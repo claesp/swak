@@ -1,0 +1,7 @@
+#include <QtPlugin>
+Q_IMPORT_PLUGIN(CotPlugin)
+Q_IMPORT_PLUGIN(MapPlugin)
+Q_IMPORT_PLUGIN(BasemapPlugin)
+Q_IMPORT_PLUGIN(TracksPlugin)
+Q_IMPORT_PLUGIN(UdpPlugin)
+Q_IMPORT_PLUGIN(EditorPlugin)

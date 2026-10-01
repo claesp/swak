@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=SWAK
+Comment=Receive and create Cursor-on-Target events
+Exec=swak
+Icon=org.swak.Swak
+Terminal=false
+Categories=Utility;Science;
+StartupNotify=true

@@ -1,0 +1,61 @@
+# Build and run
+
+The baseline is Linux, C++20, CMake 3.24, Ninja, and Qt 6.4 or later. The graphics driver must support OpenGL 3.3. The project requires the Qt Core, Gui, Widgets, Network, OpenGLWidgets, and Test components.
+
+On Debian 13, install the build packages with these commands. The package manager requires administrator access. Debian 13 includes the OpenGL development files in `qt6-base-dev`.
+
+```sh
+sudo apt-get update
+sudo apt-get install build-essential cmake ninja-build qt6-base-dev
+```
+
+Run these commands from the repository root. The debug preset uses Ninja and writes generated files under `build/debug`. The test suite opens local UDP sockets.
+
+```sh
+cmake --preset debug
+cmake --build --preset debug --parallel 4
+ctest --preset debug
+./build/debug/swak
+```
+
+For a nonstandard Qt installation, set `CMAKE_PREFIX_PATH` during configuration. Use one Qt installation for headers, libraries, and tools. Keep machine-specific paths in an untracked `CMakeUserPresets.json` file.
+
+```sh
+cmake --preset debug -DCMAKE_PREFIX_PATH=/path/to/qt
+```
+
+The release preset uses a separate directory. Run the following commands from the repository root. Installation includes the executable, desktop entry, icon, and documentation.
+
+```sh
+cmake --preset release
+cmake --build --preset release --parallel 4
+cmake --install build/release --prefix "$HOME/.local"
+```
+
+The installed application uses system Qt libraries and platform plugins. It does not bundle Qt or install additional libraries. The `~/.local/bin` directory must appear in `PATH` for the desktop entry to launch SWAK.
+
+# Tests
+
+Qt Test exercises message parsing, event storage, file limits, projection, and receiver shutdown. AddressSanitizer detects certain memory errors during tests. UndefinedBehaviorSanitizer detects certain invalid C++ operations during tests.
+
+Run these commands from the repository root to use both diagnostic tools. The sanitizer preset uses a separate directory. These tools do not establish that the application is secure.
+
+```sh
+cmake --preset sanitize
+cmake --build --preset sanitize --parallel 4
+ctest --preset sanitize
+```
+
+The GUI test requires a display with OpenGL support. Run the following command from `build/debug` in a desktop session. The test creates a window and writes `gui-smoke.png`, `gui-light.png`, and `map-smoke.png` in the current directory.
+
+```sh
+./swak_gui_tests
+```
+
+Xvfb provides a temporary X11 display for unattended tests. On Debian 13, install `xvfb` and `xauth` first. Run this command from `build/debug` when a desktop display is unavailable.
+
+```sh
+QT_QPA_PLATFORM=xcb xvfb-run -a -s '-screen 0 1440x1000x24 -nolisten tcp' ./swak_gui_tests
+```
+
+The ordinary CTest suite uses the offscreen platform and does not test rendering. The GUI test runs separately to avoid silent skips on hosts without OpenGL. Native Wayland behavior requires a separate desktop test.
