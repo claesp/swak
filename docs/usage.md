@@ -83,3 +83,31 @@ A preferences error appears in the status bar. If a file is invalid or uses an u
 Only one running instance can write a given profile. A second instance reports the conflict and uses defaults without saving. Different profile paths support independent instances.
 
 If a saved receiver cannot bind its endpoint, the receiver pane reports the error. Its requested running state remains saved for the next launch. Select Stop receiver to cancel that request.
+
+# Settings
+
+Open Settings > Configure application to edit application and plugin configuration. Apply saves changes and keeps the dialog open. OK saves changes and closes the dialog. Cancel discards changes since the last Apply. Invalid input prevents all pending changes from applying. A save error stays visible, and changes remain active for the current session.
+
+The dialog includes logging, workspace geometry, the save interval, and pane visibility, placement, and dimensions. Plugin sections include map position and zoom, editor fields and directories, receiver configuration, and table columns. Column positions must form a unique sequence from zero through four. Plugins without configurable parameters show an explanatory section. Protocol limits remain fixed security boundaries.
+
+The dialog stores values in the same portable preferences file as the workspace controls. Changes survive restarts, and absent plugin sections remain in the file. The dialog also remembers its own size and position. The desktop compositor controls final window placement on Wayland.
+
+# Text logging
+
+Text logging starts disabled in every build of the application. To enable it, select Enable text logging to standard error in the Logging section. The choice survives restarts through the selected profile. Qt diagnostics before profile loading remain silent.
+
+Severity describes the type of message: Debug, Info, Warning, Error, or Fatal. Urgency describes the required response: Routine, Attention, or Immediate. Both minimum thresholds must match before a message is written. Qt Debug and Info messages use Routine urgency. Qt Warning messages use Attention. Qt Critical and Fatal messages use Immediate urgency.
+
+The category identifies the source of a message. Application categories start with `swak.`, and Qt categories start with `qt.`. Use the category prefix field to restrict output, for example `swak.preferences` or `qt.qpa`. An empty prefix accepts all categories. Include Qt diagnostics controls Qt output independently of the thresholds. Existing Qt category rules can restrict output further, but cannot enable logging when the application disables it.
+
+The message-rate limit bounds output each second. The logger drops excess messages and bounds each message to 2048 characters. It escapes line breaks and removes terminal control characters. It drops output when a pipe or socket cannot accept it immediately. Output to regular files still depends on filesystem performance. The application does not create or rotate log files. A terminal or service manager can capture standard error after logging is enabled.
+
+Logs can contain private information from Qt or future plugins. Review captured output before sharing it. Application messages do not include event payloads or editor drafts. Interactive error labels remain visible when text logging is off. Help, version, and command-line usage responses are interactive output rather than logs.
+
+A fatal Qt diagnostic still terminates the process when its text is disabled. Logging does not replace error handling or recover memory corruption. Development test and sanitizer output remains independent of application logging. Libraries that write directly to file descriptors bypass the Qt handler and cannot receive severity metadata from this logger.
+
+# Wayland mouse warning
+
+The message `This plugin supports grabbing the mouse only for popup windows` comes from Qt, not an application plugin. Qt emits it from `QWaylandWindow::setMouseGrabEnabled` when the target is not a popup. Dock operations can request mouse capture through Qt. The source review did not identify the exact user gesture that triggered this instance.
+
+The application logging controls classify this message as Warning severity with Attention urgency. Default configuration suppresses its text. This does not change Wayland mouse-capture behavior. The [Qt 6.8 source](https://github.com/qt/qtwayland/blob/6.8/src/client/qwaylandwindow.cpp) contains the original warning.

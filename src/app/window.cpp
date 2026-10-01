@@ -1,5 +1,7 @@
 #include "app/window.h"
 #include "core/interfaces.h"
+#include "core/logging.h"
+#include "app/settings_dialog.h"
 #include <QAction>
 #include <QDockWidget>
 #include <QLabel>
@@ -26,8 +28,9 @@ void mergeValues(QJsonObject &target, const QJsonObject &source)
 }
 }
 Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, QWidget *parent)
-    : QMainWindow(parent), preferences_(preferencesPath)
+    : QMainWindow(parent), plugins_(plugins), preferences_(preferencesPath)
 {
+    configureLogging(preferences_.document().value(QStringLiteral("logging")).toObject());
     setWindowTitle(tr("SWAK | Cursor-on-Target workspace"));
     resize(1280, 800);
     setMinimumSize(850, 600);
@@ -131,6 +134,12 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     auto *eventsMenu = menuBar()->addMenu(tr("&Events"));
     auto *clear = eventsMenu->addAction(tr("&Clear events"));
     connect(clear, &QAction::triggered, &store_, &Store::clear);
+    auto *settingsMenu = menuBar()->addMenu(tr("&Settings"));
+    settingsMenu->setObjectName(QStringLiteral("settingsMenu"));
+    auto *settings = settingsMenu->addAction(tr("&Configure application…"));
+    settings->setObjectName(QStringLiteral("settingsAction"));
+    settings->setShortcut(QKeySequence::Preferences);
+    connect(settings, &QAction::triggered, this, &Window::openSettings);
     auto *status = new QLabel(this);
     statusBar()->addWidget(status);
     const auto updateStatus = [this, status] { status->setText(tr("%1 / %2 events · Offline map")
@@ -146,7 +155,9 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     restorePreferences();
     preferencesStatus_->setText(preferences_.error());
     preferencesStatus_->setToolTip(preferences_.path());
-    saveTimer_.setInterval(750);
+    const auto application = preferences_.document().value(QStringLiteral("application")).toObject();
+    saveTimer_.setInterval(preferenceInteger(application, QStringLiteral("saveInterval"), 750, 250, 60000));
+    settingsGeometry_ = geometryBytes(application, QStringLiteral("settingsGeometry"));
     connect(&saveTimer_, &QTimer::timeout, this, [this] {
         if (isVisible() && !closing_) savePreferences();
     });
@@ -184,11 +195,9 @@ void Window::restorePreferences()
         }
     }
     const auto components = document.value(QStringLiteral("components")).toObject();
-    for (auto *widget : findChildren<QWidget *>()) {
-        if (auto *participant = dynamic_cast<PreferenceParticipant *>(widget)) {
-            const auto values = components.value(participant->preferenceId());
-            if (values.isObject()) participant->restorePreferences(values.toObject());
-        }
+    for (auto *participant : participants()) {
+        const auto values = components.value(participant->preferenceId());
+        if (values.isObject()) participant->restorePreferences(values.toObject());
     }
     fitWindowsToScreens();
 }
@@ -210,18 +219,112 @@ bool Window::savePreferences()
     }
     document.insert(QStringLiteral("panes"), panes);
     auto components = document.value(QStringLiteral("components")).toObject();
-    for (const auto *widget : findChildren<QWidget *>()) {
-        if (const auto *participant = dynamic_cast<const PreferenceParticipant *>(widget)) {
-            auto values = components.value(participant->preferenceId()).toObject();
-            mergeValues(values, participant->savePreferences());
-            components.insert(participant->preferenceId(), values);
-        }
+    for (const auto *participant : participants()) {
+        auto values = components.value(participant->preferenceId()).toObject();
+        mergeValues(values, participant->savePreferences());
+        components.insert(participant->preferenceId(), values);
     }
     document.insert(QStringLiteral("components"), components);
+    auto logging = document.value(QStringLiteral("logging")).toObject();
+    mergeValues(logging, loggingConfiguration());
+    document.insert(QStringLiteral("logging"), logging);
+    auto application = document.value(QStringLiteral("application")).toObject();
+    application.insert(QStringLiteral("saveInterval"), saveTimer_.interval());
+    application.insert(QStringLiteral("settingsGeometry"), QString::fromLatin1(settingsGeometry_.toBase64()));
+    document.insert(QStringLiteral("application"), application);
     document.insert(QStringLiteral("version"), 1);
     const bool saved = preferences_.save(document);
     preferencesStatus_->setText(preferences_.error());
+    if (!saved) logMessage(Severity::Warning, Urgency::Attention, QStringLiteral("swak.preferences"), tr("The application cannot save preferences."));
     return saved;
+}
+QList<PreferenceParticipant *> Window::participants() const
+{
+    QList<PreferenceParticipant *> result;
+    const auto append = [&result](QObject *object) {
+        if (auto *participant = dynamic_cast<PreferenceParticipant *>(object); participant && !result.contains(participant))
+            result.append(participant);
+    };
+    for (auto *plugin : plugins_) append(plugin);
+    for (auto *widget : findChildren<QWidget *>()) append(widget);
+    return result;
+}
+void Window::openSettings()
+{
+    QList<SettingsPage> pages;
+    pages.append({QStringLiteral("logging"), tr("Logging"), {
+        booleanSetting(QStringLiteral("enabled"), tr("Enable text logging to standard error")),
+        choiceSetting(QStringLiteral("severity"), tr("Minimum severity"), {tr("Debug"), tr("Info"), tr("Warning"), tr("Error"), tr("Fatal")}),
+        choiceSetting(QStringLiteral("urgency"), tr("Minimum urgency"), {tr("Routine"), tr("Attention"), tr("Immediate")}),
+        booleanSetting(QStringLiteral("qt"), tr("Include Qt diagnostics")),
+        textSetting(QStringLiteral("prefix"), tr("Category prefix (empty means all)"), 128),
+        numberSetting(QStringLiteral("rate"), tr("Maximum messages per second"), 1, 1000)},
+        loggingConfiguration(), {}, [](const QJsonObject &values) { configureLogging(values); }});
+    pages.append({QStringLiteral("application"), tr("Workspace"), {
+        numberSetting(QStringLiteral("width"), tr("Window width"), minimumWidth(), 16384),
+        numberSetting(QStringLiteral("height"), tr("Window height"), minimumHeight(), 16384),
+        numberSetting(QStringLiteral("x"), tr("Window X position"), -65536, 65536),
+        numberSetting(QStringLiteral("y"), tr("Window Y position"), -65536, 65536),
+        booleanSetting(QStringLiteral("maximized"), tr("Maximized")),
+        numberSetting(QStringLiteral("saveInterval"), tr("Automatic save interval (milliseconds)"), 250, 60000)},
+        {{QStringLiteral("width"), normalGeometry().width()}, {QStringLiteral("height"), normalGeometry().height()},
+         {QStringLiteral("x"), normalGeometry().x()}, {QStringLiteral("y"), normalGeometry().y()},
+         {QStringLiteral("maximized"), isMaximized()}, {QStringLiteral("saveInterval"), saveTimer_.interval()}}, {},
+        [this](const QJsonObject &values) {
+            showNormal();
+            setGeometry(values.value(QStringLiteral("x")).toInt(), values.value(QStringLiteral("y")).toInt(),
+                        values.value(QStringLiteral("width")).toInt(), values.value(QStringLiteral("height")).toInt());
+            fitWindowsToScreens();
+            if (values.value(QStringLiteral("maximized")).toBool()) showMaximized();
+            saveTimer_.setInterval(values.value(QStringLiteral("saveInterval")).toInt());
+        }});
+    for (auto *participant : participants()) {
+        if (auto *provider = dynamic_cast<SettingsParticipant *>(participant)) {
+            pages.append({provider->preferenceId(), provider->settingsTitle(), provider->settingsFields(), provider->savePreferences(),
+                [provider](const QJsonObject &values) { return provider->validateSettings(values); },
+                [provider](const QJsonObject &values) { provider->restorePreferences(values); }});
+        }
+    }
+    for (auto *plugin : plugins_) {
+        if (dynamic_cast<SettingsParticipant *>(plugin) || qobject_cast<ToolPlugin *>(plugin) ||
+            qobject_cast<SourcePlugin *>(plugin) || qobject_cast<ViewPlugin *>(plugin)) continue;
+        QString title;
+        if (auto *codec = qobject_cast<Codec *>(plugin)) title = codec->name();
+        else if (auto *layer = qobject_cast<MapLayer *>(plugin)) title = layer->name();
+        if (!title.isEmpty()) pages.append({QString::fromLatin1(plugin->metaObject()->className()), title, {}, {}, {}, {}});
+    }
+    for (auto *dock : findChildren<QDockWidget *>(QString{}, Qt::FindDirectChildrenOnly)) {
+        pages.append({dock->objectName(), tr("Pane: %1").arg(dock->windowTitle()), {
+            booleanSetting(QStringLiteral("visible"), tr("Visible")), booleanSetting(QStringLiteral("floating"), tr("Detached")),
+            choiceSetting(QStringLiteral("area"), tr("Dock area"), {tr("Left"), tr("Right"), tr("Top"), tr("Bottom")}, {1, 2, 4, 8}),
+            numberSetting(QStringLiteral("width"), tr("Width"), 100, 16384), numberSetting(QStringLiteral("height"), tr("Height"), 100, 16384),
+            numberSetting(QStringLiteral("x"), tr("Detached X position"), -65536, 65536),
+            numberSetting(QStringLiteral("y"), tr("Detached Y position"), -65536, 65536)},
+            {{QStringLiteral("visible"), !dock->isHidden()}, {QStringLiteral("floating"), dock->isFloating()},
+             {QStringLiteral("area"), static_cast<int>(dockWidgetArea(dock))},
+             {QStringLiteral("width"), dock->width()}, {QStringLiteral("height"), dock->height()},
+             {QStringLiteral("x"), dock->x()}, {QStringLiteral("y"), dock->y()}}, {},
+            [this, dock](const QJsonObject &values) {
+                addDockWidget(static_cast<Qt::DockWidgetArea>(values.value(QStringLiteral("area")).toInt()), dock);
+                dock->setFloating(values.value(QStringLiteral("floating")).toBool());
+                if (dock->isFloating()) dock->setGeometry(values.value(QStringLiteral("x")).toInt(), values.value(QStringLiteral("y")).toInt(),
+                    values.value(QStringLiteral("width")).toInt(), values.value(QStringLiteral("height")).toInt());
+                else {
+                    resizeDocks({dock}, {values.value(QStringLiteral("width")).toInt()}, Qt::Horizontal);
+                    resizeDocks({dock}, {values.value(QStringLiteral("height")).toInt()}, Qt::Vertical);
+                }
+                dock->setVisible(values.value(QStringLiteral("visible")).toBool());
+                fitWindowsToScreens();
+            }});
+    }
+    SettingsDialog dialog(std::move(pages), [this] {
+        return savePreferences() ? QString{} : preferences_.error();
+    }, this);
+    if (!settingsGeometry_.isEmpty()) dialog.restoreGeometry(settingsGeometry_);
+    if (screen()) dialog.setGeometry(fitWindowRectangle(dialog.geometry(), {screen()->availableGeometry()}));
+    dialog.exec();
+    settingsGeometry_ = dialog.saveGeometry();
+    savePreferences();
 }
 void Window::fitWindowsToScreens()
 {

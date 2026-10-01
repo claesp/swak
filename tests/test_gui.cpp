@@ -1,4 +1,11 @@
 #include "app/window.h"
+#include "core/logging.h"
+#include "app/settings_dialog.h"
+#include <QDialogButtonBox>
+#include <QCheckBox>
+#include <QComboBox>
+#include <QListWidget>
+#include <QScrollArea>
 #include "core/interfaces.h"
 #include <QApplication>
 #include <QDoubleSpinBox>
@@ -28,9 +35,169 @@
 #include <QUdpSocket>
 #include <QLabel>
 
+class ExampleSettings final : public QObject, public swak::SettingsParticipant {
+public:
+    bool enabled = false;
+    QString preferenceId() const override { return QStringLiteral("org.swak.example"); }
+    QString settingsTitle() const override { return QStringLiteral("Example extension"); }
+    QList<swak::SettingField> settingsFields() const override
+    { return {swak::booleanSetting(QStringLiteral("enabled"), QStringLiteral("Enabled"))}; }
+    QJsonObject savePreferences() const override { return {{QStringLiteral("enabled"), enabled}}; }
+    void restorePreferences(const QJsonObject &values) override { enabled = values.value(QStringLiteral("enabled")).toBool(); }
+};
+
 class GuiTest final : public QObject {
     Q_OBJECT
 private slots:
+    void settingsPluginExtension()
+    {
+        QTemporaryDir directory;
+        const auto path = directory.filePath(QStringLiteral("extension.json"));
+        ExampleSettings example;
+        auto plugins = QPluginLoader::staticInstances();
+        plugins.append(&example);
+        {
+            swak::Window window(path, plugins);
+            QTimer::singleShot(0, &window, [&] {
+                auto *dialog = window.findChild<swak::SettingsDialog *>();
+                if (!dialog) { QFAIL("Settings dialog did not open."); return; }
+                auto *field = dialog->findChild<QCheckBox *>(QStringLiteral("org.swak.example/enabled"));
+                if (!field) { dialog->reject(); QFAIL("The extension section is missing."); return; }
+                field->setChecked(true);
+                dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+            });
+            window.findChild<QAction *>(QStringLiteral("settingsAction"))->trigger();
+            QVERIFY(example.enabled);
+        }
+        {
+            swak::Window absent(path, QPluginLoader::staticInstances());
+            QVERIFY(absent.savePreferences());
+        }
+        example.enabled = false;
+        swak::Window restored(path, plugins);
+        QVERIFY(example.enabled);
+    }
+    void unchangedSettingsPreservePrecision()
+    {
+        int applications = 0;
+        swak::SettingsDialog dialog({{QStringLiteral("test"), QStringLiteral("Precision"),
+            {swak::numberSetting(QStringLiteral("number"), QStringLiteral("Number"), 0, 1, 2)},
+            {{QStringLiteral("number"), 0.123456789}}, {}, [&](const QJsonObject &) { ++applications; }}}, [] { return QString{}; }, nullptr);
+        dialog.findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+        QCOMPARE(applications, 0);
+    }
+    void tableColumnSettings()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("table.json")), QPluginLoader::staticInstances());
+        auto *table = window.findChild<QTableView *>();
+        QVERIFY(table);
+        auto *provider = dynamic_cast<swak::SettingsParticipant *>(table);
+        QVERIFY(provider);
+        table->horizontalHeader()->resizeSection(0, 231);
+        table->setColumnHidden(0, true);
+        auto values = provider->savePreferences();
+        QCOMPARE(swak::settingValue(values, QStringLiteral("columns/0/width")).toInt(), 231);
+        values = swak::withSettingValue(values, QStringLiteral("columns/0/position"), 1).toObject();
+        QVERIFY(!provider->validateSettings(values).isEmpty());
+        values = swak::withSettingValue(values, QStringLiteral("columns/1/position"), 0).toObject();
+        QVERIFY(provider->validateSettings(values).isEmpty());
+        provider->restorePreferences(values);
+        QCOMPARE(table->horizontalHeader()->visualIndex(0), 1);
+        table->setColumnHidden(0, false);
+        QCOMPARE(table->horizontalHeader()->sectionSize(0), 231);
+    }
+    void settingsDialog()
+    {
+        QTemporaryDir directory;
+        const auto path = directory.filePath(QStringLiteral("settings.json"));
+        {
+            swak::Window window(path, QPluginLoader::staticInstances());
+            window.show();
+            QVERIFY(QTest::qWaitForWindowExposed(&window));
+            auto *action = window.findChild<QAction *>(QStringLiteral("settingsAction"));
+            QVERIFY(action);
+            QTimer::singleShot(0, &window, [&] {
+                auto *dialog = window.findChild<swak::SettingsDialog *>();
+                if (!dialog) { QFAIL("Settings dialog did not open."); return; }
+                const auto cancel = [&] { dialog->reject(); };
+                auto *identity = dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.editor/identity"));
+                if (!identity) { cancel(); QFAIL("The editor section is missing."); return; }
+                identity->setText(QStringLiteral("cancelled"));
+                cancel();
+            });
+            const auto initial = window.findChild<QLineEdit *>(QStringLiteral("identity"))->text();
+            action->trigger();
+            QCOMPARE(window.findChild<QLineEdit *>(QStringLiteral("identity"))->text(), initial);
+            bool complete = false;
+            QTimer::singleShot(0, &window, [&] {
+                auto *dialog = window.findChild<swak::SettingsDialog *>();
+                if (!dialog) { QFAIL("Settings dialog did not open."); return; }
+                auto *buttons = dialog->findChild<QDialogButtonBox *>();
+                auto *identity = dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.editor/identity"));
+                auto *address = dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.udp/address"));
+                auto *enabled = dialog->findChild<QCheckBox *>(QStringLiteral("logging/enabled"));
+                auto *severity = dialog->findChild<QComboBox *>(QStringLiteral("logging/severity"));
+                auto *interval = dialog->findChild<QDoubleSpinBox *>(QStringLiteral("application/saveInterval"));
+                auto *zoom = dialog->findChild<QDoubleSpinBox *>(QStringLiteral("org.swak.map/zoom"));
+                auto *width = dialog->findChild<QDoubleSpinBox *>(QStringLiteral("org.swak.events/columns/0/width"));
+                if (!buttons || !identity || !address || !enabled || !severity || !interval || !zoom || !width) {
+                    dialog->reject(); QFAIL("A settings field is missing."); return;
+                }
+                identity->setText(QStringLiteral("configured"));
+                address->setText(QStringLiteral("invalid-address"));
+                buttons->button(QDialogButtonBox::Apply)->click();
+                if (window.findChild<QLineEdit *>(QStringLiteral("identity"))->text() != initial) {
+                    dialog->reject(); QFAIL("An invalid page allowed partial application."); return;
+                }
+                address->setText(QStringLiteral("127.0.0.1"));
+                enabled->setChecked(true);
+                severity->setCurrentIndex(3);
+                interval->setValue(2000);
+                zoom->setValue(4);
+                width->setValue(230);
+                buttons->button(QDialogButtonBox::Apply)->click();
+                if (!QTest::qWaitFor([dialog] {
+                    for (auto *scroll : dialog->findChildren<QScrollArea *>())
+                        if (scroll->isVisible() && scroll->widget()->width() > scroll->viewport()->width()) return false;
+                    return true;
+                }, 1000)) { dialog->reject(); QFAIL("The Settings form overflows horizontally."); return; }
+                if (!dialog->grab().save(QStringLiteral("settings-smoke.png"))) {
+                    dialog->reject(); QFAIL("Settings screenshot failed."); return;
+                }
+                identity->setText(QStringLiteral("discard-after-apply"));
+                dialog->reject();
+                complete = true;
+            });
+            action->trigger();
+            QVERIFY(complete);
+            QCOMPARE(window.findChild<QLineEdit *>(QStringLiteral("identity"))->text(), QStringLiteral("configured"));
+            QVERIFY(swak::loggingConfiguration().value(QStringLiteral("enabled")).toBool());
+            window.close();
+        }
+        {
+            swak::Window restored(path, QPluginLoader::staticInstances());
+            QCOMPARE(restored.findChild<QLineEdit *>(QStringLiteral("identity"))->text(), QStringLiteral("configured"));
+            QCOMPARE(swak::loggingConfiguration().value(QStringLiteral("severity")).toInt(), 3);
+            auto *map = dynamic_cast<swak::PreferenceParticipant *>(restored.findChild<QOpenGLWidget *>());
+            QVERIFY(map);
+            QCOMPARE(map->savePreferences().value(QStringLiteral("zoom")).toDouble(), 4.0);
+        }
+        swak::configureLogging({});
+    }
+    void settingsSaveFailure()
+    {
+        bool applied = false;
+        swak::SettingsDialog dialog({{QStringLiteral("test"), QStringLiteral("Test"),
+            {swak::textSetting(QStringLiteral("value"), QStringLiteral("Value"), 20)},
+            {{QStringLiteral("value"), QStringLiteral("before")}}, {},
+            [&](const QJsonObject &) { applied = true; }}}, [] { return QStringLiteral("Read-only profile"); }, nullptr);
+        dialog.findChild<QLineEdit *>()->setText(QStringLiteral("after"));
+        dialog.findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+        QVERIFY(applied);
+        QCOMPARE(dialog.result(), 0);
+        QVERIFY(dialog.findChild<QLabel *>(QStringLiteral("settingsStatus"))->text().contains(QStringLiteral("Read-only")));
+    }
     void preferencesRestart()
     {
         QTemporaryDir directory;

@@ -13,7 +13,7 @@
 #include <utility>
 
 namespace swak {
-class MapWidget final : public QOpenGLWidget, public PreferenceParticipant, protected QOpenGLFunctions {
+class MapWidget final : public QOpenGLWidget, public SettingsParticipant, protected QOpenGLFunctions {
 public:
     MapWidget(Store &store, QList<MapLayer *> layers, QWidget *parent)
         : QOpenGLWidget(parent), store_(store), layers_(std::move(layers))
@@ -36,6 +36,13 @@ public:
         });
     }
     QString preferenceId() const override { return QStringLiteral("org.swak.map"); }
+    QString settingsTitle() const override { return tr("Map"); }
+    QList<SettingField> settingsFields() const override
+    {
+        return {numberSetting(QStringLiteral("centerX"), tr("Horizontal center (0–1)"), 0, 1, 6),
+                numberSetting(QStringLiteral("centerY"), tr("Vertical center (0–1)"), 0, 1, 6),
+                numberSetting(QStringLiteral("zoom"), tr("Zoom"), 0, 16, 2)};
+    }
     QJsonObject savePreferences() const override
     {
         return {{QStringLiteral("centerX"), view_.center.x()}, {QStringLiteral("centerY"), view_.center.y()},

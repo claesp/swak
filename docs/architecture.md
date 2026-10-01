@@ -66,3 +66,23 @@ Preferences use `QStandardPaths`, `QJsonDocument`, `QLockFile`, and `QSaveFile`.
 The CoT fields follow the base format described in the [MITRE CoT router guide](https://nps.edu/documents/104517539/109705106/COT%2BUser%2BGuide.pdf/4e67c16d-171c-4f8c-9649-7b3870dbcb4c). This application implements its own bounded subset rather than full schema validation. Contact callsigns are the only interpreted detail extension.
 
 Qt documents the graphics lifecycle in [QOpenGLWidget](https://doc.qt.io/qt-6/qopenglwidget.html). Qt documents streaming XML parsing in [QXmlStreamReader](https://doc.qt.io/qt-6/qxmlstreamreader.html). Use documentation for the target Qt version before adding newer APIs.
+
+# Settings sections
+
+`SettingsParticipant` extends `PreferenceParticipant` and has interface identifier `org.swak.Settings/1.0`. It lives in `src/core/settings.h` and is available through `src/core/interfaces.h`. A plugin can implement it on its root object or on a widget that it creates. The host discovers both forms without plugin-specific dialog code.
+
+Each provider supplies a stable identifier, a translated section title, field descriptions, and optional validation. Fields support booleans, bounded numbers, bounded text, and choices. Slash-separated field paths address nested JSON objects and array indices. Field paths and limits come from trusted plugin code, not imported profiles. All identifiers must remain unique across providers.
+
+The dialog reads a snapshot through `savePreferences`. It validates all changed sections before it calls `restorePreferences` on any provider. Unchanged controls do not replace more precise stored values. Apply updates live components and saves the shared profile. Plugins must keep restoration bounded, handle runtime failures, and report operational errors in their interface. The receiver reports bind failures in its pane and retains the saved startup request.
+
+Plugin code must not throw through validation or restoration callbacks. Providers must remain alive for the dialog lifetime. The host keeps static plugin objects alive and owns their widgets. Unknown preference fields and sections for absent providers survive normal saves.
+
+# Logging contract
+
+The executable installs its Qt message handler before constructing `QApplication`. The handler starts silent. A bounded read of the selected profile enables explicitly saved logging before the graphics probe. The window then applies its loaded configuration. Invalid profiles cannot enable logging.
+
+Application and plugin code uses `logMessage` from `src/core/logging.h`. Every call supplies severity, urgency, a stable category, and bounded diagnostic text. Do not log event payloads, credentials, or editor drafts. Use error labels for user-facing failures, regardless of logging configuration. Do not use direct console writes or replace the Qt handler in a plugin.
+
+The logger serializes concurrent calls and limits message size and rate. A separate nonblocking descriptor handles pipes and terminals without changing the original descriptor flags. Socket output uses nonblocking sends. Closed pipes do not deliver a fatal signal to the application. The logger drops unavailable output and never retries inside the interface thread.
+
+This design adds no external dependency. The output adapter uses Linux descriptors and signal masks. It does not intercept arbitrary output from native libraries. Qt documents the supported handler in [Qt logging](https://doc.qt.io/qt-6.8/qtlogging.html).

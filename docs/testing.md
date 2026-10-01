@@ -67,3 +67,15 @@ Uncovered areas include application startup, file-dialog interaction, several ma
 The release preset built successfully with tests, sanitizers, and coverage disabled. Its compiler commands contain no sanitizer or coverage flags. Its executable does not link sanitizer or Qt Test libraries. Python, Cppcheck, and coverage tools remain development-only dependencies.
 
 Run instructions and report locations are in [Development diagnostics](quality.md). Reports remain under the ignored `build/quality/` directory. The source repository stores the workflow and this dated evidence, not machine-specific reports.
+
+# Settings and logging
+
+On October 2, 2026, debug and sanitizer suites passed the logging, core, preferences, and workload tests. The logging tests cover silent defaults, explicit enablement, severity, urgency, category filtering, rate limits, escaped output, and concurrent calls. Separate child processes test fatal diagnostics and unavailable output. Closed pipes, full pipes, closed sockets, and active sockets passed. Fatal Qt diagnostics terminate even when their text is disabled.
+
+All 18 native GUI cases passed under Xvfb with Qt 6.8.2 at normal and 200 percent scaling. Added cases cover Apply, Cancel, validation before application, saved configuration, and visible save failures. A test plugin adds a section through the new interface. Its values survive plugin removal and return. Other cases cover unchanged numeric precision, column order validation, and hidden column widths.
+
+The release startup test used a fresh temporary profile with `QT_DEBUG_PLUGINS=1`. Both stdout and stderr remained empty during the two-second run. The supervisor then stopped the process. Static analysis passed with Cppcheck 2.17.1.
+
+The native sanitizer GUI cases passed their assertions. LeakSanitizer still reported the known 240732-byte Mesa leak in 1073 allocations, and the runner retained the failure. The logging handler runs only in the application and logging probes. It does not suppress test framework or sanitizer reports.
+
+The warning about mouse capture was located in Qt 6.8 Wayland source. Its exact triggering gesture was not reproduced in a native Wayland session. Hardware graphics, native Wayland placement, and Qt 6.4 remain untested.

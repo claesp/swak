@@ -1,0 +1,33 @@
+#pragma once
+#include "core/preferences.h"
+#include <QJsonArray>
+#include <QStringList>
+#include <QtPlugin>
+
+namespace swak {
+struct SettingField {
+    enum class Kind { Boolean, Number, Text, Choice };
+    QString path;
+    QString label;
+    Kind kind = Kind::Text;
+    double minimum = 0;
+    double maximum = 0;
+    int decimals = 0;
+    QStringList choices;
+    QJsonArray choiceValues;
+};
+SettingField booleanSetting(QString path, QString label);
+SettingField numberSetting(QString path, QString label, double minimum, double maximum, int decimals = 0);
+SettingField textSetting(QString path, QString label, int maxLength);
+SettingField choiceSetting(QString path, QString label, QStringList choices, QJsonArray values = {});
+
+class SettingsParticipant : public PreferenceParticipant {
+public:
+    virtual QString settingsTitle() const = 0;
+    virtual QList<SettingField> settingsFields() const = 0;
+    virtual QString validateSettings(const QJsonObject &) const { return {}; }
+};
+QJsonValue settingValue(const QJsonValue &root, const QString &path);
+QJsonValue withSettingValue(QJsonValue root, const QString &path, const QJsonValue &value);
+}
+Q_DECLARE_INTERFACE(swak::SettingsParticipant, "org.swak.Settings/1.0")

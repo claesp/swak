@@ -14,6 +14,9 @@ Follow these standing requirements:
 - Regularly inspect the code for dead code, unsafe ownership, leaks, unbounded loops, and other common faults.
 - Run the applicable diagnostics in `docs/quality.md` during development and all modes before a release.
 - Keep recoverable failures from crashing the application or blocking the interface.
+- Keep application text logging disabled until the user enables it in configuration.
+- Route application and plugin diagnostics through the shared severity and urgency logger.
+- Expose plugin configuration through the shared Settings interface.
 - Do not hide memory corruption with catch-all handlers or fatal signal recovery.
 - Add external dependencies only with a documented reason.
 - Use the `qt-linux-gui` skill for development when available.

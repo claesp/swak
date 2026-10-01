@@ -8,12 +8,47 @@
 #include <QSet>
 #include <QSortFilterProxyModel>
 #include <QTableView>
+#include <algorithm>
 
 namespace swak {
-class EventTable final : public QTableView, public PreferenceParticipant {
+class EventTable final : public QTableView, public SettingsParticipant {
 public:
-    using QTableView::QTableView;
+    explicit EventTable(QWidget *parent) : QTableView(parent)
+    {
+        connect(horizontalHeader(), &QHeaderView::sectionResized, this, [this](int column, int, int width) {
+            if (width > 0) widths_.insert(column, width);
+        });
+    }
     QString preferenceId() const override { return QStringLiteral("org.swak.events"); }
+    QString settingsTitle() const override { return tr("Events table"); }
+    QList<SettingField> settingsFields() const override
+    {
+        QList<SettingField> fields{choiceSetting(QStringLiteral("sortColumn"), tr("Sort column"),
+            {tr("Identity"), tr("Type"), tr("Latitude"), tr("Longitude"), tr("Stale time")}, QJsonArray::fromStringList(columnIds())),
+            choiceSetting(QStringLiteral("sortOrder"), tr("Sort order"), {tr("Ascending"), tr("Descending")})};
+        const auto columns = savePreferences().value(QStringLiteral("columns")).toArray();
+        const QStringList names{tr("Identity"), tr("Type"), tr("Latitude"), tr("Longitude"), tr("Stale time")};
+        for (int i = 0; i < columns.size(); ++i) {
+            const auto column = columns.at(i).toObject();
+            const auto title = names.at(columnIds().indexOf(column.value(QStringLiteral("id")).toString()));
+            const auto path = QStringLiteral("columns/%1/").arg(i);
+            fields.append(numberSetting(path + QStringLiteral("width"), tr("%1 width").arg(title), 24, 4096));
+            fields.append(booleanSetting(path + QStringLiteral("hidden"), tr("Hide %1").arg(title)));
+            fields.append(numberSetting(path + QStringLiteral("position"), tr("%1 position (0–4)").arg(title), 0, 4));
+        }
+        return fields;
+    }
+    QString validateSettings(const QJsonObject &values) const override
+    {
+        QSet<int> positions;
+        for (const auto &entry : values.value(QStringLiteral("columns")).toArray()) {
+            const int position = entry.toObject().value(QStringLiteral("position")).toInt(-1);
+            if (position < 0 || position >= columnIds().size() || positions.contains(position))
+                return tr("Use each column position once, from 0 through 4.");
+            positions.insert(position);
+        }
+        return {};
+    }
     QJsonObject savePreferences() const override
     {
         QJsonArray columns;
@@ -21,7 +56,8 @@ public:
         for (int visual = 0; visual < header->count(); ++visual) {
             const int logical = header->logicalIndex(visual);
             columns.append(QJsonObject{{QStringLiteral("id"), columnIds().at(logical)},
-                {QStringLiteral("width"), header->sectionSize(logical)},
+                {QStringLiteral("position"), visual},
+                {QStringLiteral("width"), header->isSectionHidden(logical) ? widths_.value(logical, 100) : header->sectionSize(logical)},
                 {QStringLiteral("hidden"), header->isSectionHidden(logical)}});
         }
         const int sort = header->sortIndicatorSection();
@@ -31,11 +67,19 @@ public:
     }
     void restorePreferences(const QJsonObject &values) override
     {
-        const auto columns = values.value(QStringLiteral("columns")).toArray();
+        QList<QJsonObject> columns;
+        for (const auto &entry : values.value(QStringLiteral("columns")).toArray()) {
+            auto column = entry.toObject();
+            if (!column.contains(QStringLiteral("position"))) column.insert(QStringLiteral("position"), static_cast<int>(columns.size()));
+            columns.append(column);
+        }
+        std::stable_sort(columns.begin(), columns.end(), [](const QJsonObject &a, const QJsonObject &b) {
+            return a.value(QStringLiteral("position")).toInt() < b.value(QStringLiteral("position")).toInt();
+        });
         auto *header = horizontalHeader();
         QSet<int> restored;
         for (const auto &entry : columns) {
-            const auto column = entry.toObject();
+            const auto column = entry;
             const int logical = static_cast<int>(columnIds().indexOf(column.value(QStringLiteral("id")).toString()));
             if (logical < 0 || restored.contains(logical)) continue;
             const int visual = static_cast<int>(restored.size());
@@ -49,6 +93,7 @@ public:
             preferenceInteger(values, QStringLiteral("sortOrder"), Qt::AscendingOrder, 0, 1)));
     }
 private:
+    QHash<int, int> widths_;
     static const QStringList &columnIds()
     {
         static const QStringList ids{QStringLiteral("identity"), QStringLiteral("type"), QStringLiteral("latitude"),

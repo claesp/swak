@@ -20,7 +20,7 @@
 #include <QVBoxLayout>
 
 namespace swak {
-class Editor final : public QWidget, public PreferenceParticipant {
+class Editor final : public QWidget, public SettingsParticipant {
 public:
     Editor(Store &store, const Codec &codec, QWidget *parent) : QWidget(parent), store_(store), codec_(codec)
     {
@@ -92,6 +92,19 @@ public:
         connect(&store_, &Store::changed, this, refreshPreview);
     }
     QString preferenceId() const override { return QStringLiteral("org.swak.editor"); }
+    QString settingsTitle() const override { return tr("Event editor"); }
+    QList<SettingField> settingsFields() const override
+    {
+        return {textSetting(QStringLiteral("identity"), tr("Identity"), 128),
+                textSetting(QStringLiteral("callsign"), tr("Callsign"), 128),
+                textSetting(QStringLiteral("type"), tr("Type"), 128),
+                numberSetting(QStringLiteral("latitude"), tr("Latitude"), -90, 90, 6),
+                numberSetting(QStringLiteral("longitude"), tr("Longitude"), -180, 180, 6),
+                numberSetting(QStringLiteral("altitude"), tr("Altitude (meters)"), -100000, 100000000, 1),
+                numberSetting(QStringLiteral("lifetime"), tr("Lifetime (seconds)"), 1, 86400),
+                textSetting(QStringLiteral("importDirectory"), tr("Import directory"), 4096),
+                textSetting(QStringLiteral("exportDirectory"), tr("Export directory"), 4096)};
+    }
     QJsonObject savePreferences() const override
     {
         return {{QStringLiteral("identity"), uid_->text()}, {QStringLiteral("callsign"), callsign_->text()},

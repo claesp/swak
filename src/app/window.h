@@ -21,6 +21,9 @@ protected:
 private:
     void restorePreferences();
     void fitWindowsToScreens();
+    void openSettings();
+    QList<PreferenceParticipant *> participants() const;
+    QList<QObject *> plugins_;
     Store store_;
     Preferences preferences_;
     QTimer saveTimer_;
@@ -28,5 +31,6 @@ private:
     QLabel *preferencesStatus_ = nullptr;
     bool closing_ = false;
     bool shown_ = false;
+    QByteArray settingsGeometry_;
 };
 }

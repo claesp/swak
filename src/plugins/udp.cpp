@@ -13,7 +13,7 @@
 #include <QVBoxLayout>
 
 namespace swak {
-class Receiver final : public QWidget, public PreferenceParticipant {
+class Receiver final : public QWidget, public SettingsParticipant {
 public:
     Receiver(Store &store, const Codec &codec, QWidget *parent)
         : QWidget(parent), store_(store), codec_(codec)
@@ -50,6 +50,20 @@ public:
         connect(timer_, &QTimer::timeout, this, [this] { drain(); });
     }
     QString preferenceId() const override { return QStringLiteral("org.swak.udp"); }
+    QString settingsTitle() const override { return tr("UDP receiver"); }
+    QList<SettingField> settingsFields() const override
+    {
+        return {textSetting(QStringLiteral("address"), tr("Local address"), 64),
+                numberSetting(QStringLiteral("port"), tr("Port"), 1, 65535),
+                booleanSetting(QStringLiteral("running"), tr("Run receiver now and after restart"))};
+    }
+    QString validateSettings(const QJsonObject &values) const override
+    {
+        QHostAddress address;
+        if (!address.setAddress(values.value(QStringLiteral("address")).toString()) || address.isMulticast() || address == QHostAddress::Broadcast)
+            return tr("Enter a numeric local address. Multicast and broadcast addresses are not supported.");
+        return {};
+    }
     QJsonObject savePreferences() const override
     {
         return {{QStringLiteral("address"), address_->text()}, {QStringLiteral("port"), port_->value()},

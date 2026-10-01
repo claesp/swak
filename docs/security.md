@@ -46,3 +46,11 @@ Preferences use a versioned JSON file with a one MiB limit. The file accepts reg
 Writes replace the file atomically through `QSaveFile`. The saved file permits access only to its owner. A process lock prevents concurrent instances from overwriting the same preferences.
 
 Unknown plugin sections remain in the document. Plugins must bound every value before applying it to controls or operations. Do not store credentials in this file.
+
+# Diagnostic output
+
+The application disables text logging before Qt startup. Only an explicit enabled flag in the selected profile permits output. Severity, urgency, source filtering, and rate limits apply to both application and Qt messages. Logging configuration uses the bounded preferences reader and preserves unknown fields.
+
+Messages have bounded length and cannot inject terminal control characters or extra log lines. Excess messages are dropped. Nonblocking pipe and socket writes prevent diagnostic backpressure from stopping the interface. A broken output pipe cannot terminate the application. Regular-file output still depends on filesystem latency.
+
+Plugin code must use the shared logger and avoid private payloads. Qt diagnostics can include paths or other private context. Fatal diagnostics retain their original termination behavior even when text output is disabled. Development diagnostic tools retain their independent output.
