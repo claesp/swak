@@ -4,7 +4,7 @@ SWAK is a native Linux workspace for Cursor-on-Target (CoT) events. It uses C++2
 
 A plugin adds a feature through a defined interface. Six built-in plugins provide the CoT format, the map view, land outlines, event markers, UDP reception, and the event editor. Qt is the only direct application dependency.
 
-The application receives CoT XML datagrams and imports individual XML files. You can generate events, inspect their positions, and export the XML preview. The application does not send network traffic or download maps.
+The application receives CoT XML datagrams and imports individual XML files. You can generate events, inspect their positions, and export the XML preview. Interface preferences survive restarts and missing plugins. The application does not send network traffic or download maps.
 
 The offline map contains schematic land outlines and a coordinate grid. These outlines are hand-authored reference shapes, not surveyed map data. Do not use this map for navigation.
 

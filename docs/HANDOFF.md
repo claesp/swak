@@ -1,10 +1,10 @@
 # Session handoff
 
-This handoff records the project state on October 2, 2026. The repository is `/home/clpe/code/swak`, and the branch is `main`. The working tree was clean before this handoff was added.
+This handoff records the project state on October 2, 2026. The repository is `/home/clpe/code/swak`, and the branch is `main`.
 
 The repository root contains `AGENTS.md` as the entry point for agents that support automatic instruction discovery. It directs agents to this handoff. Agents without that support need an explicit instruction to read these files.
 
-The latest functional commit is `c227d7e`, which splits the workspace tools into independent dock panes. The initial application commit is `4f82422`. No requested implementation work remains pending at this point.
+The current implementation includes persistent preferences and independent dock panes. Read `git log -5 --oneline` for the current commit identifiers. The initial application commit is `4f82422`. No requested implementation work remains pending at this point.
 
 # User requirements
 
@@ -37,11 +37,12 @@ The main implementation files are:
 - `src/plugins/editor.cpp`: Event generation, XML preview, file import, and export.
 - `src/core/store.cpp`: Event storage, replacement, expiry, and selection.
 - `src/core/files.cpp`: Bounded regular-file reads that reject pipes without waiting.
+- `src/core/preferences.cpp`: Versioned JSON storage, file locking, and input bounds.
 - `src/app/window.cpp`: Dock layout, menus, and plugin integration.
 
 The map uses the Qt OpenGL paint engine through `QOpenGLWidget`. Its land outlines are schematic and unsuitable for navigation. Detailed map data, network tiles, terrain, and military symbol standards are not implemented.
 
-The receiver starts disabled and defaults to `127.0.0.1:6969`. UDP messages are unauthenticated. The application generates and exports events but does not transmit them over the network.
+A fresh profile starts with reception disabled and endpoint `127.0.0.1:6969`. Saved running state resumes reception on later launches. UDP messages are unauthenticated. The application generates and exports events but does not transmit them over the network.
 
 Messages are limited to 16384 bytes, and the store holds at most 4096 identities. XML has depth, element, attribute, and text limits. Unknown detail fields are discarded and do not appear in exported XML.
 
@@ -51,9 +52,25 @@ Events, Event editor, UDP receiver, and Plugins each have an independent `QDockW
 
 Every dock uses the same content wrapper. A `QSizeGrip`, the corner resize handle, appears when a dock floats. The Events pane passed a test that resizes it through a mouse drag on this handle.
 
-Each pane has its own View menu action. File > Quit retains the standard quit shortcut. The Events menu contains Clear events.
+Each pane has its own View menu action. View > Reset layout restores the default dock arrangement. File > Quit retains the standard quit shortcut. The Events menu contains Clear events.
 
 The window destroys the docks and map before destroying its event store. Preserve this order because plugin widgets reference the store. Hiding the receiver pane does not stop an active receiver.
+
+# Persistent preferences
+
+Preferences use schema version 1 in `preferences.json` under `QStandardPaths::AppConfigLocation`. The command-line flag `--preferences /path/to/file.json` selects a portable profile. The host saves changes every 750 milliseconds and when the main window closes.
+
+`PreferenceParticipant` gives plugin widgets stable identifiers and bounded JSON save and restore methods. Pane names use these identifiers with a `.pane` suffix. Missing plugin sections and Qt dock placeholders survive later saves.
+
+The application stores window and pane geometry, active dock tabs, map position, table columns, editor drafts, last file directories, and receiver state. Live event data and XML previews remain session data. The profile contains private editor and network information.
+
+Writes use `QSaveFile` and owner-only permissions. `QLockFile` prevents concurrent writers. Malformed or unsupported profiles remain untouched and produce a visible status message.
+
+Restart tests cover absent and returning receiver, map, and codec plugins. Missing map support shows an empty-state message. Missing codec support disables event tools without discarding their preferences.
+
+The core and preferences suites passed in debug, release, and sanitizer builds. All 13 native GUI cases passed at normal and 200 percent scaling. The GUI sanitizer process reports pre-existing Mesa leaks, reproduced with identical counts on baseline commit `362a661`.
+
+The release executable saved a separate profile through `--preferences` during an X11 startup test. The JSON file used owner-only read and write permissions.
 
 # Build environment
 
@@ -75,7 +92,7 @@ ctest --preset debug
 
 Read `docs/build.md` for normal system installation and build commands. Existing CMake caches reference the temporary prefix. If that prefix disappears, use a fresh build directory or refresh the CMake configuration.
 
-The current release executable is `build/release/swak`. Both debug and release executables include commit `c227d7e`. The sanitizer build and temporary installed copy were not rebuilt for the pane changes.
+The current release executable is `build/release/swak`. Debug, release, and sanitizer builds include the preferences implementation. The temporary installed copy predates these changes.
 
 # Test evidence and limits
 

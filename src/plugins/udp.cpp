@@ -1,5 +1,6 @@
 #include "core/interfaces.h"
 #include "core/store.h"
+#include "core/preferences.h"
 #include <QElapsedTimer>
 #include <QFormLayout>
 #include <QHostAddress>
@@ -12,7 +13,7 @@
 #include <QVBoxLayout>
 
 namespace swak {
-class Receiver final : public QWidget {
+class Receiver final : public QWidget, public PreferenceParticipant {
 public:
     Receiver(Store &store, const Codec &codec, QWidget *parent)
         : QWidget(parent), store_(store), codec_(codec)
@@ -48,10 +49,32 @@ public:
         connect(button_, &QPushButton::clicked, this, [this] { toggle(); });
         connect(timer_, &QTimer::timeout, this, [this] { drain(); });
     }
+    QString preferenceId() const override { return QStringLiteral("org.swak.udp"); }
+    QJsonObject savePreferences() const override
+    {
+        return {{QStringLiteral("address"), address_->text()}, {QStringLiteral("port"), port_->value()},
+                {QStringLiteral("running"), runningRequested_}};
+    }
+    void restorePreferences(const QJsonObject &values) override
+    {
+        if (runningRequested_) toggle();
+        address_->setText(preferenceText(values, QStringLiteral("address"), QStringLiteral("127.0.0.1"), 64));
+        port_->setValue(preferenceInteger(values, QStringLiteral("port"), 6969, 1, 65535));
+        if (values.value(QStringLiteral("running")).toBool(false)) {
+            toggle();
+            if (!timer_->isActive()) {
+                runningRequested_ = true;
+                button_->setText(tr("Stop receiver"));
+                status_->setText(tr("The saved receiver cannot start. Stop it to cancel the next startup attempt.\n%1")
+                                 .arg(status_->text()));
+            }
+        }
+    }
 private:
     void toggle()
     {
-        if (timer_->isActive()) {
+        if (runningRequested_) {
+            runningRequested_ = false;
             timer_->stop();
             socket_->close();
             address_->setEnabled(true);
@@ -70,6 +93,7 @@ private:
             return;
         }
         socket_->setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption, 256 * 1024);
+        runningRequested_ = true;
         accepted_ = 0;
         rejected_ = 0;
         lastError_.clear();
@@ -115,6 +139,7 @@ private:
     QLabel *status_;
     QUdpSocket *socket_;
     QTimer *timer_;
+    bool runningRequested_ = false;
     quint64 accepted_ = 0;
     quint64 rejected_ = 0;
     QString lastError_;

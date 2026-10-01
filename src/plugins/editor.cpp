@@ -1,6 +1,9 @@
 #include "core/interfaces.h"
 #include "core/store.h"
 #include "core/files.h"
+#include "core/preferences.h"
+#include <QDir>
+#include <QFileInfo>
 #include <QDoubleSpinBox>
 #include <QFile>
 #include <QFileDialog>
@@ -16,7 +19,7 @@
 #include <QVBoxLayout>
 
 namespace swak {
-class Editor final : public QWidget {
+class Editor final : public QWidget, public PreferenceParticipant {
 public:
     Editor(Store &store, const Codec &codec, QWidget *parent) : QWidget(parent), store_(store), codec_(codec)
     {
@@ -30,6 +33,7 @@ public:
         altitude_ = numberField(QStringLiteral("altitude"), -100000, 100000000, 1);
         altitude_->setToolTip(tr("Height above the WGS 84 reference surface, in meters."));
         lifetime_ = new QSpinBox(this);
+        lifetime_->setObjectName(QStringLiteral("lifetime"));
         lifetime_->setRange(1, 86400);
         lifetime_->setValue(300);
         lifetime_->setSuffix(tr(" s"));
@@ -84,6 +88,27 @@ public:
         connect(&store_, &Store::selectionChanged, this, refreshPreview);
         connect(&store_, &Store::changed, this, refreshPreview);
     }
+    QString preferenceId() const override { return QStringLiteral("org.swak.editor"); }
+    QJsonObject savePreferences() const override
+    {
+        return {{QStringLiteral("identity"), uid_->text()}, {QStringLiteral("callsign"), callsign_->text()},
+                {QStringLiteral("type"), type_->text()}, {QStringLiteral("latitude"), latitude_->value()},
+                {QStringLiteral("longitude"), longitude_->value()}, {QStringLiteral("altitude"), altitude_->value()},
+                {QStringLiteral("lifetime"), lifetime_->value()}, {QStringLiteral("importDirectory"), importDirectory_},
+                {QStringLiteral("exportDirectory"), exportDirectory_}};
+    }
+    void restorePreferences(const QJsonObject &values) override
+    {
+        uid_->setText(preferenceText(values, QStringLiteral("identity"), uid_->text(), 128));
+        callsign_->setText(preferenceText(values, QStringLiteral("callsign"), callsign_->text(), 128));
+        type_->setText(preferenceText(values, QStringLiteral("type"), type_->text(), 128));
+        latitude_->setValue(preferenceNumber(values, QStringLiteral("latitude"), 0, -90, 90));
+        longitude_->setValue(preferenceNumber(values, QStringLiteral("longitude"), 0, -180, 180));
+        altitude_->setValue(preferenceNumber(values, QStringLiteral("altitude"), 0, -100000, 100000000));
+        lifetime_->setValue(preferenceInteger(values, QStringLiteral("lifetime"), 300, 1, 86400));
+        importDirectory_ = preferenceText(values, QStringLiteral("importDirectory"), {}, 4096);
+        exportDirectory_ = preferenceText(values, QStringLiteral("exportDirectory"), {}, 4096);
+    }
 private:
     QLineEdit *textField(const QString &name, const QString &value)
     {
@@ -129,8 +154,9 @@ private:
     }
     void importFile()
     {
-        const auto path = QFileDialog::getOpenFileName(this, tr("Import a CoT event"), {}, tr("CoT XML (*.xml *.cot);;All files (*)"));
+        const auto path = QFileDialog::getOpenFileName(this, tr("Import a CoT event"), !importDirectory_.isEmpty() && QDir(importDirectory_).exists() ? importDirectory_ : QDir::homePath(), tr("CoT XML (*.xml *.cot);;All files (*)"));
         if (path.isEmpty()) return;
+        importDirectory_ = QFileInfo(path).absolutePath();
         const auto input = readEventFile(path);
         if (!input.error.isEmpty()) { status_->setText(input.error); return; }
         const auto decoded = codec_.decode(input.bytes);
@@ -143,8 +169,9 @@ private:
     void exportFile()
     {
         if (output_.isEmpty()) return;
-        const auto path = QFileDialog::getSaveFileName(this, tr("Export the preview event"), QStringLiteral("event.xml"), tr("CoT XML (*.xml)"));
+        const auto path = QFileDialog::getSaveFileName(this, tr("Export the preview event"), QDir(!exportDirectory_.isEmpty() && QDir(exportDirectory_).exists() ? exportDirectory_ : QDir::homePath()).filePath(QStringLiteral("event.xml")), tr("CoT XML (*.xml)"));
         if (path.isEmpty()) return;
+        exportDirectory_ = QFileInfo(path).absolutePath();
         QSaveFile file(path);
         if (!file.open(QIODevice::WriteOnly) || file.write(output_) != output_.size() || !file.commit()) {
             status_->setText(tr("The file cannot be saved: %1").arg(file.errorString()));
@@ -165,6 +192,8 @@ private:
     QPushButton *export_;
     QLabel *status_;
     QByteArray output_;
+    QString importDirectory_;
+    QString exportDirectory_;
 };
 class EditorPlugin final : public QObject, public ToolPlugin {
     Q_OBJECT

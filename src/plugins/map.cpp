@@ -1,6 +1,7 @@
 #include "core/interfaces.h"
 #include "core/projection.h"
 #include "core/store.h"
+#include "core/preferences.h"
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QOpenGLFunctions>
@@ -12,7 +13,7 @@
 #include <utility>
 
 namespace swak {
-class MapWidget final : public QOpenGLWidget, protected QOpenGLFunctions {
+class MapWidget final : public QOpenGLWidget, public PreferenceParticipant, protected QOpenGLFunctions {
 public:
     MapWidget(Store &store, QList<MapLayer *> layers, QWidget *parent)
         : QOpenGLWidget(parent), store_(store), layers_(std::move(layers))
@@ -34,6 +35,19 @@ public:
             }
             update();
         });
+    }
+    QString preferenceId() const override { return QStringLiteral("org.swak.map"); }
+    QJsonObject savePreferences() const override
+    {
+        return {{QStringLiteral("centerX"), view_.center.x()}, {QStringLiteral("centerY"), view_.center.y()},
+                {QStringLiteral("zoom"), view_.zoom}};
+    }
+    void restorePreferences(const QJsonObject &values) override
+    {
+        view_.center = {preferenceNumber(values, QStringLiteral("centerX"), 0.5, 0, 1),
+                        preferenceNumber(values, QStringLiteral("centerY"), 0.5, 0, 1)};
+        view_.zoom = preferenceNumber(values, QStringLiteral("zoom"), 1, 0, 16);
+        update();
     }
 protected:
     void initializeGL() override { initializeOpenGLFunctions(); }

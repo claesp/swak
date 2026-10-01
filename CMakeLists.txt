@@ -20,7 +20,7 @@ if(SWAK_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 add_library(swak_core STATIC src/core/event.cpp src/core/event.h src/core/files.cpp src/core/files.h src/core/interfaces.h
-    src/core/store.cpp src/core/store.h src/core/projection.cpp src/core/projection.h)
+    src/core/store.cpp src/core/store.h src/core/projection.cpp src/core/projection.h src/core/preferences.cpp src/core/preferences.h)
 target_include_directories(swak_core PUBLIC src)
 target_link_libraries(swak_core PUBLIC swak_build Qt6::Widgets)
 
@@ -49,6 +49,9 @@ if(BUILD_TESTING)
     target_link_libraries(swak_tests PRIVATE swak_cot swak_map swak_basemap swak_tracks swak_udp swak_editor Qt6::Test Qt6::Network)
     add_test(NAME core COMMAND swak_tests)
     set_tests_properties(core PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    add_executable(swak_preferences_tests tests/test_preferences.cpp)
+    target_link_libraries(swak_preferences_tests PRIVATE swak_core Qt6::Test)
+    add_test(NAME preferences COMMAND swak_preferences_tests)
     add_executable(swak_gui_tests tests/test_gui.cpp src/app/window.cpp src/app/window.h src/app/plugins.cpp)
     target_link_libraries(swak_gui_tests PRIVATE swak_cot swak_map swak_basemap swak_tracks swak_udp swak_editor Qt6::Test Qt6::Network Qt6::OpenGLWidgets)
 endif()

@@ -45,6 +45,22 @@ The host keeps plugin instances alive for the process lifetime. It destroys pane
 
 Use a separate process for untrusted extensions. Native plugins have full application permissions and cannot provide an isolation boundary. Runtime plugin discovery requires a separate design for trust, compatibility, and process isolation.
 
+# Preferences contract
+
+`PreferenceParticipant` is an optional interface for plugin widgets in `src/core/preferences.h`. It supplies a stable identifier and methods to save and restore a JSON object. The host finds participants within its widget tree.
+
+Keep each identifier stable across plugin releases. The host derives persistent pane names from those identifiers. Do not use translated titles, installation paths, or plugin discovery order as identifiers.
+
+The document has root schema version 1. It contains `window`, `panes`, and `components` objects. Unknown root fields and absent plugin sections remain intact when the host saves available features.
+
+Each plugin owns its component keys and must bound restored values. Keep compatible keys stable when adding fields. An incompatible document format requires a new schema version and an explicit migration.
+
+The host uses versioned Qt layout data for dock relationships and separate records for individual panes. Qt retains placeholders for absent panes across saves. If the Qt layout cannot be restored, the host restores available pane records instead.
+
+A missing map plugin produces an empty-state message. A missing codec disables the tools that require it. Both cases preserve the absent component preferences for a later launch.
+
+Preferences use `QStandardPaths`, `QJsonDocument`, `QLockFile`, and `QSaveFile`. No additional library is required. Read [Use the workspace](usage.md) for profile portability and recovery behavior.
+
 # References
 
 The CoT fields follow the base format described in the [MITRE CoT router guide](https://nps.edu/documents/104517539/109705106/COT%2BUser%2BGuide.pdf/4e67c16d-171c-4f8c-9649-7b3870dbcb4c). This application implements its own bounded subset rather than full schema validation. Contact callsigns are the only interpreted detail extension.

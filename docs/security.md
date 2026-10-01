@@ -23,9 +23,9 @@ Expired events and older updates are rejected. Equal timestamps can replace an e
 
 File import opens files without waiting for pipe writers and then inspects the open descriptor. It accepts regular files only and reads at most the message limit plus one byte. Export uses `QSaveFile` to replace the destination after a complete write.
 
-The receiver starts only after an explicit interface action. Its default binding accepts local traffic only. The bounded polling loop limits work per interface cycle, and the operating system drops traffic when its socket queue fills.
+The receiver starts after an explicit interface action or restoration of a saved running state. Its default binding accepts local traffic only. The bounded polling loop limits work per interface cycle, and the operating system drops traffic when its socket queue fills.
 
-The application creates no persistent event cache and writes no message logs. It does not fetch remote map content, run shell commands, or load external application plugins. Qt still loads its system platform and graphics plugins as part of normal startup.
+The application creates no persistent event cache and writes no message logs. Preferences include editor drafts, file directories, and the receiver address. Treat the preferences file as private data. It does not fetch remote map content, run shell commands, or load external application plugins. Qt still loads its system platform and graphics plugins as part of normal startup.
 
 Use a trusted Qt installation and graphics driver. Native libraries and graphics drivers share the application process. This version does not provide a process sandbox, encrypted transport, or sender authentication.
 
@@ -36,3 +36,11 @@ Keep new dependencies limited to features that Qt cannot reasonably provide. Doc
 Bound allocations and work before parsing external data. Add tests for malformed input and resource limits. Keep generated files and local tool paths out of Git.
 
 Use the sanitizer preset after changes to parsing, ownership, or file handling. Run the native GUI test after interface changes. Record any untested graphics backend or target platform in the test report.
+
+# Preferences storage
+
+Preferences use a versioned JSON file with a one MiB limit. The file accepts regular-file reads only. Invalid files and unsupported versions remain untouched, and the interface reports the error.
+
+Writes replace the file atomically through `QSaveFile`. The saved file permits access only to its owner. A process lock prevents concurrent instances from overwriting the same preferences.
+
+Unknown plugin sections remain in the document. Plugins must bound every value before applying it to controls or operations. Do not store credentials in this file.

@@ -1,12 +1,61 @@
 #include "core/interfaces.h"
 #include "core/projection.h"
 #include "core/store.h"
+#include "core/preferences.h"
+#include <QJsonArray>
 #include <QHeaderView>
 #include <QPainter>
+#include <QSet>
 #include <QSortFilterProxyModel>
 #include <QTableView>
 
 namespace swak {
+class EventTable final : public QTableView, public PreferenceParticipant {
+public:
+    using QTableView::QTableView;
+    QString preferenceId() const override { return QStringLiteral("org.swak.events"); }
+    QJsonObject savePreferences() const override
+    {
+        QJsonArray columns;
+        const auto *header = horizontalHeader();
+        for (int visual = 0; visual < header->count(); ++visual) {
+            const int logical = header->logicalIndex(visual);
+            columns.append(QJsonObject{{QStringLiteral("id"), columnIds().at(logical)},
+                {QStringLiteral("width"), header->sectionSize(logical)},
+                {QStringLiteral("hidden"), header->isSectionHidden(logical)}});
+        }
+        const int sort = header->sortIndicatorSection();
+        return {{QStringLiteral("columns"), columns},
+                {QStringLiteral("sortColumn"), sort >= 0 && sort < columnIds().size() ? columnIds().at(sort) : QString{}},
+                {QStringLiteral("sortOrder"), static_cast<int>(header->sortIndicatorOrder())}};
+    }
+    void restorePreferences(const QJsonObject &values) override
+    {
+        const auto columns = values.value(QStringLiteral("columns")).toArray();
+        auto *header = horizontalHeader();
+        QSet<int> restored;
+        for (const auto &entry : columns) {
+            const auto column = entry.toObject();
+            const int logical = static_cast<int>(columnIds().indexOf(column.value(QStringLiteral("id")).toString()));
+            if (logical < 0 || restored.contains(logical)) continue;
+            const int visual = static_cast<int>(restored.size());
+            restored.insert(logical);
+            header->moveSection(header->visualIndex(logical), visual);
+            header->resizeSection(logical, preferenceInteger(column, QStringLiteral("width"), 100, 24, 4096));
+            header->setSectionHidden(logical, column.value(QStringLiteral("hidden")).toBool(false));
+        }
+        const int sort = static_cast<int>(columnIds().indexOf(values.value(QStringLiteral("sortColumn")).toString()));
+        if (sort >= 0) sortByColumn(sort, static_cast<Qt::SortOrder>(
+            preferenceInteger(values, QStringLiteral("sortOrder"), Qt::AscendingOrder, 0, 1)));
+    }
+private:
+    static const QStringList &columnIds()
+    {
+        static const QStringList ids{QStringLiteral("identity"), QStringLiteral("type"), QStringLiteral("latitude"),
+                                     QStringLiteral("longitude"), QStringLiteral("stale")};
+        return ids;
+    }
+};
 class TracksPlugin final : public QObject, public MapLayer, public ToolPlugin {
     Q_OBJECT
     Q_PLUGIN_METADATA(IID "org.swak.MapLayer/1.0")
@@ -36,7 +85,7 @@ public:
     }
     QWidget *create(Store &store, const Codec &, QWidget *parent) override
     {
-        auto *table = new QTableView(parent);
+        auto *table = new EventTable(parent);
         table->setObjectName(QStringLiteral("eventsTable"));
         table->setAccessibleName(tr("Received and generated events"));
         auto *proxy = new QSortFilterProxyModel(table);
@@ -46,6 +95,7 @@ public:
         table->setSelectionBehavior(QAbstractItemView::SelectRows);
         table->setSelectionMode(QAbstractItemView::SingleSelection);
         table->setAlternatingRowColors(true);
+        table->horizontalHeader()->setSectionsMovable(true);
         table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
         table->horizontalHeader()->setStretchLastSection(true);
         connect(table->selectionModel(), &QItemSelectionModel::currentRowChanged, table,
