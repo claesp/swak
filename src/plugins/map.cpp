@@ -27,12 +27,11 @@ public:
         std::sort(layers_.begin(), layers_.end(), [](const auto *a, const auto *b) { return a->order() < b->order(); });
         connect(&store_, &Store::changed, this, QOverload<>::of(&MapWidget::update));
         connect(&store_, &Store::selectionChanged, this, [this] {
-            for (const auto &event : store_.events()) {
-                if (event.uid == store_.selected()) {
-                    view_.center = project(event.latitude, event.longitude);
-                    break;
-                }
-            }
+            const auto &events = store_.events();
+            const auto event = std::find_if(events.begin(), events.end(), [this](const Event &item) {
+                return item.uid == store_.selected();
+            });
+            if (event != events.end()) view_.center = project(event->latitude, event->longitude);
             update();
         });
     }

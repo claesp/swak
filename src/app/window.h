@@ -9,9 +9,10 @@ namespace swak {
 class Window final : public QMainWindow {
     Q_OBJECT
 public:
-    explicit Window(QWidget *parent = nullptr);
     Window(const QString &preferencesPath, const QList<QObject *> &plugins, QWidget *parent = nullptr);
     ~Window() override;
+    // Native GUI tests use this access to inspect event updates.
+    // cppcheck-suppress unusedFunction
     Store &store() { return store_; }
     bool savePreferences();
 protected:

@@ -51,3 +51,19 @@ The added cases cover these behaviors:
 All 13 GUI cases also passed under address and undefined behavior sanitizers. LeakSanitizer then reported 240732 bytes in 1073 allocations from `libGLX_mesa.so.0`, so that process returned a failure status. The unchanged baseline at `362a661` produced the same allocation count, byte count, and library stack locations.
 
 This comparison identifies a pre-existing graphics-stack issue rather than a new preferences regression. No leak suppression was added. Native Wayland placement and hardware GPU behavior remain untested.
+
+# Development diagnostics
+
+On October 2, 2026, the diagnostic runner passed its tests for success, failure, infinite-loop termination, and coverage aggregation. The sanitizer quick mode passed the core, preferences, and workload suites. Cppcheck 2.17.1 passed with Qt descriptions and exhaustive branch analysis. The review removed an unused window constructor and resolved the reported source issues. Narrow comments explain value-return and test-access exceptions.
+
+A 60-second headless workload passed under address and undefined behavior sanitizers with leak detection enabled. It completed 1279 cycles. Peak resident memory grew by 8052736 bytes after warmup. The longest event-loop gap was 57 milliseconds. Idle CPU time was 0.003 seconds over one second. The file descriptor bound passed.
+
+A ten-second native workload passed its behavior and resource assertions under Xvfb with Mesa llvmpipe. It completed 246 cycles with 9113600 bytes of peak growth, a 45-millisecond maximum gap, and 0.032 seconds of idle CPU time. LeakSanitizer then reported the known 240732-byte Mesa leak in 1073 allocations. The runner returned status 1 and preserved the underlying status 23 in its diagnostic message. No suppression was added.
+
+The coverage mode passed the core, preferences, workload, and 13 native GUI cases. GCC 14.2 recorded 948 of 1081 source lines and 137 of 153 functions as executed. It recorded 1498 of 3104 compiler branches as executed. Branch totals include generated exception paths within source expressions. These figures are evidence of gaps, not a claim of complete path coverage.
+
+Uncovered areas include application startup, file-dialog interaction, several map input handlers, preference-directory failures, and short-read failures. Native hardware and Wayland runs remain outstanding. No multi-hour run occurred in this session. Run the documented two-hour workload and desktop tests before claiming long-session stability.
+
+The release preset built successfully with tests, sanitizers, and coverage disabled. Its compiler commands contain no sanitizer or coverage flags. Its executable does not link sanitizer or Qt Test libraries. Python, Cppcheck, and coverage tools remain development-only dependencies.
+
+Run instructions and report locations are in [Development diagnostics](quality.md). Reports remain under the ignored `build/quality/` directory. The source repository stores the workflow and this dated evidence, not machine-specific reports.

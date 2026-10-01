@@ -31,9 +31,9 @@ Preferences::Preferences(QString path) : path_(QFileInfo(path).absoluteFilePath(
     if (QFileInfo::exists(path_)) {
         const auto input = readRegularFile(path_, MaxPreferencesBytes);
         if (!input.error.isEmpty()) { error_ = input.error; return; }
-        QJsonParseError error;
-        const auto json = QJsonDocument::fromJson(input.bytes, &error);
-        if (error.error != QJsonParseError::NoError || !json.isObject() ||
+        QJsonParseError parseError;
+        const auto json = QJsonDocument::fromJson(input.bytes, &parseError);
+        if (parseError.error != QJsonParseError::NoError || !json.isObject() ||
             !json.object().value(QStringLiteral("version")).isDouble()) {
             error_ = tr("The preferences file is invalid. It will not be overwritten.");
             return;

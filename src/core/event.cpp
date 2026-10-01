@@ -2,6 +2,7 @@
 #include <QCoreApplication>
 #include <QRegularExpression>
 #include <cmath>
+#include <algorithm>
 
 namespace swak {
 QString eventError(const Event &event)
@@ -9,11 +10,10 @@ QString eventError(const Event &event)
     const auto tr = [](const char *text) { return QCoreApplication::translate("Event", text); };
     const auto safeText = [](const QString &value, int max) {
         if (value.isEmpty() || value.size() > max) return false;
-        for (const auto ch : value) {
-            if (ch.isNull() || ch.category() == QChar::Other_Control ||
-                ch.category() == QChar::Other_Format || ch.isSurrogate()) return false;
-        }
-        return true;
+        return std::none_of(value.begin(), value.end(), [](QChar ch) {
+            return ch.isNull() || ch.category() == QChar::Other_Control ||
+                   ch.category() == QChar::Other_Format || ch.isSurrogate();
+        });
     };
     static const QRegularExpression typePattern(QStringLiteral("\\A[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*(?:;[^;]*)?\\z"));
     static const QRegularExpression howPattern(QStringLiteral("\\A[A-Za-z0-9_]-[A-Za-z0-9_]\\z"));

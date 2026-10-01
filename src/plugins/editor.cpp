@@ -1,4 +1,5 @@
 #include "core/interfaces.h"
+#include <algorithm>
 #include "core/store.h"
 #include "core/files.h"
 #include "core/preferences.h"
@@ -81,9 +82,11 @@ public:
         connect(importButton, &QPushButton::clicked, this, [this] { importFile(); });
         connect(export_, &QPushButton::clicked, this, [this] { exportFile(); });
         const auto refreshPreview = [this] {
-            for (const auto &event : store_.events()) {
-                if (event.uid == store_.selected()) { showEvent(event); return; }
-            }
+            const auto &events = store_.events();
+            const auto event = std::find_if(events.begin(), events.end(), [this](const Event &item) {
+                return item.uid == store_.selected();
+            });
+            if (event != events.end()) showEvent(*event);
         };
         connect(&store_, &Store::selectionChanged, this, refreshPreview);
         connect(&store_, &Store::changed, this, refreshPreview);

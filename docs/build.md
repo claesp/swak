@@ -36,6 +36,8 @@ The installed application uses system Qt libraries and platform plugins. It does
 
 # Tests
 
+Read [Development diagnostics](quality.md) for the on-demand runner, long-session workloads, source analysis, and coverage reports.
+
 Qt Test exercises message parsing, event storage, file limits, projection, and receiver shutdown. AddressSanitizer detects certain memory errors during tests. UndefinedBehaviorSanitizer detects certain invalid C++ operations during tests.
 
 Run these commands from the repository root to use both diagnostic tools. The sanitizer preset uses a separate directory. These tools do not establish that the application is secure.

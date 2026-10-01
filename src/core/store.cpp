@@ -46,7 +46,7 @@ QString Store::accept(const Event &event, const QDateTime &now)
         const int row = found.value();
         if (event.time < events_.at(row).time) return tr("A newer event already exists for this identity.");
         events_[row] = event;
-        emit dataChanged(index(row, 0), index(row, 4));
+        emit dataChanged(QAbstractTableModel::index(row, 0), QAbstractTableModel::index(row, 4));
     } else {
         if (events_.size() >= MaxEvents) return tr("The event limit is full. Clear events or wait for them to expire.");
         const int row = rowCount();

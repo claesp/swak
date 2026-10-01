@@ -4,7 +4,6 @@
 #include <QDockWidget>
 #include <QLabel>
 #include <QMenuBar>
-#include <QPluginLoader>
 #include <QStatusBar>
 #include <QSizeGrip>
 #include <QVBoxLayout>
@@ -26,8 +25,6 @@ void mergeValues(QJsonObject &target, const QJsonObject &source)
     for (auto it = source.begin(); it != source.end(); ++it) target.insert(it.key(), it.value());
 }
 }
-Window::Window(QWidget *parent)
-    : Window(Preferences::defaultPath(), QPluginLoader::staticInstances(), parent) {}
 Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, QWidget *parent)
     : QMainWindow(parent), preferences_(preferencesPath)
 {

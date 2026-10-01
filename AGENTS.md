@@ -8,6 +8,13 @@ Follow these standing requirements:
 - Use CMake with the Ninja generator and the repository presets.
 - Keep features behind plugin interfaces where practical.
 - Keep the application small, fast, and secure.
+- Harden all code for long sessions and recoverable failures.
+- Exercise all reachable code paths, including errors, cancellation, and shutdown, with tests.
+- Review coverage gaps and record paths that remain untested.
+- Regularly inspect the code for dead code, unsafe ownership, leaks, unbounded loops, and other common faults.
+- Run the applicable diagnostics in `docs/quality.md` during development and all modes before a release.
+- Keep recoverable failures from crashing the application or blocking the interface.
+- Do not hide memory corruption with catch-all handlers or fatal signal recovery.
 - Add external dependencies only with a documented reason.
 - Use the `qt-linux-gui` skill for development when available.
 - Use the `simple-english` skill for commits, code comments, and documentation when available.

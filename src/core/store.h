@@ -19,6 +19,8 @@ public:
     void clear();
     const QList<Event> &events() const { return events_; }
     void select(const QString &uid);
+    // A value remains valid after the selection changes. QString shares its storage.
+    // cppcheck-suppress returnByReference
     QString selected() const { return selected_; }
 signals:
     void changed();

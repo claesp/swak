@@ -37,6 +37,8 @@ Bound allocations and work before parsing external data. Add tests for malformed
 
 Use the sanitizer preset after changes to parsing, ownership, or file handling. Run the native GUI test after interface changes. Record any untested graphics backend or target platform in the test report.
 
+Follow [Development diagnostics](quality.md) for repeated memory, responsiveness, coverage, and source analysis runs. Exercise recoverable failure paths and successful operations after failures. Keep work and memory bounded during sessions that last for hours. Do not ignore sanitizer failures or attempt to recover from memory corruption inside the same process.
+
 # Preferences storage
 
 Preferences use a versioned JSON file with a one MiB limit. The file accepts regular-file reads only. Invalid files and unsupported versions remain untouched, and the interface reports the error.
