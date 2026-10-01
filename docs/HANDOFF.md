@@ -2,6 +2,8 @@
 
 This handoff records the project state on October 2, 2026. The repository is `/home/clpe/code/swak`, and the branch is `main`. The working tree was clean before this handoff was added.
 
+The repository root contains `AGENTS.md` as the entry point for agents that support automatic instruction discovery. It directs agents to this handoff. Agents without that support need an explicit instruction to read these files.
+
 The latest functional commit is `c227d7e`, which splits the workspace tools into independent dock panes. The initial application commit is `4f82422`. No requested implementation work remains pending at this point.
 
 # User requirements
