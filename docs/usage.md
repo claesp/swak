@@ -2,6 +2,10 @@
 
 The application starts with an empty map and no receiver socket. The event editor opens beside the map. The View menu restores hidden docks, which are movable tool panels.
 
+Events, Event editor, UDP receiver, and Plugins each have an independent dock. The three tool docks start as tabs beside the map. Drag a dock title or tab to detach that pane.
+
+Each detached pane has a resize handle in its lower-right corner. Close a pane to hide it. Use File > Quit to close the application.
+
 To create a local event, use this sequence:
 
 1. Enter an identity, callsign, event type, and position in the Event editor.
@@ -26,7 +30,7 @@ UDP carries separate network messages called datagrams. Each datagram must conta
 
 To receive events, use this sequence:
 
-1. Open the UDP receiver tab.
+1. Open the UDP receiver pane from the View menu.
 2. Enter a numeric local address and port.
 3. Select Start receiver.
 

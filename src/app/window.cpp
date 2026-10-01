@@ -6,7 +6,7 @@
 #include <QMenuBar>
 #include <QPluginLoader>
 #include <QStatusBar>
-#include <QTabWidget>
+#include <QSizeGrip>
 #include <QVBoxLayout>
 #include <stdexcept>
 
@@ -28,51 +28,74 @@ Window::Window(QWidget *parent) : QMainWindow(parent)
     }
     if (!codec || !view) throw std::runtime_error("The required built-in plugins are missing.");
     setCentralWidget(view->create(store_, layers, this));
+    auto *fileMenu = menuBar()->addMenu(tr("&File"));
+    fileMenu->setObjectName(QStringLiteral("fileMenu"));
+    auto *quit = fileMenu->addAction(tr("&Quit"));
+    quit->setObjectName(QStringLiteral("quitAction"));
+    quit->setShortcut(QKeySequence::Quit);
+    connect(quit, &QAction::triggered, this, &QWidget::close);
     auto *viewMenu = menuBar()->addMenu(tr("&View"));
-    auto *tools = new QDockWidget(tr("Workspace tools"), this);
-    tools->setObjectName(QStringLiteral("toolsDock"));
-    tools->setMinimumWidth(330);
-    auto *tabs = new QTabWidget(tools);
-    tabs->setObjectName(QStringLiteral("toolsTabs"));
-    tools->setWidget(tabs);
-    addDockWidget(Qt::RightDockWidgetArea, tools);
-    viewMenu->addAction(tools->toggleViewAction());
+    viewMenu->setObjectName(QStringLiteral("viewMenu"));
+    const auto createDock = [this, viewMenu](const QString &title, const QString &id,
+                                           QWidget *content, Qt::DockWidgetArea area) {
+        auto *dock = new QDockWidget(title, this);
+        dock->setObjectName(id);
+        auto *container = new QWidget(dock);
+        container->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+        auto *layout = new QVBoxLayout(container);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(0);
+        layout->addWidget(content, 1);
+        auto *grip = new QSizeGrip(container);
+        grip->setAccessibleName(tr("Resize pane"));
+        layout->addWidget(grip, 0, Qt::AlignRight);
+        grip->hide();
+        connect(dock, &QDockWidget::topLevelChanged, grip, &QWidget::setVisible);
+        dock->setWidget(container);
+        addDockWidget(area, dock);
+        viewMenu->addAction(dock->toggleViewAction());
+        return dock;
+    };
+    QList<QDockWidget *> sideDocks;
     for (auto *plugin : plugins) {
         if (auto *tool = qobject_cast<ToolPlugin *>(plugin)) {
-            if (qobject_cast<MapLayer *>(plugin)) {
-                auto *dock = new QDockWidget(tool->name(), this);
-                dock->setObjectName(QStringLiteral("eventsDock"));
-                dock->setWidget(tool->create(store_, *codec, dock));
-                addDockWidget(Qt::BottomDockWidgetArea, dock);
+            const bool isLayer = qobject_cast<MapLayer *>(plugin) != nullptr;
+            const QString id = isLayer ? QStringLiteral("eventsDock")
+                                       : QString::fromLatin1(plugin->metaObject()->className()) + QStringLiteral("Dock");
+            auto *dock = createDock(tool->name(), id, tool->create(store_, *codec, this),
+                                    isLayer ? Qt::BottomDockWidgetArea : Qt::RightDockWidgetArea);
+            if (isLayer) {
                 resizeDocks({dock}, {170}, Qt::Vertical);
-                viewMenu->addAction(dock->toggleViewAction());
             } else {
-                tabs->addTab(tool->create(store_, *codec, tabs), tool->name());
+                sideDocks.append(dock);
                 names.append(tool->name());
             }
         }
     }
     for (auto *plugin : plugins) {
         if (auto *source = qobject_cast<SourcePlugin *>(plugin)) {
-            tabs->addTab(source->create(store_, *codec, tabs), source->name());
+            sideDocks.append(createDock(source->name(),
+                QString::fromLatin1(plugin->metaObject()->className()) + QStringLiteral("Dock"),
+                source->create(store_, *codec, this), Qt::RightDockWidgetArea));
             names.append(source->name());
         }
     }
-    auto *pluginPanel = new QWidget(tabs);
+    auto *pluginPanel = new QWidget(this);
     auto *pluginLayout = new QVBoxLayout(pluginPanel);
     auto *pluginText = new QLabel(tr("Built-in plugins\n\n%1\n\nPlugins run with application permissions. This build does not load external plugin files.").arg(names.join('\n')), pluginPanel);
     pluginText->setTextFormat(Qt::PlainText);
     pluginText->setWordWrap(true);
     pluginLayout->addWidget(pluginText);
     pluginLayout->addStretch();
-    tabs->addTab(pluginPanel, tr("Plugins"));
-    resizeDocks({tools}, {380}, Qt::Horizontal);
+    sideDocks.append(createDock(tr("Plugins"), QStringLiteral("pluginsDock"), pluginPanel, Qt::RightDockWidgetArea));
+    for (qsizetype index = 1; index < sideDocks.size(); ++index) {
+        tabifyDockWidget(sideDocks.first(), sideDocks.at(index));
+    }
+    resizeDocks(sideDocks, QList<int>(sideDocks.size(), 380), Qt::Horizontal);
+    sideDocks.first()->raise();
     auto *eventsMenu = menuBar()->addMenu(tr("&Events"));
     auto *clear = eventsMenu->addAction(tr("&Clear events"));
     connect(clear, &QAction::triggered, &store_, &Store::clear);
-    auto *quit = eventsMenu->addAction(tr("&Quit"));
-    quit->setShortcut(QKeySequence::Quit);
-    connect(quit, &QAction::triggered, this, &QWidget::close);
     auto *status = new QLabel(this);
     statusBar()->addWidget(status);
     const auto updateStatus = [this, status] { status->setText(tr("%1 / %2 events · Offline map · Network reception requires Start")

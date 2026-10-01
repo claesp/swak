@@ -37,6 +37,8 @@ To add a built-in feature, use this sequence:
 
 A plugin can implement more than one interface. The tracks plugin demonstrates this arrangement. In this host, a tool that also implements `MapLayer` appears in the bottom dock.
 
+Each tool and source has an independent dock with a View menu action. The host groups the side docks as tabs initially. All docks share a content container and a resize handle that appears when detached.
+
 Create widgets with the supplied parent. Keep widgets and painter calls on the GUI thread. Keep each map layer free of retained painter or store references beyond the call.
 
 The host keeps plugin instances alive for the process lifetime. It destroys panels and the map before destroying the event store. Source panels must close their sockets and timers when Qt destroys them.
