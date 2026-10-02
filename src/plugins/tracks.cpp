@@ -5,6 +5,7 @@
 #include <QJsonArray>
 #include <QHeaderView>
 #include <QPainter>
+#include <QMenu>
 #include <QSet>
 #include <QSortFilterProxyModel>
 #include <QTableView>
@@ -101,12 +102,18 @@ private:
         return ids;
     }
 };
-class TracksPlugin final : public QObject, public MapLayer, public ToolPlugin {
+class TracksPlugin final : public QObject, public MapLayer, public ToolPlugin, public MenuPlugin {
     Q_OBJECT
     Q_PLUGIN_METADATA(IID "org.swak.MapLayer/1.0")
-    Q_INTERFACES(swak::MapLayer swak::ToolPlugin)
+    Q_INTERFACES(swak::MapLayer swak::ToolPlugin swak::MenuPlugin)
 public:
     QString name() const override { return tr("CoT Events"); }
+    void populateMenu(Store &store, QMenu &menu) override
+    {
+        auto *clear = menu.addAction(tr("&Clear"));
+        clear->setObjectName(QStringLiteral("clearEventsAction"));
+        connect(clear, &QAction::triggered, &store, &Store::clear);
+    }
     int order() const override { return 100; }
     void paint(QPainter &painter, const Viewport &view, const Store &store) const override
     {

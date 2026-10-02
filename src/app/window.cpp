@@ -136,9 +136,18 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         fitWindowsToScreens();
         savePreferences();
     });
-    auto *eventsMenu = menuBar()->addMenu(tr("&CoT Events"));
-    auto *clear = eventsMenu->addAction(tr("&Clear events"));
-    connect(clear, &QAction::triggered, &store_, &Store::clear);
+    auto *toolsMenu = menuBar()->addMenu(tr("&Tools"));
+    toolsMenu->setObjectName(QStringLiteral("toolsMenu"));
+    auto *pluginsMenu = toolsMenu->addMenu(tr("&Plugins"));
+    pluginsMenu->setObjectName(QStringLiteral("pluginsMenu"));
+    for (auto *plugin : plugins) {
+        if (auto *provider = qobject_cast<MenuPlugin *>(plugin)) {
+            auto *menu = pluginsMenu->addMenu(provider->name());
+            provider->populateMenu(store_, *menu);
+            if (menu->isEmpty()) delete menu;
+        }
+    }
+    pluginsMenu->setEnabled(!pluginsMenu->isEmpty());
     auto *status = new QLabel(this);
     statusBar()->addWidget(status);
     const auto updateStatus = [this, status] { status->setText(tr("%1 / %2 events · Offline map")

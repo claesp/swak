@@ -31,6 +31,7 @@
 #include <QTest>
 #include <QTemporaryDir>
 #include <QPluginLoader>
+#include <QPointer>
 #include <QHeaderView>
 #include <QSpinBox>
 #include <QJsonDocument>
@@ -49,9 +50,80 @@ public:
     void restorePreferences(const QJsonObject &values) override { enabled = values.value(QStringLiteral("enabled")).toBool(); }
 };
 
+class ExampleMenu final : public QObject, public swak::MenuPlugin {
+    Q_OBJECT
+    Q_INTERFACES(swak::MenuPlugin)
+public:
+    bool empty = false;
+    int calls = 0;
+    QString name() const override { return QStringLiteral("Example menu"); }
+    void populateMenu(swak::Store &, QMenu &menu) override
+    {
+        if (empty) return;
+        auto *action = menu.addAction(QStringLiteral("Example action"));
+        connect(action, &QAction::triggered, this, [this] { ++calls; });
+    }
+};
+
 class GuiTest final : public QObject {
     Q_OBJECT
 private slots:
+    void pluginMenus()
+    {
+        QTemporaryDir directory;
+        ExampleMenu plugin;
+        QPointer<QAction> oldAction;
+        for (int i = 0; i < 2; ++i) {
+            swak::Window window(directory.filePath(QStringLiteral("menu.json")), {&plugin});
+            auto *tools = window.findChild<QMenu *>(QStringLiteral("toolsMenu"));
+            auto *plugins = window.findChild<QMenu *>(QStringLiteral("pluginsMenu"));
+            QVERIFY(tools && plugins);
+            QVERIFY(window.menuBar()->actions().contains(tools->menuAction()));
+            QVERIFY(tools->actions().contains(plugins->menuAction()));
+            QCOMPARE(plugins->actions().size(), 1);
+            auto *menu = plugins->actions().first()->menu();
+            QVERIFY(menu);
+            QCOMPARE(menu->title(), QStringLiteral("Example menu"));
+            oldAction = menu->actions().first();
+            oldAction->trigger();
+            QCOMPARE(plugin.calls, i + 1);
+        }
+        QVERIFY(oldAction.isNull());
+        plugin.empty = true;
+        swak::Window empty(directory.filePath(QStringLiteral("empty.json")), {&plugin});
+        auto *emptyMenu = empty.findChild<QMenu *>(QStringLiteral("pluginsMenu"));
+        QVERIFY(emptyMenu->isEmpty());
+        QVERIFY(!emptyMenu->isEnabled());
+        swak::Window absent(directory.filePath(QStringLiteral("absent.json")), {});
+        QVERIFY(absent.findChild<QMenu *>(QStringLiteral("pluginsMenu"))->isEmpty());
+        QVERIFY(!absent.findChild<QAction *>(QStringLiteral("clearEventsAction")));
+    }
+    void clearEventsMenu()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("clear.json")), QPluginLoader::staticInstances());
+        auto *plugins = window.findChild<QMenu *>(QStringLiteral("pluginsMenu"));
+        QVERIFY(plugins);
+        QMenu *events = nullptr;
+        for (auto *action : plugins->actions()) {
+            if (action->menu() && action->menu()->title() == QStringLiteral("CoT Events")) events = action->menu();
+        }
+        QVERIFY(events);
+        auto *clear = window.findChild<QAction *>(QStringLiteral("clearEventsAction"));
+        QVERIFY(clear && events->actions().contains(clear));
+        QCOMPARE(clear->text(), QStringLiteral("&Clear"));
+        QVERIFY(!window.menuBar()->actions().contains(events->menuAction()));
+        auto *generate = window.findChild<QPushButton *>(QStringLiteral("generateEvent"));
+        QVERIFY(generate);
+        generate->click();
+        QCOMPARE(window.store().rowCount(), 1);
+        QVERIFY(!window.store().selected().isEmpty());
+        clear->trigger();
+        QCOMPARE(window.store().rowCount(), 0);
+        QVERIFY(window.store().selected().isEmpty());
+        clear->trigger();
+        QCOMPARE(window.store().rowCount(), 0);
+    }
     void localizedSettingsLists()
     {
         const QLocale previous;
@@ -667,7 +739,7 @@ private slots:
         map->update();
         QVERIFY(frames.wait(2000));
         QVERIFY(map->width() >= 320);
-        window.store().clear();
+        window.findChild<QAction *>(QStringLiteral("clearEventsAction"))->trigger();
         QCOMPARE(window.store().rowCount(), 0);
         window.close();
     }

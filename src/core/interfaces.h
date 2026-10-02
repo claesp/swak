@@ -7,6 +7,7 @@
 
 class QWidget;
 class QPainter;
+class QMenu;
 namespace swak {
 class Store;
 struct Viewport;
@@ -37,6 +38,12 @@ public:
     virtual QString name() const = 0;
     virtual QWidget *create(Store &store, const Codec &codec, QWidget *parent) = 0;
 };
+class MenuPlugin {
+public:
+    virtual ~MenuPlugin() = default;
+    virtual QString name() const = 0;
+    virtual void populateMenu(Store &store, QMenu &menu) = 0;
+};
 class SourcePlugin {
 public:
     virtual ~SourcePlugin() = default;
@@ -49,3 +56,4 @@ Q_DECLARE_INTERFACE(swak::MapLayer, "org.swak.MapLayer/1.0")
 Q_DECLARE_INTERFACE(swak::ViewPlugin, "org.swak.View/1.0")
 Q_DECLARE_INTERFACE(swak::ToolPlugin, "org.swak.Tool/1.0")
 Q_DECLARE_INTERFACE(swak::SourcePlugin, "org.swak.Source/1.0")
+Q_DECLARE_INTERFACE(swak::MenuPlugin, "org.swak.Menu/1.0")

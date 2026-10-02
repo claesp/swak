@@ -6,6 +6,8 @@ CoT Events, CoT Event Generator, UDP receiver, and Plugins each have an independ
 
 Each detached pane has a resize handle in its lower-right corner. Close a pane to hide it. Use File > Quit to close the application.
 
+Use Tools > Plugins > CoT Events > Clear to remove all current events and clear the selection. Plugins add their commands under Tools > Plugins.
+
 To create a local event, use this sequence:
 
 1. Enter an identity, callsign, event type, and position in CoT Event Generator.

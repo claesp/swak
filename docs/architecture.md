@@ -11,6 +11,7 @@ The extension levels are:
 - `ViewPlugin` creates a presentation widget and receives the available map layers.
 - `MapLayer` draws one part of the map in a defined order.
 - `ToolPlugin` creates a workspace panel for event interaction.
+- `MenuPlugin` adds commands under Tools > Plugins.
 
 The CoT plugin implements `Codec`. The UDP plugin implements `SourcePlugin`. The OpenGL map plugin implements `ViewPlugin`.
 
@@ -88,3 +89,11 @@ The logger serializes concurrent calls and limits message size and rate. A separ
 This design adds no external dependency. The output adapter uses Linux descriptors and signal masks. It does not intercept arbitrary output from native libraries. Qt documents the supported handler in [Qt logging](https://doc.qt.io/qt-6.8/qtlogging.html).
 
 The Settings dialog separates General sections from pane customization. The host marks pane pages explicitly and keeps stable identifiers separate from translated titles. Section names and choice labels use `QCollator` ordering. Choice values remain attached to their labels after sorting. The default collator follows the system collation locale, including `LC_COLLATE` on Linux. Qt documents this behavior in [QCollator](https://doc.qt.io/qt-6/qcollator.html).
+
+# Plugin menus
+
+`MenuPlugin` is an optional interface with identifier `org.swak.Menu/1.0`. A plugin implements `name()` and `populateMenu(Store &, QMenu &)`. The host creates a submenu under Tools > Plugins and calls the provider once for each window. Plugins do not need a panel or codec to provide commands. The host removes empty submenus and disables Plugins when no commands exist.
+
+Create actions with the supplied menu as their parent. Connect callbacks with a QObject context that owns the state they use. Do not retain window menus or store references in static plugin objects. Keep callbacks bounded and do not let exceptions escape them. Qt removes connections when the action or its context is destroyed.
+
+The CoT Events plugin adds Clear and connects it directly to the window event store. The host contains no event-specific menu code. This interface adds no external dependency and does not load external plugin files.
