@@ -6,6 +6,9 @@
 #include <QComboBox>
 #include <QListWidget>
 #include <QScrollArea>
+#include <QTabWidget>
+#include <QCollator>
+#include <QScopeGuard>
 #include "core/interfaces.h"
 #include <QApplication>
 #include <QDoubleSpinBox>
@@ -49,6 +52,46 @@ public:
 class GuiTest final : public QObject {
     Q_OBJECT
 private slots:
+    void localizedSettingsLists()
+    {
+        const QLocale previous;
+        const auto restoreLocale = qScopeGuard([previous] { QLocale::setDefault(previous); });
+        QLocale::setDefault(QLocale(QStringLiteral("sv_SE")));
+        const QStringList labels{QStringLiteral("Örebro"), QStringLiteral("Ångström"), QStringLiteral("Zulu"),
+                                 QStringLiteral("Älg"), QStringLiteral("Alpha")};
+        QList<swak::SettingsPage> pages;
+        int chosen = -1;
+        for (const auto &label : labels) pages.append({label, label, {}, {}, {}, {}});
+        pages.append({QStringLiteral("choice"), QStringLiteral("Choice"),
+            {swak::choiceSetting(QStringLiteral("value"), QStringLiteral("Value"), labels, {10, 20, 30, 40, 50})},
+            {{QStringLiteral("value"), 20}}, {}, [&](const QJsonObject &values) { chosen = values.value(QStringLiteral("value")).toInt(); }});
+        pages.append({QStringLiteral("pane-z"), QStringLiteral("Zulu"), {}, {}, {}, {}, true});
+        pages.append({QStringLiteral("pane-a"), QStringLiteral("Alpha"), {}, {}, {}, {}, true});
+        swak::SettingsDialog dialog(pages, [] { return QString{}; }, nullptr);
+        const QCollator collator;
+        for (auto *list : dialog.findChildren<QListWidget *>()) {
+            for (int i = 1; i < list->count(); ++i)
+                QVERIFY(collator.compare(list->item(i - 1)->text(), list->item(i)->text()) <= 0);
+        }
+        auto *combo = dialog.findChild<QComboBox *>();
+        QVERIFY(combo);
+        QCOMPARE(combo->itemText(0), QStringLiteral("Alpha"));
+        QCOMPARE(combo->itemText(1), QStringLiteral("Zulu"));
+        QCOMPARE(combo->itemText(2), QStringLiteral("Ångström"));
+        QCOMPARE(combo->itemText(3), QStringLiteral("Älg"));
+        QCOMPARE(combo->itemText(4), QStringLiteral("Örebro"));
+        QCOMPARE(combo->currentData().toInt(), 20);
+        combo->setCurrentIndex(combo->findData(40));
+        dialog.findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Apply)->click();
+        QCOMPARE(chosen, 40);
+        dialog.restoreNavigation({{QStringLiteral("tab"), QStringLiteral("panes")},
+                                  {QStringLiteral("paneSettingsSections"), QStringLiteral("pane-z")}});
+        QCOMPARE(dialog.findChild<QTabWidget *>()->currentIndex(), 1);
+        QCOMPARE(dialog.findChild<QListWidget *>(QStringLiteral("paneSettingsSections"))->currentItem()->text(), QStringLiteral("Zulu"));
+        swak::SettingsDialog reopened(pages, [] { return QString{}; }, nullptr);
+        reopened.restoreNavigation(dialog.navigation());
+        QCOMPARE(reopened.navigation(), dialog.navigation());
+    }
     void settingsPluginExtension()
     {
         QTemporaryDir directory;
@@ -117,6 +160,11 @@ private slots:
             QVERIFY(QTest::qWaitForWindowExposed(&window));
             auto *action = window.findChild<QAction *>(QStringLiteral("settingsAction"));
             QVERIFY(action);
+            QVERIFY(window.findChild<QMenu *>(QStringLiteral("fileMenu"))->actions().contains(action));
+            QCOMPARE(action->text(), QStringLiteral("&Settings"));
+            QVERIFY(!window.findChild<QMenu *>(QStringLiteral("settingsMenu")));
+            QCOMPARE(window.findChild<QDockWidget *>(QStringLiteral("org.swak.editor.pane"))->windowTitle(), QStringLiteral("CoT Event Generator"));
+            QCOMPARE(window.findChild<QDockWidget *>(QStringLiteral("org.swak.events.pane"))->windowTitle(), QStringLiteral("CoT Events"));
             QTimer::singleShot(0, &window, [&] {
                 auto *dialog = window.findChild<swak::SettingsDialog *>();
                 if (!dialog) { QFAIL("Settings dialog did not open."); return; }
@@ -133,6 +181,20 @@ private slots:
             QTimer::singleShot(0, &window, [&] {
                 auto *dialog = window.findChild<swak::SettingsDialog *>();
                 if (!dialog) { QFAIL("Settings dialog did not open."); return; }
+                auto *tabs = dialog->findChild<QTabWidget *>();
+                auto *panes = dialog->findChild<QListWidget *>(QStringLiteral("paneSettingsSections"));
+                if (!tabs || tabs->count() != 2 || !panes || panes->count() != 4) {
+                    dialog->reject(); QFAIL("The pane tab is incomplete."); return;
+                }
+                const QCollator collator;
+                for (auto *list : dialog->findChildren<QListWidget *>()) {
+                    for (int i = 0; i < list->count(); ++i) {
+                        if (list->item(i)->text().startsWith(QStringLiteral("Pane:")) ||
+                            (i > 0 && collator.compare(list->item(i - 1)->text(), list->item(i)->text()) > 0)) {
+                            dialog->reject(); QFAIL("Settings sections are not correctly named and sorted."); return;
+                        }
+                    }
+                }
                 auto *buttons = dialog->findChild<QDialogButtonBox *>();
                 auto *identity = dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.editor/identity"));
                 auto *address = dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.udp/address"));
@@ -152,7 +214,7 @@ private slots:
                 }
                 address->setText(QStringLiteral("127.0.0.1"));
                 enabled->setChecked(true);
-                severity->setCurrentIndex(3);
+                severity->setCurrentIndex(severity->findData(3));
                 interval->setValue(2000);
                 zoom->setValue(4);
                 width->setValue(230);
@@ -164,6 +226,15 @@ private slots:
                 }, 1000)) { dialog->reject(); QFAIL("The Settings form overflows horizontally."); return; }
                 if (!dialog->grab().save(QStringLiteral("settings-smoke.png"))) {
                     dialog->reject(); QFAIL("Settings screenshot failed."); return;
+                }
+                tabs->setCurrentIndex(1);
+                if (!QTest::qWaitFor([dialog] {
+                    for (auto *scroll : dialog->findChildren<QScrollArea *>())
+                        if (scroll->isVisible() && scroll->widget()->width() > scroll->viewport()->width()) return false;
+                    return true;
+                }, 1000)) { dialog->reject(); QFAIL("The pane form overflows horizontally."); return; }
+                if (!dialog->grab().save(QStringLiteral("settings-panes.png"))) {
+                    dialog->reject(); QFAIL("Pane screenshot failed."); return;
                 }
                 identity->setText(QStringLiteral("discard-after-apply"));
                 dialog->reject();

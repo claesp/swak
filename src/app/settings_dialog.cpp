@@ -1,5 +1,9 @@
 #include "app/settings_dialog.h"
 #include <QCheckBox>
+#include <QCollator>
+#include <QTabWidget>
+#include <algorithm>
+#include <array>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
@@ -32,17 +36,35 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
     resize(760, 580);
     setMinimumSize(600, 400);
     auto *layout = new QVBoxLayout(this);
-    auto *body = new QHBoxLayout;
-    auto *sections = new QListWidget(this);
-    sections->setObjectName(QStringLiteral("settingsSections"));
-    sections->setAccessibleName(tr("Settings sections"));
-    sections->setMaximumWidth(220);
-    auto *stack = new QStackedWidget(this);
-    body->addWidget(sections);
-    body->addWidget(stack, 1);
-    layout->addLayout(body, 1);
+    const QCollator collator;
+    std::stable_sort(pages_.begin(), pages_.end(), [&collator](const SettingsPage &a, const SettingsPage &b) {
+        return collator.compare(a.title, b.title) < 0;
+    });
+    auto *tabs = new QTabWidget(this);
+    tabs->setObjectName(QStringLiteral("settingsTabs"));
+    layout->addWidget(tabs, 1);
+    std::array<QListWidget *, 2> lists{};
+    std::array<QStackedWidget *, 2> stacks{};
+    for (int i = 0; i < 2; ++i) {
+        auto *tab = new QWidget(tabs);
+        auto *body = new QHBoxLayout(tab);
+        auto *sections = new QListWidget(tab);
+        sections->setObjectName(i == 0 ? QStringLiteral("settingsSections") : QStringLiteral("paneSettingsSections"));
+        sections->setAccessibleName(i == 0 ? tr("Settings sections") : tr("Pane sections"));
+        sections->setMaximumWidth(220);
+        auto *stack = new QStackedWidget(tab);
+        body->addWidget(sections);
+        body->addWidget(stack, 1);
+        tabs->addTab(tab, i == 0 ? tr("General") : tr("Panes"));
+        lists.at(static_cast<size_t>(i)) = sections;
+        stacks.at(static_cast<size_t>(i)) = stack;
+        connect(sections, &QListWidget::currentRowChanged, stack, &QStackedWidget::setCurrentIndex);
+    }
     for (const auto &page : pages_) {
-        sections->addItem(page.title);
+        const size_t group = page.paneCustomization ? 1 : 0;
+        lists.at(group)->addItem(page.title);
+        lists.at(group)->item(lists.at(group)->count() - 1)->setData(Qt::UserRole, page.id);
+        auto *stack = stacks.at(group);
         auto *scroll = new QScrollArea(stack);
         scroll->setWidgetResizable(true);
         auto *content = new QWidget(scroll);
@@ -83,9 +105,14 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
             }
             case SettingField::Kind::Choice: {
                 auto *choices = new QComboBox(content);
-                for (int i = 0; i < field.choices.size(); ++i) {
+                QList<int> order;
+                for (int i = 0; i < field.choices.size(); ++i) order.append(i);
+                std::stable_sort(order.begin(), order.end(), [&collator, &field](int a, int b) {
+                    return collator.compare(field.choices.at(a), field.choices.at(b)) < 0;
+                });
+                for (const int i : order) {
                     choices->addItem(field.choices.at(i), field.choiceValues.at(i).toVariant());
-                    if (field.choiceValues.at(i) == value) choices->setCurrentIndex(i);
+                    if (field.choiceValues.at(i) == value) choices->setCurrentIndex(choices->count() - 1);
                 }
                 editor = choices;
                 break;
@@ -108,8 +135,7 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
         scroll->setWidget(content);
         stack->addWidget(scroll);
     }
-    connect(sections, &QListWidget::currentRowChanged, stack, &QStackedWidget::setCurrentIndex);
-    sections->setCurrentRow(0);
+    for (auto *sections : lists) sections->setCurrentRow(0);
     status_ = new QLabel(this);
     status_->setObjectName(QStringLiteral("settingsStatus"));
     status_->setTextFormat(Qt::PlainText);
@@ -121,6 +147,25 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
     connect(buttons->button(QDialogButtonBox::Apply), &QPushButton::clicked, this, [this] { applyChanges(); });
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     layout->addWidget(buttons);
+}
+QJsonObject SettingsDialog::navigation() const
+{
+    QJsonObject values;
+    values.insert(QStringLiteral("tab"), findChild<QTabWidget *>()->currentIndex() == 1 ? QStringLiteral("panes") : QStringLiteral("general"));
+    for (auto *list : findChildren<QListWidget *>()) {
+        if (list->currentItem()) values.insert(list->objectName(), list->currentItem()->data(Qt::UserRole).toString());
+    }
+    return values;
+}
+void SettingsDialog::restoreNavigation(const QJsonObject &values)
+{
+    findChild<QTabWidget *>()->setCurrentIndex(values.value(QStringLiteral("tab")).toString() == QStringLiteral("panes") ? 1 : 0);
+    for (auto *list : findChildren<QListWidget *>()) {
+        const auto id = values.value(list->objectName()).toString();
+        for (int i = 0; i < list->count(); ++i) {
+            if (list->item(i)->data(Qt::UserRole).toString() == id) { list->setCurrentRow(i); break; }
+        }
+    }
 }
 bool SettingsDialog::applyChanges()
 {

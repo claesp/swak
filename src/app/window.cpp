@@ -54,6 +54,11 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     }
     auto *fileMenu = menuBar()->addMenu(tr("&File"));
     fileMenu->setObjectName(QStringLiteral("fileMenu"));
+    auto *settings = fileMenu->addAction(tr("&Settings"));
+    settings->setObjectName(QStringLiteral("settingsAction"));
+    settings->setShortcut(QKeySequence::Preferences);
+    connect(settings, &QAction::triggered, this, &Window::openSettings);
+    fileMenu->addSeparator();
     auto *quit = fileMenu->addAction(tr("&Quit"));
     quit->setObjectName(QStringLiteral("quitAction"));
     quit->setShortcut(QKeySequence::Quit);
@@ -131,15 +136,9 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         fitWindowsToScreens();
         savePreferences();
     });
-    auto *eventsMenu = menuBar()->addMenu(tr("&Events"));
+    auto *eventsMenu = menuBar()->addMenu(tr("&CoT Events"));
     auto *clear = eventsMenu->addAction(tr("&Clear events"));
     connect(clear, &QAction::triggered, &store_, &Store::clear);
-    auto *settingsMenu = menuBar()->addMenu(tr("&Settings"));
-    settingsMenu->setObjectName(QStringLiteral("settingsMenu"));
-    auto *settings = settingsMenu->addAction(tr("&Configure application…"));
-    settings->setObjectName(QStringLiteral("settingsAction"));
-    settings->setShortcut(QKeySequence::Preferences);
-    connect(settings, &QAction::triggered, this, &Window::openSettings);
     auto *status = new QLabel(this);
     statusBar()->addWidget(status);
     const auto updateStatus = [this, status] { status->setText(tr("%1 / %2 events · Offline map")
@@ -158,6 +157,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     const auto application = preferences_.document().value(QStringLiteral("application")).toObject();
     saveTimer_.setInterval(preferenceInteger(application, QStringLiteral("saveInterval"), 750, 250, 60000));
     settingsGeometry_ = geometryBytes(application, QStringLiteral("settingsGeometry"));
+    settingsNavigation_ = application.value(QStringLiteral("settingsNavigation")).toObject();
     connect(&saveTimer_, &QTimer::timeout, this, [this] {
         if (isVisible() && !closing_) savePreferences();
     });
@@ -231,6 +231,7 @@ bool Window::savePreferences()
     auto application = document.value(QStringLiteral("application")).toObject();
     application.insert(QStringLiteral("saveInterval"), saveTimer_.interval());
     application.insert(QStringLiteral("settingsGeometry"), QString::fromLatin1(settingsGeometry_.toBase64()));
+    application.insert(QStringLiteral("settingsNavigation"), settingsNavigation_);
     document.insert(QStringLiteral("application"), application);
     document.insert(QStringLiteral("version"), 1);
     const bool saved = preferences_.save(document);
@@ -294,7 +295,7 @@ void Window::openSettings()
         if (!title.isEmpty()) pages.append({QString::fromLatin1(plugin->metaObject()->className()), title, {}, {}, {}, {}});
     }
     for (auto *dock : findChildren<QDockWidget *>(QString{}, Qt::FindDirectChildrenOnly)) {
-        pages.append({dock->objectName(), tr("Pane: %1").arg(dock->windowTitle()), {
+        pages.append({dock->objectName(), dock->windowTitle(), {
             booleanSetting(QStringLiteral("visible"), tr("Visible")), booleanSetting(QStringLiteral("floating"), tr("Detached")),
             choiceSetting(QStringLiteral("area"), tr("Dock area"), {tr("Left"), tr("Right"), tr("Top"), tr("Bottom")}, {1, 2, 4, 8}),
             numberSetting(QStringLiteral("width"), tr("Width"), 100, 16384), numberSetting(QStringLiteral("height"), tr("Height"), 100, 16384),
@@ -315,15 +316,17 @@ void Window::openSettings()
                 }
                 dock->setVisible(values.value(QStringLiteral("visible")).toBool());
                 fitWindowsToScreens();
-            }});
+            }, true});
     }
     SettingsDialog dialog(std::move(pages), [this] {
         return savePreferences() ? QString{} : preferences_.error();
     }, this);
+    dialog.restoreNavigation(settingsNavigation_);
     if (!settingsGeometry_.isEmpty()) dialog.restoreGeometry(settingsGeometry_);
     if (screen()) dialog.setGeometry(fitWindowRectangle(dialog.geometry(), {screen()->availableGeometry()}));
     dialog.exec();
     settingsGeometry_ = dialog.saveGeometry();
+    settingsNavigation_ = dialog.navigation();
     savePreferences();
 }
 void Window::fitWindowsToScreens()

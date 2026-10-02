@@ -92,7 +92,7 @@ public:
         connect(&store_, &Store::changed, this, refreshPreview);
     }
     QString preferenceId() const override { return QStringLiteral("org.swak.editor"); }
-    QString settingsTitle() const override { return tr("Event editor"); }
+    QString settingsTitle() const override { return tr("CoT Event Generator"); }
     QList<SettingField> settingsFields() const override
     {
         return {textSetting(QStringLiteral("identity"), tr("Identity"), 128),
@@ -216,7 +216,7 @@ class EditorPlugin final : public QObject, public ToolPlugin {
     Q_PLUGIN_METADATA(IID "org.swak.Tool/1.0")
     Q_INTERFACES(swak::ToolPlugin)
 public:
-    QString name() const override { return tr("Event editor"); }
+    QString name() const override { return tr("CoT Event Generator"); }
     QWidget *create(Store &store, const Codec &codec, QWidget *parent) override { return new Editor(store, codec, parent); }
 };
 }

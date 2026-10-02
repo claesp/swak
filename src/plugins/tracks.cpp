@@ -20,7 +20,7 @@ public:
         });
     }
     QString preferenceId() const override { return QStringLiteral("org.swak.events"); }
-    QString settingsTitle() const override { return tr("Events table"); }
+    QString settingsTitle() const override { return tr("CoT Events"); }
     QList<SettingField> settingsFields() const override
     {
         QList<SettingField> fields{choiceSetting(QStringLiteral("sortColumn"), tr("Sort column"),
@@ -106,7 +106,7 @@ class TracksPlugin final : public QObject, public MapLayer, public ToolPlugin {
     Q_PLUGIN_METADATA(IID "org.swak.MapLayer/1.0")
     Q_INTERFACES(swak::MapLayer swak::ToolPlugin)
 public:
-    QString name() const override { return tr("Events"); }
+    QString name() const override { return tr("CoT Events"); }
     int order() const override { return 100; }
     void paint(QPainter &painter, const Viewport &view, const Store &store) const override
     {

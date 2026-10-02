@@ -1,14 +1,14 @@
 # Use the workspace
 
-A fresh profile starts with an empty map and no receiver socket. Later launches restore the saved interface and receiver state. The event editor opens beside the map in the default layout. The View menu restores hidden docks, which are movable tool panels.
+A fresh profile starts with an empty map and no receiver socket. Later launches restore the saved interface and receiver state. CoT Event Generator opens beside the map in the default layout. The View menu restores hidden docks, which are movable tool panels.
 
-Events, Event editor, UDP receiver, and Plugins each have an independent dock. The three tool docks start as tabs beside the map. Drag a dock title or tab to detach that pane.
+CoT Events, CoT Event Generator, UDP receiver, and Plugins each have an independent dock. The three tool docks start as tabs beside the map. Drag a dock title or tab to detach that pane.
 
 Each detached pane has a resize handle in its lower-right corner. Close a pane to hide it. Use File > Quit to close the application.
 
 To create a local event, use this sequence:
 
-1. Enter an identity, callsign, event type, and position in the Event editor.
+1. Enter an identity, callsign, event type, and position in CoT Event Generator.
 2. Set the event lifetime in seconds.
 3. Select Generate event.
 
@@ -86,11 +86,13 @@ If a saved receiver cannot bind its endpoint, the receiver pane reports the erro
 
 # Settings
 
-Open Settings > Configure application to edit application and plugin configuration. Apply saves changes and keeps the dialog open. OK saves changes and closes the dialog. Cancel discards changes since the last Apply. Invalid input prevents all pending changes from applying. A save error stays visible, and changes remain active for the current session.
+Open File > Settings to edit application and plugin configuration. Apply saves changes and keeps the dialog open. OK saves changes and closes the dialog. Cancel discards changes since the last Apply. Invalid input prevents all pending changes from applying. A save error stays visible, and changes remain active for the current session.
 
-The dialog includes logging, workspace geometry, the save interval, and pane visibility, placement, and dimensions. Plugin sections include map position and zoom, editor fields and directories, receiver configuration, and table columns. Column positions must form a unique sequence from zero through four. Plugins without configurable parameters show an explanatory section. Protocol limits remain fixed security boundaries.
+The General tab contains application and plugin configuration. The Panes tab contains pane visibility, placement, and dimensions. Pane entries use their names without a prefix. Section lists and dropdown choices follow the system locale for alphabetical ordering.
 
-The dialog stores values in the same portable preferences file as the workspace controls. Changes survive restarts, and absent plugin sections remain in the file. The dialog also remembers its own size and position. The desktop compositor controls final window placement on Wayland.
+Plugin sections include map position and zoom, editor fields and directories, receiver configuration, and table columns. Column positions must form a unique sequence from zero through four. Plugins without configurable parameters show an explanatory section. Protocol limits remain fixed security boundaries.
+
+The dialog stores values in the same portable preferences file as the workspace controls. Changes survive restarts, and absent plugin sections remain in the file. The dialog also remembers its size, position, tab, and selected sections. The desktop compositor controls final window placement on Wayland.
 
 # Text logging
 

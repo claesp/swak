@@ -32,5 +32,6 @@ private:
     bool closing_ = false;
     bool shown_ = false;
     QByteArray settingsGeometry_;
+    QJsonObject settingsNavigation_;
 };
 }
