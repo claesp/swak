@@ -105,6 +105,7 @@ TileRenderer::TileRenderer(QObject *parent) : QObject(parent)
     workers_.setMaxThreadCount(2);
     cacheStats_.setInterval(2000);
     connect(&cacheStats_, &QTimer::timeout, this, [this] {
+        if (ready_ && contentVisible_ && coverage().rendered < coverage().total && !schedule_.isActive()) schedule_.start(0);
         const qint64 bytes = disk_ ? disk_->cacheSize() : -1;
         if (bytes == diskBytes_) return;
         diskBytes_ = bytes;
@@ -114,10 +115,46 @@ TileRenderer::TileRenderer(QObject *parent) : QObject(parent)
     schedule_.setSingleShot(true);
     connect(&schedule_, &QTimer::timeout, this, &TileRenderer::pump);
 }
+TileRenderer::Coverage TileRenderer::coverage() const
+{
+    Coverage result;
+    if (!contentVisible_) return result;
+    if (!visible_.isEmpty()) {
+        const auto &first = visible_.first();
+        const int count = 1 << first.z;
+        const int columns = std::min(count - first.x, static_cast<int>(std::ceil((viewSize_.width() - first.rectangle.left()) / first.rectangle.width())));
+        const int rows = std::min(count - first.y, static_cast<int>(std::ceil((viewSize_.height() - first.rectangle.top()) / first.rectangle.height())));
+        result.total = columns * rows;
+    }
+    for (const auto &tile : visible_) {
+        const auto *image = images_.object(tile.key);
+        if (image && !image->pixels.isNull()) ++result.rendered;
+    }
+    return result;
+}
 QString TileRenderer::status() const
 {
-    if (!deferred_.isEmpty()) return tr("Map memory limit reached. Increase Tile memory cache in Settings.");
-    return status_;
+    const auto current = coverage();
+    QString message = current.total > 0 && current.rendered == current.total ? QString{} : status_;
+    if (current.rendered < current.total) {
+        if (!message.isEmpty()) message += QLatin1Char(' ');
+        message += tr("Map coverage: %1/%2 tiles.").arg(current.rendered).arg(current.total);
+    } else if (current.total > 0 && compact_ && message.isEmpty()) message = tr("Map complete. Object information is limited by the memory budget.");
+    return message;
+}
+void TileRenderer::compactImages()
+{
+    compact_ = true;
+    for (const auto &key : images_.keys()) {
+        if (std::none_of(visible_.begin(), visible_.end(), [&](const TilePlacement &tile) { return tile.key == key; })) {
+            images_.remove(key); continue;
+        }
+        std::unique_ptr<Image> image(images_.take(key));
+        image->pixels = image->pixels.scaled(256, 256, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+        image->vectors = {};
+        const int cost = static_cast<int>(image->pixels.sizeInBytes() / 1024);
+        images_.insert(key, image.release(), cost);
+    }
 }
 void TileRenderer::setDiskLimit(int mebibytes)
 {
@@ -134,7 +171,7 @@ void TileRenderer::setMemoryLimit(int mebibytes)
     visible_.clear();
     needed_.clear();
     prefetchSkipped_.clear();
-    deferred_.clear();
+    compact_ = false;
     pressureZoom_ = 19;
     emit changed();
 }
@@ -164,7 +201,7 @@ void TileRenderer::setSource(MapProvider *provider, const QJsonObject &source)
     if (provider_ == provider && source_ == source && (ready_ || !provider)) return;
     cancel();
     images_.clear();
-    deferred_.clear();
+    compact_ = false;
     failures_.clear();
     visible_.clear();
     needed_.clear();
@@ -205,7 +242,7 @@ void TileRenderer::paint(QPainter &painter, const Viewport &view, double opacity
     if (antialias_ != antialias && dynamic_cast<VectorTileProvider *>(provider_)) {
         cancel();
         images_.clear();
-        deferred_.clear();
+        compact_ = false;
     }
     antialias_ = antialias;
     const int minimum = provider_ ? source_.value(QStringLiteral("minZoom")).toInt() : 0;
@@ -218,11 +255,11 @@ void TileRenderer::paint(QPainter &painter, const Viewport &view, double opacity
     const bool moved = next.size() != visible_.size() || !std::equal(next.begin(), next.end(), visible_.begin(),
         [](const TilePlacement &a, const TilePlacement &b) { return a.key == b.key; });
     visible_ = next;
+    viewSize_ = view.size;
     needed_ = tileFetchArea(visible_, prefetchMargin_);
     if (fetching && moved) {
-        deferred_.clear();
         prefetchSkipped_.clear();
-        if (!schedule_.isActive()) schedule_.start(0);
+        schedule_.start(0);
     }
     for (const auto &key : images_.keys()) {
         const auto *image = images_.object(key);
@@ -286,18 +323,18 @@ void TileRenderer::pump()
     const bool visibleReady = std::all_of(visible_.begin(), visible_.end(), [&](const TilePlacement &tile) {
         const auto *image = images_.object(tile.key);
         const auto *failure = failures_.object(tile.key);
-        return (image && (image->transient || image->expires > now)) || (failure && failure->retryAt > now) || deferred_.contains(tile.key);
+        return (image && (image->transient || image->expires > now)) || (failure && failure->retryAt > now);
     });
     for (const auto &tile : needed_) {
         const bool visible = std::any_of(visible_.begin(), visible_.end(), [&](const TilePlacement &item) { return item.key == tile.key; });
-        if (!visible && !visibleReady) break;
+        if (!visible && (!visibleReady || compact_)) break;
         if (prefetchSkipped_.contains(tile.key)) continue;
         if (const auto *failure = failures_.object(tile.key); failure && failure->retryAt > now) {
             waiting = true;
             nextRetry = std::min(nextRetry, now.msecsTo(failure->retryAt));
             continue;
         }
-        if (pending_.size() + activeJobs_ >= 4 || deferred_.contains(tile.key)) continue;
+        if (pending_.size() + activeJobs_ >= 4) continue;
         const auto *cached = images_.object(tile.key);
         if ((cached && (cached->transient || cached->expires > now)) || pending_.contains(tile.key) || decoding_.contains(tile.key)) continue;
         const auto url = provider_->tileUrl(source_, tile.z, tile.x, tile.y);
@@ -311,27 +348,28 @@ void TileRenderer::pump()
         request.setAttribute(QNetworkRequest::CacheLoadControlAttribute, QNetworkRequest::PreferCache);
         request.setAttribute(QNetworkRequest::CookieLoadControlAttribute, QNetworkRequest::Manual);
         request.setAttribute(QNetworkRequest::CookieSaveControlAttribute, QNetworkRequest::Manual);
+        const qsizetype limit = dynamic_cast<VectorTileProvider *>(provider_) ? VectorDownloadLimit : MaxTileBytes;
         auto *reply = network_.get(request);
-        reply->setReadBufferSize(MaxTileBytes + 1);
+        reply->setReadBufferSize(limit + 1);
         pending_.insert(tile.key, reply);
         auto data = std::make_shared<QByteArray>();
-        connect(reply, &QNetworkReply::readyRead, this, [reply, data] {
-            data->append(reply->read(MaxTileBytes + 1 - data->size()));
-            if (data->size() > MaxTileBytes) reply->abort();
+        connect(reply, &QNetworkReply::readyRead, this, [reply, data, limit] {
+            data->append(reply->read(limit + 1 - data->size()));
+            if (data->size() > limit) reply->abort();
         });
-        connect(reply, &QNetworkReply::metaDataChanged, this, [reply] {
-            if (reply->header(QNetworkRequest::ContentLengthHeader).toLongLong() > MaxTileBytes) reply->abort();
+        connect(reply, &QNetworkReply::metaDataChanged, this, [reply, limit] {
+            if (reply->header(QNetworkRequest::ContentLengthHeader).toLongLong() > limit) reply->abort();
         });
         connect(reply, &QNetworkReply::sslErrors, this, [this, reply](const QList<QSslError> &) {
             if (source_.value(QStringLiteral("ignoreTls")).toBool(false)) reply->ignoreSslErrors();
         });
         QTimer::singleShot(15000, reply, [reply] { if (!reply->isFinished()) reply->abort(); });
-        connect(reply, &QNetworkReply::finished, this, [this, reply, data, key = tile.key] {
+        connect(reply, &QNetworkReply::finished, this, [this, reply, data, limit, key = tile.key] {
             pending_.remove(key);
-            data->append(reply->read(MaxTileBytes + 1 - data->size()));
+            data->append(reply->read(limit + 1 - data->size()));
             const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
             const bool vector = dynamic_cast<VectorTileProvider *>(provider_) != nullptr;
-            const bool responseOk = reply->error() == QNetworkReply::NoError && status == 200 && data->size() <= MaxTileBytes;
+            const bool responseOk = reply->error() == QNetworkReply::NoError && status == 200 && data->size() <= limit;
             const auto image = !vector && reply->error() == QNetworkReply::NoError && status == 200 ? decodeMapTile(*data) : QImage{};
             if (!responseOk || (!vector && image.isNull())) {
                 if (disk_) disk_->remove(reply->url());
@@ -372,7 +410,7 @@ void TileRenderer::decodeVector(const QString &key, QByteArray bytes, const QUrl
     auto *watcher = new QFutureWatcher<Image>(this);
     connect(watcher, &QFutureWatcher<Image>::finished, this, [this, watcher, key, url, flag, generation, expires, transient] {
         --activeJobs_;
-        const auto prepared = watcher->result();
+        auto prepared = watcher->result();
         const auto &result = prepared.vectors;
         watcher->deleteLater();
         if (generation == generation_) {
@@ -380,44 +418,35 @@ void TileRenderer::decodeVector(const QString &key, QByteArray bytes, const QUrl
             if (!flag->load(std::memory_order_relaxed)
                 && std::any_of(needed_.begin(), needed_.end(), [&](const TilePlacement &tile) { return tile.key == key; })) {
                 if (!result.error.isEmpty()) {
+                    const auto tile = std::find_if(visible_.begin(), visible_.end(), [&](const TilePlacement &item) { return item.key == key; });
+                    if (result.resourceLimit && tile != visible_.end() && tile->z > source_.value(QStringLiteral("minZoom")).toInt()) {
+                        pressureZoom_ = tile->z - 1;
+                        cancel(); visible_.clear(); needed_.clear(); prefetchSkipped_.clear();
+                        emit changed(); return;
+                    }
                     if (disk_) disk_->remove(url);
                     fail(key, result.error, 30, false);
                 } else {
                     failures_.remove(key);
                     const auto *previous = images_.object(key);
-                    const int previousCost = previous ? previous->vectors.costKiB : 0;
+                    const int previousCost = previous ? (compact_ ? 256 : previous->vectors.costKiB) : 0;
                     const bool visible = std::any_of(visible_.begin(), visible_.end(), [&](const TilePlacement &tile) { return tile.key == key; });
-                    if (!visible && images_.totalCost() - previousCost + result.costKiB > images_.maxCost()) {
-                        prefetchSkipped_.insert(key);
-                        schedule_.start(150);
-                        return;
+                    int cost = result.costKiB;
+                    if (!visible && images_.totalCost() - previousCost + cost > images_.maxCost()) {
+                        prefetchSkipped_.insert(key); schedule_.start(150); return;
                     }
-                    if (images_.totalCost() - previousCost + result.costKiB > images_.maxCost()) {
+                    if (!compact_ && images_.totalCost() - previousCost + cost > images_.maxCost()) {
                         for (const auto &cached : images_.keys())
-                            if (std::none_of(visible_.begin(), visible_.end(), [&](const TilePlacement &tile) { return tile.key == cached; }))
-                                images_.remove(cached);
+                            if (std::none_of(visible_.begin(), visible_.end(), [&](const TilePlacement &tile) { return tile.key == cached; })) images_.remove(cached);
                     }
-                    if (images_.totalCost() - previousCost + result.costKiB > images_.maxCost()) {
-                        const auto tile = std::find_if(visible_.begin(), visible_.end(), [&](const TilePlacement &item) { return item.key == key; });
-                        const int minimum = source_.value(QStringLiteral("minZoom")).toInt();
-                        if (tile != visible_.end() && tile->z > minimum) {
-                            pressureZoom_ = std::min(pressureZoom_, tile->z - 1);
-                            cancel();
-                            images_.clear();
-                            visible_.clear();
-                            needed_.clear();
-                            prefetchSkipped_.clear();
-                            deferred_.clear();
-                        } else {
-                            const bool first = deferred_.isEmpty();
-                            deferred_.insert(key);
-                            if (first) logMessage(Severity::Warning, Urgency::Attention, QStringLiteral("swak.maps"), status());
-                        }
-                        emit changed();
-                        return;
+                    if (compact_ || images_.totalCost() - previousCost + cost > images_.maxCost()) {
+                        if (!compact_ || images_.totalCost() - previousCost + 256 > images_.maxCost()) compactImages();
+                        prepared.pixels = prepared.pixels.scaled(256, 256, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+                        prepared.vectors = {};
+                        cost = static_cast<int>(prepared.pixels.sizeInBytes() / 1024);
                     }
-                    images_.insert(key, new Image{prepared.pixels, result, true, expires, transient}, result.costKiB);
-                    if (failures_.isEmpty() && deferred_.isEmpty()) status_.clear();
+                    images_.insert(key, new Image{prepared.pixels, prepared.vectors, true, expires, transient}, cost);
+                    if (failures_.isEmpty()) status_.clear();
                     emit changed();
                 }
             }

@@ -156,3 +156,9 @@ A pane can derive from `PaneContent` and emit `visibilityRequested(bool)`. The h
 The pane can override preferredDockArea() to select its initial dock area. The default is the bottom area. Information uses the right area. Saved layouts take precedence. This optional base class leaves existing PanePlugin factories unchanged.
 
 The Information plugin implements PanePlugin and PreferenceParticipant. Its MANIFEST declares `clipboard-write`, a permission for user-requested copies to the OS clipboard. The common Plugin API remains version 2. All built-in plugins compile against the same extended service structure. No external binary compatibility is promised.
+
+# Vector recovery and coverage
+
+VectorTile now has a resourceLimit flag. A decoder sets this flag with an error when a valid request exceeds a resource boundary. The host can request a lower tile level for this case. Other decode errors retain the normal retry policy. The static plugin interface identifier remains unchanged.
+
+TileRenderer::coverage() returns the visible tile count and the count with prepared images. The map status reports incomplete coverage. Under memory pressure, the renderer can retain pixels without geometry. Feature inspection then returns no hits for those tiles. Image coverage remains distinct from feature availability and data freshness.

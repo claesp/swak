@@ -42,7 +42,7 @@ Certificate and hostname checks are enabled by default. Each source has an expli
 
 SWAK uses the existing Qt Network library for asynchronous HTTPS and Qt image readers for raster decoding. These are existing dependencies. It does not add a browser engine or a GIS runtime. Images render through QPainter on QOpenGLWidget, which uses the OpenGL paint engine for texture upload, scaling, and composition.
 
-The renderer permits four active requests and 256 visible tiles. Each response has a two MiB limit, a ten-second inactivity limit, and a fifteen-second total limit. Decoding accepts only 256-by-256 images.
+The renderer permits four active requests and 256 visible tiles. Raster responses have a two MiB limit. Vector responses have an eight MiB limit. Both use ten-second inactivity and fifteen-second total limits. Decoding accepts only 256-by-256 images.
 
 The decoded-tile cache defaults to 256 MiB. File > Settings > Map exposes Tile memory cache, with limits from 64 through 512 MiB.
 
@@ -93,11 +93,15 @@ Keep the OpenFreeMap, OpenMapTiles, and OpenStreetMap credits visible. The prese
 
 Vector requests use the same HTTPS, cache, timeout, and retry controls as image tiles. Responses must contain raw MVT bytes. SWAK requests identity encoding and does not open gzip archives as tiles. Downloads and pending decode tasks share a limit of four. Two background workers decode and paint tiles. Source changes, hiding, and shutdown cancel obsolete work. The renderer discards results from earlier source generations.
 
-A tile has limits of two MiB, 64 layers, 20000 features, and 100000 vertices. Each feature accepts up to 256 property pairs. Each layer dictionary accepts up to 16384 keys and values. The parser also bounds text, geometry commands, coordinate ranges, and retained properties. Invalid tiles enter the normal retry path.
+A vector tile has limits of eight MiB, 64 layers, 50000 features, and 500000 vertices. Each feature accepts up to 256 property pairs. Each layer dictionary accepts up to 65536 keys and values. The parser also bounds text, geometry commands, coordinate ranges, and retained properties. Retained properties have a 16 MiB limit. The estimated geometry and property total has a 64 MiB limit per tile. Invalid tiles enter the normal retry path.
 
-The cache accounts for decoded geometry, properties, and prepared images within the configured memory budget. It first removes tiles outside the view. If the visible tiles still exceed the budget, SWAK requests the next lower tile zoom. The map center and selected zoom stay unchanged.
+The cache accounts for decoded geometry, properties, and prepared images within the configured memory budget. It first removes tiles outside the view. If visible geometry still exceeds the budget, SWAK retains 256-pixel images and releases the geometry. This keeps all visible tiles drawable, including at the provider minimum zoom. Object inspection is unavailable for these compact tiles. KML data and CoT inspection remain available.
 
-This fallback continues only to the provider minimum zoom and does not repeat on each repaint. A zoom, source, or memory limit change permits full-detail requests again. Panning keeps the reduced detail level. If the minimum zoom still exceeds the budget, the map asks the user to increase Tile memory cache. The limit remains enforced.
+The map reports this reduced inspection mode. Increasing Tile memory cache or changing the provider restores normal decoding. Compact mode disables extra tile fetching. At most 256 visible images require 64 MiB, which fits the lowest supported cache budget.
+
+A parser resource limit requests the next lower tile level, down to the provider minimum. The map center and selected zoom stay unchanged. Panning keeps this detail level. Changing zoom or provider permits full-detail requests again. Invalid content, network failures, and failures at the minimum level remain explicit errors with bounded retries.
+
+The renderer counts visible tiles and cached images after each view change. Missing coverage appears as a rendered/total count. A two-second audit schedules unfinished work while respecting existing retry delays and request limits. Coverage measures available images, including stale cached images. It does not establish data freshness. A failed service or invalid minimum-level tile can still leave missing coverage.
 
 Workers paint complete tiles into 512-pixel images for 256 logical pixels. The OpenGL map view reuses these images during panning. The parser limits still bound geometry work per tile. There is no shared frame limit that discards later tiles. Higher display scaling and reduced-detail fallback can soften the prepared images. Labels and line widths scale with the tile during fallback. Feature inspection follows visible layer choices. MVT parsing does not fetch linked resources or execute styles. Development tests cover truncated records, malformed commands, oversized numbers, property types, holes, cancellation, replacement, and worker exceptions.
 

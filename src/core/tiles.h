@@ -28,6 +28,8 @@ public:
     void setSource(MapProvider *provider, const QJsonObject &source);
     void paint(QPainter &painter, const Viewport &view, double opacity, bool smooth, double missingOpacity = 0.2);
     QString status() const;
+    struct Coverage { int total = 0; int rendered = 0; };
+    Coverage coverage() const;
     void setMemoryLimit(int mebibytes);
     void setDiskLimit(int mebibytes);
     void setPrefetchMargin(int margin);
@@ -47,6 +49,7 @@ signals:
 private:
     struct Image { QImage pixels; VectorTile vectors; bool vector = false; QDateTime expires; bool transient = false; };
     void pump();
+    void compactImages();
     void cancel();
     void decodeVector(const QString &key, QByteArray bytes, const QUrl &url, QDateTime expires, bool transient);
     void fail(const QString &key, const QString &message, int retrySeconds, bool providerWide);
@@ -58,6 +61,7 @@ private:
     QCache<QString, Image> images_{256 * 1024};
     QHash<QString, QNetworkReply *> pending_;
     QList<TilePlacement> visible_;
+    QSizeF viewSize_;
     QList<TilePlacement> needed_;
     QSet<QString> prefetchSkipped_;
     int prefetchMargin_ = 1;
@@ -78,6 +82,6 @@ private:
     QHash<QString, std::shared_ptr<std::atomic_bool>> decoding_;
     quint64 generation_ = 0;
     int activeJobs_ = 0;
-    QSet<QString> deferred_;
+    bool compact_ = false;
 };
 }

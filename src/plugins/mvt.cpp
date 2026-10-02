@@ -14,6 +14,8 @@ namespace swak {
 namespace {
 using Reader = protozero::pbf_reader;
 using Wire = protozero::pbf_wire_type;
+struct TileLimit : std::runtime_error { TileLimit() : std::runtime_error("Vector tile resource limit") {} };
+void bounded(bool valid) { if (!valid) throw TileLimit{}; }
 void require(bool valid) { if (!valid) throw std::runtime_error("Invalid vector tile"); }
 void wire(const Reader &reader, Wire expected) { require(reader.has_wire_type(expected)); }
 quint32 unsigned32(Reader &reader)
@@ -25,7 +27,7 @@ quint32 unsigned32(Reader &reader)
 }
 QString string(protozero::data_view value, size_t limit = 2048)
 {
-    require(value.size() <= limit);
+    bounded(value.size() <= limit);
     auto result = QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
     for (auto &character : result) if (!character.isPrint()) character = QLatin1Char(' ');
     return result;
@@ -57,7 +59,7 @@ QList<quint32> packed(Reader &reader, int limit)
     QList<quint32> result;
     if (reader.has_wire_type(Wire::varint)) { result.append(unsigned32(reader)); return result; }
     wire(reader, Wire::length_delimited);
-    for (const auto value : reader.get_packed_uint64()) { require(result.size() < limit && value <= std::numeric_limits<quint32>::max()); result.append(static_cast<quint32>(value)); }
+    for (const auto value : reader.get_packed_uint64()) { bounded(result.size() < limit); require(value <= std::numeric_limits<quint32>::max()); result.append(static_cast<quint32>(value)); }
     return result;
 }
 void geometry(VectorFeature &feature, const QList<quint32> &commands, quint32 extent, int &vertices, const std::atomic_bool &cancelled)
@@ -71,7 +73,7 @@ void geometry(VectorFeature &feature, const QList<quint32> &commands, quint32 ex
         const quint32 command = commands.at(offset++);
         const quint32 operation = command & 7U;
         const quint32 count = command >> 3U;
-        require(count > 0 && count <= 100000);
+        require(count > 0); bounded(count <= 500000);
         if (operation == 7) {
             require(feature.kind == VectorFeature::Kind::Polygon && count == 1 && segment >= 3 && !closed);
             feature.path.closeSubpath(); closed = true; segment = 0; continue;
@@ -84,7 +86,7 @@ void geometry(VectorFeature &feature, const QList<quint32> &commands, quint32 ex
             segment = 0;
         } else require(segment > 0 && !closed);
         for (quint32 i = 0; i < count; ++i) {
-            require(++vertices <= 100000);
+            bounded(++vertices <= 500000);
             x += delta(commands.at(offset++)); y += delta(commands.at(offset++));
             require(std::abs(x) <= static_cast<qint64>(extent) * 16 && std::abs(y) <= static_cast<qint64>(extent) * 16);
             const QPointF point(static_cast<double>(x) / extent, static_cast<double>(y) / extent);
@@ -125,7 +127,7 @@ int order(const VectorFeature &feature)
 VectorTile decode(const QByteArray &bytes, const std::atomic_bool &cancelled)
 {
     VectorTile result;
-    require(bytes.size() <= 2 * 1024 * 1024);
+    bounded(bytes.size() <= VectorDownloadLimit);
     Reader tile(bytes.constData(), static_cast<size_t>(bytes.size()));
     int vertices = 0;
     qsizetype retained = 0;
@@ -139,14 +141,14 @@ VectorTile decode(const QByteArray &bytes, const std::atomic_bool &cancelled)
         QList<protozero::data_view> features;
         QStringList keys;
         QList<QJsonValue> values;
-        require(result.layers.size() < 64);
+        bounded(result.layers.size() < 64);
         while (layer.next()) {
             require(!cancelled.load(std::memory_order_relaxed));
             switch (layer.tag()) {
             case 1: wire(layer, Wire::length_delimited); require(name.isEmpty()); name = string(layer.get_view(), 100); break;
-            case 2: wire(layer, Wire::length_delimited); require(features.size() + result.features.size() < 20000); features.append(layer.get_view()); break;
-            case 3: wire(layer, Wire::length_delimited); require(keys.size() < 16384); keys.append(string(layer.get_view(), 100)); break;
-            case 4: wire(layer, Wire::length_delimited); require(values.size() < 16384); values.append(property(Reader(layer.get_view()))); break;
+            case 2: wire(layer, Wire::length_delimited); bounded(features.size() + result.features.size() < 50000); features.append(layer.get_view()); break;
+            case 3: wire(layer, Wire::length_delimited); bounded(keys.size() < 65536); keys.append(string(layer.get_view(), 100)); break;
+            case 4: wire(layer, Wire::length_delimited); bounded(values.size() < 65536); values.append(property(Reader(layer.get_view()))); break;
             case 5: wire(layer, Wire::varint); extent = unsigned32(layer); break;
             case 15: wire(layer, Wire::varint); version = unsigned32(layer); break;
             default: layer.skip(); break;
@@ -164,9 +166,9 @@ VectorTile decode(const QByteArray &bytes, const std::atomic_bool &cancelled)
             while (input.next()) {
                 switch (input.tag()) {
                 case 1: wire(input, Wire::varint); feature.id = QString::number(input.get_uint64()); break;
-                case 2: tags.append(packed(input, 512)); require(tags.size() <= 512); break;
+                case 2: tags.append(packed(input, 512)); bounded(tags.size() <= 512); break;
                 case 3: wire(input, Wire::varint); kind = unsigned32(input); break;
-                case 4: commands.append(packed(input, 300000)); require(commands.size() <= 300000); break;
+                case 4: commands.append(packed(input, 1500000)); bounded(commands.size() <= 1500000); break;
                 default: input.skip(); break;
                 }
             }
@@ -176,10 +178,11 @@ VectorTile decode(const QByteArray &bytes, const std::atomic_bool &cancelled)
                 require(tags.at(i) < static_cast<quint32>(keys.size()) && tags.at(i + 1) < static_cast<quint32>(values.size()));
                 const auto &key = keys.at(tags.at(i)); const auto &value = values.at(tags.at(i + 1));
                 retained += 128 + key.size() * 2 + value.toString().size() * 2;
-                require(retained <= 8 * 1024 * 1024);
+                bounded(retained <= 16 * 1024 * 1024);
                 feature.properties.insert(key, value);
             }
             geometry(feature, commands, extent, vertices, cancelled);
+            bounded(retained + vertices * 64 + (result.features.size() + 1) * 256 <= 64 * 1024 * 1024);
             feature.color = color(feature);
             feature.labelOnly = name.endsWith(QLatin1String("_name")) || name.endsWith(QLatin1String("_label"))
                 || name == QLatin1String("place") || name == QLatin1String("housenumber");
@@ -254,7 +257,8 @@ public:
     VectorTile decodeTile(const QByteArray &bytes, const std::atomic_bool &cancelled) const override
     {
         try { return decode(bytes, cancelled); }
-        catch (const std::exception &) { VectorTile result; result.error = tr("Vector tile is invalid, cancelled, or exceeds its limits."); return result; }
+        catch (const TileLimit &) { VectorTile result; result.resourceLimit = true; result.error = tr("Vector tile exceeds the resource limit."); return result; }
+        catch (const std::exception &) { VectorTile result; result.error = (cancelled.load() ? tr("Vector tile decoding cancelled.") : tr("Vector tile is invalid.")); return result; }
     }
 };
 }

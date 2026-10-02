@@ -259,7 +259,7 @@ private slots:
             QCOMPARE(renderer.diskCacheBytes(), -1);
             renderer.setSource(xyz, localSource(xyz, server, false));
             draw(renderer, canvas);
-            QVERIFY(QTest::qWaitFor([&] { return !renderer.status().isEmpty(); }, 5000));
+            QVERIFY(QTest::qWaitFor([&] { return !renderer.status().isEmpty() && !renderer.status().startsWith(QStringLiteral("Map coverage:")); }, 5000));
             QVERIFY(server.requests.isEmpty());
             renderer.setSource(xyz, localSource(xyz, server, true));
             QSignalSpy changed(&renderer, &TileRenderer::changed);
@@ -287,7 +287,7 @@ private slots:
             TileRenderer strict;
             strict.setSource(xyz, localSource(xyz, server, false));
             draw(strict, canvas);
-            QVERIFY(QTest::qWaitFor([&] { return !strict.status().isEmpty(); }, 5000));
+            QVERIFY(QTest::qWaitFor([&] { return !strict.status().isEmpty() && !strict.status().startsWith(QStringLiteral("Map coverage:")); }, 5000));
             QCOMPARE(server.requests.size(), 1);
         }
     }
@@ -376,7 +376,7 @@ private slots:
         QImage canvas(256, 256, QImage::Format_RGB32);
         canvas.fill(Qt::black);
         draw(renderer, canvas);
-        QVERIFY(QTest::qWaitFor([&] { return !renderer.status().isEmpty(); }, 5000));
+        QVERIFY(QTest::qWaitFor([&] { return !renderer.status().isEmpty() && !renderer.status().startsWith(QStringLiteral("Map coverage:")); }, 5000));
         QCOMPARE(renderer.pendingCount(), 0);
         QCOMPARE(canvas.pixelColor(20, 20), QColor(MapBackgroundRgb));
         draw(renderer, canvas);
@@ -397,7 +397,7 @@ private slots:
         { QPainter painter(&canvas); renderer.paint(painter, Viewport{QSizeF(256, 256), QPointF(2, 2), 0}, 1, false); }
         QVERIFY(QTest::qWaitFor([&] { return renderer.pendingCount() == 0; }, 5000));
         draw(renderer, canvas);
-        QVERIFY(QTest::qWaitFor([&] { return !renderer.status().isEmpty(); }, 16000));
+        QVERIFY(QTest::qWaitFor([&] { return !renderer.status().isEmpty() && !renderer.status().startsWith(QStringLiteral("Map coverage:")); }, 16000));
         QVERIFY(renderer.pendingCount() <= 4);
         renderer.stop();
         QCOMPARE(renderer.pendingCount(), 0);
@@ -418,7 +418,7 @@ private slots:
         TileRenderer renderer;
         renderer.setSource(xyz, localSource(xyz, server, true));
         draw(renderer, canvas);
-        QVERIFY(QTest::qWaitFor([&] { return !renderer.status().isEmpty(); }, 5000));
+        QVERIFY(QTest::qWaitFor([&] { return !renderer.status().isEmpty() && !renderer.status().startsWith(QStringLiteral("Map coverage:")); }, 5000));
         QCOMPARE(server.requests.size(), 1);
         QCOMPARE(renderer.pendingCount(), 0);
         renderer.setSource(nullptr, {});

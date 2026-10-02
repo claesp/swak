@@ -414,3 +414,27 @@ An overlapping coverage and sanitizer run failed during a vector cancellation fi
 The final eight sanitizer suites passed in `build/quality/20261002-201316-quick-159611`. Static analysis passed in `build/quality/20261002-201317-analyze-3`. The final release command reported no remaining build work.
 
 Five focused native cases passed at 200 percent scaling in `build/information-hidpi/native.log`. They include zoom limits, the Information pane, and keyboard and wheel controls.
+
+# Dense vector recovery and viewport coverage, 2026-10-02
+
+Vector responses now permit eight MiB. Raster responses remain limited to two MiB. Vector parsing permits 50000 features, 500000 vertices, and 65536 dictionary entries per layer. Retained properties have a 16 MiB limit. Estimated geometry and properties have a 64 MiB limit per tile. Worker and request concurrency remain unchanged.
+
+VectorTile has a resourceLimit flag. Limit failures use lower tile levels down to the provider minimum. Invalid input and cancellation have separate error messages. Unsupported minimum-level content remains an explicit failure with bounded retries. The host never counts these failures as rendered tiles.
+
+TileRenderer now exposes coverage counts and audits incomplete coverage every two seconds. The count includes tiles beyond the 256-tile request cap. Complete coverage means prepared images exist, including stale cache entries. It does not establish freshness or availability of remote data. Very large viewports can require zooming in when the provider minimum prevents further detail reduction.
+
+Memory recovery first removes tiles outside the viewport. If visible geometry still exceeds the cache budget, it releases geometry and keeps 256-pixel tile images. At most 256 visible images require 64 MiB. Compact mode pauses extra tile fetching and reports limited object inspection. Changing the provider or memory budget restarts normal decoding. KML and CoT inspection remain available.
+
+Regression tests cover dense geometry, input limits, minimum-level failure, parent-level recovery, and retry backoff during coverage audits. A low-memory case keeps every visible image while panning and restores object inspection after a budget increase. A large-viewport case prevents false complete-coverage reports. Loading coverage text is distinct from failure text in test assertions.
+
+Viewport changes now schedule tile work immediately. A retry timer for an old failed tile no longer delays new visible tiles. Per-tile delays and provider-wide rate limits remain enforced. A regression moves from a failed tile to a valid tile while the old retry delay remains active.
+
+Eight sanitizer suites passed in `build/quality/20261002-203549-quick-165645`. Static analysis passed in `build/quality/20261002-203551-analyze-3`. Coverage passed eight suites and all 37 native cases in `build/quality/20261002-203651-coverage-166089`. The vector fixture now accepts a valid three MiB response and rejects input above eight MiB.
+
+Coverage reached 413 of 451 tile-controller lines and 209 of 213 MVT decoder lines. Remaining gaps include image allocation failure, some parser rejection branches, and existing vector-selection paths. Line coverage does not establish complete branch or input coverage.
+
+All 37 native sanitizer cases passed in `build/quality/20261002-203636-gui-166003`. LeakSanitizer then reported the existing Mesa leak of 240732 bytes in 1073 allocations. The diagnostic remains failed, without suppression.
+
+The 60-second sanitizer workload passed in `build/quality/20261002-203359-soak-165446`. It completed 1275 cycles with 8286208 bytes of peak memory growth. The maximum heartbeat gap was 46 milliseconds, and idle CPU time was 0.003 seconds. This short workload does not replace multi-hour qualification.
+
+The release rebuild passed without compiler warnings with Qt 6.8.2 and GCC 14.2 on Debian 13. The executable remains `build/release/swak`, version 0.1.0. The build log is `build/coverage-fix-release.log`. Hardware graphics, native Wayland, Qt 6.4 compatibility, and multi-hour use remain untested. No external dependency was added.

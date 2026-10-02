@@ -76,3 +76,9 @@ The Information pane treats remote metadata as plain text. It never loads remote
 Map selection holds owning values instead of borrowed geometry pointers. Feed changes clear data selection. The host destroys pane widgets before their services. Key panning stops on key release, focus loss, window deactivation, and hiding. Each timer tick limits elapsed movement to 100 milliseconds after a stall.
 
 Tile fetching permits zero through two extra rings, with at most 64 extra tiles. Visible downloads take priority. Background tiles cannot force visible vector tiles from memory. Existing request, decoder, TLS, and cache limits still apply. Prefetching does not introduce bulk downloads or a persistent offline archive.
+
+# Dense vector tiles
+
+Vector downloads have an eight MiB limit. Raster downloads retain the two MiB limit. Vector parsing permits 500000 vertices and 50000 features per tile. The estimate for retained geometry and properties cannot exceed 64 MiB per tile. Two workers and four combined requests or jobs remain the concurrency limits.
+
+Memory recovery releases cached geometry before it discards visible images. Compact images use 256 KiB each and remain inside the configured cache budget. The coverage audit respects request backoff, source generations, cancellation, and shutdown. Invalid data remains an error. It never counts a missing tile as rendered.

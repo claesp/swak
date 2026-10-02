@@ -21,6 +21,7 @@ public:
     MapProvider &base;
     mutable std::atomic_int started{0};
     mutable std::atomic_int finished{0};
+    mutable std::atomic_int limitFailures{0};
     bool throws = false;
     bool dense = false;
     VectorTileProvider *inflated = nullptr;
@@ -35,6 +36,9 @@ public:
     VectorTile decodeTile(const QByteArray &bytes, const std::atomic_bool &cancelled) const override
     {
         ++started;
+        if (limitFailures.fetch_sub(1) > 0) {
+            VectorTile tile; tile.resourceLimit = true; tile.error = QStringLiteral("Fixture resource limit"); ++finished; return tile;
+        }
         if (inflated) {
             auto result = inflated->decodeTile(bytes, cancelled);
             if (dense && !result.features.isEmpty()) {
@@ -86,6 +90,18 @@ private slots:
         paintVectorTile(painter, tile, QRectF(0, 0, 256, 256), source, labels);
         QCOMPARE(canvas.pixelColor(50, 50), QColor("#92bfd0"));
         QVERIFY(!labels.isEmpty());
+    }
+    void denseTileLimits()
+    {
+        for (const int count : {100001, 500001}) {
+            QByteArray geometry = vector_fixture::varint((static_cast<quint64>(count) << 3U) | 1U);
+            geometry.append(QByteArray(count * 2, '\0'));
+            const auto tile = decoder_->decodeTile(vector_fixture::layer("poi", vector_fixture::feature(1, geometry)), cancelled_);
+            if (count == 100001) { QVERIFY2(tile.error.isEmpty(), qPrintable(tile.error)); QCOMPARE(tile.features.first().points.size(), count); }
+            else { QVERIFY(!tile.error.isEmpty()); QVERIFY(tile.resourceLimit); }
+        }
+        const auto oversized = decoder_->decodeTile(QByteArray(VectorDownloadLimit + 1, 'x'), cancelled_);
+        QVERIFY(oversized.resourceLimit);
     }
     void invalidInput()
     {
@@ -147,7 +163,7 @@ private slots:
         QCOMPARE(slow.started.load(), slow.finished.load());
         slow.throws = true;
         TileRenderer renderer; renderer.setPrefetchMargin(0); renderer.setSource(&slow, source); draw(renderer);
-        QVERIFY(QTest::qWaitFor([&] { return !renderer.status().isEmpty(); }, 5000));
+        QVERIFY(QTest::qWaitFor([&] { return !renderer.status().isEmpty() && !renderer.status().startsWith(QStringLiteral("Map coverage:")); }, 5000));
         QVERIFY(renderer.featuresAt(QPointF(128, 128)).isEmpty());
     }
     void cachePressure()
@@ -160,7 +176,8 @@ private slots:
         SlowVector large(*provider_); large.inflated = decoder_;
         TileRenderer renderer; renderer.setSource(&large, source);
         QImage canvas(512, 512, QImage::Format_RGB32);
-        const auto draw = [&] { QPainter painter(&canvas); renderer.paint(painter, {QSizeF(512, 512), QPointF(0.5, 0.5), 1}, 1, false); };
+        Viewport view{QSizeF(512, 512), QPointF(0.5, 0.5), 1};
+        const auto draw = [&] { QPainter painter(&canvas); renderer.paint(painter, view, 1, false); };
         connect(&renderer, &TileRenderer::changed, &renderer, draw);
         draw();
         QVERIFY(QTest::qWaitFor([&] { return renderer.memoryCostKiB() == 164096; }, 5000));
@@ -168,20 +185,86 @@ private slots:
         QCOMPARE(renderer.memoryCostKiB(), 164096);
         for (int y : {128, 384}) for (int x : {128, 384}) QVERIFY(!renderer.featuresAt(QPointF(x, y)).isEmpty());
         renderer.setMemoryLimit(64);
-        QVERIFY(QTest::qWaitFor([&] { return !renderer.featuresAt(QPointF(256, 256)).isEmpty(); }, 5000));
-        QCOMPARE(renderer.memoryCostKiB(), 41024);
-        QVERIFY(renderer.status().isEmpty());
+        QVERIFY(QTest::qWaitFor([&] { const auto state = renderer.coverage(); return state.total == 4 && state.rendered == 4; }, 5000));
+        QCOMPARE(renderer.memoryCostKiB(), 1024);
+        QVERIFY(renderer.status().contains(QStringLiteral("Map complete")));
+        for (int y : {64, 320}) for (int x : {64, 320}) QCOMPARE(canvas.pixelColor(x, y), QColor("#92bfd0"));
         const int decoded = large.started.load();
         draw();
         QVERIFY(!QTest::qWaitFor([&] { return large.started.load() > decoded; }, 500));
-        QVERIFY(std::any_of(server.requests.begin(), server.requests.end(), [](const QByteArray &request) { return request.contains("/large/0/0/0.pbf"); }));
+        QVERIFY(std::none_of(server.requests.begin(), server.requests.end(), [](const QByteArray &request) { return request.contains("/large/0/0/0.pbf"); }));
         source.insert(QStringLiteral("minZoom"), 1);
         renderer.setSource(&large, source);
-        QVERIFY(QTest::qWaitFor([&] { return renderer.status().contains(QStringLiteral("memory limit")); }, 5000));
-        QVERIFY(renderer.memoryCostKiB() <= 64 * 1024);
+        QVERIFY(QTest::qWaitFor([&] { const auto state = renderer.coverage(); return state.total == 4 && state.rendered == 4; }, 5000));
+        QCOMPARE(renderer.memoryCostKiB(), 1024);
+        for (const double center : {0.375, 0.625, 0.375}) {
+            view.zoom = 2; view.center = QPointF(center, center); draw();
+            QVERIFY(QTest::qWaitFor([&] { const auto state = renderer.coverage(); return state.total == 9 && state.rendered == 9; }, 5000));
+            QVERIFY(renderer.memoryCostKiB() <= 64 * 1024);
+            for (int y : {64, 320}) for (int x : {64, 320}) QCOMPARE(canvas.pixelColor(x, y), QColor("#92bfd0"));
+        }
+        view.zoom = 1; view.center = QPointF(0.5, 0.5);
         renderer.setMemoryLimit(256);
         QVERIFY(QTest::qWaitFor([&] { return renderer.memoryCostKiB() == 164096; }, 5000));
         QVERIFY(renderer.status().isEmpty());
+        renderer.stop();
+    }
+    void coverageRecovery()
+    {
+        TileServer server; server.body = vector_fixture::sample();
+        QVERIFY(server.load(QFINDTESTDATA("fixtures"))); QVERIFY(server.listen(QHostAddress::LocalHost));
+        auto source = provider_->defaults();
+        source.insert(QStringLiteral("endpoint"), QStringLiteral("https://localhost:%1/recovery/{z}/{x}/{y}.pbf").arg(server.serverPort()));
+        source.insert(QStringLiteral("ignoreTls"), true);
+        SlowVector limited(*provider_); limited.inflated = decoder_; limited.limitFailures = 1;
+        TileRenderer renderer; renderer.setPrefetchMargin(0); renderer.setSource(&limited, source);
+        QImage canvas(512, 512, QImage::Format_RGB32);
+        const auto draw = [&] { QPainter painter(&canvas); renderer.paint(painter, {QSizeF(512, 512), QPointF(0.5, 0.5), 1}, 1, false); };
+        connect(&renderer, &TileRenderer::changed, &renderer, draw); draw();
+        QCOMPARE(renderer.coverage().rendered, 0); QCOMPARE(renderer.coverage().total, 4);
+        QVERIFY(renderer.status().contains(QStringLiteral("0/4")));
+        QVERIFY(QTest::qWaitFor([&] { const auto state = renderer.coverage(); return state.total == 1 && state.rendered == 1; }, 5000));
+        QVERIFY(std::any_of(server.requests.begin(), server.requests.end(), [](const QByteArray &request) { return request.contains("/recovery/0/0/0.pbf"); }));
+        QVERIFY(renderer.status().isEmpty());
+        renderer.stop(); QCOMPARE(renderer.coverage().total, 0);
+        draw(); QVERIFY(QTest::qWaitFor([&] { return renderer.coverage().rendered == renderer.coverage().total && renderer.coverage().total > 0; }, 5000));
+        renderer.stop();
+        const auto before = server.requests.size();
+        source.insert(QStringLiteral("minZoom"), 1);
+        source.insert(QStringLiteral("endpoint"), QStringLiteral("https://localhost:%1/minimum/{z}/{x}/{y}.pbf").arg(server.serverPort()));
+        limited.limitFailures = 100; renderer.setSource(&limited, source); draw();
+        QVERIFY(QTest::qWaitFor([&] { return server.requests.size() == before + 4 && renderer.pendingCount() == 0 && limited.started == limited.finished; }, 5000));
+        QCOMPARE(renderer.coverage().total, 4); QCOMPARE(renderer.coverage().rendered, 0);
+        QVERIFY(renderer.status().contains(QStringLiteral("Fixture resource limit")));
+        const auto failed = server.requests.size();
+        QVERIFY(!QTest::qWaitFor([&] { return server.requests.size() > failed; }, 2200));
+        renderer.stop();
+        source.insert(QStringLiteral("minZoom"), 7); source.insert(QStringLiteral("maxZoom"), 7);
+        disconnect(&renderer, &TileRenderer::changed, &renderer, nullptr);
+        renderer.setSource(&limited, source);
+        { QPainter painter(&canvas); renderer.paint(painter, {QSizeF(32768, 32768), QPointF(0.5, 0.5), 7}, 1, false); }
+        QCOMPARE(renderer.coverage().total, 16384); QCOMPARE(renderer.coverage().rendered, 0);
+        renderer.stop();
+    }
+    void newViewportBypassesOldRetry()
+    {
+        TileServer server; server.body = vector_fixture::sample();
+        QVERIFY(server.load(QFINDTESTDATA("fixtures"))); QVERIFY(server.listen(QHostAddress::LocalHost));
+        auto source = provider_->defaults();
+        source.insert(QStringLiteral("minZoom"), 1);
+        source.insert(QStringLiteral("endpoint"), QStringLiteral("https://localhost:%1/retry/{z}/{x}/{y}.pbf").arg(server.serverPort()));
+        source.insert(QStringLiteral("ignoreTls"), true);
+        SlowVector limited(*provider_); limited.inflated = decoder_; limited.limitFailures = 1;
+        TileRenderer renderer; renderer.setPrefetchMargin(0); renderer.setSource(&limited, source);
+        QImage canvas(256, 256, QImage::Format_RGB32);
+        Viewport view{QSizeF(256, 256), QPointF(0.25, 0.25), 1};
+        const auto draw = [&] { QPainter painter(&canvas); renderer.paint(painter, view, 1, false); };
+        connect(&renderer, &TileRenderer::changed, &renderer, draw); draw();
+        QVERIFY(QTest::qWaitFor([&] { return renderer.status().contains(QStringLiteral("Fixture resource limit")); }, 5000));
+        QVERIFY(!QTest::qWaitFor([&] { return server.requests.size() > 1; }, 300));
+        view.center = QPointF(0.75, 0.25); draw();
+        QVERIFY(QTest::qWaitFor([&] { return renderer.coverage().rendered == 1; }, 3000));
+        QCOMPARE(server.requests.size(), 2); QVERIFY(renderer.status().isEmpty());
         renderer.stop();
     }
     void nearbyCachePressure()
@@ -267,7 +350,7 @@ private slots:
     }
     void networkAndReplacement()
     {
-        TileServer server; server.body = vector_fixture::sample();
+        TileServer server; server.body = vector_fixture::sample() + vector_fixture::field(99, QByteArray(3 * 1024 * 1024, 'x'));
         QVERIFY(server.load(QFINDTESTDATA("fixtures"))); QVERIFY(server.listen(QHostAddress::LocalHost, 0));
         auto source = provider_->defaults();
         source.insert(QStringLiteral("endpoint"), QStringLiteral("https://localhost:%1/{z}/{x}/{y}.pbf").arg(server.serverPort()));
@@ -285,7 +368,7 @@ private slots:
         renderer.setSource(nullptr, {}); QVERIFY(renderer.featuresAt(QPointF(128, 128)).isEmpty());
         source.insert(QStringLiteral("endpoint"), QStringLiteral("https://localhost:%1/invalid/{z}/{x}/{y}.pbf").arg(server.serverPort()));
         server.body = "bad tile"; renderer.setSource(provider_, source); draw();
-        QVERIFY(QTest::qWaitFor([&] { return !renderer.status().isEmpty(); }, 5000));
+        QVERIFY(QTest::qWaitFor([&] { return !renderer.status().isEmpty() && !renderer.status().startsWith(QStringLiteral("Map coverage:")); }, 5000));
         QVERIFY(renderer.featuresAt(QPointF(128, 128)).isEmpty());
         renderer.stop();
         QVERIFY(renderer.featuresAt(QPointF(128, 128)).isEmpty());
@@ -296,7 +379,7 @@ int main(int argc, char **argv)
     QApplication app(argc, argv);
     if (argc == 3 && (QByteArray(argv[1]) == "--sample" || QByteArray(argv[1]) == "--render-sample" || QByteArray(argv[1]) == "--benchmark-sample")) {
         QFile file(QString::fromLocal8Bit(argv[2])); if (!file.open(QIODevice::ReadOnly)) return 2;
-        const auto bytes = file.read(2 * 1024 * 1024 + 1); std::atomic_bool cancelled{false};
+        const auto bytes = file.read(VectorDownloadLimit + 1); std::atomic_bool cancelled{false};
         for (auto *object : QPluginLoader::staticInstances()) if (auto *decoder = qobject_cast<VectorTileProvider *>(object)) {
             const auto tile = decoder->decodeTile(bytes, cancelled);
             qInfo().noquote() << "Features:" << tile.features.size() << "Cost KiB:" << tile.costKiB << "Layers:" << tile.layers.join(',') << "Error:" << tile.error;

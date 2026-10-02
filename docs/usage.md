@@ -180,3 +180,11 @@ Click a map object to open Information. The pane shows its label, type, descript
 Selected points have a white outline. Selected routes use the inverse of their drawing color. Selected polygons have a dashed white edge and a faint white fill.
 
 Selection uses a snapshot of the object. A change to the corresponding data source clears the snapshot. Selection does not survive restart. The pane layout and table header do survive restart.
+
+# Map coverage and dense tiles
+
+The map shows a rendered/total tile count while coverage is incomplete. A two-second audit schedules unfinished work. Failed downloads keep their retry delay. Invalid data remains an error. Coverage counts cached images, so it does not establish data freshness.
+
+Dense tiles accept more geometry within fixed input and memory limits. If visible geometry exceeds Tile memory cache, SWAK keeps compact tile images and releases object details. The map reports this mode. Increase Tile memory cache in File > Settings > Map to restore inspection. Changing the provider also restarts normal decoding. KML and CoT selection remain available.
+
+Tiles that exceed parser limits use a lower detail level when the provider supports one. Missing minimum-level tiles remain marked missing. The coverage count includes tiles beyond the request cap. If a very large viewport exceeds that cap at the provider minimum level, zoom in to enlarge each tile. Network failure and invalid content can still prevent complete coverage.

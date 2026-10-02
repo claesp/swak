@@ -8,6 +8,7 @@
 
 class QPainter;
 namespace swak {
+inline constexpr qsizetype VectorDownloadLimit = 8 * 1024 * 1024;
 struct VectorFeature {
     enum class Kind { Point = 1, Line = 2, Polygon = 3 };
     Kind kind = Kind::Point;
@@ -24,6 +25,7 @@ struct VectorTile {
     QStringList layers;
     QString error;
     int costKiB = 1;
+    bool resourceLimit = false;
 };
 class VectorTileProvider {
 public:
