@@ -49,6 +49,11 @@ public:
     virtual QString name() const = 0;
     virtual QWidget *create(PluginServices &services, const QList<MapLayer *> &layers, QWidget *parent) = 0;
 };
+class StatusProvider {
+public:
+    virtual ~StatusProvider() = default;
+    virtual QWidget *createStatusWidget(QWidget *parent) = 0;
+};
 class ToolPlugin {
 public:
     virtual ~ToolPlugin() = default;

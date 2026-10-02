@@ -26,6 +26,7 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QTabWidget>
+#include <QStatusBar>
 #include <QKeySequenceEdit>
 #include <QCollator>
 #include <QScopeGuard>
@@ -362,7 +363,7 @@ private slots:
             auto *table = window.findChild<QTableView *>(QStringLiteral("activityTable"));
             QVERIFY(history && status && table);
             QVERIFY(window.findChild<QLabel *>(QStringLiteral("cotEventCount"))->text().startsWith(QStringLiteral("CoT Events:")));
-            QCOMPARE(window.findChildren<QFrame *>(QStringLiteral("statusSeparator")).size(), 1);
+            QCOMPARE(window.findChildren<QFrame *>(QStringLiteral("statusSeparator")).size(), 2);
             QVERIFY(!window.findChild<QLabel *>(QStringLiteral("latestActivity")));
             history->clear();
             history->restorePreferences({{QStringLiteral("capacity"), 2}});
@@ -512,11 +513,17 @@ private slots:
         }, 5000));
         auto *credit = map->findChild<QLabel *>(QStringLiteral("mapAttribution"));
         QVERIFY(credit);
-        auto *cache = map->findChild<QLabel *>(QStringLiteral("mapCacheSize"));
+        auto *cache = window.statusBar()->findChild<QLabel *>(QStringLiteral("mapStatus"));
         QVERIFY(cache);
         QVERIFY(QTest::qWaitFor([&] { return !cache->text().contains(QStringLiteral("inactive")) && !cache->text().contains(QStringLiteral("0 bytes")); }));
         QVERIFY(cache->text().startsWith(QStringLiteral("Map cache:")));
-        QVERIFY(cache->y() > credit->geometry().bottom());
+        QVERIFY(!map->findChild<QLabel *>(QStringLiteral("mapCacheSize")));
+        QCOMPARE(credit->geometry().bottom(), map->height() - 9);
+        QVERIFY(cache->text().contains(QStringLiteral("Zoom")));
+        QVERIFY(QTest::qWaitFor([&] { return cache->toolTip() == cache->text(); }));
+        QVERIFY(cache->width() > 0);
+        QVERIFY(window.screen()->grabWindow(window.winId()).save(QStringLiteral("map-status-bar.png")));
+        QVERIFY(!credit->text().contains(QStringLiteral("HTTPS certificate")));
         QCOMPARE(credit->alignment(), Qt::AlignRight);
         QVERIFY(credit->text().contains(QStringLiteral("href=")));
         QVERIFY(!credit->text().contains(QStringLiteral("| https")));
@@ -1303,6 +1310,12 @@ private slots:
                 auto *panes = dialog->findChild<QListWidget *>(QStringLiteral("paneSettingsSections"));
                 if (!tabs || tabs->count() != 3 || !panes || panes->count() != 6) {
                     dialog->reject(); QFAIL("The pane tab is incomplete."); return;
+                }
+                for (auto *label : dialog->findChildren<QLabel *>()) {
+                    if (label->wordWrap()) { dialog->reject(); QFAIL("A Settings label wraps across lines."); return; }
+                    if (label->buddy() && label->minimumWidth() < label->sizeHint().width()) {
+                        dialog->reject(); QFAIL("A Settings field label can be clipped."); return;
+                    }
                 }
                 const QCollator collator;
                 for (auto *list : dialog->findChildren<QListWidget *>()) {

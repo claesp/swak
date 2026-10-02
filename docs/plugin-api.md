@@ -170,3 +170,11 @@ TileRenderer::coverage() returns the visible tile count and the count with prepa
 The editor uses `QKeySequenceEdit`. Values use `QKeySequence::PortableText` in the existing component object. Plugins define allowed keys, conflicts, defaults, focus scope, and empty-value behavior. Plugins must bound imported key strings and reject unsupported sequences. The field description does not install a shortcut. Existing profile keys and missing-plugin sections remain intact.
 
 The map owns its navigation keys. Information owns its dismissal key and limits event handling to widgets owned by its workspace. Information ignores modal dialogs and popup menus. Closing Information clears both shared selection services. No dependency or plugin role changes.
+
+# View status widgets
+
+A view widget can implement `StatusProvider` from `core/interfaces.h`. The host calls `createStatusWidget(parent)` once and adds the result after the event counts, with a separator. The status bar owns the returned widget. A null result adds no section. A missing view plugin adds no section.
+
+The view updates its status widget on the interface thread. It must use a guarded pointer if the status widget can be destroyed first. The map uses `QPointer` and publishes cache size, zoom, pointer coordinates, tile diagnostics, and the certificate warning. The host contains no map-specific status code.
+
+`SingleLineLabel` renders plain text on one line. It uses an ellipsis when space is limited and retains the full text in its tooltip. This shared widget serves status sections and Settings notices. Field labels retain their full width inside scrollable forms.

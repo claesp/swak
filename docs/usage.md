@@ -163,7 +163,7 @@ Use Edit to set its refresh interval and appearance. Remove deletes a feed, and 
 
 OpenFreeMap is available in Map Providers and the provider dropdown. It supplies native vector maps with layers, labels, and points of interest. Right-click the map to change Map layers or inspect Map information. The keyboard Menu key uses the map center. File > Settings > Map providers contains the same layer controls and vector appearance parameters. Read `map-providers.md` for source terms and supported formats.
 
-The map shows the local disk-cache size below attribution. File > Settings > Map contains the Tile disk cache limit. The default is 128 MiB, with a range from 16 through 4096 MiB. The size describes the active HTTPS cache, which is separate from decoded memory. An inactive cache label means that no usable map provider cache is open.
+The bottom status bar shows local disk-cache size, zoom, pointer coordinates, and tile diagnostics in a separate map section. File > Settings > Map contains the Tile disk cache limit. The default is 128 MiB, with a range from 16 through 4096 MiB. The size describes the active HTTPS cache, which is separate from decoded memory. An inactive cache label means that no usable map provider cache is open.
 
 File > Settings contains tables for Map providers and Data providers. The same tables appear in Tools > Map Providers and Tools > Data Providers. A map radio button selects one provider. Data checkboxes enable independent feeds. Row selection controls Edit and Delete without changing activation. Clear selection turns off map providers. Table names follow the operating system sort order.
 
@@ -183,7 +183,7 @@ Selection uses a snapshot of the object. A change to the corresponding data sour
 
 # Map coverage and dense tiles
 
-The map shows a rendered/total tile count while coverage is incomplete. A two-second audit schedules unfinished work. Failed downloads keep their retry delay. Invalid data remains an error. Coverage counts cached images, so it does not establish data freshness.
+The map status section shows a rendered/total tile count while coverage is incomplete. A two-second audit schedules unfinished work. Failed downloads keep their retry delay. Invalid data remains an error. Coverage counts cached images, so it does not establish data freshness.
 
 Dense tiles accept more geometry within fixed input and memory limits. If visible geometry exceeds Tile memory cache, SWAK keeps compact tile images and releases object details. The map reports this mode. Increase Tile memory cache in File > Settings > Map to restore inspection. Changing the provider also restarts normal decoding. KML and CoT selection remain available.
 
@@ -196,3 +196,5 @@ Open File > Settings > Keybindings. Select a plugin section. Select a key field 
 Map controls require map focus. Q zooms in, and E zooms out. The four movement keys remain required and distinct. Zoom, reset, alternate zoom, and step keys can be empty to disable them. Conflicting map keys prevent Apply. The standard shortcuts for text fields and application menus remain unchanged.
 
 Esc closes Information and clears the map object and CoT selection. This command works in the main window and detached panes. Modal dialogs and popup menus keep their normal Escape behavior. Information supports Esc or one function key. When an object is selected, its dismissal key takes priority over a matching map key.
+
+The map keeps clickable attribution at its bottom-right edge. Status text uses an ellipsis when the window is narrow. Hover over the status section to read its full text. Settings field labels stay on one line. Narrow forms provide horizontal scrolling for long labels. Settings notices and result messages also stay on one line, with their full text available on hover.

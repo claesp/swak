@@ -458,3 +458,23 @@ Coverage passed eight suites and 38 native cases in `build/quality/20261002-2058
 Remaining coverage gaps include existing vector context-menu paths, non-left double-click delegation, and defensive fallback branches. Line coverage does not establish complete branch or input coverage. Static analysis found no unused application function that requires removal.
 
 The 60-second sanitizer workload passed in `build/quality/20261002-210002-soak-171585`. It completed 1267 cycles with 8286208 bytes of peak memory growth. The maximum heartbeat gap was 37 milliseconds, and idle CPU time was 0.005 seconds. This workload does not replace multi-hour qualification.
+
+## 2026-10-02: Map status and Settings labels
+
+The bottom status bar now shows map cache size, zoom, pointer coordinates, tile diagnostics, and the certificate warning. A separator keeps this section apart from the event counts. The map no longer draws these diagnostics over its surface. Clickable attribution stays right-aligned, eight logical pixels above the lower map edge.
+
+View widgets can implement the shared `StatusProvider` interface to create a status widget. The host owns that widget through the status bar. The map retains a guarded pointer. This keeps map-specific behavior out of the main window.
+
+Settings field labels now remain on one line in General, Panes, Keybindings, and provider forms. Scrollable forms retain the full label width. Shared `SingleLineLabel` widgets keep notices and result messages on one line. They use an ellipsis when necessary and retain the full text in a tooltip. Embedded Map Providers and Data Providers use the same behavior.
+
+The native regression checks the map status location, separator count, attribution margin, tooltip text, and Settings label policies. Native screenshots show the new status bar and Settings layout. Eight sanitizer suites passed in `build/quality/20261002-211227-quick-173446`. Static analysis passed in `build/quality/20261002-211311-analyze-2` after an explicit `QPointer::data()` return replaced an implicit conversion.
+
+All 38 native sanitizer cases passed in `build/quality/20261002-211355-gui-174713`. LeakSanitizer then reported 102748 bytes in 457 allocations from the existing Mesa paths. The diagnostic remains failed, without suppression. The native screenshot is `build/quality/20261002-211355-gui-174713/map-status-bar.png`.
+
+The release rebuild passed without compiler warnings. The executable remains `build/release/swak`, version 0.1.0. The build log is `build/status-layout-release.log`. This task adds no external dependency. Hardware graphics, native Wayland, Qt 6.4 compatibility, and multi-hour use remain untested.
+
+Coverage passed eight suites and 38 native cases in `build/quality/20261002-211415-coverage-174856`. It executed all 16 lines in the shared single-line label. Settings dialog coverage reached 197 of 199 lines. Remaining gaps include defensive fallback branches and existing vector context-menu paths. Line coverage does not establish complete branch or input coverage.
+
+The 60-second sanitizer workload passed in `build/quality/20261002-211545-soak-175793`. It completed 1280 cycles with 8327168 bytes of peak memory growth. The maximum heartbeat gap was 36 milliseconds, and idle CPU time was 0.005 seconds. This workload does not replace multi-hour qualification.
+
+Focused native tests for map providers, Settings, and data providers passed at 200% display scaling. Screenshots in `build/status-layout-highdpi` show the single-line labels, separate map status section, and lower attribution. Tests used Qt 6.8.2, GCC 14.2, and software Mesa on Debian 13.

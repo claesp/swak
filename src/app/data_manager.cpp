@@ -3,6 +3,7 @@
 #include "core/logging.h"
 #include "app/provider_table.h"
 #include <QLabel>
+#include "core/single_line_label.h"
 #include <QPushButton>
 #include <QDialogButtonBox>
 #include <QVBoxLayout>
@@ -17,8 +18,8 @@ DataManager::DataManager(DataSources &sources, QWidget *parent, std::function<QS
     if (embedded) setWindowFlags(Qt::Widget);
     setObjectName(QStringLiteral("dataProvidersDialog")); setWindowTitle(tr("Data Providers")); resize(700, 460);
     auto *layout = new QVBoxLayout(this);
-    auto *notice = new QLabel(tr("Enable feeds to draw KML/KMZ points, lines, and polygons. Each enabled feed refreshes on its own interval. Downloads use HTTPS. Network links and remote icons are not loaded. Provider changes apply immediately."), this);
-    notice->setWordWrap(true); layout->addWidget(notice);
+    auto *notice = new SingleLineLabel(tr("Enable feeds to draw KML/KMZ points, lines, and polygons. Each enabled feed refreshes on its own interval. Downloads use HTTPS. Network links and remote icons are not loaded. Provider changes apply immediately."), this);
+    notice->setWordWrap(false); layout->addWidget(notice);
     list_ = new ProviderTable(false, this); list_->setObjectName(QStringLiteral("dataProviderList")); list_->setAccessibleName(tr("Data providers")); layout->addWidget(list_);
     auto *row = new QHBoxLayout;
     auto button = [&](const QString &label, const QString &id) { auto *value = new QPushButton(label, this); value->setObjectName(id); row->addWidget(value); return value; };
@@ -27,7 +28,7 @@ DataManager::DataManager(DataSources &sources, QWidget *parent, std::function<QS
     auto *remove = button(tr("Delete"), QStringLiteral("removeDataProvider"));
     auto *update = button(tr("Refresh now"), QStringLiteral("refreshDataProvider"));
     layout->addLayout(row);
-    status_ = new QLabel(this); status_->setTextFormat(Qt::PlainText); status_->setWordWrap(true); status_->setObjectName(QStringLiteral("dataProviderStatus")); layout->addWidget(status_);
+    status_ = new SingleLineLabel(this); status_->setTextFormat(Qt::PlainText); status_->setWordWrap(false); status_->setObjectName(QStringLiteral("dataProviderStatus")); layout->addWidget(status_);
     if (!embedded) {
         auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, this); layout->addWidget(buttons);
         connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::close);

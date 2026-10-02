@@ -4,6 +4,7 @@
 #include "app/provider_table.h"
 #include <QTimer>
 #include <QLabel>
+#include "core/single_line_label.h"
 #include <QPushButton>
 #include <QDialogButtonBox>
 #include <QVBoxLayout>
@@ -19,8 +20,8 @@ MapManager::MapManager(MapSources &sources, QWidget *parent, std::function<QStri
     setWindowTitle(tr("Map Providers"));
     resize(650, 460);
     auto *layout = new QVBoxLayout(this);
-    auto *notice = new QLabel(tr("Select a provider to fetch visible map tiles over HTTPS. Providers receive your IP address and viewed area. Attribution stays visible on the map. No bulk downloads. Provider changes apply immediately."), this);
-    notice->setWordWrap(true);
+    auto *notice = new SingleLineLabel(tr("Select a provider to fetch visible map tiles over HTTPS. Providers receive your IP address and viewed area. Attribution stays visible on the map. No bulk downloads. Provider changes apply immediately."), this);
+    notice->setWordWrap(false);
     layout->addWidget(notice);
     list_ = new ProviderTable(true, this);
     list_->setObjectName(QStringLiteral("mapProviderList"));
@@ -37,9 +38,9 @@ MapManager::MapManager(MapSources &sources, QWidget *parent, std::function<QStri
     remove->setObjectName(QStringLiteral("removeMapProvider"));
     row->addWidget(remove);
     layout->addLayout(row);
-    status_ = new QLabel(this);
+    status_ = new SingleLineLabel(this);
     status_->setTextFormat(Qt::PlainText);
-    status_->setWordWrap(true);
+    status_->setWordWrap(false);
     layout->addWidget(status_);
     auto *clearProvider = new QPushButton(tr("Clear selection"), this);
     clearProvider->setObjectName(QStringLiteral("clearMapProvider"));

@@ -1,5 +1,6 @@
 #include "core/interfaces.h"
 #include "core/tiles.h"
+#include "core/single_line_label.h"
 #include "core/data.h"
 #include <QHideEvent>
 #include <QContextMenuEvent>
@@ -53,7 +54,7 @@ int navigationKey(const QString &text)
         || (key >= Qt::Key_F1 && key <= Qt::Key_F12) || (key >= Qt::Key_Left && key <= Qt::Key_Down) || key == Qt::Key_Home || key == Qt::Key_Plus || key == Qt::Key_Equal || key == Qt::Key_Minus) ? key : 0;
 }
 }
-class MapWidget final : public QOpenGLWidget, public SettingsParticipant, protected QOpenGLFunctions {
+class MapWidget final : public QOpenGLWidget, public SettingsParticipant, public StatusProvider, protected QOpenGLFunctions {
 public:
     MapWidget(Store &store, QList<MapLayer *> layers, QWidget *parent)
         : QOpenGLWidget(parent), store_(store), layers_(std::move(layers))
@@ -73,13 +74,6 @@ public:
         setAccessibleName(tr("Event map"));
         setAccessibleDescription(tr("Drag to pan. Double-click to center. Use the wheel to zoom. Change keyboard controls in File, Settings, Keybindings. Right-click for map layers and information."));
         setMouseTracking(true);
-        cacheLabel_ = new QLabel(this);
-        cacheLabel_->setObjectName(QStringLiteral("mapCacheSize"));
-        cacheLabel_->setTextFormat(Qt::PlainText);
-        cacheLabel_->setStyleSheet(QStringLiteral("color: #c7d7e5;"));
-        cacheLabel_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-        cacheLabel_->setAttribute(Qt::WA_TransparentForMouseEvents);
-        cacheLabel_->setToolTip(tr("Local tile files for the active HTTPS cache. Cached tiles survive restarts until they expire or the disk limit removes them."));
         attribution_ = new QLabel(this);
         attribution_->setObjectName(QStringLiteral("mapAttribution"));
         attribution_->setAlignment(Qt::AlignRight);
@@ -135,6 +129,14 @@ public:
         };
         connect(sources_, &MapSources::changed, this, apply);
         apply();
+    }
+    QWidget *createStatusWidget(QWidget *parent) override
+    {
+        statusLabel_ = new SingleLineLabel(parent);
+        statusLabel_->setObjectName(QStringLiteral("mapStatus"));
+        statusLabel_->setAccessibleName(tr("Map status"));
+        update();
+        return statusLabel_.data();
     }
     QString preferenceId() const override { return QStringLiteral("org.swak.map"); }
     QString settingsTitle() const override { return tr("Map"); }
@@ -283,13 +285,14 @@ protected:
         const bool onWorld = coord.x() >= -180 && coord.x() <= 180 && coord.y() >= -85.051129 && coord.y() <= 85.051129;
         const QString position = onWorld ? tr("%1°, %2°").arg(coord.y(), 0, 'f', 4).arg(coord.x(), 0, 'f', 4)
                                          : tr("Pointer outside map");
-        painter.drawText(QRect(16, height() - 30, width() - 32, 22), Qt::AlignLeft | Qt::AlignVCenter,
-                         tr("%1  |  Zoom %2").arg(position).arg(view_.zoom, 0, 'f', 0));
-        const auto cacheBytes = tiles_.diskCacheBytes();
-        cacheLabel_->setText(cacheBytes < 0 ? tr("Map cache: inactive")
-            : tr("Map cache: %1").arg(QLocale().formattedDataSize(cacheBytes)));
-        cacheLabel_->adjustSize();
-        cacheLabel_->move(width() - 12 - cacheLabel_->width(), height() - 32 - cacheLabel_->height());
+        if (statusLabel_) {
+            const auto cacheBytes = tiles_.diskCacheBytes();
+            QString status = cacheBytes < 0 ? tr("Map cache: inactive") : tr("Map cache: %1").arg(QLocale().formattedDataSize(cacheBytes));
+            status += tr(" | Zoom %1 | %2").arg(view_.zoom, 0, 'f', 0).arg(position);
+            if (!tiles_.status().isEmpty()) status += QStringLiteral(" | ") + tiles_.status();
+            if (source.value(QStringLiteral("ignoreTls")).toBool(false)) status += QStringLiteral(" | ") + tr("HTTPS certificate checks disabled");
+            if (statusLabel_->text() != status) statusLabel_->setText(status);
+        }
         QStringList credits;
         if (!source.isEmpty()) credits.append(source.value(QStringLiteral("attribution")).toString());
         if (dataSources_) credits.append(dataSources_->attributions());
@@ -335,21 +338,14 @@ protected:
                 naturalWidth = std::max(naturalWidth, creditWidth);
                 if (tooltip.isEmpty() && linked) tooltip = urls.first().toDisplayString();
             }
-            if (source.value(QStringLiteral("ignoreTls")).toBool(false)) {
-                const auto warning = tr("HTTPS certificate checks disabled");
-                text += QStringLiteral("<br>") + warning.toHtmlEscaped();
-                naturalWidth = std::max(naturalWidth, attribution_->fontMetrics().horizontalAdvance(warning));
-            }
-            if (!tiles_.status().isEmpty()) text += QStringLiteral("<br>") + tiles_.status().toHtmlEscaped();
             attribution_->setText(text);
             attribution_->setToolTip(tooltip);
             const auto style = QStringLiteral("QLabel { color: white; background-color: rgba(16,32,44,%1); padding: 4px; }")
                 .arg(qRound(attributionOpacity_ * 255));
             if (attribution_->styleSheet() != style) attribution_->setStyleSheet(style);
-            naturalWidth = std::max(naturalWidth, attribution_->fontMetrics().horizontalAdvance(tiles_.status()));
             const int panelWidth = std::min(width() - 24, naturalWidth + 16);
             const int panelHeight = attribution_->heightForWidth(panelWidth);
-            attribution_->setGeometry(width() - 12 - panelWidth, cacheLabel_->y() - 2 - panelHeight, panelWidth, panelHeight);
+            attribution_->setGeometry(width() - 12 - panelWidth, height() - 8 - panelHeight, panelWidth, panelHeight);
         }
         if (hasFocus()) {
             painter.setPen(QPen(QColor("#5fd6ff"), 2));
@@ -583,7 +579,7 @@ private:
     MapSources *sources_ = nullptr;
     TileRenderer tiles_;
     QLabel *attribution_;
-    QLabel *cacheLabel_;
+    QPointer<QLabel> statusLabel_;
     double attributionOpacity_ = 0.55;
     double opacity_ = 1;
     int tileCacheMiB_ = 256;

@@ -1,5 +1,6 @@
 #include "app/settings_dialog.h"
 #include "core/logging.h"
+#include "core/single_line_label.h"
 #include <QCheckBox>
 #include <QCollator>
 #include <QTabWidget>
@@ -113,7 +114,7 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
             auto *form = formFor(group);
             auto *content = form->parentWidget();
             auto *note = new QLabel(tr("This plugin has no configurable parameters."), content);
-            note->setWordWrap(true);
+            note->setWordWrap(false);
             form->addRow(note);
         }
         for (const auto &field : page.fields) {
@@ -170,7 +171,8 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
             else {
                 auto *label = new QLabel(field.label, content);
                 label->setTextFormat(Qt::PlainText);
-                label->setWordWrap(!providerForm);
+                label->setWordWrap(false);
+                label->setMinimumWidth(label->sizeHint().width());
                 label->setBuddy(editor);
                 form->addRow(label, editor);
             }
@@ -179,10 +181,10 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
         editors_.append(editors);
     }
     for (auto *sections : lists) if (sections) sections->setCurrentRow(0);
-    status_ = new QLabel(this);
+    status_ = new SingleLineLabel(this);
     status_->setObjectName(QStringLiteral("settingsStatus"));
     status_->setTextFormat(Qt::PlainText);
-    status_->setWordWrap(true);
+    status_->setWordWrap(false);
     layout->addWidget(status_);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel | (newProvider ? QDialogButtonBox::NoButton : QDialogButtonBox::Apply), this);
     buttons->setObjectName(QStringLiteral("settingsButtons"));

@@ -337,6 +337,12 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     connect(activity, &QAbstractItemModel::rowsRemoved, internal, updateInternal);
     connect(activity, &QAbstractItemModel::modelReset, internal, updateInternal);
     updateInternal();
+    if (auto *provider = dynamic_cast<StatusProvider *>(centralWidget())) {
+        if (auto *widget = provider->createStatusWidget(statusBar())) {
+            separator();
+            statusBar()->addWidget(widget, 1);
+        }
+    }
     auto *preferenceSeparator = new QFrame(this);
     preferenceSeparator->setObjectName(QStringLiteral("preferencesSeparator"));
     preferenceSeparator->setFrameShape(QFrame::VLine);
