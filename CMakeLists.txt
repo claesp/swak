@@ -18,6 +18,8 @@ endif()
 
 add_library(swak_build INTERFACE)
 target_compile_features(swak_build INTERFACE cxx_std_20)
+configure_file(src/core/version.h.in generated/swak/version.h @ONLY)
+target_include_directories(swak_build INTERFACE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_compile_options(swak_build INTERFACE
     $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic;-Wconversion;-Wshadow;-fstack-protector-strong>)
 target_link_options(swak_build INTERFACE $<$<CXX_COMPILER_ID:GNU,Clang>:-Wl,-z,relro,-z,now>)

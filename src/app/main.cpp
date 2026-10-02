@@ -1,4 +1,5 @@
 #include "app/window.h"
+#include "swak/version.h"
 #include "core/logging.h"
 #include <QApplication>
 #include <QCommandLineParser>
@@ -22,7 +23,7 @@ int main(int argc, char **argv)
     QApplication app(argc, argv);
     QCoreApplication::setApplicationName(QStringLiteral("swak"));
     QCoreApplication::setOrganizationName(QStringLiteral("SWAK"));
-    QCoreApplication::setApplicationVersion(QStringLiteral("0.1.0"));
+    QCoreApplication::setApplicationVersion(QStringLiteral(SWAK_VERSION));
     QGuiApplication::setDesktopFileName(QStringLiteral("org.swak.Swak"));
     QCommandLineParser parser;
     parser.setApplicationDescription(QCoreApplication::translate("main", "A native Cursor-on-Target workspace."));

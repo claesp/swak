@@ -12,6 +12,7 @@ The extension levels are:
 - `MapLayer` draws one part of the map in a defined order.
 - `ToolPlugin` creates a workspace panel for event interaction.
 - `MenuPlugin` adds commands under Tools > Plugins.
+- `ToolbarPlugin` adds icon actions to the main toolbar.
 
 The CoT plugin implements `Codec`. The UDP plugin implements `SourcePlugin`. The OpenGL map plugin implements `ViewPlugin`.
 
@@ -97,3 +98,13 @@ The Settings dialog separates General sections from pane customization. The host
 Create actions with the supplied menu as their parent. Connect callbacks with a QObject context that owns the state they use. Do not retain window menus or store references in static plugin objects. Keep callbacks bounded and do not let exceptions escape them. Qt removes connections when the action or its context is destroyed.
 
 The CoT Events plugin adds Clear and connects it directly to the window event store. The host contains no event-specific menu code. This interface adds no external dependency and does not load external plugin files.
+
+# Toolbar and About
+
+`ToolbarPlugin` is an optional interface with identifier `org.swak.Toolbar/1.0`. The host calls `populateToolbar(Store &, QToolBar &, QMenu *)` once for each window. It supplies the main toolbar and the same plugin menu, or null when the plugin has no menu interface. The host calls the menu provider first. A toolbar provider can reuse its menu actions or create actions owned by the toolbar.
+
+Use translated action text, a tooltip, and an icon with a fallback. Connect callbacks with a QObject context that owns their state. Do not retain toolbar or menu pointers in static plugin objects. The CoT Events plugin shares its Clear action across both surfaces. Shared actions keep their text, enabled state, and behavior consistent.
+
+The main toolbar stays at the top and has stable identifier `mainToolbar`. The View menu controls its visibility. The saved window layout retains visibility across restarts and missing plugins. Reset layout restores the default toolbar state.
+
+Help > About opens one dialog per window and releases it on close. The dialog uses plain text and contains the application version and general information. CMake supplies `SWAK_VERSION` from `PROJECT_VERSION` to both About and the command-line version. Future general information belongs in this dialog.

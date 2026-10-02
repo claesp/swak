@@ -1,8 +1,11 @@
 #include "app/window.h"
+#include "swak/version.h"
 #include "core/interfaces.h"
 #include "core/logging.h"
 #include "app/settings_dialog.h"
 #include <QAction>
+#include <QToolBar>
+#include <QMessageBox>
 #include <QDockWidget>
 #include <QLabel>
 #include <QMenuBar>
@@ -128,7 +131,6 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     }
     resizeDocks(sideDocks, QList<int>(sideDocks.size(), 380), Qt::Horizontal);
     sideDocks.first()->raise();
-    defaultLayout_ = saveState(LayoutVersion);
     auto *resetLayout = viewMenu->addAction(tr("Reset layout"));
     resetLayout->setObjectName(QStringLiteral("resetLayoutAction"));
     connect(resetLayout, &QAction::triggered, this, [this] {
@@ -140,14 +142,42 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     toolsMenu->setObjectName(QStringLiteral("toolsMenu"));
     auto *pluginsMenu = toolsMenu->addMenu(tr("&Plugins"));
     pluginsMenu->setObjectName(QStringLiteral("pluginsMenu"));
+    auto *toolbar = new QToolBar(tr("Main toolbar"), this);
+    toolbar->setObjectName(QStringLiteral("mainToolbar"));
+    toolbar->setMovable(false);
+    toolbar->setFloatable(false);
+    toolbar->setAllowedAreas(Qt::TopToolBarArea);
+    addToolBar(Qt::TopToolBarArea, toolbar);
+    viewMenu->addAction(toolbar->toggleViewAction());
     for (auto *plugin : plugins) {
+        QMenu *menu = nullptr;
         if (auto *provider = qobject_cast<MenuPlugin *>(plugin)) {
-            auto *menu = pluginsMenu->addMenu(provider->name());
+            menu = pluginsMenu->addMenu(provider->name());
             provider->populateMenu(store_, *menu);
-            if (menu->isEmpty()) delete menu;
         }
+        if (auto *provider = qobject_cast<ToolbarPlugin *>(plugin)) provider->populateToolbar(store_, *toolbar, menu);
+        if (menu && menu->isEmpty()) delete menu;
     }
     pluginsMenu->setEnabled(!pluginsMenu->isEmpty());
+    defaultLayout_ = saveState(LayoutVersion);
+    auto *helpMenu = menuBar()->addMenu(tr("&Help"));
+    helpMenu->setObjectName(QStringLiteral("helpMenu"));
+    auto *about = helpMenu->addAction(tr("&About"));
+    about->setObjectName(QStringLiteral("aboutAction"));
+    connect(about, &QAction::triggered, this, [this] {
+        if (auto *existing = findChild<QMessageBox *>(QStringLiteral("aboutDialog"))) {
+            existing->raise();
+            existing->activateWindow();
+            return;
+        }
+        auto *dialog = new QMessageBox(QMessageBox::Information, tr("About SWAK"),
+            tr("SWAK\nVersion %1\n\nA native Cursor-on-Target workspace.\nReceive, generate, and present CoT events with built-in plugins.")
+                .arg(QStringLiteral(SWAK_VERSION)), QMessageBox::Close, this);
+        dialog->setObjectName(QStringLiteral("aboutDialog"));
+        dialog->setTextFormat(Qt::PlainText);
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->open();
+    });
     auto *status = new QLabel(this);
     statusBar()->addWidget(status);
     const auto updateStatus = [this, status] { status->setText(tr("%1 / %2 events · Offline map")

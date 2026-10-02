@@ -8,6 +8,7 @@
 class QWidget;
 class QPainter;
 class QMenu;
+class QToolBar;
 namespace swak {
 class Store;
 struct Viewport;
@@ -44,6 +45,11 @@ public:
     virtual QString name() const = 0;
     virtual void populateMenu(Store &store, QMenu &menu) = 0;
 };
+class ToolbarPlugin {
+public:
+    virtual ~ToolbarPlugin() = default;
+    virtual void populateToolbar(Store &store, QToolBar &toolbar, QMenu *pluginMenu) = 0;
+};
 class SourcePlugin {
 public:
     virtual ~SourcePlugin() = default;
@@ -57,3 +63,4 @@ Q_DECLARE_INTERFACE(swak::ViewPlugin, "org.swak.View/1.0")
 Q_DECLARE_INTERFACE(swak::ToolPlugin, "org.swak.Tool/1.0")
 Q_DECLARE_INTERFACE(swak::SourcePlugin, "org.swak.Source/1.0")
 Q_DECLARE_INTERFACE(swak::MenuPlugin, "org.swak.Menu/1.0")
+Q_DECLARE_INTERFACE(swak::ToolbarPlugin, "org.swak.Toolbar/1.0")

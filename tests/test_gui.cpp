@@ -1,4 +1,5 @@
 #include "app/window.h"
+#include "swak/version.h"
 #include "core/logging.h"
 #include "app/settings_dialog.h"
 #include <QDialogButtonBox>
@@ -32,6 +33,9 @@
 #include <QTemporaryDir>
 #include <QPluginLoader>
 #include <QPointer>
+#include <QToolBar>
+#include <QToolButton>
+#include <QMessageBox>
 #include <QHeaderView>
 #include <QSpinBox>
 #include <QJsonDocument>
@@ -65,9 +69,82 @@ public:
     }
 };
 
+class ExampleToolbar final : public QObject, public swak::ToolbarPlugin {
+    Q_OBJECT
+    Q_INTERFACES(swak::ToolbarPlugin)
+public:
+    int calls = 0;
+    void populateToolbar(swak::Store &, QToolBar &toolbar, QMenu *menu) override
+    {
+        Q_ASSERT(!menu);
+        auto *action = toolbar.addAction(toolbar.style()->standardIcon(QStyle::SP_DialogApplyButton), QStringLiteral("Example"));
+        connect(action, &QAction::triggered, this, [this] { ++calls; });
+    }
+};
+
 class GuiTest final : public QObject {
     Q_OBJECT
 private slots:
+    void pluginToolbar()
+    {
+        QTemporaryDir directory;
+        const auto path = directory.filePath(QStringLiteral("toolbar.json"));
+        ExampleToolbar plugin;
+        QPointer<QAction> action;
+        {
+            swak::Window window(path, {&plugin});
+            auto *toolbar = window.findChild<QToolBar *>(QStringLiteral("mainToolbar"));
+            QVERIFY(toolbar);
+            QCOMPARE(window.toolBarArea(toolbar), Qt::TopToolBarArea);
+            QVERIFY(!toolbar->isMovable());
+            QVERIFY(!toolbar->isFloatable());
+            QCOMPARE(toolbar->actions().size(), 1);
+            action = toolbar->actions().first();
+            QVERIFY(!action->icon().isNull());
+            action->trigger();
+            QCOMPARE(plugin.calls, 1);
+            toolbar->hide();
+            QVERIFY(window.savePreferences());
+        }
+        QVERIFY(action.isNull());
+        {
+            swak::Window absent(path, {});
+            auto *toolbar = absent.findChild<QToolBar *>(QStringLiteral("mainToolbar"));
+            QVERIFY(toolbar->actions().isEmpty());
+            QVERIFY(toolbar->isHidden());
+            QVERIFY(absent.savePreferences());
+        }
+        swak::Window restored(path, {&plugin});
+        auto *toolbar = restored.findChild<QToolBar *>(QStringLiteral("mainToolbar"));
+        QVERIFY(toolbar->isHidden());
+        toolbar->actions().first()->trigger();
+        QCOMPARE(plugin.calls, 2);
+        restored.findChild<QAction *>(QStringLiteral("resetLayoutAction"))->trigger();
+        QVERIFY(!toolbar->isHidden());
+    }
+    void aboutDialog()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("about.json")), {});
+        auto *help = window.findChild<QMenu *>(QStringLiteral("helpMenu"));
+        auto *about = window.findChild<QAction *>(QStringLiteral("aboutAction"));
+        QVERIFY(help && about);
+        QCOMPARE(window.menuBar()->actions().last(), help->menuAction());
+        QVERIFY(help->actions().contains(about));
+        for (int i = 0; i < 2; ++i) {
+            about->trigger();
+            QPointer<QMessageBox> dialog = window.findChild<QMessageBox *>(QStringLiteral("aboutDialog"));
+            QVERIFY(dialog);
+            QVERIFY(dialog->text().contains(QStringLiteral("Version ") + QStringLiteral(SWAK_VERSION)));
+            QCOMPARE(dialog->textFormat(), Qt::PlainText);
+            about->trigger();
+            QCOMPARE(window.findChildren<QMessageBox *>().size(), 1);
+            QVERIFY(QTest::qWaitForWindowExposed(dialog));
+            QVERIFY(dialog->grab().save(QStringLiteral("about-smoke.png")));
+            dialog->close();
+            QVERIFY(QTest::qWaitFor([&dialog] { return dialog.isNull(); }));
+        }
+    }
     void pluginMenus()
     {
         QTemporaryDir directory;
@@ -112,17 +189,37 @@ private slots:
         auto *clear = window.findChild<QAction *>(QStringLiteral("clearEventsAction"));
         QVERIFY(clear && events->actions().contains(clear));
         QCOMPARE(clear->text(), QStringLiteral("&Clear"));
+        auto *toolbar = window.findChild<QToolBar *>(QStringLiteral("mainToolbar"));
+        QVERIFY(toolbar && toolbar->actions().contains(clear));
+        QVERIFY(!clear->icon().isNull());
+        QCOMPARE(clear->toolTip(), QStringLiteral("Clear CoT Events"));
         QVERIFY(!window.menuBar()->actions().contains(events->menuAction()));
         auto *generate = window.findChild<QPushButton *>(QStringLiteral("generateEvent"));
         QVERIFY(generate);
         generate->click();
         QCOMPARE(window.store().rowCount(), 1);
         QVERIFY(!window.store().selected().isEmpty());
-        clear->trigger();
+        auto *button = qobject_cast<QToolButton *>(toolbar->widgetForAction(clear));
+        QVERIFY(button);
+        button->click();
         QCOMPARE(window.store().rowCount(), 0);
         QVERIFY(window.store().selected().isEmpty());
         clear->trigger();
         QCOMPARE(window.store().rowCount(), 0);
+        bool standalone = false;
+        for (auto *plugin : QPluginLoader::staticInstances()) {
+            if (auto *provider = qobject_cast<swak::ToolbarPlugin *>(plugin)) {
+                QToolBar independent;
+                provider->populateToolbar(window.store(), independent, nullptr);
+                QCOMPARE(independent.actions().size(), 1);
+                generate->click();
+                QCOMPARE(window.store().rowCount(), 1);
+                independent.actions().first()->trigger();
+                QCOMPARE(window.store().rowCount(), 0);
+                standalone = true;
+            }
+        }
+        QVERIFY(standalone);
     }
     void localizedSettingsLists()
     {
@@ -629,7 +726,8 @@ private slots:
         auto *fileMenu = window.findChild<QMenu *>(QStringLiteral("fileMenu"));
         auto *quit = window.findChild<QAction *>(QStringLiteral("quitAction"));
         QVERIFY(viewMenu && fileMenu && quit);
-        QCOMPARE(viewMenu->actions().size(), 5);
+        QCOMPARE(viewMenu->actions().size(), 6);
+        QVERIFY(viewMenu->actions().contains(window.findChild<QToolBar *>(QStringLiteral("mainToolbar"))->toggleViewAction()));
         QVERIFY(fileMenu->actions().contains(quit));
         QCOMPARE(window.menuBar()->actions().first(), fileMenu->menuAction());
         QCOMPARE(quit->shortcut(), QKeySequence(QKeySequence::Quit));

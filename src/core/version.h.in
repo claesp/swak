@@ -1,0 +1,2 @@
+#pragma once
+#define SWAK_VERSION "@PROJECT_VERSION@"

@@ -6,6 +6,9 @@
 #include <QHeaderView>
 #include <QPainter>
 #include <QMenu>
+#include <QToolBar>
+#include <QStyle>
+#include <QIcon>
 #include <QSet>
 #include <QSortFilterProxyModel>
 #include <QTableView>
@@ -102,17 +105,21 @@ private:
         return ids;
     }
 };
-class TracksPlugin final : public QObject, public MapLayer, public ToolPlugin, public MenuPlugin {
+class TracksPlugin final : public QObject, public MapLayer, public ToolPlugin, public MenuPlugin, public ToolbarPlugin {
     Q_OBJECT
     Q_PLUGIN_METADATA(IID "org.swak.MapLayer/1.0")
-    Q_INTERFACES(swak::MapLayer swak::ToolPlugin swak::MenuPlugin)
+    Q_INTERFACES(swak::MapLayer swak::ToolPlugin swak::MenuPlugin swak::ToolbarPlugin)
 public:
     QString name() const override { return tr("CoT Events"); }
     void populateMenu(Store &store, QMenu &menu) override
     {
-        auto *clear = menu.addAction(tr("&Clear"));
-        clear->setObjectName(QStringLiteral("clearEventsAction"));
-        connect(clear, &QAction::triggered, &store, &Store::clear);
+        menu.addAction(createClearAction(store, menu));
+    }
+    void populateToolbar(Store &store, QToolBar &toolbar, QMenu *pluginMenu) override
+    {
+        auto *clear = pluginMenu ? pluginMenu->findChild<QAction *>(QStringLiteral("clearEventsAction")) : nullptr;
+        if (!clear) clear = createClearAction(store, toolbar);
+        toolbar.addAction(clear);
     }
     int order() const override { return 100; }
     void paint(QPainter &painter, const Viewport &view, const Store &store) const override
@@ -162,6 +169,17 @@ public:
             table->clearSelection();
         });
         return table;
+    }
+private:
+    QAction *createClearAction(Store &store, QWidget &owner)
+    {
+        auto *clear = new QAction(QIcon::fromTheme(QStringLiteral("edit-clear"),
+            owner.style()->standardIcon(QStyle::SP_DialogResetButton)), tr("&Clear"), &owner);
+        clear->setObjectName(QStringLiteral("clearEventsAction"));
+        clear->setToolTip(tr("Clear CoT Events"));
+        clear->setStatusTip(tr("Remove all current CoT events and clear the selection."));
+        connect(clear, &QAction::triggered, &store, &Store::clear);
+        return clear;
     }
 };
 }

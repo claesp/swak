@@ -8,6 +8,10 @@ Each detached pane has a resize handle in its lower-right corner. Close a pane t
 
 Use Tools > Plugins > CoT Events > Clear to remove all current events and clear the selection. Plugins add their commands under Tools > Plugins.
 
+The top toolbar provides plugin icons. Its Clear button performs the same action as the CoT Events menu command. Point to an icon to read its tooltip. Use View > Main toolbar to hide or show the toolbar. The application saves this choice across restarts.
+
+Use Help > About to read the application version and general information.
+
 To create a local event, use this sequence:
 
 1. Enter an identity, callsign, event type, and position in CoT Event Generator.
