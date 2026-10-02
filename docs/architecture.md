@@ -108,3 +108,11 @@ Use translated action text, a tooltip, and an icon with a fallback. Connect call
 The main toolbar stays at the top and has stable identifier `mainToolbar`. The View menu controls its visibility. The saved window layout retains visibility across restarts and missing plugins. Reset layout restores the default toolbar state.
 
 Help > About opens one dialog per window and releases it on close. The dialog uses plain text and contains the application version and general information. CMake supplies `SWAK_VERSION` from `PROJECT_VERSION` to both About and the command-line version. Future general information belongs in this dialog.
+
+# Map registration
+
+`MapExtension` registers a stable map identifier, a name, and a kind: Provider or Tool. A provider also implements `MapProvider`, which supplies defaults, editable fields, validation, and a tile URL builder. The XYZ, WMTS, and WMS plugins register both interfaces. No map tool exists yet. The offline schematic remains an internal map layer.
+
+`MapSources` owns the per-window catalog and implements `SettingsParticipant`. The host discovers participants among its QObject children as well as plugin roots. `MapConsumer` connects the map widget to the catalog without changing the existing view interface. Only registered providers enter the manager format list. Missing providers retain their saved configuration.
+
+`TileRenderer` handles bounded HTTPS retrieval, caching, and image decoding. It cancels requests when the map hides or changes source. The map widget draws image tiles after the schematic layer and before event layers. A source change clears decoded images and connection state. Read [Map providers](map-providers.md) for format contracts and limits.

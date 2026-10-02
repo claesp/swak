@@ -1,4 +1,6 @@
 #include "core/interfaces.h"
+#include "core/tiles.h"
+#include <QHideEvent>
 #include "core/projection.h"
 #include "core/store.h"
 #include "core/preferences.h"
@@ -13,11 +15,12 @@
 #include <utility>
 
 namespace swak {
-class MapWidget final : public QOpenGLWidget, public SettingsParticipant, protected QOpenGLFunctions {
+class MapWidget final : public QOpenGLWidget, public SettingsParticipant, public MapConsumer, protected QOpenGLFunctions {
 public:
     MapWidget(Store &store, QList<MapLayer *> layers, QWidget *parent)
         : QOpenGLWidget(parent), store_(store), layers_(std::move(layers))
     {
+        connect(&tiles_, &TileRenderer::changed, this, QOverload<>::of(&MapWidget::update));
         setObjectName(QStringLiteral("map"));
         setMinimumSize(320, 240);
         setFocusPolicy(Qt::StrongFocus);
@@ -35,27 +38,47 @@ public:
             update();
         });
     }
+    void setMapSources(MapSources *sources) override
+    {
+        if (sources_) disconnect(sources_, nullptr, this, nullptr);
+        sources_ = sources;
+        const auto apply = [this] {
+            const auto source = sources_->activeSource();
+            tiles_.setSource(sources_->provider(source), source);
+            update();
+        };
+        connect(sources_, &MapSources::changed, this, apply);
+        apply();
+    }
     QString preferenceId() const override { return QStringLiteral("org.swak.map"); }
     QString settingsTitle() const override { return tr("Map"); }
     QList<SettingField> settingsFields() const override
     {
         return {numberSetting(QStringLiteral("centerX"), tr("Horizontal center (0–1)"), 0, 1, 6),
                 numberSetting(QStringLiteral("centerY"), tr("Vertical center (0–1)"), 0, 1, 6),
-                numberSetting(QStringLiteral("zoom"), tr("Zoom"), 0, 16, 2)};
+                numberSetting(QStringLiteral("zoom"), tr("Zoom"), 0, 19, 2),
+                numberSetting(QStringLiteral("opacity"), tr("Provider opacity"), 0, 1, 2),
+                booleanSetting(QStringLiteral("smooth"), tr("Smooth image scaling")),
+                booleanSetting(QStringLiteral("antialias"), tr("Smooth vector edges"))};
     }
     QJsonObject savePreferences() const override
     {
         return {{QStringLiteral("centerX"), view_.center.x()}, {QStringLiteral("centerY"), view_.center.y()},
-                {QStringLiteral("zoom"), view_.zoom}};
+                {QStringLiteral("zoom"), view_.zoom}, {QStringLiteral("opacity"), opacity_},
+                {QStringLiteral("smooth"), smooth_}, {QStringLiteral("antialias"), antialias_}};
     }
     void restorePreferences(const QJsonObject &values) override
     {
         view_.center = {preferenceNumber(values, QStringLiteral("centerX"), 0.5, 0, 1),
                         preferenceNumber(values, QStringLiteral("centerY"), 0.5, 0, 1)};
-        view_.zoom = preferenceNumber(values, QStringLiteral("zoom"), 1, 0, 16);
+        view_.zoom = preferenceNumber(values, QStringLiteral("zoom"), 1, 0, 19);
+        opacity_ = preferenceNumber(values, QStringLiteral("opacity"), 1, 0, 1);
+        smooth_ = values.value(QStringLiteral("smooth")).toBool(true);
+        antialias_ = values.value(QStringLiteral("antialias")).toBool(true);
         update();
     }
 protected:
+    void hideEvent(QHideEvent *event) override { tiles_.stop(); QOpenGLWidget::hideEvent(event); }
     void initializeGL() override { initializeOpenGLFunctions(); }
     void paintGL() override
     {
@@ -63,15 +86,20 @@ protected:
         glClear(GL_COLOR_BUFFER_BIT);
         view_.size = size();
         QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setRenderHint(QPainter::Antialiasing, antialias_);
+        bool tilesPainted = false;
         for (const auto *layer : layers_) {
+            if (!tilesPainted && layer->order() > 0) { tiles_.paint(painter, view_, opacity_, smooth_); tilesPainted = true; }
             painter.save();
             layer->paint(painter, view_, store_);
             painter.restore();
         }
+        if (!tilesPainted) tiles_.paint(painter, view_, opacity_, smooth_);
+        const auto source = sources_ ? sources_->activeSource() : QJsonObject{};
         painter.setPen(QColor("#c7d7e5"));
         painter.drawText(QRect(16, 12, width() - 32, 44), Qt::AlignLeft | Qt::AlignTop,
-                         tr("OFFLINE MAP  |  Schematic land outlines\nDrag to pan · Scroll to zoom · Home to reset"));
+                         (source.isEmpty() ? tr("OFFLINE MAP | Schematic land outlines") : source.value(QStringLiteral("name")).toString()) +
+                         tr("\nDrag to pan · Scroll to zoom · Home to reset"));
         const QPointF coord = view_.coordinate(cursor_);
         const bool onWorld = coord.x() >= -180 && coord.x() <= 180 && coord.y() >= -85.051129 && coord.y() <= 85.051129;
         const QString position = onWorld ? tr("%1°, %2°").arg(coord.y(), 0, 'f', 4).arg(coord.x(), 0, 'f', 4)
@@ -80,6 +108,16 @@ protected:
                          tr("%1  |  Zoom %2  |  %3 events").arg(position).arg(view_.zoom, 0, 'f', 1).arg(store_.rowCount()));
         if (store_.rowCount() == 0) {
             painter.drawText(rect(), Qt::AlignCenter, tr("No events yet.\nGenerate an event or start a receiver."));
+        }
+        if (!source.isEmpty()) {
+            QString credit = source.value(QStringLiteral("attribution")).toString();
+            if (source.value(QStringLiteral("ignoreTls")).toBool(false)) credit += tr("\nHTTPS certificate checks disabled");
+            if (!tiles_.status().isEmpty()) credit += QLatin1Char('\n') + tiles_.status();
+            const int textHeight = painter.fontMetrics().boundingRect(QRect(0, 0, width() - 24, 300), Qt::TextWordWrap, credit).height();
+            const QRect panel(0, height() - 38 - textHeight, width(), textHeight + 8);
+            painter.fillRect(panel, QColor("#10202c"));
+            painter.setPen(Qt::white);
+            painter.drawText(panel.adjusted(12, 4, -12, -4), Qt::TextWordWrap, credit);
         }
         if (hasFocus()) {
             painter.setPen(QPen(QColor("#5fd6ff"), 2));
@@ -153,11 +191,16 @@ private:
     {
         const QPointF offset = anchor - QPointF(width() / 2.0, height() / 2.0);
         const QPointF before = view_.center + offset / view_.scale();
-        view_.zoom = std::clamp(view_.zoom + delta, 0.0, 16.0);
+        view_.zoom = std::clamp(view_.zoom + delta, 0.0, 19.0);
         view_.center = before - offset / view_.scale();
         clampCenter();
         update();
     }
+    MapSources *sources_ = nullptr;
+    TileRenderer tiles_;
+    double opacity_ = 1;
+    bool smooth_ = true;
+    bool antialias_ = true;
     Store &store_;
     QList<MapLayer *> layers_;
     Viewport view_;

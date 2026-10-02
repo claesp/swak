@@ -1,4 +1,8 @@
 #include "app/window.h"
+#include "app/map_manager.h"
+#include "core/maps.h"
+#include "tile_server.h"
+#include <QStandardPaths>
 #include "swak/version.h"
 #include "core/logging.h"
 #include "app/settings_dialog.h"
@@ -82,9 +86,94 @@ public:
     }
 };
 
+class ExampleMapTool final : public QObject, public swak::MapExtension {
+    Q_OBJECT
+    Q_INTERFACES(swak::MapExtension)
+public:
+    QString mapId() const override { return QStringLiteral("example.tool"); }
+    QString mapName() const override { return QStringLiteral("Example map tool"); }
+    Kind mapKind() const override { return Kind::Tool; }
+};
+
 class GuiTest final : public QObject {
     Q_OBJECT
 private slots:
+    void mapProvidersAndGpu()
+    {
+        QTemporaryDir directory;
+        TileServer server;
+        QVERIFY(server.load(QFINDTESTDATA("fixtures")));
+        QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+        ExampleMapTool tool;
+        auto plugins = QPluginLoader::staticInstances();
+        plugins.append(&tool);
+        auto owner = std::make_unique<swak::Window>(directory.filePath(QStringLiteral("maps.json")), plugins);
+        auto &window = *owner;
+        auto *sources = window.findChild<swak::MapSources *>();
+        QVERIFY(sources);
+        QCOMPARE(sources->providers().size(), 3);
+        QVERIFY(!sources->networkEnabled());
+        const auto id = QStringLiteral("org.swak.xyz");
+        auto source = sources->sources().value(id).toObject();
+        source.insert(QStringLiteral("endpoint"), QStringLiteral("https://localhost:%1/{z}/{x}/{y}.png").arg(server.serverPort()));
+        source.insert(QStringLiteral("ignoreTls"), true);
+        QVERIFY(sources->put(id, source).isEmpty());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        sources->select(id);
+        auto *map = window.findChild<QOpenGLWidget *>();
+        QVERIFY(map);
+        QVERIFY(QTest::qWaitFor([&] {
+            const auto frame = map->grabFramebuffer();
+            if (frame.isNull()) return false;
+            for (int dx : {-100, 100}) for (int dy : {-100, 100})
+                if (frame.pixelColor(frame.width() / 2 + dx, frame.height() / 2 + dy) != QColor("#eb426a")) return false;
+            return true;
+        }, 5000));
+        QVERIFY(map->grabFramebuffer().save(QStringLiteral("provider-map-smoke.png")));
+        window.findChild<QAction *>(QStringLiteral("mapProvidersAction"))->trigger();
+        auto *dialog = window.findChild<swak::MapManager *>();
+        QVERIFY(dialog);
+        QVERIFY(QTest::qWaitForWindowExposed(dialog));
+        auto *list = dialog->findChild<QListWidget *>(QStringLiteral("mapProviderList"));
+        QCOMPARE(list->count(), 3);
+        QVERIFY(dialog->grab().save(QStringLiteral("map-providers-smoke.png")));
+        dialog->findChild<QPushButton *>(QStringLiteral("useMapProvider"))->click();
+        QCOMPARE(sources->activeId(), id);
+        QTimer::singleShot(0, dialog, [dialog] {
+            if (auto *editor = dialog->findChild<swak::SettingsDialog *>()) editor->reject();
+        });
+        dialog->findChild<QPushButton *>(QStringLiteral("addMapProvider"))->click();
+        QCOMPARE(list->count(), 4);
+        dialog->findChild<QPushButton *>(QStringLiteral("removeMapProvider"))->click();
+        QCOMPARE(list->count(), 3);
+        for (int i = 0; i < list->count(); ++i) if (list->item(i)->data(Qt::UserRole).toString() == id) list->setCurrentRow(i);
+        QTimer::singleShot(0, dialog, [dialog, id] {
+            auto *editor = dialog->findChild<swak::SettingsDialog *>();
+            if (!editor) return;
+            editor->findChild<QLineEdit *>(id + QStringLiteral("/name"))->setText(QStringLiteral("Local test map"));
+            editor->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+        });
+        dialog->findChild<QPushButton *>(QStringLiteral("editMapProvider"))->click();
+        source.insert(QStringLiteral("name"), QStringLiteral("Local test map"));
+        QCOMPARE(sources->sources().value(id).toObject(), source);
+        dialog->findChild<QPushButton *>(QStringLiteral("offlineMap"))->click();
+        QVERIFY(!sources->networkEnabled());
+        QVERIFY(window.savePreferences());
+        dialog->close();
+        window.close();
+        owner.reset();
+        swak::Window restored(directory.filePath(QStringLiteral("maps.json")), plugins);
+        QCOMPARE(restored.findChild<swak::MapSources *>()->sources().value(id).toObject(), source);
+        swak::MapSources absent({});
+        absent.restorePreferences(restored.findChild<swak::MapSources *>()->savePreferences());
+        swak::MapManager missing(absent);
+        auto *missingList = missing.findChild<QListWidget *>(QStringLiteral("mapProviderList"));
+        QVERIFY(missingList->item(0)->text().contains(QStringLiteral("unavailable")));
+        missing.findChild<QPushButton *>(QStringLiteral("useMapProvider"))->click();
+        QVERIFY(absent.activeSource().isEmpty());
+        missing.findChild<QPushButton *>(QStringLiteral("editMapProvider"))->click();
+    }
     void pluginToolbar()
     {
         QTemporaryDir directory;
@@ -850,6 +939,8 @@ int main(int argc, char **argv)
     format.setStencilBufferSize(8);
     QSurfaceFormat::setDefaultFormat(format);
     QApplication app(argc, argv);
+    QTemporaryDir mapCache;
+    qputenv("XDG_CACHE_HOME", mapCache.path().toUtf8());
     GuiTest test;
     return QTest::qExec(&test, argc, argv);
 }

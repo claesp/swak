@@ -1,4 +1,5 @@
 #include "app/window.h"
+#include "app/map_manager.h"
 #include "swak/version.h"
 #include "core/interfaces.h"
 #include "core/logging.h"
@@ -45,6 +46,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         if (auto *candidate = qobject_cast<Codec *>(plugin)) { codec = candidate; names.append(candidate->name()); }
         if (auto *candidate = qobject_cast<ViewPlugin *>(plugin)) { view = candidate; names.append(candidate->name()); }
         if (auto *layer = qobject_cast<MapLayer *>(plugin)) { layers.append(layer); names.append(layer->name()); }
+        if (auto *extension = qobject_cast<MapExtension *>(plugin)) names.append(extension->mapName());
     }
     if (view) {
         setCentralWidget(view->create(store_, layers, this));
@@ -55,6 +57,9 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         empty->setWordWrap(true);
         setCentralWidget(empty);
     }
+    auto *mapSources = new MapSources(plugins, this);
+    mapSources->setObjectName(QStringLiteral("mapSources"));
+    if (auto *consumer = dynamic_cast<MapConsumer *>(centralWidget())) consumer->setMapSources(mapSources);
     auto *fileMenu = menuBar()->addMenu(tr("&File"));
     fileMenu->setObjectName(QStringLiteral("fileMenu"));
     auto *settings = fileMenu->addAction(tr("&Settings"));
@@ -140,6 +145,16 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     });
     auto *toolsMenu = menuBar()->addMenu(tr("&Tools"));
     toolsMenu->setObjectName(QStringLiteral("toolsMenu"));
+    auto *manageMaps = toolsMenu->addAction(tr("Map Providers"));
+    manageMaps->setObjectName(QStringLiteral("mapProvidersAction"));
+    connect(manageMaps, &QAction::triggered, this, [this, mapSources] {
+        if (auto *existing = findChild<MapManager *>()) { existing->show(); existing->raise(); return; }
+        auto *dialog = new MapManager(*mapSources, this);
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        if (!mapManagerGeometry_.isEmpty()) dialog->restoreGeometry(mapManagerGeometry_);
+        connect(dialog, &QDialog::finished, this, [this, dialog] { mapManagerGeometry_ = dialog->saveGeometry(); savePreferences(); });
+        dialog->show();
+    });
     auto *pluginsMenu = toolsMenu->addMenu(tr("&Plugins"));
     pluginsMenu->setObjectName(QStringLiteral("pluginsMenu"));
     auto *toolbar = new QToolBar(tr("Main toolbar"), this);
@@ -180,7 +195,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     });
     auto *status = new QLabel(this);
     statusBar()->addWidget(status);
-    const auto updateStatus = [this, status] { status->setText(tr("%1 / %2 events · Offline map")
+    const auto updateStatus = [this, status] { status->setText(tr("%1 / %2 events")
                                                           .arg(store_.rowCount()).arg(MaxEvents)); };
     connect(&store_, &Store::changed, this, updateStatus);
     updateStatus();
@@ -191,11 +206,13 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     preferencesStatus_->setMaximumWidth(420);
     statusBar()->addPermanentWidget(preferencesStatus_);
     restorePreferences();
+    connect(mapSources, &MapSources::changed, this, [this] { savePreferences(); });
     preferencesStatus_->setText(preferences_.error());
     preferencesStatus_->setToolTip(preferences_.path());
     const auto application = preferences_.document().value(QStringLiteral("application")).toObject();
     saveTimer_.setInterval(preferenceInteger(application, QStringLiteral("saveInterval"), 750, 250, 60000));
     settingsGeometry_ = geometryBytes(application, QStringLiteral("settingsGeometry"));
+    mapManagerGeometry_ = geometryBytes(application, QStringLiteral("mapManagerGeometry"));
     settingsNavigation_ = application.value(QStringLiteral("settingsNavigation")).toObject();
     connect(&saveTimer_, &QTimer::timeout, this, [this] {
         if (isVisible() && !closing_) savePreferences();
@@ -271,6 +288,7 @@ bool Window::savePreferences()
     application.insert(QStringLiteral("saveInterval"), saveTimer_.interval());
     application.insert(QStringLiteral("settingsGeometry"), QString::fromLatin1(settingsGeometry_.toBase64()));
     application.insert(QStringLiteral("settingsNavigation"), settingsNavigation_);
+    application.insert(QStringLiteral("mapManagerGeometry"), QString::fromLatin1(mapManagerGeometry_.toBase64()));
     document.insert(QStringLiteral("application"), application);
     document.insert(QStringLiteral("version"), 1);
     const bool saved = preferences_.save(document);
@@ -286,7 +304,7 @@ QList<PreferenceParticipant *> Window::participants() const
             result.append(participant);
     };
     for (auto *plugin : plugins_) append(plugin);
-    for (auto *widget : findChildren<QWidget *>()) append(widget);
+    for (auto *object : findChildren<QObject *>()) append(object);
     return result;
 }
 void Window::openSettings()

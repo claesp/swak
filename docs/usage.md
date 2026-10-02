@@ -119,3 +119,7 @@ A fatal Qt diagnostic still terminates the process when its text is disabled. Lo
 The message `This plugin supports grabbing the mouse only for popup windows` comes from Qt, not an application plugin. Qt emits it from `QWaylandWindow::setMouseGrabEnabled` when the target is not a popup. Dock operations can request mouse capture through Qt. The source review did not identify the exact user gesture that triggered this instance.
 
 The application logging controls classify this message as Warning severity with Attention urgency. Default configuration suppresses its text. This does not change Wayland mouse-capture behavior. The [Qt 6.8 source](https://github.com/qt/qtwayland/blob/6.8/src/client/qwaylandwindow.cpp) contains the original warning.
+
+# Online maps
+
+Open Tools > Map Providers to select or configure an online map. A fresh profile uses the offline reference map. File > Settings contains source and rendering controls. Read [Map providers](map-providers.md) for sources, formats, attribution, and HTTPS behavior.

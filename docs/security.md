@@ -25,13 +25,13 @@ File import opens files without waiting for pipe writers and then inspects the o
 
 The receiver starts after an explicit interface action or restoration of a saved running state. Its default binding accepts local traffic only. The bounded polling loop limits work per interface cycle, and the operating system drops traffic when its socket queue fills.
 
-The application creates no persistent event cache and writes no message logs. Preferences include editor drafts, file directories, and the receiver address. Treat the preferences file as private data. It does not fetch remote map content, run shell commands, or load external application plugins. Qt still loads its system platform and graphics plugins as part of normal startup.
+The application creates no persistent event cache and writes no message logs. Preferences include editor drafts, file directories, and the receiver address. Treat the preferences file as private data. Remote map requests require a selected provider and enabled online maps. The application does not run shell commands or load external application plugins. Qt still loads its system platform and graphics plugins as part of normal startup.
 
 Use a trusted Qt installation and graphics driver. Native libraries and graphics drivers share the application process. This version does not provide a process sandbox, encrypted transport, or sender authentication.
 
 # Development rules
 
-Keep new dependencies limited to features that Qt cannot reasonably provide. Document the reason and input boundaries before adding a dependency. Do not disable certificate or hostname validation when adding encrypted transport.
+Keep new dependencies limited to features that Qt cannot reasonably provide. Document the reason and input boundaries before adding a dependency. Keep certificate and hostname checks enabled by default. Map sources support a user-selected exception, as requested, with separate caches and a visible warning.
 
 Bound allocations and work before parsing external data. Add tests for malformed input and resource limits. Keep generated files and local tool paths out of Git.
 
@@ -54,3 +54,5 @@ The application disables text logging before Qt startup. Only an explicit enable
 Messages have bounded length and cannot inject terminal control characters or extra log lines. Excess messages are dropped. Nonblocking pipe and socket writes prevent diagnostic backpressure from stopping the interface. A broken output pipe cannot terminate the application. Regular-file output still depends on filesystem latency.
 
 Plugin code must use the shared logger and avoid private payloads. Qt diagnostics can include paths or other private context. Fatal diagnostics retain their original termination behavior even when text output is disabled. Development diagnostic tools retain their independent output.
+
+Map input limits, cache isolation, and HTTPS behavior are documented in [Map providers](map-providers.md). Remote tiles remain untrusted after HTTPS checks and after cache retrieval.
