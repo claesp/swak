@@ -40,16 +40,17 @@
 
 namespace swak {
 namespace {
-const std::array<QString, 4> PanPaths{QStringLiteral("panNorthKey"), QStringLiteral("panWestKey"), QStringLiteral("panSouthKey"), QStringLiteral("panEastKey")};
-const std::array<int, 4> DefaultPanKeys{Qt::Key_W, Qt::Key_A, Qt::Key_S, Qt::Key_D};
-int panKey(const QString &text)
+const std::array<QString, 14> KeyPaths{QStringLiteral("panNorthKey"), QStringLiteral("panWestKey"), QStringLiteral("panSouthKey"), QStringLiteral("panEastKey"), QStringLiteral("zoomInKey"), QStringLiteral("zoomOutKey"), QStringLiteral("resetViewKey"), QStringLiteral("zoomPlusKey"), QStringLiteral("zoomEqualKey"), QStringLiteral("zoomMinusKey"),
+    QStringLiteral("stepWestKey"), QStringLiteral("stepEastKey"), QStringLiteral("stepNorthKey"), QStringLiteral("stepSouthKey")};
+const std::array<int, 14> DefaultKeys{Qt::Key_W, Qt::Key_A, Qt::Key_S, Qt::Key_D, Qt::Key_Q, Qt::Key_E, Qt::Key_Home, Qt::Key_Plus, Qt::Key_Equal, Qt::Key_Minus, Qt::Key_Left, Qt::Key_Right, Qt::Key_Up, Qt::Key_Down};
+int navigationKey(const QString &text)
 {
     if (text.isEmpty() || text.size() > 32) return 0;
     const auto sequence = QKeySequence::fromString(text, QKeySequence::PortableText);
     if (sequence.count() != 1 || sequence[0].keyboardModifiers() != Qt::NoModifier) return 0;
     const int key = sequence[0].key();
     return ((key >= Qt::Key_A && key <= Qt::Key_Z) || (key >= Qt::Key_0 && key <= Qt::Key_9)
-        || (key >= Qt::Key_F1 && key <= Qt::Key_F12) || (key >= Qt::Key_Left && key <= Qt::Key_Down)) ? key : 0;
+        || (key >= Qt::Key_F1 && key <= Qt::Key_F12) || (key >= Qt::Key_Left && key <= Qt::Key_Down) || key == Qt::Key_Home || key == Qt::Key_Plus || key == Qt::Key_Equal || key == Qt::Key_Minus) ? key : 0;
 }
 }
 class MapWidget final : public QOpenGLWidget, public SettingsParticipant, protected QOpenGLFunctions {
@@ -70,7 +71,7 @@ public:
         setMinimumSize(320, 240);
         setFocusPolicy(Qt::StrongFocus);
         setAccessibleName(tr("Event map"));
-        setAccessibleDescription(tr("Hold W, A, S, or D to pan. Drag to pan. Double-click to center. Use the wheel or plus and minus keys to zoom. Press Home to reset. Right-click for map layers and information."));
+        setAccessibleDescription(tr("Drag to pan. Double-click to center. Use the wheel to zoom. Change keyboard controls in File, Settings, Keybindings. Right-click for map layers and information."));
         setMouseTracking(true);
         cacheLabel_ = new QLabel(this);
         cacheLabel_->setObjectName(QStringLiteral("mapCacheSize"));
@@ -142,10 +143,20 @@ public:
         return {numberSetting(QStringLiteral("centerX"), tr("Horizontal center (0–1)"), 0, 1, 6),
                 numberSetting(QStringLiteral("centerY"), tr("Vertical center (0–1)"), 0, 1, 6),
                 numberSetting(QStringLiteral("zoom"), tr("Zoom"), zoomLimits().first, zoomLimits().second),
-                textSetting(QStringLiteral("panNorthKey"), tr("Pan north key"), 32),
-                textSetting(QStringLiteral("panWestKey"), tr("Pan west key"), 32),
-                textSetting(QStringLiteral("panSouthKey"), tr("Pan south key"), 32),
-                textSetting(QStringLiteral("panEastKey"), tr("Pan east key"), 32),
+                keySetting(QStringLiteral("panNorthKey"), tr("Pan north")),
+                keySetting(QStringLiteral("panWestKey"), tr("Pan west")),
+                keySetting(QStringLiteral("panSouthKey"), tr("Pan south")),
+                keySetting(QStringLiteral("panEastKey"), tr("Pan east")),
+                keySetting(QStringLiteral("zoomInKey"), tr("Zoom in")),
+                keySetting(QStringLiteral("zoomOutKey"), tr("Zoom out")),
+                keySetting(QStringLiteral("resetViewKey"), tr("Reset map view")),
+                keySetting(QStringLiteral("zoomPlusKey"), tr("Zoom in (alternate)")),
+                keySetting(QStringLiteral("zoomEqualKey"), tr("Zoom in (second alternate)")),
+                keySetting(QStringLiteral("zoomMinusKey"), tr("Zoom out (alternate)")),
+                keySetting(QStringLiteral("stepWestKey"), tr("Step west")),
+                keySetting(QStringLiteral("stepEastKey"), tr("Step east")),
+                keySetting(QStringLiteral("stepNorthKey"), tr("Step north")),
+                keySetting(QStringLiteral("stepSouthKey"), tr("Step south")),
                 numberSetting(QStringLiteral("panSpeed"), tr("Keyboard pan speed (pixels per second)"), 30, 2000),
                 booleanSetting(QStringLiteral("wheelZoom"), tr("Mouse wheel zoom")),
                 booleanSetting(QStringLiteral("wheelReverse"), tr("Reverse mouse wheel zoom")),
@@ -161,13 +172,7 @@ public:
     }
     QString validateSettings(const QJsonObject &values) const override
     {
-        QSet<int> keys;
-        for (size_t i = 0; i < PanPaths.size(); ++i) {
-            const int key = panKey(values.value(PanPaths[i]).toString(QKeySequence(DefaultPanKeys[i]).toString(QKeySequence::PortableText)));
-            if (!key || keys.contains(key)) return tr("Use four different keys: letters, digits, arrows, or F1 through F12. Do not use modifiers or key sequences.");
-            keys.insert(key);
-        }
-        return {};
+        return readKeys(values) ? QString{} : tr("Use distinct single keys without modifiers. Use letters, digits, arrows, Home, +, =, -, or F1 through F12. Leave optional keys empty to disable them.");
     }
     QJsonObject savePreferences() const override
     {
@@ -178,16 +183,13 @@ public:
                 {QStringLiteral("panSpeed"), panSpeed_}, {QStringLiteral("wheelZoom"), wheelZoom_},
                 {QStringLiteral("wheelReverse"), wheelReverse_}, {QStringLiteral("wheelSteps"), wheelSteps_},
                 {QStringLiteral("prefetchMargin"), prefetchMargin_}};
-        for (size_t i = 0; i < PanPaths.size(); ++i) values.insert(PanPaths[i], QKeySequence(panKeys_[i]).toString(QKeySequence::PortableText));
+        for (size_t i = 0; i < KeyPaths.size(); ++i) values.insert(KeyPaths[i], QKeySequence(keys_[i]).toString(QKeySequence::PortableText));
         return values;
     }
     void restorePreferences(const QJsonObject &values) override
     {
         stopPanning();
-        panKeys_ = DefaultPanKeys;
-        if (validateSettings(values).isEmpty())
-            for (size_t i = 0; i < PanPaths.size(); ++i)
-                panKeys_[i] = panKey(preferenceText(values, PanPaths[i], QKeySequence(DefaultPanKeys[i]).toString(QKeySequence::PortableText), 32));
+        keys_ = readKeys(values).value_or(DefaultKeys);
         panSpeed_ = preferenceNumber(values, QStringLiteral("panSpeed"), 300, 30, 2000);
         wheelZoom_ = values.value(QStringLiteral("wheelZoom")).toBool(true);
         wheelReverse_ = values.value(QStringLiteral("wheelReverse")).toBool(false);
@@ -443,29 +445,53 @@ protected:
     }
     void keyPressEvent(QKeyEvent *event) override
     {
-        if (event->modifiers() == Qt::NoModifier && std::find(panKeys_.begin(), panKeys_.end(), event->key()) != panKeys_.end()) {
+        const auto modifiers = event->modifiers() & ~Qt::KeypadModifier;
+        const bool plainKey = modifiers == Qt::NoModifier || (event->key() == Qt::Key_Plus && modifiers == Qt::ShiftModifier);
+        if (plainKey && std::find(keys_.begin(), keys_.begin() + 4, event->key()) != keys_.begin() + 4) {
             if (!event->isAutoRepeat()) { heldPan_.insert(event->key()); syncPanTimer(); }
             event->accept();
             return;
         }
-        switch (event->key()) {
-        case Qt::Key_Plus: case Qt::Key_Equal: zoomAt(rect().center(), 1); break;
-        case Qt::Key_Minus: zoomAt(rect().center(), -1); break;
-        case Qt::Key_Home: view_.center = {0.5, 0.5}; view_.zoom = 1; normalizeZoom(); wheelRemainder_ = 0; break;
-        case Qt::Key_Left: view_.center.rx() -= 64 / view_.scale(); break;
-        case Qt::Key_Right: view_.center.rx() += 64 / view_.scale(); break;
-        case Qt::Key_Up: view_.center.ry() -= 64 / view_.scale(); break;
-        case Qt::Key_Down: view_.center.ry() += 64 / view_.scale(); break;
-        default: QOpenGLWidget::keyPressEvent(event); return;
+        if (!plainKey) {
+            QOpenGLWidget::keyPressEvent(event); return;
         }
+        const auto match = std::find(keys_.begin() + 4, keys_.end(), event->key());
+        if (match == keys_.end()) { QOpenGLWidget::keyPressEvent(event); return; }
+        switch (std::distance(keys_.begin(), match)) {
+        case 4: case 7: case 8: zoomAt(rect().center(), 1); break;
+        case 5: case 9: zoomAt(rect().center(), -1); break;
+        case 6: view_.center = {0.5, 0.5}; view_.zoom = 1; normalizeZoom(); wheelRemainder_ = 0; break;
+        case 10: view_.center.rx() -= 64 / view_.scale(); break;
+        case 11: view_.center.rx() += 64 / view_.scale(); break;
+        case 12: view_.center.ry() -= 64 / view_.scale(); break;
+        case 13: view_.center.ry() += 64 / view_.scale(); break;
+        default: break;
+        }
+        event->accept();
         clampCenter();
         update();
     }
 private:
+    static std::optional<std::array<int, 14>> readKeys(const QJsonObject &values)
+    {
+        std::array<int, 14> keys{};
+        QSet<int> used;
+        for (size_t i = 0; i < KeyPaths.size(); ++i) {
+            const auto text = values.value(KeyPaths[i]).toString(QKeySequence(DefaultKeys[i]).toString(QKeySequence::PortableText));
+            if (i >= 4 && text.isEmpty()) continue;
+            const int key = navigationKey(text);
+            // Keep older custom pan keys when new defaults overlap them.
+            if (i >= 4 && !values.contains(KeyPaths[i]) && used.contains(key)) continue;
+            if (!key || used.contains(key)) return std::nullopt;
+            keys[i] = key;
+            used.insert(key);
+        }
+        return keys;
+    }
     QPointF panDirection() const
     {
-        const double x = int(heldPan_.contains(panKeys_[3])) - int(heldPan_.contains(panKeys_[1]));
-        const double y = int(heldPan_.contains(panKeys_[2])) - int(heldPan_.contains(panKeys_[0]));
+        const double x = int(heldPan_.contains(keys_[3])) - int(heldPan_.contains(keys_[1]));
+        const double y = int(heldPan_.contains(keys_[2])) - int(heldPan_.contains(keys_[0]));
         const double length = std::hypot(x, y);
         return length > 0 ? QPointF(x / length, y / length) : QPointF{};
     }
@@ -546,7 +572,7 @@ private:
     QTimer panTimer_;
     QElapsedTimer panClock_;
     QSet<int> heldPan_;
-    std::array<int, 4> panKeys_ = DefaultPanKeys;
+    std::array<int, 14> keys_ = DefaultKeys;
     double panSpeed_ = 300;
     bool wheelZoom_ = true;
     bool wheelReverse_ = false;

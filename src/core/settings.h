@@ -6,7 +6,7 @@
 
 namespace swak {
 struct SettingField {
-    enum class Kind { Boolean, Number, Text, Choice };
+    enum class Kind { Boolean, Number, Text, Choice, Key };
     QString path;
     QString label;
     Kind kind = Kind::Text;
@@ -19,6 +19,7 @@ struct SettingField {
 SettingField booleanSetting(QString path, QString label);
 SettingField numberSetting(QString path, QString label, double minimum, double maximum, int decimals = 0);
 SettingField textSetting(QString path, QString label, int maxLength);
+SettingField keySetting(QString path, QString label);
 SettingField choiceSetting(QString path, QString label, QStringList choices, QJsonArray values = {});
 
 class SettingsParticipant : public PreferenceParticipant {

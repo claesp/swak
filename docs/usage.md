@@ -28,7 +28,7 @@ The editor generates `a-u-G` events by default. Map markers use blue for `a-f` t
 
 Select a table row or map marker to focus that event. The XML preview then shows that event. Selection changes the preview but keeps the editor fields unchanged.
 
-Drag the map with the left mouse button to move it. Double-click with the left button to center that point without changing zoom. Use the wheel to zoom around the pointer. With map focus, hold W, A, S, or D to move north, west, south, or east. Diagonal movement keeps the same speed. Release the keys to stop. Losing focus also stops movement. Arrow keys move one step. Plus and minus change zoom, and Home resets the view.
+Drag the map with the left mouse button to move it. Double-click with the left button to center that point without changing zoom. Use the wheel to zoom around the pointer. With map focus, hold W, A, S, or D to move north, west, south, or east. Diagonal movement keeps the same speed. Release the keys to stop. Losing focus also stops movement. Arrow keys move one step. Q and E zoom in and out. Plus and minus also change zoom, and Home resets the view.
 
 The map uses Web Mercator, a rectangular map projection. It clips positions near the poles to approximately 85.05 degrees. The event table retains the original coordinates, including polar positions.
 
@@ -169,7 +169,7 @@ File > Settings contains tables for Map providers and Data providers. The same t
 
 # Map movement and selection
 
-File > Settings > Map contains the movement keys, speed, wheel controls, and tile margin. Keys must differ and must not use modifiers. Letters, digits, function keys, and arrow keys are supported. The default speed is 300 logical pixels per second. Wheel zoom works only over the map. You can disable it, reverse it, or change its step size.
+File > Settings > Keybindings contains the keyboard controls for Map and Information. General > Map contains speed, wheel controls, and tile margin. Keys must differ and must not use modifiers. Letters, digits, function keys, and arrow keys are supported. The default speed is 300 logical pixels per second. Wheel zoom works only over the map. You can disable it, reverse it, or change its step size.
 
 The lowest zoom fills the map area. Zoom uses whole levels. Panning stops at the world edges. A window resize can raise the lowest zoom. The cropped part of the world remains reachable by panning. If the viewport exceeds the provider limit, SWAK enlarges tiles from the highest available level.
 
@@ -188,3 +188,11 @@ The map shows a rendered/total tile count while coverage is incomplete. A two-se
 Dense tiles accept more geometry within fixed input and memory limits. If visible geometry exceeds Tile memory cache, SWAK keeps compact tile images and releases object details. The map reports this mode. Increase Tile memory cache in File > Settings > Map to restore inspection. Changing the provider also restarts normal decoding. KML and CoT selection remain available.
 
 Tiles that exceed parser limits use a lower detail level when the provider supports one. Missing minimum-level tiles remain marked missing. The coverage count includes tiles beyond the request cap. If a very large viewport exceeds that cap at the provider minimum level, zoom in to enlarge each tile. Network failure and invalid content can still prevent complete coverage.
+
+# Keyboard configuration
+
+Open File > Settings > Keybindings. Select a plugin section. Select a key field and press the replacement key. Select Apply to save the changes. The saved keys survive restarts. Existing custom movement keys remain unchanged during migration.
+
+Map controls require map focus. Q zooms in, and E zooms out. The four movement keys remain required and distinct. Zoom, reset, alternate zoom, and step keys can be empty to disable them. Conflicting map keys prevent Apply. The standard shortcuts for text fields and application menus remain unchanged.
+
+Esc closes Information and clears the map object and CoT selection. This command works in the main window and detached panes. Modal dialogs and popup menus keep their normal Escape behavior. Information supports Esc or one function key. When an object is selected, its dismissal key takes priority over a matching map key.

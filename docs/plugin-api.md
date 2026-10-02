@@ -162,3 +162,11 @@ The Information plugin implements PanePlugin and PreferenceParticipant. Its MANI
 VectorTile now has a resourceLimit flag. A decoder sets this flag with an error when a valid request exceeds a resource boundary. The host can request a lower tile level for this case. Other decode errors retain the normal retry policy. The static plugin interface identifier remains unchanged.
 
 TileRenderer::coverage() returns the visible tile count and the count with prepared images. The map status reports incomplete coverage. Under memory pressure, the renderer can retain pixels without geometry. Feature inspection then returns no hits for those tiles. Image coverage remains distinct from feature availability and data freshness.
+
+# Keybinding fields
+
+`SettingField::Kind::Key` and `keySetting(path, label)` add keyboard controls through the existing `SettingsParticipant` interface. The host places these fields in the Keybindings tab. It sorts plugin sections with the system locale. General and keyboard fields retain one shared snapshot and one validation callback per participant. Apply validates every changed participant before it changes any component.
+
+The editor uses `QKeySequenceEdit`. Values use `QKeySequence::PortableText` in the existing component object. Plugins define allowed keys, conflicts, defaults, focus scope, and empty-value behavior. Plugins must bound imported key strings and reject unsupported sequences. The field description does not install a shortcut. Existing profile keys and missing-plugin sections remain intact.
+
+The map owns its navigation keys. Information owns its dismissal key and limits event handling to widgets owned by its workspace. Information ignores modal dialogs and popup menus. Closing Information clears both shared selection services. No dependency or plugin role changes.

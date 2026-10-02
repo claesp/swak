@@ -74,7 +74,7 @@ Qt documents the graphics lifecycle in [QOpenGLWidget](https://doc.qt.io/qt-6/qo
 
 `SettingsParticipant` extends `PreferenceParticipant` and has interface identifier `org.swak.Settings/1.0`. It lives in `src/core/settings.h` and is available through `src/core/interfaces.h`. A plugin can implement it on its root object or on a widget that it creates. The host discovers both forms without plugin-specific dialog code.
 
-Each provider supplies a stable identifier, a translated section title, field descriptions, and optional validation. Fields support booleans, bounded numbers, bounded text, and choices. Slash-separated field paths address nested JSON objects and array indices. Field paths and limits come from trusted plugin code, not imported profiles. All identifiers must remain unique across providers.
+Each provider supplies a stable identifier, a translated section title, field descriptions, and optional validation. Fields support booleans, bounded numbers, bounded text, choices, and keybindings. Slash-separated field paths address nested JSON objects and array indices. Field paths and limits come from trusted plugin code, not imported profiles. All identifiers must remain unique across providers.
 
 The dialog reads a snapshot through `savePreferences`. It validates all changed sections before it calls `restorePreferences` on any provider. Unchanged controls do not replace more precise stored values. Apply updates live components and saves the shared profile. Plugins must keep restoration bounded, handle runtime failures, and report operational errors in their interface. The receiver reports bind failures in its pane and retains the saved startup request.
 

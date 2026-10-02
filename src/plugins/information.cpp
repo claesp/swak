@@ -1,4 +1,5 @@
 #include "core/interfaces.h"
+#include "core/store.h"
 #include "core/map_selection.h"
 #include <QLabel>
 #include <QPlainTextEdit>
@@ -12,6 +13,8 @@
 #include <QJsonArray>
 #include <QCollator>
 #include <QTimer>
+#include <QKeyEvent>
+#include <QKeySequence>
 #include <algorithm>
 namespace swak {
 namespace {
@@ -40,11 +43,12 @@ protected:
         else QPlainTextEdit::mouseDoubleClickEvent(event);
     }
 };
-class InformationPane final : public PaneContent, public PreferenceParticipant {
+class InformationPane final : public PaneContent, public SettingsParticipant {
 public:
-    InformationPane(MapSelection *selection, QWidget *parent) : PaneContent(parent)
+    InformationPane(MapSelection *selection, Store &store, QWidget *parent) : PaneContent(parent), selection_(selection), store_(store), owner_(parent->window())
     {
         setObjectName(QStringLiteral("informationPane"));
+        qApp->installEventFilter(this);
         QTimer::singleShot(0, this, [this, selection] {
             if (!selection || !selection->item()) emit visibilityRequested(false);
         });
@@ -84,13 +88,51 @@ public:
     }
     Qt::DockWidgetArea preferredDockArea() const override { return Qt::RightDockWidgetArea; }
     QString preferenceId() const override { return QStringLiteral("org.swak.information"); }
-    QJsonObject savePreferences() const override { return {{QStringLiteral("header"), QString::fromLatin1(properties_->horizontalHeader()->saveState().toBase64())}}; }
+    QString settingsTitle() const override { return tr("Information"); }
+    QList<SettingField> settingsFields() const override
+    { return {keySetting(QStringLiteral("dismissKey"), tr("Close Information and clear selection"))}; }
+    QString validateSettings(const QJsonObject &values) const override
+    {
+        return dismissalKey(values) ? QString{} : tr("Use Esc or one key from F1 through F12 without modifiers.");
+    }
+    QJsonObject savePreferences() const override { return {{QStringLiteral("dismissKey"), QKeySequence(dismissKey_).toString(QKeySequence::PortableText)}, {QStringLiteral("header"), QString::fromLatin1(properties_->horizontalHeader()->saveState().toBase64())}}; }
     void restorePreferences(const QJsonObject &values) override
     {
+        const int key = dismissalKey(values);
+        dismissKey_ = key ? key : Qt::Key_Escape;
         const auto bytes = preferenceText(values, QStringLiteral("header"), {}, 16384).toLatin1();
         if (!bytes.isEmpty()) properties_->horizontalHeader()->restoreState(QByteArray::fromBase64(bytes, QByteArray::AbortOnBase64DecodingErrors));
     }
+protected:
+    bool eventFilter(QObject *object, QEvent *event) override
+    {
+        if (event->type() != QEvent::KeyPress || QApplication::activeModalWidget() || QApplication::activePopupWidget()) return false;
+        auto *widget = qobject_cast<QWidget *>(object);
+        while (widget && widget != owner_) widget = widget->parentWidget();
+        if (!widget) return false;
+        auto *key = static_cast<QKeyEvent *>(event);
+        if (key->key() != dismissKey_ || key->modifiers() != Qt::NoModifier) return false;
+        if ((!selection_ || !selection_->item()) && store_.selected().isEmpty() && !isVisible()) return false;
+        if (selection_) selection_->clear();
+        store_.select({});
+        emit visibilityRequested(false);
+        key->accept();
+        return true;
+    }
 private:
+    static int dismissalKey(const QJsonObject &values)
+    {
+        const auto text = values.value(QStringLiteral("dismissKey")).toString(QStringLiteral("Esc"));
+        if (text.isEmpty() || text.size() > 32) return 0;
+        const auto key = QKeySequence::fromString(text, QKeySequence::PortableText);
+        if (key.count() != 1 || key[0].keyboardModifiers() != Qt::NoModifier) return 0;
+        const int value = key[0].key();
+        return value == Qt::Key_Escape || (value >= Qt::Key_F1 && value <= Qt::Key_F12) ? value : 0;
+    }
+    MapSelection *selection_;
+    Store &store_;
+    QWidget *owner_;
+    int dismissKey_ = Qt::Key_Escape;
     CopyLabel *title_;
     CopyLabel *type_;
     Description *description_;
@@ -103,7 +145,7 @@ class InformationPlugin final : public QObject, public Plugin, public PanePlugin
     Q_INTERFACES(swak::Plugin swak::PanePlugin)
 public:
     QString name() const override { return tr("Information"); }
-    QWidget *create(PluginServices &services, QWidget *parent) override { return new InformationPane(services.selection, parent); }
+    QWidget *create(PluginServices &services, QWidget *parent) override { return new InformationPane(services.selection, services.store, parent); }
 };
 }
 #include "information.moc"

@@ -7,6 +7,8 @@ SettingField numberSetting(QString path, QString label, double minimum, double m
 { return {std::move(path), std::move(label), SettingField::Kind::Number, minimum, maximum, decimals, {}, {}}; }
 SettingField textSetting(QString path, QString label, int maxLength)
 { return {std::move(path), std::move(label), SettingField::Kind::Text, 0, static_cast<double>(maxLength), 0, {}, {}}; }
+SettingField keySetting(QString path, QString label)
+{ return {std::move(path), std::move(label), SettingField::Kind::Key, 0, 32, 0, {}, {}}; }
 SettingField choiceSetting(QString path, QString label, QStringList choices, QJsonArray values)
 {
     if (values.isEmpty()) for (int i = 0; i < choices.size(); ++i) values.append(i);

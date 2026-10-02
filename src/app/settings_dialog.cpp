@@ -11,6 +11,7 @@
 #include <QFormLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QKeySequenceEdit>
 #include <QListWidget>
 #include <QPushButton>
 #include <QScrollArea>
@@ -24,6 +25,7 @@ QJsonValue editorValue(QWidget *editor)
 {
     if (auto *box = qobject_cast<QCheckBox *>(editor)) return box->isChecked();
     if (auto *number = qobject_cast<QDoubleSpinBox *>(editor)) return number->value();
+    if (auto *key = qobject_cast<QKeySequenceEdit *>(editor)) return key->keySequence().toString(QKeySequence::PortableText);
     if (auto *text = qobject_cast<QLineEdit *>(editor)) return text->text();
     if (auto *choices = qobject_cast<QComboBox *>(editor)) return QJsonValue::fromVariant(choices->currentData());
     return {};
@@ -46,8 +48,8 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
         tabs->setObjectName(QStringLiteral("settingsTabs"));
         layout->addWidget(tabs, 1);
     }
-    std::array<QListWidget *, 2> lists{};
-    std::array<QStackedWidget *, 2> stacks{};
+    std::array<QListWidget *, 3> lists{};
+    std::array<QStackedWidget *, 3> stacks{};
     if (providerForm) {
         auto *stack = new QStackedWidget(this);
         stacks[0] = stack;
@@ -61,47 +63,62 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
             connect(choice, &QComboBox::currentIndexChanged, stack, &QStackedWidget::setCurrentIndex);
         }
         layout->addWidget(stack, 1);
-    } else for (int i = 0; i < 2; ++i) {
+    } else for (int i = 0; i < 3; ++i) {
         auto *tab = new QWidget(tabs);
         auto *body = new QHBoxLayout(tab);
         auto *sections = new QListWidget(tab);
-        sections->setObjectName(i == 0 ? QStringLiteral("settingsSections") : QStringLiteral("paneSettingsSections"));
-        sections->setAccessibleName(i == 0 ? tr("Settings sections") : tr("Pane sections"));
+        sections->setObjectName(i == 0 ? QStringLiteral("settingsSections") : (i == 1 ? QStringLiteral("paneSettingsSections") : QStringLiteral("keybindingSettingsSections")));
+        sections->setAccessibleName(i == 0 ? tr("Settings sections") : (i == 1 ? tr("Pane sections") : tr("Keybinding sections")));
         sections->setMaximumWidth(220);
         auto *stack = new QStackedWidget(tab);
         body->addWidget(sections);
         body->addWidget(stack, 1);
-        tabs->addTab(tab, i == 0 ? tr("General") : tr("Panes"));
+        tabs->addTab(tab, i == 0 ? tr("General") : (i == 1 ? tr("Panes") : tr("Keybindings")));
         lists.at(static_cast<size_t>(i)) = sections;
         stacks.at(static_cast<size_t>(i)) = stack;
         connect(sections, &QListWidget::currentRowChanged, stack, &QStackedWidget::setCurrentIndex);
     }
     for (const auto &page : pages_) {
         const size_t group = !providerForm && page.paneCustomization ? 1 : 0;
-        if (lists.at(group)) {
-            lists.at(group)->addItem(page.title);
-            lists.at(group)->item(lists.at(group)->count() - 1)->setData(Qt::UserRole, page.id);
-        }
-        auto *stack = stacks.at(group);
+        auto addSection = [&](size_t target, QWidget *widget) {
+            if (lists.at(target)) {
+                lists.at(target)->addItem(page.title);
+                lists.at(target)->item(lists.at(target)->count() - 1)->setData(Qt::UserRole, page.id);
+            }
+            stacks.at(target)->addWidget(widget);
+        };
         if (page.createContent) {
-            stack->addWidget(page.createContent(stack));
+            addSection(group, page.createContent(stacks.at(group)));
             editors_.append(QList<QWidget *>{});
             continue;
         }
-        auto *scroll = new QScrollArea(stack);
-        scroll->setWidgetResizable(true);
-        auto *content = new QWidget(scroll);
-        auto *form = new QFormLayout(content);
-        form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-        form->setRowWrapPolicy(providerForm ? QFormLayout::DontWrapRows : QFormLayout::WrapAllRows);
-        form->setLabelAlignment(Qt::AlignLeft);
+        std::array<QFormLayout *, 3> forms{};
+        auto formFor = [&](size_t target) {
+            if (!forms.at(target)) {
+                auto *scroll = new QScrollArea(stacks.at(target));
+                scroll->setWidgetResizable(true);
+                auto *content = new QWidget(scroll);
+                auto *form = new QFormLayout(content);
+                form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+                form->setRowWrapPolicy(providerForm ? QFormLayout::DontWrapRows : QFormLayout::WrapAllRows);
+                form->setLabelAlignment(Qt::AlignLeft);
+                scroll->setWidget(content);
+                addSection(target, scroll);
+                forms.at(target) = form;
+            }
+            return forms.at(target);
+        };
         QList<QWidget *> editors;
         if (page.fields.isEmpty()) {
+            auto *form = formFor(group);
+            auto *content = form->parentWidget();
             auto *note = new QLabel(tr("This plugin has no configurable parameters."), content);
             note->setWordWrap(true);
             form->addRow(note);
         }
         for (const auto &field : page.fields) {
+            auto *form = formFor(!providerForm && field.kind == SettingField::Kind::Key ? 2 : group);
+            auto *content = form->parentWidget();
             const auto value = settingValue(page.values, field.path);
             QWidget *editor = nullptr;
             switch (field.kind) {
@@ -124,6 +141,11 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
                 text->setMaxLength(static_cast<int>(field.maximum));
                 text->setText(value.toString());
                 editor = text;
+                break;
+            }
+            case SettingField::Kind::Key: {
+                auto *key = new QKeySequenceEdit(QKeySequence::fromString(value.toString(), QKeySequence::PortableText), content);
+                editor = key;
                 break;
             }
             case SettingField::Kind::Choice: {
@@ -155,8 +177,6 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
             editors.append(editor);
         }
         editors_.append(editors);
-        scroll->setWidget(content);
-        stack->addWidget(scroll);
     }
     for (auto *sections : lists) if (sections) sections->setCurrentRow(0);
     status_ = new QLabel(this);
@@ -174,7 +194,7 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
 QJsonObject SettingsDialog::navigation() const
 {
     QJsonObject values;
-    if (auto *tabs = findChild<QTabWidget *>()) values.insert(QStringLiteral("tab"), tabs->currentIndex() == 1 ? QStringLiteral("panes") : QStringLiteral("general"));
+    if (auto *tabs = findChild<QTabWidget *>()) values.insert(QStringLiteral("tab"), tabs->currentIndex() == 2 ? QStringLiteral("keybindings") : (tabs->currentIndex() == 1 ? QStringLiteral("panes") : QStringLiteral("general")));
     for (auto *list : findChildren<QListWidget *>()) {
         if (list->currentItem()) values.insert(list->objectName(), list->currentItem()->data(Qt::UserRole).toString());
     }
@@ -182,7 +202,7 @@ QJsonObject SettingsDialog::navigation() const
 }
 void SettingsDialog::restoreNavigation(const QJsonObject &values)
 {
-    if (auto *tabs = findChild<QTabWidget *>()) tabs->setCurrentIndex(values.value(QStringLiteral("tab")).toString() == QStringLiteral("panes") ? 1 : 0);
+    if (auto *tabs = findChild<QTabWidget *>()) tabs->setCurrentIndex(values.value(QStringLiteral("tab")).toString() == QStringLiteral("panes") ? 1 : (values.value(QStringLiteral("tab")).toString() == QStringLiteral("keybindings") ? 2 : 0));
     for (auto *list : findChildren<QListWidget *>()) {
         const auto id = values.value(list->objectName()).toString();
         for (int i = 0; i < list->count(); ++i) {

@@ -26,6 +26,7 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QTabWidget>
+#include <QKeySequenceEdit>
 #include <QCollator>
 #include <QScopeGuard>
 #include "core/interfaces.h"
@@ -658,6 +659,9 @@ private slots:
         QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
         QVERIFY(selection->item()); QCOMPARE(selection->item()->label, QStringLiteral("Local event"));
         QVERIFY(selection->item()->properties.contains(QStringLiteral("UID")));
+        QTest::keyClick(map, Qt::Key_Escape);
+        QVERIFY(!selection->item()); QVERIFY(window.store().selected().isEmpty()); QVERIFY(!dock->isVisible());
+        QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center()); QVERIFY(selection->item());
         window.store().clear(); QVERIFY(!selection->item());
         auto *preferences = dynamic_cast<swak::PreferenceParticipant *>(map); QVERIFY(preferences);
         preferences->restorePreferences({{QStringLiteral("zoom"), 0}, {QStringLiteral("centerX"), 0}, {QStringLiteral("centerY"), 1}});
@@ -723,6 +727,87 @@ private slots:
         manager->findChild<QTableWidget *>(QStringLiteral("dataProviderList"))->setCurrentCell(0, 1);
         manager->findChild<QPushButton *>(QStringLiteral("removeDataProvider"))->click(); QCOMPARE(feeds->sources().size(), 2);
         manager->close();
+    }
+    void keybindingsAndDismissal()
+    {
+        QTemporaryDir directory;
+        const auto profile = directory.filePath(QStringLiteral("keys.json"));
+        {
+            swak::Window window(profile, QPluginLoader::staticInstances()); window.show(); window.activateWindow();
+            QVERIFY(QTest::qWaitForWindowExposed(&window));
+            auto *map = window.findChild<QOpenGLWidget *>();
+            auto *settings = dynamic_cast<swak::SettingsParticipant *>(map); QVERIFY(settings);
+            settings->restorePreferences({{QStringLiteral("zoom"), 4}, {QStringLiteral("panNorthKey"), QStringLiteral("Q")}});
+            QCOMPARE(settings->savePreferences().value(QStringLiteral("panNorthKey")).toString(), QStringLiteral("Q"));
+            QVERIFY(settings->savePreferences().value(QStringLiteral("zoomInKey")).toString().isEmpty());
+            settings->restorePreferences({{QStringLiteral("zoom"), 4}});
+            const auto zoom = [&] { return settings->savePreferences().value(QStringLiteral("zoom")).toInt(); };
+            map->setFocus(); QVERIFY(QTest::qWaitFor([&] { return map->hasFocus(); }));
+            QTest::keyClick(map, Qt::Key_Q); QCOMPARE(zoom(), 5);
+            QTest::keyClick(map, Qt::Key_E); QCOMPARE(zoom(), 4);
+            QTest::keyClick(map, Qt::Key_Plus, Qt::ShiftModifier); QCOMPARE(zoom(), 5);
+            QTest::keyClick(map, Qt::Key_Minus); QCOMPARE(zoom(), 4);
+            QTest::keyClick(map, Qt::Key_Equal); QCOMPARE(zoom(), 5);
+            QTest::keyClick(map, Qt::Key_Minus); QCOMPARE(zoom(), 4);
+            const auto center = [&] { const auto v = settings->savePreferences(); return QPointF(v.value(QStringLiteral("centerX")).toDouble(), v.value(QStringLiteral("centerY")).toDouble()); };
+            const auto origin = center();
+            QTest::keyClick(map, Qt::Key_Left); QVERIFY(center().x() < origin.x());
+            QTest::keyClick(map, Qt::Key_Right); QCOMPARE(center(), origin);
+            QTest::keyClick(map, Qt::Key_Up); QVERIFY(center().y() < origin.y());
+            QTest::keyClick(map, Qt::Key_Down); QCOMPARE(center(), origin);
+            QTest::keyClick(map, Qt::Key_E, Qt::ControlModifier); QCOMPARE(zoom(), 4);
+            auto *selection = window.findChild<swak::MapSelection *>(); QVERIFY(selection);
+            auto *pane = window.findChild<QWidget *>(QStringLiteral("informationPane"));
+            auto *dock = window.findChild<QDockWidget *>(QStringLiteral("org.swak.information.pane")); QVERIFY(pane && dock);
+            swak::MapItem item; item.label = QStringLiteral("Selected point"); selection->select(item);
+            QVERIFY(dock->isVisible());
+            QTest::keyClick(map, Qt::Key_Escape); QVERIFY(!selection->item()); QVERIFY(!dock->isVisible());
+            selection->select(item); dock->setFloating(true); dock->show(); dock->activateWindow();
+            QVERIFY(QTest::qWaitForWindowExposed(dock));
+            auto *description = pane->findChild<QPlainTextEdit *>(); description->setFocus();
+            QTest::keyClick(description, Qt::Key_Q); QCOMPARE(zoom(), 4);
+            QTest::keyClick(description, Qt::Key_Escape); QVERIFY(!selection->item()); QVERIFY(!dock->isVisible());
+            dock->show(); QTest::keyClick(description, Qt::Key_Escape); QVERIFY(!dock->isVisible());
+            selection->select(item);
+            {
+                QDialog modal(&window); modal.setModal(true); modal.show();
+                QVERIFY(QTest::qWaitForWindowExposed(&modal));
+                QTest::keyClick(&modal, Qt::Key_Escape); QVERIFY(selection->item()); QVERIFY(dock->isVisible());
+            }
+            auto *info = dynamic_cast<swak::SettingsParticipant *>(pane); QVERIFY(info);
+            swak::SettingsDialog dialog({{settings->preferenceId(), settings->settingsTitle(), settings->settingsFields(), settings->savePreferences(),
+                [settings](const QJsonObject &v) { return settings->validateSettings(v); },
+                [settings](const QJsonObject &v) { settings->restorePreferences(v); }},
+                {info->preferenceId(), info->settingsTitle(), info->settingsFields(), info->savePreferences(),
+                [info](const QJsonObject &v) { return info->validateSettings(v); },
+                [info](const QJsonObject &v) { info->restorePreferences(v); }}}, [] { return QString{}; }, &window);
+            dialog.show(); dialog.findChild<QTabWidget *>()->setCurrentIndex(2);
+            auto *keys = dialog.findChild<QListWidget *>(QStringLiteral("keybindingSettingsSections")); QVERIFY(keys); QCOMPARE(keys->count(), 2);
+            keys->setCurrentRow(1);
+            auto *in = dialog.findChild<QKeySequenceEdit *>(QStringLiteral("org.swak.map/zoomInKey")); QVERIFY(in);
+            auto *out = dialog.findChild<QKeySequenceEdit *>(QStringLiteral("org.swak.map/zoomOutKey")); QVERIFY(out);
+            auto *close = dialog.findChild<QKeySequenceEdit *>(QStringLiteral("org.swak.information/dismissKey")); QVERIFY(close);
+            in->setKeySequence(QKeySequence(Qt::Key_R)); out->setKeySequence(QKeySequence(Qt::Key_R));
+            auto *apply = dialog.findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Apply); apply->click();
+            QCOMPARE(settings->savePreferences().value(QStringLiteral("zoomInKey")).toString(), QStringLiteral("Q"));
+            out->setKeySequence(QKeySequence(Qt::Key_T)); close->setKeySequence(QKeySequence(Qt::Key_F12)); apply->click();
+            QCOMPARE(info->savePreferences().value(QStringLiteral("dismissKey")).toString(), QStringLiteral("F12"));
+            QVERIFY(QTest::qWaitForWindowExposed(&dialog));
+            QVERIFY(dialog.screen()->grabWindow(dialog.winId()).save(QStringLiteral("keybindings-settings.png")));
+            const auto navigation = dialog.navigation(); QCOMPARE(navigation.value(QStringLiteral("tab")).toString(), QStringLiteral("keybindings"));
+            dialog.close(); window.activateWindow(); map->setFocus();
+            QTest::keyClick(map, Qt::Key_Q); QCOMPARE(zoom(), 4);
+            QTest::keyClick(map, Qt::Key_R); QCOMPARE(zoom(), 5);
+            QTest::keyClick(map, Qt::Key_T); QCOMPARE(zoom(), 4);
+            QTest::keyClick(map, Qt::Key_Escape); QVERIFY(selection->item());
+            QTest::keyClick(map, Qt::Key_F12); QVERIFY(!selection->item()); QVERIFY(!dock->isVisible());
+            QVERIFY(window.savePreferences());
+        }
+        swak::Window restored(profile, QPluginLoader::staticInstances());
+        auto *map = dynamic_cast<swak::SettingsParticipant *>(restored.findChild<QOpenGLWidget *>());
+        QCOMPARE(map->savePreferences().value(QStringLiteral("zoomInKey")).toString(), QStringLiteral("R"));
+        auto *info = dynamic_cast<swak::SettingsParticipant *>(restored.findChild<QWidget *>(QStringLiteral("informationPane")));
+        QCOMPARE(info->savePreferences().value(QStringLiteral("dismissKey")).toString(), QStringLiteral("F12"));
     }
     void keyboardPanAndWheelSettings()
     {
@@ -1216,7 +1301,7 @@ private slots:
                 if (!dialog) { QFAIL("Settings dialog did not open."); return; }
                 auto *tabs = dialog->findChild<QTabWidget *>();
                 auto *panes = dialog->findChild<QListWidget *>(QStringLiteral("paneSettingsSections"));
-                if (!tabs || tabs->count() != 2 || !panes || panes->count() != 6) {
+                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 6) {
                     dialog->reject(); QFAIL("The pane tab is incomplete."); return;
                 }
                 const QCollator collator;

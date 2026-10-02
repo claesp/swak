@@ -438,3 +438,23 @@ All 37 native sanitizer cases passed in `build/quality/20261002-203636-gui-16600
 The 60-second sanitizer workload passed in `build/quality/20261002-203359-soak-165446`. It completed 1275 cycles with 8286208 bytes of peak memory growth. The maximum heartbeat gap was 46 milliseconds, and idle CPU time was 0.003 seconds. This short workload does not replace multi-hour qualification.
 
 The release rebuild passed without compiler warnings with Qt 6.8.2 and GCC 14.2 on Debian 13. The executable remains `build/release/swak`, version 0.1.0. The build log is `build/coverage-fix-release.log`. Hardware graphics, native Wayland, Qt 6.4 compatibility, and multi-hour use remain untested. No external dependency was added.
+
+## 2026-10-02: Keyboard configuration and Information dismissal
+
+File > Settings now contains a Keybindings tab. Plugins add fields through `keySetting` and the existing `SettingsParticipant` interface. General and keyboard fields share one snapshot and one validation step per plugin. Plugin sections retain locale ordering. The profile retains the selected tab and section.
+
+The Map section includes movement, zoom, reset, and alternate navigation keys. Q zooms in, and E zooms out, when the map has focus. Existing custom pan keys survive migration. New defaults that overlap older pan keys start disabled. The four continuous movement keys remain required. Other map bindings can be empty. Duplicate explicit map keys prevent Apply.
+
+The Information section sets its dismissal key. Esc is the default. It clears the map selection and the selected CoT event, then hides Information. It also works in detached panes and when an empty Information pane is visible. Modal dialogs and popup menus retain their normal behavior. The plugin limits keyboard handling to widgets owned by its workspace.
+
+The native regression covers rebinding, duplicate rejection, restart persistence, older profile migration, focus, detached panes, and modal Escape behavior. The existing Information regression also covers CoT selection removal. The native Keybindings screenshot shows the new tab without clipped controls at normal scale.
+
+Eight sanitizer suites passed in `build/quality/20261002-205610-quick-168860`. Static analysis passed in `build/quality/20261002-205825-analyze-2`. All 38 native sanitizer cases passed in `build/quality/20261002-205756-gui-170221`. LeakSanitizer then reported the existing Mesa leak of 240732 bytes in 1073 allocations. The diagnostic remains failed, without suppression.
+
+The release rebuild passed without compiler warnings. The executable is `build/release/swak`, version 0.1.0. The build log is `build/keybindings-release.log`. This task adds no external dependency. Hardware graphics, native Wayland, Qt 6.4 compatibility, and multi-hour use remain untested.
+
+Coverage passed eight suites and 38 native cases in `build/quality/20261002-205817-coverage-170364`. Additional assertions cover alternate zoom keys and all four step directions. That focused native test passed at 200% display scaling. The screenshot is `build/keybindings-highdpi/keybindings-settings.png`. The final source coverage report is `build/keybindings-coverage/coverage.md`. Rebuilding the test changed its gcov checksum, so gcov replaced that test-only profile. Application source profiles retained the complete suite evidence.
+
+Remaining coverage gaps include existing vector context-menu paths, non-left double-click delegation, and defensive fallback branches. Line coverage does not establish complete branch or input coverage. Static analysis found no unused application function that requires removal.
+
+The 60-second sanitizer workload passed in `build/quality/20261002-210002-soak-171585`. It completed 1267 cycles with 8286208 bytes of peak memory growth. The maximum heartbeat gap was 37 milliseconds, and idle CPU time was 0.005 seconds. This workload does not replace multi-hour qualification.
