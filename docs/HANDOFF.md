@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation: See “OpenFreeMap and vector layers” below. The release includes these changes.
+Latest implementation: See “Vector cache recovery” below. The release includes these changes.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -322,3 +322,21 @@ Final coverage passed eight suites and all 33 native GUI cases in `build/quality
 The final vector sanitizer run passed nine cases in `build/openfreemap-vector-sanitize-final.log`. It includes panning away during decoding and unknown extension fields. A 60-second sanitizer workload passed in `build/quality/20261002-161801-soak-134020`. It completed 972 cycles with 8220672 bytes of peak memory growth, a 77-millisecond maximum heartbeat gap, and 0.022 idle CPU seconds. This short workload does not replace the documented multi-hour release qualification.
 
 The installation smoke test passed in `build/openfreemap-package`. The installed application reports version 0.1.0 and includes the manuals and both protozero license notices. Release linkage contains no sanitizer library or new runtime dependency. The final build and installation logs are `build/openfreemap-release-final.log` and `build/openfreemap-install.log`.
+
+# Vector cache recovery
+
+The reported cache warning came from the fixed 64 MiB decoded-tile budget. The sampled Stockholm tile accounts for 6531 KiB. A normal viewport can therefore exceed the old budget. The previous pressure guard then stopped loading the remaining tiles until the view changed.
+
+The shared map configuration now includes Tile memory cache, from 64 through 512 MiB, with a 256 MiB default. Existing profiles receive that default when the field is absent. The renderer removes offscreen tiles before reducing detail. If visible geometry still exceeds the budget, it requests lower tile zoom levels without changing the map center or selected zoom. This fallback stops at the provider minimum. It remains stable across repaints and retries full detail after a new view or budget change.
+
+The memory budget stays enforced, and decoding still uses at most four combined download and worker slots. A source generation cancels obsolete work during fallback. The host also discards completed tiles that are no longer visible. At the minimum zoom, an exhausted budget produces one actionable warning instead of repeated warnings for every rejected tile. Cache warnings now derive from the current deferred set, so they clear when the condition clears.
+
+The regression test reproduces 160000 KiB of visible tile estimates. It tests full-detail loading at the default budget, lower-detail recovery at 64 MiB, minimum-zoom exhaustion, and recovery after increasing the budget. It also makes sure that a stable view does not repeatedly decode tiles. The native test stores a custom memory limit and restores it after restart.
+
+The final release rebuild passed with Qt 6.8.2 and GCC 14.2. The executable is `build/release/swak`, version 0.1.0. Eight sanitizer suites passed in `build/quality/20261002-165535-quick-138789`. Static analysis passed in `build/quality/20261002-165614-analyze-3`. Final coverage passed eight suites and all 33 native GUI cases in `build/quality/20261002-165535-coverage-138793`.
+
+The tile controller reached 310 of 311 executable lines. The remaining line is a compiler-attributed closing line. Existing map mouse and gesture coverage gaps remain. Line coverage does not establish complete branch or input coverage. An initial test waited for worker completion before the host applied its result. The final test waits for the observable cache state instead.
+
+All 33 native cases also passed under sanitizers. LeakSanitizer then reported the existing Mesa leak of 240732 bytes in 1073 allocations. That native leak test remains failed in `build/quality/20261002-165711-gui-139525`. Hardware GPUs, native Wayland, minimum Qt compatibility, and multi-hour live-map sessions remain untested.
+
+A 60-second sanitizer workload passed in `build/quality/20261002-165818-soak-139809`. It completed 924 cycles with 8183808 bytes of peak memory growth, an 83-millisecond maximum heartbeat gap, and 0.017 idle CPU seconds. The focused pressure test also passed before the full diagnostics. The release build log is `build/vector-cache-release-final.log`.

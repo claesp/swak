@@ -94,6 +94,7 @@ public:
         return {numberSetting(QStringLiteral("centerX"), tr("Horizontal center (0–1)"), 0, 1, 6),
                 numberSetting(QStringLiteral("centerY"), tr("Vertical center (0–1)"), 0, 1, 6),
                 numberSetting(QStringLiteral("zoom"), tr("Zoom"), zoomLimits().first, zoomLimits().second),
+                numberSetting(QStringLiteral("tileCacheMiB"), tr("Tile memory cache (MiB)"), 64, 512),
                 numberSetting(QStringLiteral("missingOpacity"), tr("Missing tile marker opacity"), 0, 1, 2),
                 numberSetting(QStringLiteral("opacity"), tr("Provider opacity"), 0, 1, 2),
                 numberSetting(QStringLiteral("attributionOpacity"), tr("Attribution background opacity"), 0, 1, 2),
@@ -103,7 +104,7 @@ public:
     QJsonObject savePreferences() const override
     {
         return {{QStringLiteral("informationGeometry"), QString::fromLatin1((information_ ? information_->saveGeometry() : informationGeometry_).toBase64())}, {QStringLiteral("centerX"), view_.center.x()}, {QStringLiteral("centerY"), view_.center.y()},
-                {QStringLiteral("zoom"), view_.zoom}, {QStringLiteral("opacity"), opacity_},
+                {QStringLiteral("zoom"), view_.zoom}, {QStringLiteral("tileCacheMiB"), tileCacheMiB_}, {QStringLiteral("opacity"), opacity_},
                 {QStringLiteral("missingOpacity"), missingOpacity_},
                 {QStringLiteral("attributionOpacity"), attributionOpacity_}, {QStringLiteral("smooth"), smooth_}, {QStringLiteral("antialias"), antialias_}};
     }
@@ -115,6 +116,8 @@ public:
         view_.zoom = preferenceNumber(values, QStringLiteral("zoom"), 1, 0, 19);
         normalizeZoom();
         wheelRemainder_ = 0;
+        tileCacheMiB_ = static_cast<int>(preferenceNumber(values, QStringLiteral("tileCacheMiB"), 256, 64, 512));
+        tiles_.setMemoryLimit(tileCacheMiB_);
         missingOpacity_ = preferenceNumber(values, QStringLiteral("missingOpacity"), 0.2, 0, 1);
         opacity_ = preferenceNumber(values, QStringLiteral("opacity"), 1, 0, 1);
         attributionOpacity_ = preferenceNumber(values, QStringLiteral("attributionOpacity"), 0.55, 0, 1);
@@ -380,6 +383,7 @@ private:
     QLabel *attribution_;
     double attributionOpacity_ = 0.55;
     double opacity_ = 1;
+    int tileCacheMiB_ = 256;
     double missingOpacity_ = 0.2;
     int wheelRemainder_ = 0;
     bool smooth_ = true;

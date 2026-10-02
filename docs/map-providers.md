@@ -42,7 +42,11 @@ Certificate and hostname checks are enabled by default. Each source has an expli
 
 SWAK uses the existing Qt Network library for asynchronous HTTPS and Qt image readers for raster decoding. These are existing dependencies. It does not add a browser engine or a GIS runtime. Images render through QPainter on QOpenGLWidget, which uses the OpenGL paint engine for texture upload, scaling, and composition.
 
-The renderer permits four active requests and 256 visible tiles. Each response has a two MiB limit, a ten-second inactivity limit, and a fifteen-second total limit. Decoding accepts only 256-by-256 images. The decoded-tile cache holds at most 64 MiB. Failed requests pause for at least 30 seconds. Integer Retry-After values extend this delay up to one hour.
+The renderer permits four active requests and 256 visible tiles. Each response has a two MiB limit, a ten-second inactivity limit, and a fifteen-second total limit. Decoding accepts only 256-by-256 images.
+
+The decoded-tile cache defaults to 256 MiB. File > Settings > Map exposes Tile memory cache, with limits from 64 through 512 MiB.
+
+Failed requests pause for at least 30 seconds. Integer Retry-After values extend this delay up to one hour.
 
 The disk cache uses Qt HTTP caching. Entries without an expiry get a seven-day default. Verified and unchecked HTTPS responses use separate caches, each limited to 128 MiB. Non-cacheable images remain in memory only while their tiles stay in the view.
 
@@ -89,7 +93,11 @@ Keep the OpenFreeMap, OpenMapTiles, and OpenStreetMap credits visible. The prese
 
 Vector requests use the same HTTPS, cache, timeout, and retry controls as image tiles. Responses must contain raw MVT bytes. SWAK requests identity encoding and does not open gzip archives as tiles. Downloads and pending decode tasks share a limit of four. Two background workers decode tiles. Source changes, hiding, and shutdown cancel obsolete work. The renderer discards results from earlier source generations.
 
-A tile has limits of two MiB, 64 layers, 20000 features, and 100000 vertices. Each feature accepts up to 256 property pairs. Each layer dictionary accepts up to 16384 keys and values. The parser also bounds text, geometry commands, coordinate ranges, and retained properties. Invalid tiles enter the normal retry path. The cache accounts for decoded geometry and properties within its existing 64 MiB budget. If visible tiles fill the cache, SWAK defers other tiles until the view changes. This prevents repeated eviction and decoding loops.
+A tile has limits of two MiB, 64 layers, 20000 features, and 100000 vertices. Each feature accepts up to 256 property pairs. Each layer dictionary accepts up to 16384 keys and values. The parser also bounds text, geometry commands, coordinate ranges, and retained properties. Invalid tiles enter the normal retry path.
+
+The cache accounts for decoded geometry and properties within the configured memory budget. It first removes tiles outside the view. If the visible tiles still exceed the budget, SWAK requests the next lower tile zoom. The map center and selected zoom stay unchanged.
+
+This fallback continues only to the provider minimum zoom and does not repeat on each repaint. A new view or memory limit permits full-detail requests again. If the minimum zoom still exceeds the budget, the map asks the user to increase Tile memory cache. The limit remains enforced.
 
 Each frame permits up to 200000 vector vertices. If the map reaches this limit, its status asks the user to zoom in or hide layers. Feature inspection follows visible layer choices. MVT parsing does not fetch linked resources or execute styles. Development tests cover truncated records, malformed commands, oversized numbers, property types, holes, cancellation, replacement, and worker exceptions.
 

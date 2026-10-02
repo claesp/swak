@@ -151,11 +151,27 @@ private slots:
         TileRenderer renderer; renderer.setSource(&large, source);
         QImage canvas(512, 512, QImage::Format_RGB32);
         const auto draw = [&] { QPainter painter(&canvas); renderer.paint(painter, {QSizeF(512, 512), QPointF(0.5, 0.5), 1}, 1, false); };
+        connect(&renderer, &TileRenderer::changed, &renderer, draw);
         draw();
-        QVERIFY(QTest::qWaitFor([&] { return large.finished.load() == 4; }, 5000));
-        QVERIFY(QTest::qWaitFor([&] { return renderer.status().contains(QStringLiteral("cache limit")); }, 1000));
+        QVERIFY(QTest::qWaitFor([&] { return renderer.memoryCostKiB() == 160000; }, 5000));
+        QVERIFY(renderer.status().isEmpty());
+        QCOMPARE(renderer.memoryCostKiB(), 160000);
+        for (int y : {128, 384}) for (int x : {128, 384}) QVERIFY(!renderer.featuresAt(QPointF(x, y)).isEmpty());
+        renderer.setMemoryLimit(64);
+        QVERIFY(QTest::qWaitFor([&] { return !renderer.featuresAt(QPointF(256, 256)).isEmpty(); }, 5000));
+        QCOMPARE(renderer.memoryCostKiB(), 40000);
+        QVERIFY(renderer.status().isEmpty());
+        const int decoded = large.started.load();
         draw();
-        QVERIFY(!QTest::qWaitFor([&] { return large.started.load() > 4; }, 500));
+        QVERIFY(!QTest::qWaitFor([&] { return large.started.load() > decoded; }, 500));
+        QVERIFY(std::any_of(server.requests.begin(), server.requests.end(), [](const QByteArray &request) { return request.contains("/large/0/0/0.pbf"); }));
+        source.insert(QStringLiteral("minZoom"), 1);
+        renderer.setSource(&large, source);
+        QVERIFY(QTest::qWaitFor([&] { return renderer.status().contains(QStringLiteral("memory limit")); }, 5000));
+        QVERIFY(renderer.memoryCostKiB() <= 64 * 1024);
+        renderer.setMemoryLimit(256);
+        QVERIFY(QTest::qWaitFor([&] { return renderer.memoryCostKiB() == 160000; }, 5000));
+        QVERIFY(renderer.status().isEmpty());
         renderer.stop();
     }
     void holesAndProperties()
@@ -214,7 +230,7 @@ int main(int argc, char **argv)
         const auto bytes = file.read(2 * 1024 * 1024 + 1); std::atomic_bool cancelled{false};
         for (auto *object : QPluginLoader::staticInstances()) if (auto *decoder = qobject_cast<VectorTileProvider *>(object)) {
             const auto tile = decoder->decodeTile(bytes, cancelled);
-            qInfo().noquote() << "Features:" << tile.features.size() << "Layers:" << tile.layers.join(',') << "Error:" << tile.error;
+            qInfo().noquote() << "Features:" << tile.features.size() << "Cost KiB:" << tile.costKiB << "Layers:" << tile.layers.join(',') << "Error:" << tile.error;
             if (tile.error.isEmpty() && QByteArray(argv[1]) == "--render-sample") {
                 QImage image(1024, 1024, QImage::Format_RGB32);
                 { QPainter painter(&image); painter.setRenderHint(QPainter::Antialiasing); QList<QRectF> labels; int budget = 200000;

@@ -72,6 +72,24 @@ TileRenderer::TileRenderer(QObject *parent) : QObject(parent)
     schedule_.setSingleShot(true);
     connect(&schedule_, &QTimer::timeout, this, &TileRenderer::pump);
 }
+QString TileRenderer::status() const
+{
+    if (!deferred_.isEmpty()) return tr("Map memory limit reached. Increase Tile memory cache in Settings.");
+    return detailLimited_ ? tr("Map detail limit reached. Zoom in or hide layers.") : status_;
+}
+void TileRenderer::setMemoryLimit(int mebibytes)
+{
+    const int limit = std::clamp(mebibytes, 64, 512) * 1024;
+    if (images_.maxCost() == limit) return;
+    cancel();
+    images_.clear();
+    images_.setMaxCost(limit);
+    requested_.clear();
+    visible_.clear();
+    deferred_.clear();
+    pressureZoom_ = 19;
+    emit changed();
+}
 TileRenderer::~TileRenderer() { cancel(); workers_.waitForDone(); network_.setCache(nullptr); lock_.reset(); }
 void TileRenderer::cancel()
 {
@@ -99,6 +117,8 @@ void TileRenderer::setSource(MapProvider *provider, const QJsonObject &source)
     deferred_.clear();
     failures_.clear();
     visible_.clear();
+    requested_.clear();
+    pressureZoom_ = 19;
     network_.clearAccessCache();
     network_.setCache(nullptr);
     disk_ = nullptr;
@@ -128,8 +148,16 @@ void TileRenderer::paint(QPainter &painter, const Viewport &view, double opacity
     const bool fetching = provider_ && ready_ && opacity > 0;
     if (!fetching) stop();
     contentVisible_ = fetching;
-    const auto next = visibleTiles(view, provider_ ? source_.value(QStringLiteral("minZoom")).toInt() : 0,
-        provider_ ? source_.value(QStringLiteral("maxZoom")).toInt() : 19);
+    const int minimum = provider_ ? source_.value(QStringLiteral("minZoom")).toInt() : 0;
+    const int maximum = provider_ ? source_.value(QStringLiteral("maxZoom")).toInt() : 19;
+    const auto requested = visibleTiles(view, minimum, maximum);
+    const bool newView = view.zoom != requestedZoom_ || requested.size() != requested_.size()
+        || !std::equal(requested.begin(), requested.end(), requested_.begin(),
+            [](const TilePlacement &a, const TilePlacement &b) { return a.key == b.key; });
+    if (newView) pressureZoom_ = maximum;
+    requestedZoom_ = view.zoom;
+    requested_ = requested;
+    const auto next = pressureZoom_ < maximum ? visibleTiles(view, minimum, pressureZoom_) : requested;
     const bool moved = next.size() != visible_.size() || !std::equal(next.begin(), next.end(), visible_.begin(),
         [](const TilePlacement &a, const TilePlacement &b) { return a.key == b.key; });
     visible_ = next;
@@ -279,7 +307,8 @@ void TileRenderer::decodeVector(const QString &key, QByteArray bytes, const QUrl
         watcher->deleteLater();
         if (generation == generation_) {
             decoding_.remove(key);
-            if (!flag->load(std::memory_order_relaxed)) {
+            if (!flag->load(std::memory_order_relaxed)
+                && std::any_of(visible_.begin(), visible_.end(), [&](const TilePlacement &tile) { return tile.key == key; })) {
                 if (!result.error.isEmpty()) {
                     if (disk_) disk_->remove(url);
                     fail(key, result.error, 30, false);
@@ -293,9 +322,19 @@ void TileRenderer::decodeVector(const QString &key, QByteArray bytes, const QUrl
                                 images_.remove(cached);
                     }
                     if (images_.totalCost() - previousCost + result.costKiB > images_.maxCost()) {
-                        deferred_.insert(key);
-                        status_ = tr("Vector cache limit reached. Change the view to load other tiles.");
-                        logMessage(Severity::Warning, Urgency::Attention, QStringLiteral("swak.maps"), status_);
+                        const auto tile = std::find_if(visible_.begin(), visible_.end(), [&](const TilePlacement &item) { return item.key == key; });
+                        const int minimum = source_.value(QStringLiteral("minZoom")).toInt();
+                        if (tile != visible_.end() && tile->z > minimum) {
+                            pressureZoom_ = std::min(pressureZoom_, tile->z - 1);
+                            cancel();
+                            images_.clear();
+                            visible_.clear();
+                            deferred_.clear();
+                        } else {
+                            const bool first = deferred_.isEmpty();
+                            deferred_.insert(key);
+                            if (first) logMessage(Severity::Warning, Urgency::Attention, QStringLiteral("swak.maps"), status());
+                        }
                         emit changed();
                         return;
                     }

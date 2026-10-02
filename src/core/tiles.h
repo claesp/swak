@@ -25,10 +25,14 @@ public:
     ~TileRenderer() override;
     void setSource(MapProvider *provider, const QJsonObject &source);
     void paint(QPainter &painter, const Viewport &view, double opacity, bool smooth, double missingOpacity = 0.2);
-    QString status() const { return detailLimited_ ? tr("Map detail limit reached. Zoom in or hide layers.") : status_; }
+    QString status() const;
+    void setMemoryLimit(int mebibytes);
     // Network tests inspect the request bound and cancellation.
     // cppcheck-suppress unusedFunction
     qsizetype pendingCount() const { return pending_.size(); }
+    // Regression tests enforce the decoded memory budget.
+    // cppcheck-suppress unusedFunction
+    qsizetype memoryCostKiB() const { return images_.totalCost(); }
     void stop();
     QStringList layers() const;
     QList<QJsonObject> featuresAt(QPointF position) const;
@@ -45,9 +49,12 @@ private:
     std::unique_ptr<QLockFile> lock_;
     MapProvider *provider_ = nullptr;
     QJsonObject source_;
-    QCache<QString, Image> images_{64 * 1024};
+    QCache<QString, Image> images_{256 * 1024};
     QHash<QString, QNetworkReply *> pending_;
     QList<TilePlacement> visible_;
+    QList<TilePlacement> requested_;
+    int pressureZoom_ = 19;
+    double requestedZoom_ = -1;
     QTimer schedule_;
     QDateTime retryAt_;
     struct Failure { QDateTime retryAt; int delay; };

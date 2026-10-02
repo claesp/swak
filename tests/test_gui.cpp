@@ -424,7 +424,8 @@ private slots:
             QVERIFY(sources->put(id, source).isEmpty()); sources->select(id);
             auto *map = window.findChild<QOpenGLWidget *>(); QVERIFY(map);
             auto *preferences = dynamic_cast<swak::PreferenceParticipant *>(map); QVERIFY(preferences);
-            preferences->restorePreferences(QJsonObject{{QStringLiteral("zoom"), 0}});
+            QCOMPARE(preferences->savePreferences().value(QStringLiteral("tileCacheMiB")).toInt(), 256);
+            preferences->restorePreferences(QJsonObject{{QStringLiteral("zoom"), 0}, {QStringLiteral("tileCacheMiB"), 128}});
             window.show(); QVERIFY(QTest::qWaitForWindowExposed(&window));
             QVERIFY(QTest::qWaitFor([&] {
                 const auto frame = map->grabFramebuffer();
@@ -459,6 +460,9 @@ private slots:
             QVERIFY(window.savePreferences());
         }
         swak::Window restored(path, QPluginLoader::staticInstances());
+        auto *restoredMap = dynamic_cast<swak::PreferenceParticipant *>(restored.findChild<QOpenGLWidget *>());
+        QVERIFY(restoredMap);
+        QCOMPARE(restoredMap->savePreferences().value(QStringLiteral("tileCacheMiB")).toInt(), 128);
         const auto source = restored.findChild<swak::MapSources *>()->activeSource();
         QVERIFY(!source.value(QStringLiteral("visibleLayers")).toObject().value(QStringLiteral("poi")).toBool(true));
     }
