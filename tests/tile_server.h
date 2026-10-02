@@ -6,6 +6,7 @@
 #include <QFile>
 #include <QImage>
 #include <QBuffer>
+#include <QSet>
 
 // This server and its private key are test fixtures only.
 class TileServer final : public QTcpServer {
@@ -16,6 +17,9 @@ public:
     QByteArray headers = "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: max-age=604800\r\n";
     QList<QByteArray> requests;
     bool hold = false;
+    int failFirst = 0;
+    QSet<int> holdRequests;
+    QByteArray failureHeaders = "HTTP/1.1 404 Not Found\r\n";
     TileServer()
     {
         QImage image(256, 256, QImage::Format_RGB32);
@@ -47,8 +51,9 @@ protected:
             input->append(socket->readAll());
             if (!input->contains("\r\n\r\n")) return;
             requests.append(*input);
-            if (hold) return;
-            socket->write(headers + "Content-Length: " + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+            if (hold || holdRequests.contains(static_cast<int>(requests.size()))) return;
+            const auto response = requests.size() <= failFirst ? failureHeaders : headers;
+            socket->write(response + "Content-Length: " + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
             socket->disconnectFromHost();
         });
         socket->startServerEncryption();

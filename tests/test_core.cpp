@@ -57,6 +57,11 @@ private slots:
                 invalid.remove(key);
                 QVERIFY2(!validatePluginManifest(invalid, entry.instance()).isEmpty(), qPrintable(key));
             }
+            for (const auto &key : {QStringLiteral("id"), QStringLiteral("version"), QStringLiteral("qtMinimum")}) {
+                auto invalid = manifest;
+                invalid.insert(key, manifest.value(key).toString() + '\n');
+                QVERIFY(!validatePluginManifest(invalid, entry.instance()).isEmpty());
+            }
             auto future = manifest;
             future.insert(QStringLiteral("qtMinimum"), QStringLiteral("99.0.0"));
             QVERIFY(!validatePluginManifest(future, entry.instance()).isEmpty());
@@ -231,6 +236,41 @@ private slots:
         QCOMPARE(file.write(QByteArray(MaxMessageBytes + 1, 'x')), MaxMessageBytes + 1);
         file.close();
         QVERIFY(!readEventFile(path).error.isEmpty());
+    }
+    void namespaceLimit()
+    {
+        auto xml = codec_->encode(sample());
+        QByteArray declarations;
+        for (int i = 0; i < 33; ++i) declarations += " xmlns:n" + QByteArray::number(i) + "=\"urn:" + QByteArray::number(i) + "\"";
+        xml.replace("<event ", "<event" + declarations + " ");
+        QVERIFY(!codec_->decode(xml).event.has_value());
+    }
+    void receiverSummaryRecovery()
+    {
+        Store store;
+        ActivityModel activity;
+        MapSources maps({});
+        PluginServices services{store, activity, maps};
+        QUdpSocket sender;
+        QVERIFY(sender.bind(QHostAddress::LocalHost, 0));
+        const auto port = sender.localPort();
+        sender.close();
+        auto receiver = std::unique_ptr<QWidget>(source_->create(services, *codec_, nullptr));
+        receiver->findChild<QSpinBox *>(QStringLiteral("bindPort"))->setValue(port);
+        receiver->findChild<QPushButton *>(QStringLiteral("receiverToggle"))->click();
+        activity.clear();
+        sender.writeDatagram("bad", QHostAddress::LocalHost, port);
+        QVERIFY(QTest::qWaitFor([&] { return activity.rowCount() >= 1; }, 2000));
+        QCOMPARE(activity.index(activity.rowCount() - 1, 1).data(ActivityModel::SortRole).toInt(), static_cast<int>(Severity::Warning));
+        activity.clear();
+        QTimer traffic;
+        traffic.setInterval(30);
+        connect(&traffic, &QTimer::timeout, &traffic, [&] { sender.writeDatagram(codec_->encode(sample()), QHostAddress::LocalHost, port); });
+        traffic.start();
+        QVERIFY(QTest::qWaitFor([&] { return activity.rowCount() >= 1; }, 2000));
+        QCOMPARE(activity.index(0, 1).data(ActivityModel::SortRole).toInt(), static_cast<int>(Severity::Info));
+        QVERIFY(activity.rowCount() <= 2);
+        QVERIFY(store.rowCount() > 0);
     }
     void receiverLifecycle()
     {

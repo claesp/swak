@@ -77,12 +77,19 @@ void TileRenderer::cancel()
     pending_.clear();
     for (auto *reply : pending) { reply->disconnect(this); reply->abort(); reply->deleteLater(); }
 }
-void TileRenderer::stop() { cancel(); visible_.clear(); }
+void TileRenderer::stop()
+{
+    cancel();
+    visible_.clear();
+    for (const auto &key : images_.keys())
+        if (images_.object(key)->transient) images_.remove(key);
+}
 void TileRenderer::setSource(MapProvider *provider, const QJsonObject &source)
 {
     if (provider_ == provider && source_ == source && (ready_ || !provider)) return;
     cancel();
     images_.clear();
+    failures_.clear();
     visible_.clear();
     network_.clearAccessCache();
     network_.setCache(nullptr);
@@ -112,7 +119,11 @@ void TileRenderer::paint(QPainter &painter, const Viewport &view, double opacity
 {
     if (!provider_ || !ready_) return;
     if (opacity <= 0) { stop(); return; }
-    visible_ = visibleTiles(view, source_.value(QStringLiteral("minZoom")).toInt(), source_.value(QStringLiteral("maxZoom")).toInt());
+    const auto next = visibleTiles(view, source_.value(QStringLiteral("minZoom")).toInt(), source_.value(QStringLiteral("maxZoom")).toInt());
+    const bool moved = next.size() != visible_.size() || !std::equal(next.begin(), next.end(), visible_.begin(),
+        [](const TilePlacement &a, const TilePlacement &b) { return a.key == b.key; });
+    visible_ = next;
+    if (moved) schedule_.start(150);
     for (const auto &key : images_.keys()) {
         const auto *image = images_.object(key);
         if (image && image->transient && std::none_of(visible_.begin(), visible_.end(), [&](const TilePlacement &tile) { return tile.key == key; }))
@@ -121,20 +132,22 @@ void TileRenderer::paint(QPainter &painter, const Viewport &view, double opacity
     painter.save();
     painter.setOpacity(std::clamp(opacity, 0.0, 1.0));
     painter.setRenderHint(QPainter::SmoothPixmapTransform, smooth);
-    const auto now = QDateTime::currentDateTimeUtc();
     for (const auto &tile : visible_) {
         if (const auto *image = images_.object(tile.key)) {
-            if (image->transient || image->expires > now) painter.drawImage(tile.rectangle, image->pixels);
-            else images_.remove(tile.key);
+            painter.drawImage(tile.rectangle, image->pixels);
         }
     }
     painter.restore();
     if (!schedule_.isActive()) schedule_.start(150);
 }
-void TileRenderer::fail(const QString &message, int retrySeconds)
+void TileRenderer::fail(const QString &key, const QString &message, int retrySeconds, bool providerWide)
 {
     status_ = message;
-    retryAt_ = QDateTime::currentDateTimeUtc().addSecs(std::clamp(retrySeconds, 30, 3600));
+    const auto *previous = failures_.object(key);
+    const int delay = std::clamp(std::max(retrySeconds, previous ? previous->delay * 2 : 30), 30, 3600);
+    const auto retry = QDateTime::currentDateTimeUtc().addSecs(delay);
+    failures_.insert(key, new Failure{retry, delay});
+    if (providerWide) retryAt_ = retry;
     logMessage(Severity::Warning, Urgency::Attention, QStringLiteral("swak.maps"), message);
     emit changed();
 }
@@ -142,7 +155,6 @@ void TileRenderer::pump()
 {
     if (!provider_ || !ready_) return;
     const auto now = QDateTime::currentDateTimeUtc();
-    if (retryAt_ > now) { schedule_.start(static_cast<int>(std::min<qint64>(now.msecsTo(retryAt_), 3600000))); return; }
     for (auto it = pending_.begin(); it != pending_.end();) {
         const bool needed = std::any_of(visible_.begin(), visible_.end(), [&](const TilePlacement &tile) { return tile.key == it.key(); });
         if (needed) { ++it; continue; }
@@ -150,9 +162,18 @@ void TileRenderer::pump()
         it = pending_.erase(it);
         reply->disconnect(this); reply->abort(); reply->deleteLater();
     }
+    if (retryAt_ > now) { schedule_.start(static_cast<int>(std::min<qint64>(now.msecsTo(retryAt_), 3600000))); return; }
+    qint64 nextRetry = 3600000;
+    bool waiting = false;
     for (const auto &tile : visible_) {
-        if (pending_.size() >= 4) break;
-        if (images_.contains(tile.key) || pending_.contains(tile.key)) continue;
+        if (const auto *failure = failures_.object(tile.key); failure && failure->retryAt > now) {
+            waiting = true;
+            nextRetry = std::min(nextRetry, now.msecsTo(failure->retryAt));
+            continue;
+        }
+        if (pending_.size() >= 4) continue;
+        const auto *cached = images_.object(tile.key);
+        if ((cached && (cached->transient || cached->expires > now)) || pending_.contains(tile.key)) continue;
         const auto url = provider_->tileUrl(source_, tile.z, tile.x, tile.y);
         if (!url.isValid() || url.scheme() != QStringLiteral("https") || url.host().isEmpty()) continue;
         QNetworkRequest request(url);
@@ -186,20 +207,25 @@ void TileRenderer::pump()
             const auto image = reply->error() == QNetworkReply::NoError && status == 200 ? decodeMapTile(*data) : QImage{};
             if (image.isNull()) {
                 if (disk_) disk_->remove(reply->url());
-                fail(tr("Map tile failed. Check the provider, HTTPS certificate, and service limits."), reply->rawHeader("Retry-After").toInt());
+                fail(key, tr("Map tile failed. Check the provider, HTTPS certificate, and service limits."),
+                    reply->rawHeader("Retry-After").toInt(), status == 429 || status == 503
+                        || reply->error() == QNetworkReply::SslHandshakeFailedError);
             } else {
-                auto expires = disk_ ? disk_->metaData(reply->url()).expirationDate() : QDateTime{};
+                failures_.remove(key);
+                const auto metadata = disk_ ? disk_->metaData(reply->url()) : QNetworkCacheMetaData{};
+                auto expires = metadata.expirationDate();
                 const auto control = reply->rawHeader("Cache-Control").toLower();
-                const bool transient = control.contains("no-store") || control.contains("no-cache") ||
+                const bool transient = !metadata.isValid() || control.contains("no-store") || control.contains("no-cache") ||
                     (expires.isValid() && expires <= QDateTime::currentDateTimeUtc());
                 if (!expires.isValid()) expires = QDateTime::currentDateTimeUtc().addDays(7);
                 images_.insert(key, new Image{image, expires, transient}, static_cast<int>(image.sizeInBytes() / 1024));
-                status_.clear();
+                if (failures_.isEmpty()) status_.clear();
                 emit changed();
             }
             reply->deleteLater();
-            if (!schedule_.isActive()) schedule_.start(150);
+            schedule_.start(150);
         });
     }
+    if (waiting && !schedule_.isActive()) schedule_.start(static_cast<int>(std::max<qint64>(1, nextRetry)));
 }
 }

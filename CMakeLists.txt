@@ -23,6 +23,8 @@ target_include_directories(swak_build INTERFACE "${CMAKE_CURRENT_BINARY_DIR}/gen
 target_compile_options(swak_build INTERFACE
     $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic;-Wconversion;-Wshadow;-fstack-protector-strong>)
 target_link_options(swak_build INTERFACE $<$<CXX_COMPILER_ID:GNU,Clang>:-Wl,-z,relro,-z,now>)
+target_compile_options(swak_build INTERFACE
+    $<$<AND:$<CONFIG:Release,RelWithDebInfo>,$<CXX_COMPILER_ID:GNU,Clang>>:-include;${CMAKE_CURRENT_SOURCE_DIR}/src/core/hardening.h>)
 if(SWAK_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(swak_build INTERFACE -fsanitize=address,undefined -fno-omit-frame-pointer)
     target_link_options(swak_build INTERFACE -fsanitize=address,undefined)
@@ -58,7 +60,7 @@ target_link_libraries(swak PRIVATE swak_activity swak_cot swak_map swak_basemap 
 install(TARGETS swak RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES packaging/org.swak.Swak.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
 install(FILES packaging/org.swak.Swak.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
-install(DIRECTORY docs/ DESTINATION ${CMAKE_INSTALL_DOCDIR})
+install(FILES docs/usage.md docs/map-providers.md DESTINATION ${CMAKE_INSTALL_DOCDIR})
 
 if(BUILD_TESTING)
     find_package(Qt6 6.4 REQUIRED COMPONENTS Test)

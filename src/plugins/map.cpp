@@ -137,16 +137,36 @@ protected:
         if (!source.isEmpty()) {
             QString credit = source.value(QStringLiteral("attribution")).toString();
             static const QRegularExpression links(QStringLiteral("https?://[^\\s|<>]+"));
-            const auto match = links.match(credit);
-            const QUrl url(match.captured(), QUrl::StrictMode);
+            QList<QUrl> urls;
+            auto matches = links.globalMatch(credit);
+            while (matches.hasNext()) {
+                auto candidate = matches.next().captured();
+                while (!candidate.isEmpty() && (QStringLiteral(".,;:!?").contains(candidate.back())
+                    || (candidate.endsWith(')') && candidate.count(')') > candidate.count('('))
+                    || (candidate.endsWith(']') && candidate.count(']') > candidate.count('[')))) candidate.chop(1);
+                const QUrl url(candidate, QUrl::StrictMode);
+                if (url.isValid() && !url.host().isEmpty() && url.userInfo().isEmpty()) urls.append(url);
+            }
             credit.remove(links);
             credit = credit.trimmed();
-            while (credit.endsWith(QLatin1Char('|'))) { credit.chop(1); credit = credit.trimmed(); }
+            while (!credit.isEmpty() && QStringLiteral("|(").contains(credit.back())) {
+                credit.chop(1);
+                credit = credit.trimmed();
+            }
+            if (credit.isEmpty()) credit = tr("Map attribution");
             int naturalWidth = attribution_->fontMetrics().horizontalAdvance(credit);
             QString text = credit.toHtmlEscaped();
-            const bool linked = match.hasMatch() && url.isValid() && !url.host().isEmpty() && url.userInfo().isEmpty();
-            if (linked) text = QStringLiteral("<a style=\"color: white\" href=\"%1\">%2</a>")
-                .arg(url.toString(QUrl::FullyEncoded).toHtmlEscaped(), text);
+            const bool linked = !urls.isEmpty();
+            if (linked) {
+                text = QStringLiteral("<a style=\"color: white\" href=\"%1\">%2</a>")
+                    .arg(urls.first().toString(QUrl::FullyEncoded).toHtmlEscaped(), text);
+                for (qsizetype i = 1; i < urls.size(); ++i) {
+                    const auto label = tr("Source %1").arg(i + 1);
+                    text += QStringLiteral(" | <a style=\"color: white\" href=\"%1\">%2</a>")
+                        .arg(urls.at(i).toString(QUrl::FullyEncoded).toHtmlEscaped(), label.toHtmlEscaped());
+                    naturalWidth += attribution_->fontMetrics().horizontalAdvance(QStringLiteral(" | ") + label);
+                }
+            }
             if (source.value(QStringLiteral("ignoreTls")).toBool(false)) {
                 const auto warning = tr("HTTPS certificate checks disabled");
                 text += QStringLiteral("<br>") + warning.toHtmlEscaped();
@@ -154,7 +174,7 @@ protected:
             }
             if (!tiles_.status().isEmpty()) text += QStringLiteral("<br>") + tiles_.status().toHtmlEscaped();
             attribution_->setText(text);
-            attribution_->setToolTip(linked ? url.toDisplayString() : QString{});
+            attribution_->setToolTip(linked ? urls.first().toDisplayString() : QString{});
             const auto style = QStringLiteral("QLabel { color: white; background-color: rgba(16,32,44,%1); padding: 4px; }")
                 .arg(qRound(attributionOpacity_ * 255));
             if (attribution_->styleSheet() != style) attribution_->setStyleSheet(style);

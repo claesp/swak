@@ -3,6 +3,8 @@
 #include <QJsonDocument>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QScopeGuard>
+#include <unistd.h>
 
 using namespace swak;
 class PreferencesTest final : public QObject {
@@ -63,6 +65,31 @@ private slots:
         QFile file(path);
         QVERIFY(file.open(QIODevice::ReadOnly));
         QCOMPARE(QJsonDocument::fromJson(file.readAll()).object(), document);
+    }
+    void readOnlyProfileAndCopiedLock()
+    {
+        QTemporaryDir directory;
+        const auto path = directory.filePath(QStringLiteral("preferences.json"));
+        const QJsonObject document{{QStringLiteral("version"), 1}, {QStringLiteral("value"), 42}};
+        { Preferences profile(path); QVERIFY(profile.save(document)); }
+        if (::geteuid() != 0) {
+            const auto permissions = QFile::permissions(directory.path());
+            const auto restore = qScopeGuard([&] { QFile::setPermissions(directory.path(), permissions); });
+            QVERIFY(QFile::setPermissions(directory.path(), QFileDevice::ReadOwner | QFileDevice::ExeOwner));
+            Preferences profile(path);
+            QVERIFY(!profile.writable());
+            QCOMPARE(profile.document(), document);
+            QVERIFY(profile.error().contains(QStringLiteral("lock cannot be created")));
+        }
+        QFile lock(path + QStringLiteral(".lock"));
+        QVERIFY(lock.open(QIODevice::WriteOnly));
+        lock.write("999999\nswak\nother-host\n");
+        QVERIFY(lock.flush());
+        QVERIFY(lock.setFileTime(QDateTime::currentDateTimeUtc().addSecs(-60), QFileDevice::FileModificationTime));
+        lock.close();
+        Preferences recovered(path);
+        QVERIFY2(recovered.writable(), qPrintable(recovered.error()));
+        QCOMPARE(recovered.document(), document);
     }
     void writeFailure()
     {

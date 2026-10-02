@@ -166,7 +166,9 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     manageMaps->setObjectName(QStringLiteral("mapProvidersAction"));
     connect(manageMaps, &QAction::triggered, this, [this, mapSources] {
         if (auto *existing = findChild<MapManager *>()) { existing->show(); existing->raise(); return; }
-        auto *dialog = new MapManager(*mapSources, this);
+        auto *dialog = new MapManager(*mapSources, this, [this] {
+            return savePreferences() ? QString{} : preferences_.error();
+        });
         dialog->setAttribute(Qt::WA_DeleteOnClose);
         if (!mapManagerGeometry_.isEmpty()) dialog->restoreGeometry(mapManagerGeometry_);
         connect(dialog, &QDialog::finished, this, [this, dialog] { mapManagerGeometry_ = dialog->saveGeometry(); savePreferences(); });
@@ -196,6 +198,12 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
                 show->setCheckable(true);
                 show->setChecked(!dock->isHidden());
                 menu->insertAction(menu->actions().first(), show);
+                connect(menu, &QMenu::aboutToShow, show, [show, dock] {
+                    show->setChecked(dock->toggleViewAction()->isChecked());
+                });
+                connect(pluginsMenu, &QMenu::aboutToShow, menu, [menu, dock] {
+                    menu->menuAction()->setChecked(dock->toggleViewAction()->isChecked());
+                });
                 connect(show, &QAction::triggered, dock, [dock](bool visible) {
                     dock->setVisible(visible);
                     if (visible) dock->raise();
@@ -268,6 +276,10 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     });
     logMessage(Severity::Info, Urgency::Routine, QStringLiteral("swak.application"), tr("Workspace ready."));
     preferencesStatus_->setText(preferences_.error());
+    if (!preferences_.error().isEmpty()) {
+        lastSaveError_ = preferences_.error();
+        logMessage(Severity::Error, Urgency::Attention, QStringLiteral("swak.preferences"), lastSaveError_);
+    }
     preferencesStatus_->setToolTip(preferences_.path());
     const auto application = preferences_.document().value(QStringLiteral("application")).toObject();
     saveTimer_.setInterval(preferenceInteger(application, QStringLiteral("saveInterval"), 750, 250, 60000));
@@ -275,7 +287,8 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     mapManagerGeometry_ = geometryBytes(application, QStringLiteral("mapManagerGeometry"));
     settingsNavigation_ = application.value(QStringLiteral("settingsNavigation")).toObject();
     connect(&saveTimer_, &QTimer::timeout, this, [this] {
-        if (isVisible() && !closing_) savePreferences();
+        if (isVisible() && !closing_ && preferences_.writable()
+            && (!failedSave_.isValid() || failedSave_.elapsed() >= 30000)) savePreferences();
     });
 }
 Window::~Window()
@@ -319,6 +332,7 @@ void Window::restorePreferences()
 }
 bool Window::savePreferences()
 {
+    if (!preferences_.writable()) return false;
     auto document = preferences_.document();
     auto window = document.value(QStringLiteral("window")).toObject();
     window.insert(QStringLiteral("geometry"), QString::fromLatin1(saveGeometry().toBase64()));
@@ -353,7 +367,15 @@ bool Window::savePreferences()
     document.insert(QStringLiteral("version"), 1);
     const bool saved = preferences_.save(document);
     preferencesStatus_->setText(preferences_.error());
-    if (!saved) logMessage(Severity::Error, Urgency::Attention, QStringLiteral("swak.preferences"), tr("The application cannot save preferences."));
+    if (!saved) {
+        failedSave_.start();
+        if (lastSaveError_ != preferences_.error())
+            logMessage(Severity::Error, Urgency::Attention, QStringLiteral("swak.preferences"), preferences_.error());
+        lastSaveError_ = preferences_.error();
+    } else {
+        failedSave_.invalidate();
+        lastSaveError_.clear();
+    }
     return saved;
 }
 QList<PreferenceParticipant *> Window::participants() const
@@ -421,9 +443,11 @@ void Window::openSettings()
             {{QStringLiteral("visible"), !dock->isHidden()}, {QStringLiteral("floating"), dock->isFloating()},
              {QStringLiteral("area"), static_cast<int>(dockWidgetArea(dock))},
              {QStringLiteral("width"), dock->width()}, {QStringLiteral("height"), dock->height()},
-             {QStringLiteral("x"), dock->x()}, {QStringLiteral("y"), dock->y()}}, {},
+             {QStringLiteral("x"), dock->isFloating() ? dock->x() : dock->mapToGlobal(QPoint{}).x()},
+             {QStringLiteral("y"), dock->isFloating() ? dock->y() : dock->mapToGlobal(QPoint{}).y()}}, {},
             [this, dock](const QJsonObject &values) {
-                addDockWidget(static_cast<Qt::DockWidgetArea>(values.value(QStringLiteral("area")).toInt()), dock);
+                const auto area = static_cast<Qt::DockWidgetArea>(values.value(QStringLiteral("area")).toInt());
+                if (dockWidgetArea(dock) != area) addDockWidget(area, dock);
                 dock->setFloating(values.value(QStringLiteral("floating")).toBool());
                 if (dock->isFloating()) dock->setGeometry(values.value(QStringLiteral("x")).toInt(), values.value(QStringLiteral("y")).toInt(),
                     values.value(QStringLiteral("width")).toInt(), values.value(QStringLiteral("height")).toInt());

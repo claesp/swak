@@ -1,5 +1,7 @@
 # Session handoff
 
+Latest implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
+
 Latest review: [Claude Code Qt skill review, October 2](review-2026-10-02-claude.md). It adds five P2 defects in expiring selections, preference save errors, receiver logging, failed tiles, and URL-only attribution. It also lists P3 findings. The three defects in the [earlier review](review-2026-10-02.md) remain open. Application code remains at `2d904ab`. Later sections below contain historical implementation snapshots.
 
 This handoff records the project state on October 2, 2026. The repository is `/home/clpe/code/swak`, and the branch is `main`.

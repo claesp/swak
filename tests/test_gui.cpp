@@ -20,6 +20,7 @@
 #include <QScopeGuard>
 #include "core/interfaces.h"
 #include <QApplication>
+#include <QAbstractItemModelTester>
 #include <QDoubleSpinBox>
 #include <QImage>
 #include <QLineEdit>
@@ -110,6 +111,146 @@ public:
 class GuiTest final : public QObject {
     Q_OBJECT
 private slots:
+    void selectionExpiryAndNumericSort()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("selection.json")), QPluginLoader::staticInstances());
+        auto *table = window.findChild<QTableView *>(QStringLiteral("eventsTable"));
+        auto &store = window.store();
+        QAbstractItemModelTester tester(&store, QAbstractItemModelTester::FailureReportingMode::QtTest);
+        swak::Event event;
+        event.type = QStringLiteral("a-f-G"); event.how = QStringLiteral("h-e");
+        event.time = QDateTime::currentDateTimeUtc(); event.start = event.time;
+        const auto now = event.time;
+        for (int n : {2, 10, -2, -10}) {
+            event.uid = QString::number(n); event.latitude = n; event.longitude = n;
+            event.stale = now.addSecs(n == 2 ? 1 : 60);
+            QVERIFY(store.accept(event, now).isEmpty());
+        }
+        for (int column : {2, 3}) {
+            table->sortByColumn(column, Qt::AscendingOrder);
+            QCOMPARE(table->model()->index(0, 0).data(Qt::UserRole).toString(), QStringLiteral("-10"));
+            QCOMPARE(table->model()->index(3, 0).data(Qt::UserRole).toString(), QStringLiteral("10"));
+        }
+        store.select(QStringLiteral("2"));
+        store.expire(now.addSecs(2));
+        QVERIFY(store.selected().isEmpty());
+        QVERIFY(!table->currentIndex().isValid());
+        store.select(QStringLiteral("10"));
+        const auto current = table->currentIndex();
+        QVERIFY(current.isValid());
+        store.select({});
+        table->setCurrentIndex(current);
+        QCOMPARE(store.selected(), QStringLiteral("10"));
+    }
+    void providerRecoveryAndSaveFailure()
+    {
+        QTemporaryDir directory;
+        const auto path = directory.filePath(QStringLiteral("providers.json"));
+        swak::MapSources seed(QPluginLoader::staticInstances());
+        auto values = seed.savePreferences();
+        auto sources = seed.sources();
+        sources.insert(QStringLiteral("custom"), sources.value(QStringLiteral("org.swak.xyz")));
+        auto invalid = sources.value(QStringLiteral("org.swak.wms")).toObject();
+        invalid.insert(QStringLiteral("endpoint"), QStringLiteral("invalid"));
+        sources.insert(QStringLiteral("org.swak.wms"), invalid);
+        values.insert(QStringLiteral("sources"), sources);
+        {
+            swak::Preferences profile(path);
+            QVERIFY(profile.save({{QStringLiteral("version"), 1}, {QStringLiteral("components"), QJsonObject{{seed.preferenceId(), values}}}}));
+        }
+        {
+            swak::Window window(path, QPluginLoader::staticInstances());
+            QVERIFY(window.savePreferences());
+        }
+        swak::Preferences locked(path);
+        QCOMPARE(locked.document().value(QStringLiteral("components")).toObject().value(seed.preferenceId()).toObject(), values);
+        swak::Window second(path, QPluginLoader::staticInstances());
+        second.show();
+        auto *activity = second.findChild<swak::ActivityModel *>();
+        activity->clear();
+        QVERIFY(!QTest::qWaitFor([&] { return activity->rowCount() > 0; }, 1800));
+        second.findChild<QAction *>(QStringLiteral("mapProvidersAction"))->trigger();
+        auto *manager = second.findChild<swak::MapManager *>();
+        bool tested = false;
+        QTimer::singleShot(0, manager, [&] {
+            auto *dialog = manager->findChild<swak::SettingsDialog *>();
+            QVERIFY(dialog);
+            const auto close = qScopeGuard([dialog] { dialog->reject(); });
+            for (auto *line : dialog->findChildren<QLineEdit *>())
+                if (line->objectName().endsWith(QStringLiteral("/name"))) line->setText(QStringLiteral("Edited"));
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+            QCOMPARE(dialog->result(), 0);
+            QVERIFY(dialog->findChild<QLabel *>(QStringLiteral("settingsStatus"))->text().contains(QStringLiteral("saving failed")));
+            tested = true;
+        });
+        manager->findChild<QPushButton *>(QStringLiteral("editMapProvider"))->click();
+        QVERIFY(tested);
+    }
+    void repeatedSaveFailureRecovers()
+    {
+        QTemporaryDir directory;
+        const auto path = directory.filePath(QStringLiteral("blocked.json"));
+        swak::Window window(path, QPluginLoader::staticInstances());
+        QVERIFY(QDir().mkdir(path));
+        window.show();
+        auto *activity = window.findChild<swak::ActivityModel *>();
+        activity->clear();
+        const auto failures = [&] {
+            int count = 0;
+            for (int i = 0; i < activity->rowCount(); ++i)
+                if (activity->index(i, 3).data().toString() == QStringLiteral("swak.preferences")) ++count;
+            return count;
+        };
+        QVERIFY(!window.savePreferences());
+        QVERIFY(!window.savePreferences());
+        QVERIFY(QTest::qWaitFor([&] { return failures() == 1; }, 2000));
+        QVERIFY(!QTest::qWaitFor([&] { return failures() > 1; }, 1800));
+        QVERIFY(QDir().rmdir(path));
+        QVERIFY(window.savePreferences());
+        QVERIFY(window.findChild<QLabel *>(QStringLiteral("preferencesStatus"))->text().isEmpty());
+    }
+    void restoredMenuAndPaneTabs()
+    {
+        QTemporaryDir directory;
+        const auto path = directory.filePath(QStringLiteral("panes.json"));
+        {
+            swak::Window window(path, QPluginLoader::staticInstances());
+            window.findChild<QDockWidget *>(QStringLiteral("org.swak.events.pane"))->hide();
+            QVERIFY(window.savePreferences());
+        }
+        swak::Window window(path, QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *dock = window.findChild<QDockWidget *>(QStringLiteral("org.swak.events.pane"));
+        auto *root = window.findChild<QMenu *>(QStringLiteral("pluginsMenu"));
+        QMetaObject::invokeMethod(root, "aboutToShow");
+        QMenu *events = nullptr;
+        for (auto *action : root->actions()) if (action->menu() && action->text() == QStringLiteral("CoT Events")) events = action->menu();
+        QVERIFY(events);
+        QVERIFY(!events->menuAction()->isChecked());
+        QMetaObject::invokeMethod(events, "aboutToShow");
+        QVERIFY(!events->actions().first()->isChecked());
+        events->actions().first()->trigger();
+        QVERIFY(!dock->isHidden());
+        auto *editor = window.findChild<QDockWidget *>(QStringLiteral("org.swak.editor.pane"));
+        auto *udp = window.findChild<QDockWidget *>(QStringLiteral("org.swak.udp.pane"));
+        window.tabifyDockWidget(editor, udp);
+        bool tested = false;
+        QTimer::singleShot(0, &window, [&] {
+            auto *dialog = window.findChild<swak::SettingsDialog *>();
+            QVERIFY(dialog);
+            const auto close = qScopeGuard([dialog] { dialog->reject(); });
+            auto *width = dialog->findChild<QDoubleSpinBox *>(editor->objectName() + QStringLiteral("/width"));
+            QVERIFY(width);
+            width->setValue(width->value() + 1);
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Apply)->click();
+            QVERIFY(window.tabifiedDockWidgets(editor).contains(udp));
+            tested = true;
+        });
+        window.findChild<QAction *>(QStringLiteral("settingsAction"))->trigger();
+        QVERIFY(tested);
+    }
     void internalEventsAndMapToolbar()
     {
         QTemporaryDir directory;
@@ -223,6 +364,15 @@ private slots:
         QTest::keyClick(credit, Qt::Key_Tab);
         QTest::keyClick(credit, Qt::Key_Return);
         QCOMPARE(browser.opened, QUrl(QStringLiteral("https://www.openstreetmap.org/copyright")));
+        source.insert(QStringLiteral("attribution"), QStringLiteral("https://example.org/license"));
+        QVERIFY(sources->put(id, source).isEmpty());
+        map->grabFramebuffer();
+        QVERIFY(credit->text().contains(QStringLiteral(">Map attribution</a>")));
+        source.insert(QStringLiteral("attribution"), QStringLiteral("Example (https://example.org/license). | https://example.org/second"));
+        QVERIFY(sources->put(id, source).isEmpty());
+        map->grabFramebuffer();
+        QCOMPARE(credit->text().count(QStringLiteral("href=")), 2);
+        QVERIFY(credit->text().contains(QStringLiteral("href=\"https://example.org/license\"")));
         QVERIFY(window.screen()->grabWindow(window.winId()).save(QStringLiteral("map-attribution-smoke.png")));
         QVERIFY(map->grabFramebuffer().save(QStringLiteral("provider-map-smoke.png")));
         window.findChild<QAction *>(QStringLiteral("mapProvidersAction"))->trigger();

@@ -54,4 +54,13 @@ Requests reject redirects and do not send or store cookies. Zero opacity stops d
 
 Automated tests use a local HTTPS server and a public test certificate under `tests/fixtures/`. The matching private key is only a test fixture. It is not an application credential and is not installed. Tests do not download public map tiles or pan public services.
 
-The tests cover format parameters, bounds, missing plugins, certificate rejection, the explicit override, cache isolation, invalid responses, cancellation, and rendering. Native tests inspect the OpenGL framebuffer and provider manager. Read the dated results in [HANDOFF.md](HANDOFF.md) for the current test outcome and remaining limits.
+The tests cover format parameters, bounds, missing plugins, certificate rejection, the explicit override, cache isolation, invalid responses, cancellation, and rendering. Native tests inspect the OpenGL framebuffer and provider manager. Development test results remain in the source repository under `docs/`.
+
+
+# Tile recovery
+
+A failed tile has a bounded retry delay from 30 seconds through one hour. Other visible tiles continue to load. Service rate limits, service outages, and certificate failures pause the provider. Moving the map cancels obsolete requests during that pause.
+
+An expired image remains visible while its replacement loads. Images without usable cache metadata remain only in the current view. Hiding the map releases those images. Failure records have a limit of 256 entries.
+
+URL-only attribution shows a visible Map attribution link. Additional URLs have separate Source links. The link parser removes trailing sentence punctuation and unmatched closing brackets.

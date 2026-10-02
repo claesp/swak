@@ -32,7 +32,7 @@ private:
     struct Image { QImage pixels; QDateTime expires; bool transient; };
     void pump();
     void cancel();
-    void fail(const QString &message, int retrySeconds = 30);
+    void fail(const QString &key, const QString &message, int retrySeconds, bool providerWide);
     QNetworkAccessManager network_;
     QNetworkDiskCache *disk_ = nullptr;
     std::unique_ptr<QLockFile> lock_;
@@ -43,6 +43,8 @@ private:
     QList<TilePlacement> visible_;
     QTimer schedule_;
     QDateTime retryAt_;
+    struct Failure { QDateTime retryAt; int delay; };
+    QCache<QString, Failure> failures_{256};
     QString status_;
     bool ready_ = false;
 };

@@ -27,6 +27,7 @@ public:
     const QString &error() const { return error_; }
     const QString &path() const { return path_; }
     bool save(const QJsonObject &document);
+    bool writable() const { return writable_; }
 private:
     QString path_;
     QString error_;

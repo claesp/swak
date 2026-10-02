@@ -16,8 +16,9 @@ Q_GLOBAL_STATIC(Inbox, inbox)
 QString boundedText(const QString &text, qsizetype limit)
 {
     QString result;
-    for (const auto ch : text.left(limit))
-        if (ch.isPrint() && ch.category() != QChar::Other_Format) result += ch;
+    for (const char32_t ch : text.left(limit).toUcs4())
+        if (QChar::isPrint(ch) && QChar::category(ch) != QChar::Other_Format)
+            result += QString::fromUcs4(&ch, 1);
     return result;
 }
 }
@@ -46,7 +47,12 @@ QVariant ActivityModel::data(const QModelIndex &index, int role) const
     if (!index.isValid() || index.row() < 0 || index.row() >= events_.size() || index.column() < 0 || index.column() >= 5) return {};
     const auto &event = events_.at(index.row());
     if (role == Qt::ForegroundRole && event.severity >= Severity::Error) return QColor(QStringLiteral("#e53935"));
-    if (role != Qt::DisplayRole && role != Qt::ToolTipRole) return {};
+    if (role == SortRole) {
+        if (index.column() == 0) return event.time;
+        if (index.column() == 1) return static_cast<int>(event.severity);
+        if (index.column() == 2) return static_cast<int>(event.urgency);
+    }
+    if (role != Qt::DisplayRole && role != Qt::ToolTipRole && role != SortRole) return {};
     switch (index.column()) {
     case 0: return event.time.toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"));
     case 1: return QStringList{tr("Debug"), tr("Information"), tr("Warning"), tr("Error"), tr("Fatal")}.at(static_cast<int>(event.severity));

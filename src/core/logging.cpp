@@ -81,8 +81,10 @@ void configureLogging(const QJsonObject &values)
     if (log.output >= 0) { ::close(log.output); log.output = -1; }
     struct stat information {};
     log.socket = ::fstat(STDERR_FILENO, &information) == 0 && S_ISSOCK(information.st_mode);
-    if (log.enabled && !log.socket)
-        log.output = ::open("/proc/self/fd/2", O_WRONLY | O_NONBLOCK | O_APPEND | O_CLOEXEC);
+    if (log.enabled && !log.socket) {
+        if (S_ISREG(information.st_mode)) log.output = ::fcntl(STDERR_FILENO, F_DUPFD_CLOEXEC, 3);
+        else log.output = ::open("/proc/self/fd/2", O_WRONLY | O_NONBLOCK | O_APPEND | O_CLOEXEC);
+    }
 }
 QJsonObject loggingConfiguration()
 {

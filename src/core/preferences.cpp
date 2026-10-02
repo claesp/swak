@@ -23,10 +23,14 @@ Preferences::Preferences(QString path) : path_(QFileInfo(path).absoluteFilePath(
         return;
     }
     lock_ = std::make_unique<QLockFile>(path_ + QStringLiteral(".lock"));
-    lock_->setStaleLockTime(0);
-    if (!lock_->tryLock(0)) {
-        error_ = tr("Another instance owns the preferences file. This instance will not save preferences.");
-        return;
+    lock_->setStaleLockTime(30000);
+    const bool locked = lock_->tryLock(0);
+    if (!locked) {
+        if (lock_->error() == QLockFile::LockFailedError) {
+            error_ = tr("Another instance owns the preferences file. This instance will not save preferences.");
+            return;
+        }
+        error_ = tr("The preferences lock cannot be created. This instance will read the profile without saving.");
     }
     if (QFileInfo::exists(path_)) {
         const auto input = readRegularFile(path_, MaxPreferencesBytes);
@@ -44,7 +48,7 @@ Preferences::Preferences(QString path) : path_(QFileInfo(path).absoluteFilePath(
         }
         document_ = json.object();
     }
-    writable_ = true;
+    writable_ = locked;
 }
 Preferences::~Preferences() = default;
 QString Preferences::defaultPath()

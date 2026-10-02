@@ -41,7 +41,7 @@ public:
                 token == QXmlStreamReader::ProcessingInstruction)
                 return fail(tr("The XML contains a prohibited declaration or reference."));
             if (token == QXmlStreamReader::StartElement) {
-                if (++depth > 12 || ++elements > 256 || xml.attributes().size() > 32)
+                if (++depth > 12 || ++elements > 256 || xml.attributes().size() + xml.namespaceDeclarations().size() > 32)
                     return fail(tr("The XML structure exceeds the supported limits."));
                 const auto attrs = xml.attributes();
                 const auto field = [&attrs](const char *key) { return attrs.value(QLatin1String(key)).toString(); };

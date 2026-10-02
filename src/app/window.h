@@ -3,6 +3,7 @@
 #include "core/preferences.h"
 #include <QMainWindow>
 #include <QTimer>
+#include <QElapsedTimer>
 
 class QLabel;
 namespace swak {
@@ -29,6 +30,8 @@ private:
     QTimer saveTimer_;
     QByteArray defaultLayout_;
     QLabel *preferencesStatus_ = nullptr;
+    QString lastSaveError_;
+    QElapsedTimer failedSave_;
     bool closing_ = false;
     bool shown_ = false;
     QByteArray settingsGeometry_;

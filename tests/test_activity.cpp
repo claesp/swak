@@ -2,6 +2,7 @@
 #include <QAbstractItemModelTester>
 #include <QSignalSpy>
 #include <QTest>
+#include <QSortFilterProxyModel>
 #include <thread>
 #include <vector>
 using namespace swak;
@@ -35,6 +36,24 @@ private slots:
         QCOMPARE(model.rowCount(), 0);
         QVERIFY(!model.data({}).isValid());
         QVERIFY(!model.headerData(99, Qt::Horizontal, Qt::DisplayRole).isValid());
+    }
+    void unicodeAndTypedSorting()
+    {
+        ActivityModel model;
+        model.clear();
+        const auto text = QString::fromUtf8("Map 🌍");
+        publishActivity(Severity::Warning, Urgency::Immediate, {}, text);
+        publishActivity(Severity::Error, Urgency::Routine, {}, QStringLiteral("error"));
+        QVERIFY(QTest::qWaitFor([&] { return model.rowCount() == 2; }));
+        QCOMPARE(model.index(0, 4).data().toString(), text);
+        QCOMPARE(model.index(0, 0).data(ActivityModel::SortRole).metaType(), QMetaType::fromType<QDateTime>());
+        QSortFilterProxyModel proxy;
+        proxy.setSourceModel(&model);
+        proxy.setSortRole(ActivityModel::SortRole);
+        proxy.sort(1, Qt::AscendingOrder);
+        QCOMPARE(proxy.index(0, 4).data().toString(), text);
+        proxy.sort(2, Qt::AscendingOrder);
+        QCOMPARE(proxy.index(0, 4).data().toString(), QStringLiteral("error"));
     }
     void concurrentFlood()
     {

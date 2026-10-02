@@ -24,7 +24,7 @@ For a nonstandard Qt installation, set `CMAKE_PREFIX_PATH` during configuration.
 cmake --preset debug -DCMAKE_PREFIX_PATH=/path/to/qt
 ```
 
-Always rebuild the release executable after application changes, before completing the task. The release preset uses a separate directory. Run the following commands from the repository root. Installation includes the executable, desktop entry, icon, and documentation.
+Always rebuild the release executable after application changes, before completing the task. The release preset uses a separate directory. Run the following commands from the repository root. Installation includes the executable, desktop entry, icon, and user guides. Developer reviews and session notes stay in the source repository.
 
 ```sh
 cmake --preset release
@@ -61,3 +61,8 @@ QT_QPA_PLATFORM=xcb xvfb-run -a -s '-screen 0 1440x1000x24 -nolisten tcp' ./swak
 ```
 
 The ordinary CTest suite uses the offscreen platform and does not test rendering. The GUI test runs separately to avoid silent skips on hosts without OpenGL. Native Wayland behavior requires a separate desktop test.
+
+
+# Release hardening
+
+Optimized GCC and Clang builds set `_FORTIFY_SOURCE=2` unless the toolchain supplies its own value. This enables supported library bounds diagnostics. Existing stack protection and linker protection remain enabled. Tests and sanitizers remain excluded from the release preset.

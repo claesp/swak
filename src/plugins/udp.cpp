@@ -47,6 +47,17 @@ public:
         socket_ = new QUdpSocket(this);
         timer_ = new QTimer(this);
         timer_->setInterval(25);
+        summary_ = new QTimer(this);
+        summary_->setInterval(1000);
+        connect(summary_, &QTimer::timeout, this, [this] {
+            if (!reportPending_) return;
+            const auto severity = rejectedSinceReport_ ? Severity::Warning : Severity::Info;
+            logMessage(severity, rejectedSinceReport_ ? Urgency::Attention : Urgency::Routine,
+                QStringLiteral("swak.udp"),
+                tr("Receiver summary. Accepted: %1. Rejected: %2.").arg(accepted_).arg(rejected_));
+            reportPending_ = false;
+            rejectedSinceReport_ = false;
+        });
         connect(button_, &QPushButton::clicked, this, [this] { toggle(); });
         connect(timer_, &QTimer::timeout, this, [this] { drain(); });
     }
@@ -97,6 +108,7 @@ private:
         if (runningRequested_) {
             runningRequested_ = false;
             timer_->stop();
+            summary_->stop();
             socket_->close();
             address_->setEnabled(true);
             port_->setEnabled(true);
@@ -122,13 +134,18 @@ private:
         port_->setEnabled(false);
         button_->setText(tr("Stop receiver"));
         showStatus(tr("Receiver active on %1:%2. No messages yet.").arg(address_->text()).arg(port_->value()));
+        reportPending_ = false;
+        rejectedSinceReport_ = false;
         timer_->start();
+        summary_->start();
     }
     void drain()
     {
         QElapsedTimer budget;
         budget.start();
         bool received = false;
+        const auto rejectedBefore = rejected_;
+        lastError_.clear();
         for (int count = 0; count < 32 && socket_->hasPendingDatagrams() && budget.elapsed() < 4; ++count) {
             received = true;
             const qint64 bytes = socket_->pendingDatagramSize();
@@ -149,8 +166,12 @@ private:
             if (error.isEmpty()) ++accepted_;
             else { ++rejected_; lastError_ = error; }
         }
-        if (received) showStatus(tr("Receiver active. Accepted: %1. Rejected: %2.\n%3")
-                                     .arg(accepted_).arg(rejected_).arg(lastError_), lastError_.isEmpty() ? Severity::Info : Severity::Warning);
+        if (received) {
+            status_->setText(tr("Receiver active. Accepted: %1. Rejected: %2.\n%3")
+                .arg(accepted_).arg(rejected_).arg(lastError_));
+            reportPending_ = true;
+            rejectedSinceReport_ = rejectedSinceReport_ || rejected_ != rejectedBefore;
+        }
     }
     Store &store_;
     const Codec &codec_;
@@ -160,6 +181,9 @@ private:
     QLabel *status_;
     QUdpSocket *socket_;
     QTimer *timer_;
+    QTimer *summary_;
+    bool reportPending_ = false;
+    bool rejectedSinceReport_ = false;
     bool runningRequested_ = false;
     quint64 accepted_ = 0;
     quint64 rejected_ = 0;

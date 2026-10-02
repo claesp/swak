@@ -131,3 +131,13 @@ The map toolbar button selects an online provider or the offline map. Unavailabl
 The bottom status field shows the latest internal event for three seconds. New events restart the timer. Errors use red text. Tools > Plugins > Internal events > Show pane opens the retained history. Clear removes its rows and pending entries.
 
 File > Settings > Internal events controls the history limit from 1 through 10000 events. The default is 500. History stays in memory for the current process. Text logging remains disabled unless you enable it separately. Very large bursts discard older pending records to keep memory bounded.
+
+# Failure recovery
+
+A read-only profile does not trigger repeated save attempts. The application reports a persistent save error once. After a write failure, automatic saves retry every 30 seconds. Apply and OK still attempt an immediate save and report its result.
+
+A lock permission error permits read-only use of an existing valid profile. A profile locked by another running local instance still uses defaults. Qt uses a 30-second stale-lock threshold for locks without a matching live local process. Use profiles on local storage. Do not share one active profile between computers.
+
+Invalid map providers remain in the profile and cannot fetch tiles. Other valid providers remain usable. Correct the invalid entry in Map Providers.
+
+The receiver updates its pane for each batch. Internal events contain at most one traffic summary each second. A later clean batch clears the pane error. Summaries classify new rejections without retaining an old warning forever.

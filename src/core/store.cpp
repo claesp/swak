@@ -18,7 +18,12 @@ QVariant Store::data(const QModelIndex &index, int role) const
     if (!index.isValid() || index.row() < 0 || index.row() >= events_.size() || index.column() >= 5) return {};
     const auto &event = events_.at(index.row());
     if (role == Qt::UserRole) return event.uid;
-    if (role != Qt::DisplayRole) return {};
+    if (role == SortRole) {
+        if (index.column() == 2) return event.latitude;
+        if (index.column() == 3) return event.longitude;
+        if (index.column() == 4) return event.stale;
+    }
+    if (role != Qt::DisplayRole && role != SortRole) return {};
     switch (index.column()) {
     case 0: return event.callsign.isEmpty() ? event.uid : event.callsign;
     case 1: return event.type;
@@ -60,6 +65,9 @@ QString Store::accept(const Event &event, const QDateTime &now)
 }
 void Store::expire(const QDateTime &now)
 {
+    const auto selectedRow = rows_.constFind(selected_);
+    if (selectedRow != rows_.cend() && events_.at(selectedRow.value()).stale <= now) select({});
+    removing_ = true;
     bool removed = false;
     for (int row = rowCount() - 1; row >= 0; --row) {
         if (events_.at(row).stale > now) continue;
@@ -69,6 +77,7 @@ void Store::expire(const QDateTime &now)
         endRemoveRows();
         removed = true;
     }
+    removing_ = false;
     if (!removed) return;
     for (int row = 0; row < rowCount(); ++row) rows_[events_.at(row).uid] = row;
     if (!rows_.contains(selected_)) select({});
@@ -85,6 +94,7 @@ void Store::clear()
 }
 void Store::select(const QString &uid)
 {
+    if (removing_) return;
     const QString next = rows_.contains(uid) ? uid : QString{};
     if (selected_ == next) return;
     selected_ = next;

@@ -82,6 +82,27 @@ private slots:
         QCOMPARE(probe({{QStringLiteral("enabled"), true}}, QStringLiteral("closed-socket")), QByteArray{});
         QVERIFY(probe({{QStringLiteral("enabled"), true}}, QStringLiteral("socket")).contains("socket-message"));
     }
+    void sharedFileOffset()
+    {
+        QTemporaryDir directory;
+        QFile file(directory.filePath(QStringLiteral("output")));
+        QVERIFY(file.open(QIODevice::ReadWrite));
+        const int saved = ::dup(STDERR_FILENO);
+        QVERIFY(saved >= 0);
+        const bool redirected = ::dup2(file.handle(), STDERR_FILENO) >= 0;
+        if (redirected) {
+            swak::configureLogging({{QStringLiteral("enabled"), true}});
+            swak::logMessage(swak::Severity::Error, swak::Urgency::Attention, QStringLiteral("swak.test"), QStringLiteral("logger-line"));
+            ::write(STDERR_FILENO, "other-line\n", 11);
+            swak::configureLogging({});
+        }
+        ::dup2(saved, STDERR_FILENO);
+        ::close(saved);
+        QVERIFY(redirected);
+        QVERIFY(file.seek(0));
+        const auto bytes = file.readAll();
+        QVERIFY(bytes.contains("logger-line\nother-line\n"));
+    }
     void persistedPolicy()
     {
         QTemporaryDir directory;

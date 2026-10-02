@@ -10,7 +10,8 @@
 #include <algorithm>
 #include <QUuid>
 namespace swak {
-MapManager::MapManager(MapSources &sources, QWidget *parent) : QDialog(parent), sources_(sources)
+MapManager::MapManager(MapSources &sources, QWidget *parent, std::function<QString()> save)
+    : QDialog(parent), sources_(sources), save_(std::move(save))
 {
     setObjectName(QStringLiteral("mapProvidersDialog"));
     setWindowTitle(tr("Map Providers"));
@@ -62,9 +63,10 @@ MapManager::MapManager(MapSources &sources, QWidget *parent) : QDialog(parent), 
                 if (field.kind == SettingField::Kind::Text) values.insert(field.path, QString{});
             pages.append({provider->mapId(), provider->mapName(), provider->fields(), values,
                 [provider](const QJsonObject &value) { return provider->validate(value); },
-                [this, id](const QJsonObject &value) { sources_.put(id, value); }});
+                [this, id](const QJsonObject &value) { applyError_ = sources_.put(id, value); }});
         }
-        SettingsDialog dialog(pages, [] { return QString{}; }, this, true, true);
+        applyError_.clear();
+        SettingsDialog dialog(pages, [this] { return !applyError_.isEmpty() ? applyError_ : save_ ? save_() : tr("No profile writer is available."); }, this, true, true);
         dialog.setWindowTitle(tr("Add provider"));
         if (dialog.exec() == QDialog::Accepted)
             for (int i = 0; i < list_->count(); ++i)
@@ -121,9 +123,11 @@ void MapManager::edit()
     const auto source = sources_.sources().value(id).toObject();
     auto *provider = sources_.provider(source);
     if (!provider) { reportError(tr("Install the missing provider plugin to edit this entry.")); return; }
+    applyError_.clear();
     SettingsDialog dialog({{id, source.value(QStringLiteral("name")).toString(), provider->fields(), source,
         [provider](const QJsonObject &values) { return provider->validate(values); },
-        [this, id](const QJsonObject &values) { sources_.put(id, values); }}}, [] { return QString{}; }, this, true);
+        [this, id](const QJsonObject &values) { applyError_ = sources_.put(id, values); }}},
+        [this] { return !applyError_.isEmpty() ? applyError_ : save_ ? save_() : tr("No profile writer is available."); }, this, true);
     dialog.setWindowTitle(tr("Edit provider"));
     dialog.exec();
 }

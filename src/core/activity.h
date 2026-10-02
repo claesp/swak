@@ -18,6 +18,7 @@ void publishActivity(Severity severity, Urgency urgency, const QString &category
 class ActivityModel final : public QAbstractTableModel, public SettingsParticipant {
     Q_OBJECT
 public:
+    enum { SortRole = Qt::UserRole + 1 };
     explicit ActivityModel(QObject *parent = nullptr);
     int rowCount(const QModelIndex &parent = {}) const override;
     int columnCount(const QModelIndex &parent = {}) const override;

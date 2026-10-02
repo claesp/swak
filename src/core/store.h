@@ -9,6 +9,7 @@ namespace swak {
 class Store final : public QAbstractTableModel {
     Q_OBJECT
 public:
+    enum { SortRole = Qt::UserRole + 1 };
     explicit Store(QObject *parent = nullptr);
     int rowCount(const QModelIndex &parent = {}) const override;
     int columnCount(const QModelIndex &parent = {}) const override;
@@ -30,5 +31,6 @@ private:
     QHash<QString, int> rows_;
     QString selected_;
     QTimer expiry_;
+    bool removing_ = false;
 };
 }

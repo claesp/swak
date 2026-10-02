@@ -101,6 +101,68 @@ private slots:
         restored.restorePreferences(bad);
         QCOMPARE(restored.savePreferences(), before);
     }
+    void invalidSourceRecoveryAndQueryEncoding()
+    {
+        MapSources maps(QPluginLoader::staticInstances());
+        auto saved = maps.savePreferences();
+        auto entries = maps.sources();
+        entries.insert(QStringLiteral("custom"), entries.value(QStringLiteral("org.swak.xyz")));
+        auto invalid = entries.value(QStringLiteral("org.swak.wms")).toObject();
+        invalid.insert(QStringLiteral("endpoint"), QStringLiteral("invalid"));
+        entries.insert(QStringLiteral("org.swak.wms"), invalid);
+        saved.insert(QStringLiteral("sources"), entries);
+        maps.restorePreferences(saved);
+        QCOMPARE(maps.savePreferences(), saved);
+        maps.select(QStringLiteral("org.swak.wms"));
+        QVERIFY(maps.activeSource().isEmpty());
+        QVERIFY(maps.put(QStringLiteral("custom"), entries.value(QStringLiteral("custom")).toObject()).isEmpty());
+        for (const auto &id : {QStringLiteral("org.swak.wms"), QStringLiteral("org.swak.wmts")}) {
+            auto *provider = format(id);
+            auto values = provider->defaults();
+            values.insert(QStringLiteral("layer"), QStringLiteral("a+b"));
+            values.insert(QStringLiteral("time"), QStringLiteral("12:00:00+02:00"));
+            const auto url = provider->tileUrl(values, 0, 0, 0);
+            QVERIFY(url.toEncoded().contains("a%2Bb"));
+            QVERIFY(!url.toEncoded().contains('+'));
+        }
+    }
+    void failedTilesDoNotStarveNeighbors()
+    {
+        TileServer server;
+        QVERIFY(server.load(QFINDTESTDATA("fixtures")));
+        QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+        server.failFirst = 4;
+        auto *xyz = format(QStringLiteral("org.swak.xyz"));
+        TileRenderer renderer;
+        renderer.setSource(xyz, localSource(xyz, server, true));
+        QImage canvas(1024, 1024, QImage::Format_RGB32);
+        { QPainter painter(&canvas); renderer.paint(painter, Viewport{QSizeF(1024, 1024), QPointF(0.5, 0.5), 2}, 1, false); }
+        QVERIFY(QTest::qWaitFor([&] { return server.requests.size() == 16; }, 5000));
+        QVERIFY(QTest::qWaitFor([&] { return renderer.pendingCount() == 0; }));
+        QVERIFY(!renderer.status().isEmpty());
+        QSet<QByteArray> paths;
+        for (const auto &request : server.requests) paths.insert(request.split(' ').at(1));
+        QCOMPARE(paths.size(), 16);
+    }
+    void cancelDuringProviderBackoff()
+    {
+        TileServer server;
+        QVERIFY(server.load(QFINDTESTDATA("fixtures")));
+        QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+        server.failFirst = 1;
+        server.failureHeaders = "HTTP/1.1 429 Too Many Requests\r\nRetry-After: 60\r\n";
+        server.holdRequests = {2, 3, 4};
+        auto *xyz = format(QStringLiteral("org.swak.xyz"));
+        TileRenderer renderer;
+        renderer.setSource(xyz, localSource(xyz, server, true));
+        QImage canvas(1024, 1024, QImage::Format_RGB32);
+        { QPainter painter(&canvas); renderer.paint(painter, Viewport{QSizeF(1024, 1024), QPointF(0.5, 0.5), 2}, 1, false); }
+        QVERIFY(QTest::qWaitFor([&] { return !renderer.status().isEmpty() && server.requests.size() == 4; }));
+        QCOMPARE(renderer.pendingCount(), 3);
+        { QPainter painter(&canvas); renderer.paint(painter, Viewport{QSizeF(256, 256), QPointF(2, 2), 0}, 1, false); }
+        QVERIFY(QTest::qWaitFor([&] { return renderer.pendingCount() == 0; }, 2000));
+        QCOMPARE(server.requests.size(), 4);
+    }
     void projectionAndDecoding()
     {
         auto tiles = visibleTiles(Viewport{QSizeF(256, 256), QPointF(0.5, 0.5), 0}, 0, 19);
@@ -189,7 +251,9 @@ private slots:
         QVERIFY(changed.wait(5000));
         const auto expired = QDateTime::currentDateTimeUtc().addSecs(2);
         QVERIFY(QTest::qWaitFor([&] { return QDateTime::currentDateTimeUtc() >= expired; }, 3000));
+        canvas.fill(Qt::black);
         draw(renderer, canvas);
+        QCOMPARE(canvas.pixelColor(128, 128), QColor("#eb426a"));
         QVERIFY(changed.wait(5000));
         QCOMPARE(server.requests.size(), 2);
         QVERIFY(server.requests.last().toLower().contains("if-none-match: \"fixture\""));
@@ -215,6 +279,10 @@ private slots:
         draw(renderer, canvas);
         QVERIFY(changed.wait(5000));
         QCOMPARE(server.requests.size(), 2);
+        renderer.stop();
+        draw(renderer, canvas);
+        QVERIFY(changed.wait(5000));
+        QCOMPARE(server.requests.size(), 3);
     }
     void rejectedResponses_data()
     {

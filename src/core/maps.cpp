@@ -1,4 +1,5 @@
 #include "core/maps.h"
+#include "core/logging.h"
 #include <QRegularExpression>
 #include <cmath>
 #include <algorithm>
@@ -92,11 +93,11 @@ QString MapSources::validateSettings(const QJsonObject &values) const
 {
     const auto entries = values.value(QStringLiteral("sources")).toObject();
     if (entries.size() > 32) return tr("Use at most 32 providers.");
-    static const QRegularExpression idPattern(QStringLiteral("^[a-zA-Z0-9.-]{1,100}$"));
+    static const QRegularExpression idPattern(QStringLiteral("\\A[a-zA-Z0-9.-]{1,100}\\z"));
     for (auto it = entries.begin(); it != entries.end(); ++it) {
         if (!idPattern.match(it.key()).hasMatch()) return tr("The provider identifier is invalid.");
         const auto source = it.value().toObject();
-        if (const auto *format = provider(source)) {
+        if (const auto *format = provider(source); format && sources().value(it.key()) != it.value()) {
             const auto error = format->validate(source);
             if (!error.isEmpty()) return error;
         }
@@ -105,12 +106,26 @@ QString MapSources::validateSettings(const QJsonObject &values) const
 }
 void MapSources::restorePreferences(const QJsonObject &values)
 {
-    if (!validateSettings(values).isEmpty()) return;
+    auto structural = values;
+    auto entries = structural.value(QStringLiteral("sources")).toObject();
+    for (auto it = entries.begin(); it != entries.end(); ++it) it.value() = QJsonObject{};
+    structural.insert(QStringLiteral("sources"), entries);
+    if (!validateSettings(structural).isEmpty()) return;
     values_ = values;
+    for (const auto &entry : sources()) {
+        const auto source = entry.toObject();
+        if (const auto *format = provider(source); format && !format->validate(source).isEmpty())
+            logMessage(Severity::Warning, Urgency::Attention, QStringLiteral("swak.maps"),
+                tr("An invalid map provider is disabled. Its configuration is preserved."));
+    }
     emit changed();
 }
 QString MapSources::put(const QString &id, const QJsonObject &source)
 {
+    if (const auto *format = provider(source)) {
+        const auto error = format->validate(source);
+        if (!error.isEmpty()) return error;
+    }
     auto next = values_;
     auto entries = sources();
     entries.insert(id, source);

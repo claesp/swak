@@ -32,6 +32,8 @@ public:
         table->setAccessibleName(name());
         auto *proxy = new QSortFilterProxyModel(table);
         proxy->setSourceModel(&services.activity);
+        proxy->setSortRole(ActivityModel::SortRole);
+        proxy->setSortLocaleAware(true);
         table->setModel(proxy);
         table->setSortingEnabled(true);
         table->sortByColumn(0, Qt::DescendingOrder);

@@ -151,6 +151,8 @@ public:
         table->setAccessibleName(tr("Received and generated events"));
         auto *proxy = new QSortFilterProxyModel(table);
         proxy->setSourceModel(&store);
+        proxy->setSortRole(Store::SortRole);
+        proxy->setSortLocaleAware(true);
         table->setModel(proxy);
         table->setSortingEnabled(true);
         table->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -168,7 +170,7 @@ public:
                     return;
                 }
             }
-            table->clearSelection();
+            table->selectionModel()->clear();
         });
         return table;
     }

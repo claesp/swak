@@ -64,7 +64,7 @@ public:
         query.addQueryItem(QStringLiteral("TILECOL"), QString::number(x));
         query.addQueryItem(QStringLiteral("FORMAT"), source.value(QStringLiteral("imageFormat")).toString());
         if (!source.value(QStringLiteral("time")).toString().isEmpty()) query.addQueryItem(QStringLiteral("TIME"), source.value(QStringLiteral("time")).toString());
-        url.setQuery(query);
+        url.setQuery(query.query(QUrl::FullyEncoded).replace(QLatin1Char('+'), QStringLiteral("%2B")), QUrl::StrictMode);
         return url;
     }
 };

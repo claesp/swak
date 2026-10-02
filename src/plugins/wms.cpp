@@ -57,7 +57,7 @@ public:
         query.addQueryItem(QStringLiteral("STYLES"), source.value(QStringLiteral("style")).toString());
         query.addQueryItem(QStringLiteral("FORMAT"), source.value(QStringLiteral("imageFormat")).toString());
         query.addQueryItem(QStringLiteral("TRANSPARENT"), QStringLiteral("TRUE"));
-        url.setQuery(query);
+        url.setQuery(query.query(QUrl::FullyEncoded).replace(QLatin1Char('+'), QStringLiteral("%2B")), QUrl::StrictMode);
         return url;
     }
 };

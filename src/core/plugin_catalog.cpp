@@ -16,8 +16,8 @@ QString validatePluginManifest(const QJsonObject &manifest, QObject *instance)
     if (!plugin || plugin->apiVersion() != 2 || manifest.value(QStringLiteral("apiVersion")).toInt() != 2
         || manifest.value(QStringLiteral("schemaVersion")).toInt() != 1)
         return QStringLiteral("Unsupported plugin API or manifest schema.");
-    static const QRegularExpression identifier(QStringLiteral("^org\\.swak\\.[a-z][a-z0-9.-]{0,80}$"));
-    static const QRegularExpression version(QStringLiteral("^[0-9]{1,4}\\.[0-9]{1,4}\\.[0-9]{1,4}$"));
+    static const QRegularExpression identifier(QStringLiteral("\\Aorg\\.swak\\.[a-z][a-z0-9.-]{0,80}\\z"));
+    static const QRegularExpression version(QStringLiteral("\\A[0-9]{1,4}\\.[0-9]{1,4}\\.[0-9]{1,4}\\z"));
     if (!identifier.match(manifest.value(QStringLiteral("id")).toString()).hasMatch()
         || !version.match(manifest.value(QStringLiteral("version")).toString()).hasMatch())
         return QStringLiteral("Invalid plugin identifier or version.");
