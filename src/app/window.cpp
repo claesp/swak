@@ -18,9 +18,57 @@
 #include <QShowEvent>
 #include <QGuiApplication>
 #include <QScreen>
+#include <QMouseEvent>
+#include <QKeyEvent>
 
 namespace swak {
 namespace {
+class PluginMenu final : public QMenu {
+public:
+    using QMenu::QMenu;
+protected:
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton && activatePane(actionAt(event->position().toPoint()))) return;
+        QMenu::mouseReleaseEvent(event);
+    }
+    void keyPressEvent(QKeyEvent *event) override
+    {
+        if ((event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter || event->key() == Qt::Key_Space)
+            && activatePane(activeAction())) return;
+        QMenu::keyPressEvent(event);
+    }
+private:
+    bool activatePane(QAction *action)
+    {
+        if (!action || !action->isEnabled() || !action->property("activatesPane").toBool()) return false;
+        if (action->menu()) action->menu()->close();
+        for (auto *menu = static_cast<QMenu *>(this); menu; menu = qobject_cast<QMenu *>(menu->parentWidget())) menu->close();
+        action->trigger();
+        return true;
+    }
+};
+void addPaneAction(QMenu &menu, QDockWidget &dock, QAction *action = nullptr)
+{
+    if (!action) action = menu.addAction(dock.windowTitle());
+    action->setProperty("activatesPane", true);
+    QObject::connect(action, &QAction::triggered, &dock, [&dock] {
+        dock.show();
+        dock.raise();
+        dock.activateWindow();
+        auto *focus = dock.focusWidget();
+        if (!focus || focus == &dock || focus->focusPolicy() == Qt::NoFocus) {
+            focus = &dock;
+            for (auto *child : dock.findChildren<QWidget *>()) {
+                if (child->isVisible() && child->isEnabled() && (child->focusPolicy() & Qt::TabFocus)) {
+                    focus = child;
+                    break;
+                }
+            }
+        }
+        focus->setFocus(Qt::MenuBarFocusReason);
+    });
+}
 constexpr int LayoutVersion = 1;
 QByteArray geometryBytes(const QJsonObject &values, const QString &key)
 {
@@ -175,7 +223,8 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         dialog->show();
     });
     connect(mapSources, &MapSources::managementRequested, manageMaps, &QAction::trigger);
-    auto *pluginsMenu = toolsMenu->addMenu(tr("&Plugins"));
+    auto *pluginsMenu = new PluginMenu(tr("&Plugins"), toolsMenu);
+    toolsMenu->addMenu(pluginsMenu);
     pluginsMenu->setObjectName(QStringLiteral("pluginsMenu"));
     auto *toolbar = new QToolBar(tr("Main toolbar"), this);
     toolbar->setObjectName(QStringLiteral("mainToolbar"));
@@ -191,35 +240,26 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
             menu = pluginsMenu->addMenu(provider->name());
             provider->populateMenu(services, *menu);
         }
-        if (auto *provider = qobject_cast<ToolbarPlugin *>(plugin)) provider->populateToolbar(services, *toolbar, menu);
+        if (auto *provider = qobject_cast<ToolbarPlugin *>(plugin)) {
+            if (!toolbar->actions().isEmpty()) toolbar->addSeparator();
+            auto *label = new QLabel(provider->name(), toolbar);
+            label->setTextFormat(Qt::PlainText);
+            label->setObjectName(QStringLiteral("toolbarPluginLabel"));
+            label->setMargin(4);
+            toolbar->addWidget(label);
+            provider->populateToolbar(services, *toolbar, menu);
+        }
         if (auto *dock = pluginDocks.value(plugin)) {
             if (menu && !menu->isEmpty()) {
-                auto *show = new QAction(tr("Show pane"), menu);
-                show->setCheckable(true);
-                show->setChecked(!dock->isHidden());
-                menu->insertAction(menu->actions().first(), show);
-                connect(menu, &QMenu::aboutToShow, show, [show, dock] {
-                    show->setChecked(dock->toggleViewAction()->isChecked());
-                });
-                connect(pluginsMenu, &QMenu::aboutToShow, menu, [menu, dock] {
-                    menu->menuAction()->setChecked(dock->toggleViewAction()->isChecked());
-                });
-                connect(show, &QAction::triggered, dock, [dock](bool visible) {
-                    dock->setVisible(visible);
-                    if (visible) dock->raise();
-                });
-                connect(dock->toggleViewAction(), &QAction::toggled, show, &QAction::setChecked);
-                menu->menuAction()->setCheckable(true);
-                menu->menuAction()->setChecked(!dock->isHidden());
-                connect(dock->toggleViewAction(), &QAction::toggled, menu->menuAction(), &QAction::setChecked);
+                addPaneAction(*pluginsMenu, *dock, menu->menuAction());
             } else {
                 if (menu) { delete menu; menu = nullptr; }
-                pluginsMenu->addAction(dock->toggleViewAction());
+                addPaneAction(*pluginsMenu, *dock);
             }
         }
         if (menu && menu->isEmpty()) delete menu;
     }
-    pluginsMenu->addAction(findChild<QDockWidget *>(QStringLiteral("pluginsDock"))->toggleViewAction());
+    addPaneAction(*pluginsMenu, *findChild<QDockWidget *>(QStringLiteral("pluginsDock")));
     pluginsMenu->setEnabled(!pluginsMenu->isEmpty());
     defaultLayout_ = saveState(LayoutVersion);
     auto *helpMenu = menuBar()->addMenu(tr("&Help"));

@@ -43,16 +43,20 @@ private slots:
         for (int y : {0, 256}) for (int x : {0, 256}) {
             QCOMPARE(canvas.pixelColor(x + 20, y + 20), QColor(MapBackgroundRgb));
             int textPixels = 0;
-            for (int py = y + 100; py < y + 156; ++py)
+            QRect textBounds;
+            for (int py = y + 50; py < y + 206; ++py)
                 for (int px = x + 50; px < x + 206; ++px) {
                     const auto color = canvas.pixelColor(px, py);
                     if (color != QColor(MapBackgroundRgb)) {
                         ++textPixels;
+                        textBounds = textBounds.united(QRect(px, py, 1, 1));
                         QVERIFY(color.red() < 100);
                         QVERIFY(color.green() < 110);
                     }
                 }
             QVERIFY(textPixels > 20);
+            QVERIFY(textBounds.height() > 30);
+            QVERIFY(std::abs(textBounds.width() - textBounds.height()) < 12);
         }
         { QPainter painter(&canvas); renderer.paint(painter, view, 1, false, 0); }
         for (int y = 0; y < 512; ++y) for (int x = 0; x < 512; ++x)

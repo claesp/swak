@@ -26,19 +26,19 @@ Plugins implement the feature interfaces that they need. Their manifests declare
 | `SourcePlugin` | `/2.0` | Creates a receiver from services, a codec, and a parent widget. |
 | `PanePlugin` | `/2.0` | Creates a pane from services and a parent widget, without a codec. |
 | `MenuPlugin` | `/2.0` | Adds actions through `populateMenu(PluginServices &, QMenu &)`. |
-| `ToolbarPlugin` | `/2.0` | Adds controls through `populateToolbar(PluginServices &, QToolBar &, QMenu *)`. |
+| `ToolbarPlugin` | `/3.0` | Supplies `name()` and adds controls through `populateToolbar(PluginServices &, QToolBar &, QMenu *)`. |
 | `MapExtension` | `/1.0` | Supplies a stable map identifier, name, and Provider or Tool kind. |
 | `MapProvider` | `/1.0` | Supplies source defaults, fields, validation, and tile URLs. |
 | `PreferenceParticipant` | C++ interface, no Qt identifier | Saves and restores bounded JSON under a stable component identifier. |
 | `SettingsParticipant` | `/1.0` | Adds a title, editable fields, and optional validation to preferences. |
 
-The unchanged data and map interfaces retain version 1.0. The UI interfaces use version 2.0 because their service arguments changed. The former `MapConsumer` interface is removed. The view now receives the map catalog through the shared context.
+The unchanged data and map interfaces retain version 1.0. Most UI interfaces use version 2.0 because their service arguments changed. ToolbarPlugin uses version 3.0 because it now requires `name()`. The former `MapConsumer` interface is removed. The view now receives the map catalog through the shared context.
 
-The host calls menu callbacks before toolbar callbacks. A toolbar callback receives its plugin menu or null. Plugins can share one action between their menu and toolbar. Plugins must not assume that a menu exists.
+The host adds a plain-text label from `ToolbarPlugin::name()` before each toolbar section. Separators divide these sections. The host calls menu callbacks before toolbar callbacks. A toolbar callback receives its plugin menu or null. Plugins can share one action between their menu and toolbar. Plugins must not assume that a menu exists.
 
 Tools and sources require a codec for their panes. The host leaves those panes unavailable when no codec exists. Codec-free panes, menus, and independent map layers remain available. Pane visibility does not unload plugin code or stop a receiver.
 
-The host owns pane placement, visibility actions, and layout persistence. Plugins with commands receive a submenu under Tools > Plugins. Its Show pane action controls the pane. The submenu checkmark reflects visibility. Plugins without commands use a direct checkbox action.
+The host owns pane placement, visibility actions, and layout persistence. Plugins with commands receive a submenu under Tools > Plugins. Clicking the plugin name opens and focuses its pane. Return and Space also activate the pane. Hover and Right open the command submenu. Plugins without commands use a direct action. Closing a pane hides it.
 
 # Implemented plugins
 

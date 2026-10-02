@@ -93,6 +93,7 @@ class ExampleToolbar final : public QObject, public swak::ToolbarPlugin {
     Q_INTERFACES(swak::ToolbarPlugin)
 public:
     int calls = 0;
+    QString name() const override { return QStringLiteral("Example toolbar"); }
     void populateToolbar(swak::PluginServices &, QToolBar &toolbar, QMenu *menu) override
     {
         Q_ASSERT(!menu);
@@ -313,10 +314,8 @@ private slots:
         QMenu *events = nullptr;
         for (auto *action : root->actions()) if (action->menu() && action->text() == QStringLiteral("CoT Events")) events = action->menu();
         QVERIFY(events);
-        QVERIFY(!events->menuAction()->isChecked());
-        QMetaObject::invokeMethod(events, "aboutToShow");
-        QVERIFY(!events->actions().first()->isChecked());
-        events->actions().first()->trigger();
+        QVERIFY(!events->menuAction()->isCheckable());
+        events->menuAction()->trigger();
         QVERIFY(!dock->isHidden());
         auto *editor = window.findChild<QDockWidget *>(QStringLiteral("org.swak.editor.pane"));
         auto *udp = window.findChild<QDockWidget *>(QStringLiteral("org.swak.udp.pane"));
@@ -365,7 +364,7 @@ private slots:
             QMenu *historyMenu = nullptr;
             for (auto *action : plugins->actions()) if (action->text() == QStringLiteral("Internal events")) historyMenu = action->menu();
             QVERIFY(historyMenu);
-            historyMenu->actions().first()->trigger();
+            historyMenu->menuAction()->trigger();
             QVERIFY(table->isVisible());
             QVERIFY(QTest::qWaitForWindowExposed(&window));
             QTest::qWait(50);
@@ -549,8 +548,9 @@ private slots:
             QCOMPARE(window.toolBarArea(toolbar), Qt::TopToolBarArea);
             QVERIFY(!toolbar->isMovable());
             QVERIFY(!toolbar->isFloatable());
-            QCOMPARE(toolbar->actions().size(), 1);
-            action = toolbar->actions().first();
+            QCOMPARE(toolbar->actions().size(), 2);
+            QCOMPARE(toolbar->findChild<QLabel *>(QStringLiteral("toolbarPluginLabel"))->text(), QStringLiteral("Example toolbar"));
+            action = toolbar->actions().last();
             QVERIFY(!action->icon().isNull());
             action->trigger();
             QCOMPARE(plugin.calls, 1);
@@ -568,7 +568,7 @@ private slots:
         swak::Window restored(path, {&plugin});
         auto *toolbar = restored.findChild<QToolBar *>(QStringLiteral("mainToolbar"));
         QVERIFY(toolbar->isHidden());
-        toolbar->actions().first()->trigger();
+        toolbar->actions().last()->trigger();
         QCOMPARE(plugin.calls, 2);
         restored.findChild<QAction *>(QStringLiteral("resetLayoutAction"))->trigger();
         QVERIFY(!toolbar->isHidden());
@@ -625,6 +625,51 @@ private slots:
         swak::Window absent(directory.filePath(QStringLiteral("absent.json")), {});
         QCOMPARE(absent.findChild<QMenu *>(QStringLiteral("pluginsMenu"))->actions().size(), 1);
         QVERIFY(!absent.findChild<QAction *>(QStringLiteral("clearEventsAction")));
+    }
+    void pluginPaneActivation()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("activate.json")), QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *root = window.findChild<QMenu *>(QStringLiteral("pluginsMenu"));
+        QVERIFY(root);
+        int activated = 0;
+        for (auto *action : root->actions()) {
+            auto docks = window.findChildren<QDockWidget *>();
+            auto found = std::find_if(docks.begin(), docks.end(), [action](auto *dock) { return dock->windowTitle() == action->text(); });
+            if (found == docks.end()) continue;
+            ++activated;
+            auto *dock = *found;
+            QVERIFY(!action->isCheckable());
+            if (action->menu()) for (auto *child : action->menu()->actions()) QVERIFY(child->text() != QStringLiteral("Show pane"));
+            dock->hide();
+            root->popup(window.mapToGlobal(QPoint(40, 60)));
+            QVERIFY(QTest::qWaitForWindowExposed(root));
+            QTest::mouseClick(root, Qt::LeftButton, Qt::NoModifier, root->actionGeometry(action).center());
+            QVERIFY2(!dock->isHidden(), qPrintable(action->text()));
+            QVERIFY(!root->isVisible());
+            action->trigger();
+            QVERIFY(!dock->isHidden());
+            if (action->menu()) {
+                root->popup(window.mapToGlobal(QPoint(40, 60)));
+                root->setActiveAction(action);
+                QTest::keyClick(root, Qt::Key_Right);
+                QVERIFY(QTest::qWaitForWindowExposed(action->menu()));
+                QTest::keyClick(action->menu(), Qt::Key_Escape);
+                root->close();
+            }
+            dock->setFloating(true);
+            dock->hide();
+            root->popup(window.mapToGlobal(QPoint(40, 60)));
+            root->setActiveAction(action);
+            QTest::keyClick(root, Qt::Key_Return);
+            QVERIFY(!dock->isHidden());
+            QVERIFY(dock->isFloating());
+            dock->setFloating(false);
+        }
+        QCOMPARE(activated, 5);
+        QVERIFY(window.grab().save(QStringLiteral("plugin-labels-smoke.png")));
     }
     void clearEventsMenu()
     {

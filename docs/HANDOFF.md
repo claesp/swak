@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation: See “Map background and whole zoom levels” below. The release includes these changes.
+Latest implementation: See “Map labels and plugin activation” below. The release includes these changes.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -244,3 +244,23 @@ Coverage passed six suites and all 30 native GUI cases in `build/quality/2026100
 Focused native tests passed at 200 percent scaling. Screenshots in `build/map-background/hidpi` show the faint tile markers against the green background. All 30 native GUI cases also passed under sanitizers. LeakSanitizer then reported the existing Mesa leak of 240732 bytes in 1073 allocations. The report is `build/quality/20261002-143110-gui-110357`. This native leak test remains failed.
 
 A 60-second sanitizer workload passed in `build/quality/20261002-143247-soak-110973`. It completed 951 cycles. Peak memory growth after warmup was 6438912 bytes. The maximum heartbeat gap was 60 milliseconds. Idle CPU use was 0.007 seconds. Multi-hour sessions, hardware GPUs, native Wayland, and the minimum Qt version remain untested in this pass.
+
+# Map labels and plugin activation
+
+The October 2 update removes the text overlay from the upper-left map corner. Map controls remain in `docs/usage.md`, the Markdown user manual. Missing tile labels now rise at 45 degrees. Their opacity and tile borders remain unchanged.
+
+The toolbar labels each plugin section with its name. Separators divide adjacent sections. ToolbarPlugin now requires `name()` and uses interface identifier `org.swak.Toolbar/3.0`. The common Plugin API remains version 2. Existing plugins supply their names through the same method that their other interfaces use.
+
+Clicking a plugin name under Tools > Plugins opens and focuses its pane. It does not hide an open pane. Return and Space also activate panes. Hover and Right open command submenus. The Show pane action and visibility checkboxes are removed. Pane close buttons still hide panes. The host handles activation for docked, tabbed, and floating panes.
+
+Debug and release builds passed with Qt 6.8.2 and GCC 14.2. The release executable is `build/release/swak`. Existing Qt test macros report conversion warnings in the soak test. No new application warning appeared.
+
+Six sanitizer suites passed in `build/quality/20261002-144302-quick-112233`. Final static analysis passed in `build/quality/20261002-144702-analyze-3`. Coverage passed six suites and all 31 native GUI cases in `build/quality/20261002-144625-coverage-114139`. Tests exercise mouse activation, keyboard activation, submenu access, repeated activation, and detached panes. An initial direct-action mouse failure led to a shared handler for both menu entry types.
+
+The window reached 452 of 462 executable lines. The tile renderer reached 209 of 209 lines. The map plugin reached 241 of 278 lines. Remaining gaps include default mouse handling in the plugin menu, file dialogs, startup, map mouse controls, and some recovery branches. Line coverage does not establish complete path coverage.
+
+Native screenshots show the diagonal text and named toolbar sections. Focused tests passed at 200 percent scaling. The full native sanitizer run passed all 31 functional cases, then reported the existing Mesa leak. It leaked 240732 bytes in 1073 allocations. This test remains failed in `build/quality/20261002-144630-gui-114213`.
+
+Native Wayland, hardware GPUs, multi-hour sessions, and the minimum Qt version remain untested in this pass. No external dependency was added.
+
+A 60-second sanitizer workload passed in `build/quality/20261002-144811-soak-114835`. It completed 954 cycles with 6791168 bytes of peak memory growth after warmup. The maximum heartbeat gap was 59 milliseconds. Idle CPU use was 0.030 seconds.

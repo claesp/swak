@@ -2,7 +2,7 @@
 
 The host creates the window and connects built-in plugins to the event store. The store enforces event limits and exposes a Qt table model. A model supplies rows to views without copying a widget for each row.
 
-The plugin interfaces live in `src/core/interfaces.h`. The common plugin API is version 2. UI interfaces use `/2.0`, while unchanged data interfaces retain `/1.0`. Read [Plugin API](plugin-api.md) for the reviewed contracts and manifest schema. Every plugin in this version uses the same compiler, Qt installation, and build configuration.
+The plugin interfaces live in `src/core/interfaces.h`. The common plugin API is version 2. Most UI interfaces use `/2.0`. ToolbarPlugin uses `/3.0` for its required name. Unchanged data interfaces retain `/1.0`. Read [Plugin API](plugin-api.md) for the reviewed contracts and manifest schema. Every plugin in this version uses the same compiler, Qt installation, and build configuration.
 
 The extension levels are:
 
@@ -40,7 +40,7 @@ To add a built-in feature, use this sequence:
 
 A plugin can implement more than one interface. The tracks plugin demonstrates this arrangement. In this host, a tool that also implements `MapLayer` appears in the bottom dock.
 
-Each tool and source has an independent dock with a Tools > Plugins visibility action. The host groups the side docks as tabs initially. All docks share a content container and a resize handle that appears when detached.
+Each tool and source has an independent dock with a Tools > Plugins activation action. The host groups the side docks as tabs initially. All docks share a content container and a resize handle that appears when detached.
 
 Create widgets with the supplied parent. Keep widgets and painter calls on the GUI thread. Keep each map layer free of retained painter or store references beyond the call.
 
@@ -94,7 +94,7 @@ The Settings dialog separates General sections from pane customization. The host
 
 # Plugin menus
 
-`MenuPlugin` is an optional interface with identifier `org.swak.Menu/2.0`. A plugin implements `name()` and `populateMenu(PluginServices &, QMenu &)`. The host creates a submenu under Tools > Plugins and calls the provider once for each window. Plugins do not need a panel or codec to provide commands. The host removes empty submenus and adds pane visibility actions. The built-in Plugins pane remains available.
+`MenuPlugin` is an optional interface with identifier `org.swak.Menu/2.0`. A plugin implements `name()` and `populateMenu(PluginServices &, QMenu &)`. The host creates a submenu under Tools > Plugins and calls the provider once for each window. Plugins do not need a panel or codec to provide commands. The host removes empty submenus and adds pane activation actions. The built-in Plugins pane remains available.
 
 Create actions with the supplied menu as their parent. Connect callbacks with a QObject context that owns the state they use. Do not retain window menus or store references in static plugin objects. Keep callbacks bounded and do not let exceptions escape them. Qt removes connections when the action or its context is destroyed.
 
@@ -102,7 +102,7 @@ The CoT Events plugin adds Clear and connects it directly to the window event st
 
 # Toolbar and About
 
-`ToolbarPlugin` is an optional interface with identifier `org.swak.Toolbar/2.0`. The host calls `populateToolbar(PluginServices &, QToolBar &, QMenu *)` once for each window. It supplies the main toolbar and the same plugin menu, or null when the plugin has no menu interface. The host calls the menu provider first. A toolbar provider can reuse its menu actions or create actions owned by the toolbar.
+`ToolbarPlugin` is an optional interface with identifier `org.swak.Toolbar/3.0`. The host labels each section with `name()` and separates adjacent sections. It calls `populateToolbar(PluginServices &, QToolBar &, QMenu *)` once for each window. It supplies the main toolbar and the same plugin menu, or null when the plugin has no menu interface. The host calls the menu provider first. A toolbar provider can reuse its menu actions or create actions owned by the toolbar.
 
 Use translated action text, a tooltip, and an icon with a fallback. Connect callbacks with a QObject context that owns their state. Do not retain toolbar or menu pointers in static plugin objects. The CoT Events plugin shares its Clear action across both surfaces. Shared actions keep their text, enabled state, and behavior consistent.
 

@@ -144,7 +144,13 @@ void TileRenderer::paint(QPainter &painter, const Viewport &view, double opacity
             painter.setBrush(Qt::NoBrush);
             painter.drawRect(tile.rectangle);
             painter.setOpacity(std::clamp(missingOpacity, 0.0, 1.0));
-            painter.drawText(tile.rectangle, Qt::AlignCenter, tr("MISSING TILE"));
+            painter.save();
+            painter.setClipRect(tile.rectangle, Qt::IntersectClip);
+            painter.translate(tile.rectangle.center());
+            painter.rotate(-45);
+            painter.drawText(QRectF(-tile.rectangle.width() / 2, -tile.rectangle.height() / 2,
+                tile.rectangle.width(), tile.rectangle.height()), Qt::AlignCenter, tr("MISSING TILE"));
+            painter.restore();
         }
     }
     painter.restore();

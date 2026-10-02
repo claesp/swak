@@ -66,6 +66,7 @@ public:
 class ToolbarPlugin {
 public:
     virtual ~ToolbarPlugin() = default;
+    virtual QString name() const = 0;
     virtual void populateToolbar(PluginServices &services, QToolBar &toolbar, QMenu *pluginMenu) = 0;
 };
 class SourcePlugin {
@@ -81,7 +82,7 @@ Q_DECLARE_INTERFACE(swak::ViewPlugin, "org.swak.View/2.0")
 Q_DECLARE_INTERFACE(swak::ToolPlugin, "org.swak.Tool/2.0")
 Q_DECLARE_INTERFACE(swak::SourcePlugin, "org.swak.Source/2.0")
 Q_DECLARE_INTERFACE(swak::MenuPlugin, "org.swak.Menu/2.0")
-Q_DECLARE_INTERFACE(swak::ToolbarPlugin, "org.swak.Toolbar/2.0")
+Q_DECLARE_INTERFACE(swak::ToolbarPlugin, "org.swak.Toolbar/3.0")
 
 Q_DECLARE_INTERFACE(swak::PanePlugin, "org.swak.Pane/2.0")
 Q_DECLARE_INTERFACE(swak::Plugin, "org.swak.Plugin/2.0")

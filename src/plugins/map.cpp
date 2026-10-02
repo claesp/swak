@@ -129,9 +129,6 @@ protected:
         if (!tilesPainted) tiles_.paint(painter, view_, opacity_, smooth_, missingOpacity_);
         const auto source = sources_ ? sources_->activeSource() : QJsonObject{};
         painter.setPen(QColor("#c7d7e5"));
-        painter.drawText(QRect(16, 12, width() - 32, 44), Qt::AlignLeft | Qt::AlignTop,
-                         (source.isEmpty() ? tr("No map provider selected") : source.value(QStringLiteral("name")).toString()) +
-                         tr("\nDrag to pan · Scroll to zoom · Home to reset"));
         const QPointF coord = view_.coordinate(cursor_);
         const bool onWorld = coord.x() >= -180 && coord.x() <= 180 && coord.y() >= -85.051129 && coord.y() <= 85.051129;
         const QString position = onWorld ? tr("%1°, %2°").arg(coord.y(), 0, 'f', 4).arg(coord.x(), 0, 'f', 4)

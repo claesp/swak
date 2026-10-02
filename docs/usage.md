@@ -1,6 +1,8 @@
-# Use the workspace
+# SWAK user manual
 
-A fresh profile starts with an empty map and no receiver socket. Later launches restore the saved interface and receiver state. CoT Event Generator opens beside the map in the default layout. Tools > Plugins restores hidden docks, which are movable tool panels. Plugins with commands place Show pane inside their submenu. Other panes use a direct checkbox.
+A fresh profile starts with an empty map and no receiver socket. Later launches restore the saved interface and receiver state. CoT Event Generator opens beside the map in the default layout.
+
+Tools > Plugins restores hidden docks, which are movable tool panels. Click a plugin name to open and focus its pane. Hover over its name, or press Right, to open its command submenu. Return or Space also activates the selected pane entry. Close the pane to hide it.
 
 CoT Events, CoT Event Generator, UDP receiver, and Plugins each have an independent dock. The three tool docks start as tabs beside the map. Drag a dock title or tab to detach that pane.
 
@@ -8,7 +10,7 @@ Each detached pane has a resize handle in its lower-right corner. Close a pane t
 
 Use Tools > Plugins > CoT Events > Clear to remove all current events and clear the selection. Plugins add their commands under Tools > Plugins.
 
-The top toolbar provides plugin icons. Its Clear button performs the same action as the CoT Events menu command. Point to an icon to read its tooltip. Use View > Show main toolbar to hide or show the toolbar. The application saves this choice across restarts.
+The top toolbar groups plugin icons under each plugin name. Its Clear button performs the same action as the CoT Events menu command. Point to an icon to read its tooltip. Use View > Show main toolbar to hide or show the toolbar. The application saves this choice across restarts.
 
 Use Help > About to read the application version and general information.
 
@@ -128,7 +130,7 @@ Open Tools > Map Providers to select or configure an online map. A fresh profile
 
 The map toolbar button selects an online provider or clears the selection. Unavailable providers remain visible but disabled. Map Providers opens the manager from that dropdown.
 
-The bottom status field shows the latest internal event for three seconds. New events restart the timer. Errors use red text. Tools > Plugins > Internal events > Show pane opens the retained history. Clear removes its rows and pending entries.
+The bottom status field shows the latest internal event for three seconds. New events restart the timer. Errors use red text. Tools > Plugins > Internal events opens the retained history. Clear removes its rows and pending entries.
 
 File > Settings > Internal events controls the history limit from 1 through 10000 events. The default is 500. History stays in memory for the current process. Text logging remains disabled unless you enable it separately. Very large bursts discard older pending records to keep memory bounded.
 
@@ -147,7 +149,7 @@ The receiver updates its pane for each batch. Internal events contain at most on
 
 The map uses NATO-style green (`#303D2B`) beneath its tiles. No map provider clears the selection. The old schematic map is removed.
 
-Each missing tile shows faint MISSING TILE text and a faint edge. File > Settings > Map controls Missing tile marker opacity. A loaded tile replaces its marker. Missing providers and unavailable tiles use the same background.
+Each missing tile shows faint MISSING TILE text at 45 degrees and a faint edge. File > Settings > Map controls Missing tile marker opacity. A loaded tile replaces its marker. Missing providers and unavailable tiles use the same background.
 
 Zoom uses whole levels within the active provider minimum and maximum. Each wheel step and plus or minus key changes one level. Small wheel movements accumulate until they reach a step. Home resets the center and selects level 1, within the provider limits.
 
