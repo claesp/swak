@@ -31,6 +31,8 @@
 #include <QCollator>
 #include <QScopeGuard>
 #include "core/interfaces.h"
+#include "core/user_objects.h"
+#include "core/object_editor.h"
 #include <QApplication>
 #include <QWheelEvent>
 #include <QElapsedTimer>
@@ -735,6 +737,100 @@ private slots:
         manager->findChild<QPushButton *>(QStringLiteral("removeDataProvider"))->click(); QCOMPARE(feeds->sources().size(), 2);
         manager->close();
     }
+    void editableMarkers()
+    {
+        QTemporaryDir directory; const auto profile = directory.filePath(QStringLiteral("markers.json")); QString id;
+        {
+            swak::Window window(profile, QPluginLoader::staticInstances()); window.show(); window.activateWindow();
+            QVERIFY(QTest::qWaitForWindowExposed(&window));
+            auto *map = window.findChild<QOpenGLWidget *>(); auto *objects = window.findChild<swak::UserObjects *>(); QVERIFY(map && objects);
+            auto *editor = window.findChild<swak::ObjectEditor *>(); QVERIFY(editor);
+            auto *selection = window.findChild<swak::MapSelection *>();
+            auto *pane = window.findChild<QDockWidget *>(QStringLiteral("org.swak.markers.pane")); QVERIFY(pane);
+            auto *regular = window.findChild<QDockWidget *>(QStringLiteral("org.swak.information.pane")); QVERIFY(regular);
+            auto *title = editor->findChild<QLineEdit *>(QStringLiteral("objectTitle"));
+            auto *description = editor->findChild<QPlainTextEdit *>(QStringLiteral("objectDescription"));
+            auto *table = editor->findChild<QTableWidget *>(QStringLiteral("objectProperties"));
+            auto *apply = editor->findChild<QPushButton *>(QStringLiteral("applyObject")); QVERIFY(title && description && table && apply);
+            map->setFocus(); QVERIFY(QTest::qWaitFor([&] { return map->hasFocus(); }));
+            QTest::keyClick(map, Qt::Key_M); QCOMPARE(map->cursor().shape(), Qt::CrossCursor);
+            const QPoint point = map->rect().center(); QTest::mouseMove(map, point);
+            QVERIFY(QTest::qWaitFor([&] { return map->isValid(); }));
+            QVERIFY(window.screen()->grabWindow(window.winId()).save(QStringLiteral("marker-crosshair.png")));
+            QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, point);
+            QVERIFY(pane->isVisible()); QVERIFY(editor->draft()); QVERIFY(objects->items().isEmpty());
+            QCOMPARE(title->placeholderText(), QStringLiteral("New Marker"));
+            QVERIFY(editor->grab().save(QStringLiteral("marker-editor.png")));
+            title->setText(QStringLiteral("Observation post")); description->setPlainText(QStringLiteral("Local marker description"));
+            table->setRowCount(2);
+            for (int row = 0; row < 2; ++row) { table->setItem(row, 0, new QTableWidgetItem(QStringLiteral("Unit"))); table->setItem(row, 1, new QTableWidgetItem(QStringLiteral("Alpha"))); }
+            apply->click(); QVERIFY(objects->items().isEmpty()); QVERIFY(editor->draft());
+            table->removeRow(1); apply->click(); QCOMPARE(objects->items().size(), 1); QVERIFY(!editor->draft());
+            id = objects->items().firstKey(); QCOMPARE(objects->find(id)->title, QStringLiteral("Observation post"));
+            QVERIFY(selection->item()); QCOMPARE(selection->item()->id, id); QVERIFY(regular->isVisible()); QVERIFY(!pane->isVisible());
+            QCOMPARE(selection->item()->properties.value(QStringLiteral("Unit")).toString(), QStringLiteral("Alpha"));
+            const auto position = [&] {
+                const auto value = dynamic_cast<swak::PreferenceParticipant *>(map)->savePreferences();
+                const double scale = 256 * std::exp2(value.value(QStringLiteral("zoom")).toDouble());
+                const auto geometry = objects->find(id)->geometry;
+                return QPointF((geometry.value(QStringLiteral("x")).toDouble() - value.value(QStringLiteral("centerX")).toDouble()) * scale + map->width()/2.0,
+                    (geometry.value(QStringLiteral("y")).toDouble() - value.value(QStringLiteral("centerY")).toDouble()) * scale + map->height()/2.0).toPoint();
+            };
+            const auto context = [&](const QString &actionName) {
+                QTimer::singleShot(0, map, [actionName] {
+                    auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget()); QVERIFY(menu);
+                    auto *action = menu->findChild<QAction *>(actionName); QVERIFY(action); action->trigger(); menu->close();
+                });
+                const auto hitPoint = position(); QContextMenuEvent event(QContextMenuEvent::Mouse, hitPoint, map->mapToGlobal(hitPoint)); QApplication::sendEvent(map, &event);
+            };
+            context(QStringLiteral("editMarker")); QVERIFY(editor->draft()); QCOMPARE(title->text(), QStringLiteral("Observation post"));
+            title->setText(QStringLiteral("Discarded")); QTest::keyClick(title, Qt::Key_Escape); QVERIFY(!editor->draft()); QCOMPARE(objects->find(id)->title, QStringLiteral("Observation post"));
+            context(QStringLiteral("editMarker")); title->setText(QStringLiteral("Updated marker")); apply->click(); QCOMPARE(objects->find(id)->title, QStringLiteral("Updated marker"));
+            const auto original = objects->find(id)->geometry;
+            context(QStringLiteral("moveMarker")); QCOMPARE(map->cursor().shape(), Qt::CrossCursor);
+            QTest::mouseMove(map, position() + QPoint(70, 40)); QCOMPARE(objects->find(id)->geometry, original);
+            QTest::keyClick(map, Qt::Key_Escape); QCOMPARE(objects->find(id)->geometry, original); QVERIFY(map->cursor().shape() != Qt::CrossCursor);
+            context(QStringLiteral("moveMarker")); const auto destination = position() + QPoint(70, 40);
+            QTest::mouseMove(map, destination); QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, destination); QVERIFY(objects->find(id)->geometry != original);
+            auto *undo = window.findChild<QAction *>(QStringLiteral("undoAction")); QVERIFY(undo); QVERIFY(!undo->isEnabled());
+            context(QStringLiteral("deleteMarker")); QVERIFY(objects->items().isEmpty()); QVERIFY(!selection->item()); QVERIFY(undo->isEnabled());
+            map->setFocus(); QTest::keyClick(map, Qt::Key_Z, Qt::ControlModifier); QCOMPARE(objects->items().size(), 1); QCOMPARE(objects->find(id)->title, QStringLiteral("Updated marker"));
+            QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, position()); QVERIFY(selection->item());
+            QTest::keyClick(map, Qt::Key_Backspace); QVERIFY(objects->items().isEmpty()); undo->trigger(); QCOMPARE(objects->items().size(), 1);
+            auto *readOnly = regular->findChild<QPlainTextEdit *>(); QVERIFY(readOnly);
+            QTest::keyClick(readOnly, Qt::Key_Delete); QVERIFY(objects->items().isEmpty()); undo->trigger(); QCOMPARE(objects->items().size(), 1);
+            map->setFocus(); QTest::keyClick(map, Qt::Key_M); QTest::keyClick(map, Qt::Key_Escape); QVERIFY(!editor->draft()); QCOMPARE(objects->items().size(), 1);
+            map->setFocus(); QTest::keyClick(map, Qt::Key_M); QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
+            QVERIFY(editor->draft()); QTest::keyClick(title, Qt::Key_Escape); QVERIFY(!editor->draft()); QCOMPARE(objects->items().size(), 1);
+            map->setFocus(); QTest::keyClick(map, Qt::Key_M); QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
+            apply->click(); QCOMPARE(objects->items().size(), 2); QCOMPARE(selection->item()->label, QStringLiteral("New Marker"));
+            const auto temporaryId = selection->item()->id; objects->remove(temporaryId);
+            QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, position()); QVERIFY(selection->item()); QCOMPARE(selection->item()->id, id);
+            regular->setFloating(true); regular->show(); regular->activateWindow(); QVERIFY(QTest::qWaitForWindowExposed(regular));
+            readOnly->setFocus(); QTest::keyClick(readOnly, Qt::Key_Delete); QVERIFY(!objects->find(id));
+            QTest::keyClick(readOnly, Qt::Key_Z, Qt::ControlModifier); QVERIFY(objects->find(id));
+            regular->setFloating(false); regular->show(); window.activateWindow(); map->setFocus();
+            QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, position());
+            QVERIFY(QTest::qWaitFor([&] {
+                const auto frame = map->grabFramebuffer(); const auto pixel = position() * map->devicePixelRatioF();
+                return !frame.isNull() && frame.rect().contains(pixel) && frame.pixelColor(pixel) == QColor("#ffc857");
+            }));
+            QVERIFY(QTest::qWaitFor([&] { return regular->isVisible(); }));
+            QVERIFY(window.screen()->grabWindow(window.winId()).save(QStringLiteral("marker-information.png")));
+            auto *configuration = dynamic_cast<swak::SettingsParticipant *>(editor); QVERIFY(configuration);
+            auto options = configuration->savePreferences(); options.insert(QStringLiteral("createKey"), QStringLiteral("N")); options.insert(QStringLiteral("radius"), 9);
+            QVERIFY(configuration->validateSettings(options).isEmpty()); configuration->restorePreferences(options);
+            map->setFocus(); QTest::keyClick(map, Qt::Key_M); QVERIFY(map->cursor().shape() != Qt::CrossCursor);
+            QTest::keyClick(map, Qt::Key_N); QCOMPARE(map->cursor().shape(), Qt::CrossCursor); QTest::keyClick(map, Qt::Key_Escape);
+            options.insert(QStringLiteral("color"), QStringLiteral("invalid")); QVERIFY(!configuration->validateSettings(options).isEmpty());
+            QVERIFY(window.savePreferences());
+        }
+        swak::Window restored(profile, QPluginLoader::staticInstances()); auto *objects = restored.findChild<swak::UserObjects *>();
+        QCOMPARE(objects->items().size(), 1); QCOMPARE(objects->find(id)->title, QStringLiteral("Updated marker"));
+        QCOMPARE(objects->find(id)->description, QStringLiteral("Local marker description")); QVERIFY(!objects->undoStack().canUndo());
+        const auto configuration = dynamic_cast<swak::SettingsParticipant *>(restored.findChild<swak::ObjectEditor *>())->savePreferences();
+        QCOMPARE(configuration.value(QStringLiteral("createKey")).toString(), QStringLiteral("N")); QCOMPARE(configuration.value(QStringLiteral("radius")).toInt(), 9);
+    }
     void keybindingsAndDismissal()
     {
         QTemporaryDir directory;
@@ -1127,7 +1223,7 @@ private slots:
             QVERIFY(!action->isChecked());
             dock->setFloating(false);
         }
-        QCOMPARE(activated, 6);
+        QCOMPARE(activated, 7);
         QVERIFY(window.grab().save(QStringLiteral("plugin-labels-smoke.png")));
     }
     void clearEventsMenu()
@@ -1308,7 +1404,7 @@ private slots:
                 if (!dialog) { QFAIL("Settings dialog did not open."); return; }
                 auto *tabs = dialog->findChild<QTabWidget *>();
                 auto *panes = dialog->findChild<QListWidget *>(QStringLiteral("paneSettingsSections"));
-                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 6) {
+                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 7) {
                     dialog->reject(); QFAIL("The pane tab is incomplete."); return;
                 }
                 for (auto *label : dialog->findChildren<QLabel *>()) {
@@ -1682,7 +1778,7 @@ private slots:
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         const auto docks = window.findChildren<QDockWidget *>(QString{}, Qt::FindDirectChildrenOnly);
-        QCOMPARE(docks.size(), 6);
+        QCOMPARE(docks.size(), 7);
         QVERIFY(!window.findChild<QWidget *>(QStringLiteral("toolsDock")));
         auto *viewMenu = window.findChild<QMenu *>(QStringLiteral("viewMenu"));
         auto *fileMenu = window.findChild<QMenu *>(QStringLiteral("fileMenu"));

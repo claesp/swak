@@ -12,6 +12,8 @@ namespace swak {
 struct MapItem {
     enum class Kind { Point, Line, Polygon };
     Kind kind = Kind::Point;
+    QString owner;
+    QString id;
     QString label;
     QString type;
     QString description;

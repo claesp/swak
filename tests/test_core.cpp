@@ -3,6 +3,7 @@
 #include "core/activity.h"
 #include "core/maps.h"
 #include "core/interfaces.h"
+#include "core/user_objects.h"
 #include "core/projection.h"
 #include "core/store.h"
 #include "core/files.h"
@@ -42,9 +43,36 @@ private:
         return event;
     }
 private slots:
+    void userObjectsAndUndo()
+    {
+        UserObjects objects;
+        UserObject item{QStringLiteral("test"), QStringLiteral("circle"), QStringLiteral("Marker"), QStringLiteral("Description"),
+            {{QStringLiteral("unit"), QStringLiteral("Alpha")}}, {{QStringLiteral("x"), 0.5}, {QStringLiteral("y"), 0.5}}};
+        QVERIFY(objects.put(item).isEmpty()); objects.remove(item.id); QVERIFY(objects.items().isEmpty());
+        QVERIFY(!objects.put(item).isEmpty());
+        objects.undoStack().undo(); QCOMPARE(objects.find(item.id)->json(), item.json());
+        objects.undoStack().redo(); QVERIFY(objects.items().isEmpty()); objects.undoStack().undo();
+        auto invalid = item; invalid.geometry.insert(QStringLiteral("x"), 2); QVERIFY(!objects.put(invalid).isEmpty());
+        invalid = item; invalid.type = QStringLiteral("other"); QVERIFY(!objects.put(invalid).isEmpty());
+        invalid = item; invalid.title = QString(129, 'x'); QVERIFY(!objects.put(invalid).isEmpty());
+        invalid = item; invalid.properties.insert(QStringLiteral("Unit"), QString(257, 'x')); QVERIFY(!objects.put(invalid).isEmpty());
+        invalid = item; invalid.properties.insert(QStringLiteral("ID"), QStringLiteral("reserved")); QVERIFY(!objects.put(invalid).isEmpty());
+        invalid = item; QJsonObject nested{{QStringLiteral("leaf"), true}};
+        for (int i = 0; i < 10; ++i) nested = {{QStringLiteral("child"), nested}};
+        invalid.geometry = nested; QVERIFY(!objects.put(invalid).isEmpty());
+        invalid = item; invalid.geometry.insert(QStringLiteral("path"), QJsonArray{1, 2, 3}); QVERIFY(objects.put(invalid).isEmpty()); QVERIFY(objects.put(item).isEmpty());
+        const auto saved = objects.savePreferences(); UserObjects restored; restored.restorePreferences(saved); QCOMPARE(restored.find(item.id)->json(), item.json());
+        for (int i = 0; i < 300; ++i) { auto next = item; next.id = QString::number(i); objects.put(next); }
+        QVERIFY(objects.items().size() <= 256);
+        objects.remove(item.id); auto next = item; next.id = QStringLiteral("overflow"); QVERIFY(!objects.put(next).isEmpty());
+        objects.undoStack().undo(); QVERIFY(objects.find(item.id));
+        for (const auto &id : objects.items().keys()) objects.remove(id);
+        QVERIFY(objects.undoStack().count() <= 100); objects.restorePreferences(saved); QVERIFY(!objects.undoStack().canUndo());
+    }
+
     void pluginManifests()
     {
-        QCOMPARE(builtInPlugins().size(), 13);
+        QCOMPARE(builtInPlugins().size(), 14);
         for (const auto &entry : QPluginLoader::staticPlugins()) {
             if (entry.metaData().value(QStringLiteral("IID")).toString() != QStringLiteral("org.swak.Plugin/2.0")) continue;
             const auto manifest = entry.metaData().value(QStringLiteral("MetaData")).toObject();

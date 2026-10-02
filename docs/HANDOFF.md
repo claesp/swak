@@ -478,3 +478,26 @@ Coverage passed eight suites and 38 native cases in `build/quality/20261002-2114
 The 60-second sanitizer workload passed in `build/quality/20261002-211545-soak-175793`. It completed 1280 cycles with 8327168 bytes of peak memory growth. The maximum heartbeat gap was 36 milliseconds, and idle CPU time was 0.005 seconds. This workload does not replace multi-hour qualification.
 
 Focused native tests for map providers, Settings, and data providers passed at 200% display scaling. Screenshots in `build/status-layout-highdpi` show the single-line labels, separate map status section, and lower attribution. Tests used Qt 6.8.2, GCC 14.2, and software Mesa on Debian 13.
+
+
+## 2026-10-02: Editable local markers
+
+The Markers map tool adds local circles. M activates a crosshair cursor and guide lines at the pointer. A click opens Edit marker with an unsaved draft. Apply stores the title, description, properties, and position. Saved circles use the existing read-only Information pane. Right-click offers Edit, Move, and Delete. Esc cancels a move without changing the stored position. Delete and Backspace work on selected local markers in the map and Information pane.
+
+Edit > Undo and Ctrl+Z restore deleted objects. Undo retains at most 100 deletions within the current session. Saved markers survive restarts through the preference system. Deleted identities and their storage remain reserved until their undo commands expire. This keeps Undo within the object count and memory limits.
+
+The shared UserObjects model stores typed objects with stable identities and bounded JSON geometry. MapTools dispatches input, draws tool content, and handles cancellation and selected-object deletion. ObjectEditor supplies the reusable form. PluginServices exposes these services through optional pointers. The new plugin uses the existing pane, configuration, and map-tool interfaces. Its MANIFEST declares both roles. There are now fourteen built-in plugins.
+
+Storage permits 256 objects and 128 KiB of formatted object data, including retained deletions. Each object permits 8192 bytes, 32 text properties, a 128-character title, and a 2048-character description. Geometry has depth and collection limits. Unknown object types retain bounded data for future plugins. Existing object identities cannot change type.
+
+File > Settings exposes the creation key, circle radius, circle color, and guide opacity. The editor also retains its table header layout. The creation key accepts one unmodified letter. Cross-plugin shortcut conflicts remain a configuration limitation.
+
+Eight sanitizer suites passed in `build/quality/20261002-222519-quick-184280`. Static analysis passed in `build/quality/20261002-222521-analyze-2`. Coverage passed eight suites and all 39 native cases in `build/quality/20261002-222714-coverage-184864`. Coverage executed all 84 UserObjects lines and all 18 MapTools lines. ObjectEditor reached 61 of 72 lines, and the marker plugin reached 165 of 168 lines. Remaining gaps include property delegate interaction, description truncation, the editor Escape fallback, invalid creation keys, and defensive failure paths. Line coverage does not establish complete branch or input coverage.
+
+All 39 native sanitizer cases passed in `build/quality/20261002-222637-gui-184756`. LeakSanitizer then reported the existing Mesa leak of 240732 bytes in 1073 allocations. The diagnostic remains failed, without suppression.
+
+The final 60-second sanitizer workload passed in `build/quality/20261002-223148-soak-185836`. It now includes repeated marker creation, deletion, Undo, and redo. It completed 924 cycles with 8847360 bytes of peak memory growth. The maximum heartbeat gap was 90 milliseconds, and idle CPU time was 0.016 seconds. This workload does not replace multi-hour qualification.
+
+The focused native marker test passed at 200 percent scaling after the final pointer-position change. Screenshots in `build/markers-highdpi` show the editor, selection, and crosshair. The editor screenshot shows complete labels and controls. The release rebuild passed without compiler warnings. The executable remains `build/release/swak`, version 0.1.0. Its build log is `build/markers-release.log`.
+
+Tests used Qt 6.8.2, GCC 14.2, and software Mesa on Debian 13. Hardware graphics, native Wayland, Qt 6.4 compatibility, and multi-hour use remain untested. This task adds no external dependency.

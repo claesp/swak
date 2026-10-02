@@ -112,7 +112,7 @@ Help > About opens one dialog per window and releases it on close. The dialog us
 
 # Map registration
 
-`MapExtension` registers a stable map identifier, a name, and a kind: Provider or Tool. A provider also implements `MapProvider`, which supplies defaults, editable fields, validation, and a tile URL builder. The XYZ, WMTS, and WMS plugins register both interfaces. No map tool exists yet. The green background remains an internal map layer.
+`MapExtension` registers a stable map identifier, a name, and a kind: Provider or Tool. A provider also implements `MapProvider`, which supplies defaults, editable fields, validation, and a tile URL builder. The XYZ, WMTS, and WMS plugins register both interfaces. The marker plugin registers as a map tool. The green background remains an internal map layer.
 
 `MapSources` owns the per-window catalog and implements `SettingsParticipant`. The host discovers participants among its QObject children as well as plugin roots. `PluginServices` supplies the catalog to the view and toolbar callbacks. Only registered providers enter the manager format list. Missing providers retain their saved configuration.
 
@@ -127,3 +127,9 @@ DataManager uses the shared SettingsDialog for Add and Edit forms. The host embe
 The MVT plugin supplies OpenFreeMap through the existing MapProvider catalog. Its VectorTileProvider capability decodes bounded vector tiles on two host workers. Workers prepare complete tile images, and the OpenGL map composes those cached images. The host limits combined downloads and decode work to four jobs and discards cancelled results. The same catalog controls attribution, HTTPS, cache, appearance, and saved layer visibility.
 
 ProviderTable supplies shared row selection and activation controls for both catalogs. Map providers use an exclusive radio group, while data providers use independent checkboxes. SettingsPage can embed these manager widgets with a host-owned factory. Catalog actions save immediately and do not share the generic form snapshot. Embedded managers do not overwrite the saved geometry of separate management windows.
+
+# Local object editing
+
+The window owns `UserObjects`, `MapTools`, and their undo action. The marker plugin creates its editor pane and registers a tool instance. `ObjectEditor` supplies reusable metadata editing. The tool handles map gestures and draws local geometry. The map view forwards events through the shared registry and contains no marker-specific commands.
+
+The model stores committed objects in its own preferences component. Draft creation and move previews remain outside the model. A deletion command stores a complete record and restores its stable identity during undo. The normal Information pane uses shared selection data for both imported and local objects.

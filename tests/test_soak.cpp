@@ -2,6 +2,7 @@
 #include "vector_fixture.h"
 #include "core/activity.h"
 #include "core/maps.h"
+#include "core/user_objects.h"
 #include "core/data.h"
 #include "core/interfaces.h"
 #include "app/window.h"
@@ -64,8 +65,9 @@ private slots:
             QVERIFY(QTest::qWaitForWindowExposed(window.get()));
             auto *map = window->findChild<QOpenGLWidget *>();
             QVERIFY(map);
-            QTRY_VERIFY_WITH_TIMEOUT(map->isValid(), 5000);
+            QVERIFY(QTest::qWaitFor([&] { return map->isValid(); }, 5000));
         }
+        UserObjects localObjects;
         Store headlessStore;
         Store &store = window ? window->store() : headlessStore;
         ActivityModel activity;
@@ -146,6 +148,12 @@ private slots:
             for (const auto &received : store.events()) latestStale = qMax(latestStale, received.stale);
             store.expire(latestStale.addSecs(1));
             QCOMPARE(store.rowCount(), 0);
+            UserObject marker{QStringLiteral("marker-%1").arg(cycles % 128), QStringLiteral("circle"), QStringLiteral("Soak marker"), {}, {},
+                {{QStringLiteral("x"), 0.5}, {QStringLiteral("y"), 0.5}}};
+            QVERIFY(localObjects.put(marker).isEmpty()); localObjects.remove(marker.id);
+            localObjects.undoStack().undo(); QVERIFY(localObjects.find(marker.id));
+            localObjects.undoStack().redo(); QVERIFY(!localObjects.find(marker.id));
+            QVERIFY(localObjects.undoStack().count() <= 100);
             ++cycles;
             const qint64 resident = residentBytes();
             QVERIFY(resident > 0);

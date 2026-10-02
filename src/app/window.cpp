@@ -1,4 +1,6 @@
 #include "app/window.h"
+#include "core/map_tools.h"
+#include "core/user_objects.h"
 #include "app/map_manager.h"
 #include "app/data_manager.h"
 #include "swak/version.h"
@@ -113,7 +115,9 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     auto *dataSources = new DataSources(plugins, this);
     dataSources->setObjectName(QStringLiteral("dataSources"));
     auto *selection = new MapSelection(this);
-    PluginServices services{store_, *activity, *mapSources, dataSources, selection};
+    auto *mapTools = new MapTools(this);
+    auto *objects = new UserObjects(this);
+    PluginServices services{store_, *activity, *mapSources, dataSources, selection, mapTools, objects};
     if (view) {
         setCentralWidget(view->create(services, layers, this));
     } else {
@@ -135,6 +139,12 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     quit->setObjectName(QStringLiteral("quitAction"));
     quit->setShortcut(QKeySequence::Quit);
     connect(quit, &QAction::triggered, this, &QWidget::close);
+    auto *editMenu = menuBar()->addMenu(tr("&Edit"));
+    editMenu->setObjectName(QStringLiteral("editMenu"));
+    auto *undo = objects->undoStack().createUndoAction(editMenu, tr("Undo"));
+    undo->setObjectName(QStringLiteral("undoAction"));
+    undo->setShortcut(QKeySequence::Undo);
+    editMenu->addAction(undo);
     auto *viewMenu = menuBar()->addMenu(tr("&View"));
     viewMenu->setObjectName(QStringLiteral("viewMenu"));
     QHash<QObject *, QDockWidget *> pluginDocks;

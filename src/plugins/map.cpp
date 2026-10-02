@@ -1,5 +1,6 @@
 #include "core/interfaces.h"
 #include "core/tiles.h"
+#include "core/map_tools.h"
 #include "core/single_line_label.h"
 #include "core/data.h"
 #include <QHideEvent>
@@ -130,6 +131,10 @@ public:
         connect(sources_, &MapSources::changed, this, apply);
         apply();
     }
+    void setMapTools(MapTools *tools) {
+        tools_ = tools;
+        if (tools_) connect(tools_, &MapTools::changed, this, qOverload<>(&MapWidget::update));
+    }
     QWidget *createStatusWidget(QWidget *parent) override
     {
         statusLabel_ = new SingleLineLabel(parent);
@@ -219,6 +224,7 @@ public:
 protected:
     void contextMenuEvent(QContextMenuEvent *event) override
     {
+        if (tools_ && tools_->handle(*event, view_, *this)) { event->accept(); return; }
         const QPoint position = event->reason() == QContextMenuEvent::Keyboard ? rect().center() : event->pos();
         const auto features = tiles_.featuresAt(position);
         QMenu menu(this);
@@ -255,7 +261,7 @@ protected:
         return QOpenGLWidget::event(event);
     }
     void focusOutEvent(QFocusEvent *event) override { stopPanning(); QOpenGLWidget::focusOutEvent(event); }
-    void hideEvent(QHideEvent *event) override { stopPanning(); tiles_.stop(); QOpenGLWidget::hideEvent(event); }
+    void hideEvent(QHideEvent *event) override { stopPanning(); if (tools_) tools_->cancel(); tiles_.stop(); QOpenGLWidget::hideEvent(event); }
     void resizeEvent(QResizeEvent *event) override
     {
         QOpenGLWidget::resizeEvent(event);
@@ -278,6 +284,7 @@ protected:
             painter.restore();
         }
         if (!tilesPainted) { tiles_.paint(painter, view_, opacity_, smooth_, missingOpacity_); if (dataSources_) dataSources_->paint(painter, view_); }
+        if (tools_) tools_->paint(painter, view_);
         if (selection_) selection_->paint(painter, view_);
         const auto source = sources_ ? sources_->activeSource() : QJsonObject{};
         painter.setPen(QColor("#c7d7e5"));
@@ -354,6 +361,7 @@ protected:
     }
     void mousePressEvent(QMouseEvent *event) override
     {
+        if (tools_ && tools_->handle(*event, view_, *this)) { dragging_ = false; moved_ = false; event->accept(); return; }
         if (event->button() != Qt::LeftButton) return;
         dragging_ = true;
         moved_ = false;
@@ -363,6 +371,7 @@ protected:
     }
     void mouseDoubleClickEvent(QMouseEvent *event) override
     {
+        if (tools_ && tools_->handle(*event, view_, *this)) { event->accept(); return; }
         if (event->button() != Qt::LeftButton) { QOpenGLWidget::mouseDoubleClickEvent(event); return; }
         view_.center += (event->position() - QPointF(width() / 2.0, height() / 2.0)) / view_.scale();
         clampCenter();
@@ -376,6 +385,7 @@ protected:
     void mouseMoveEvent(QMouseEvent *event) override
     {
         cursor_ = event->position();
+        if (tools_ && tools_->handle(*event, view_, *this)) { event->accept(); update(); return; }
         if (dragging_) {
             moved_ = moved_ || (cursor_ - press_).manhattanLength() > 4;
             view_.center -= (cursor_ - last_) / view_.scale();
@@ -390,6 +400,7 @@ protected:
         dragging_ = false;
         unsetCursor();
         if (moved_) return;
+        if (tools_ && tools_->handle(*event, view_, *this)) { event->accept(); update(); return; }
         QString closest;
         double distance = 14;
         for (const auto &item : store_.events()) {
@@ -441,6 +452,7 @@ protected:
     }
     void keyPressEvent(QKeyEvent *event) override
     {
+        if (tools_ && tools_->handle(*event, view_, *this)) { stopPanning(); event->accept(); update(); return; }
         const auto modifiers = event->modifiers() & ~Qt::KeypadModifier;
         const bool plainKey = modifiers == Qt::NoModifier || (event->key() == Qt::Key_Plus && modifiers == Qt::ShiftModifier);
         if (plainKey && std::find(keys_.begin(), keys_.begin() + 4, event->key()) != keys_.begin() + 4) {
@@ -576,6 +588,7 @@ private:
     int prefetchMargin_ = 1;
     QPointer<QDialog> information_;
     QByteArray informationGeometry_;
+    MapTools *tools_ = nullptr;
     MapSources *sources_ = nullptr;
     TileRenderer tiles_;
     QLabel *attribution_;
@@ -610,6 +623,7 @@ public:
         widget->setMapSources(&services.maps);
         widget->setDataSources(services.data);
         widget->setSelection(services.selection);
+        widget->setMapTools(services.mapTools);
         return widget;
     }
     void populateToolbar(PluginServices &services, QToolBar &toolbar, QMenu *) override

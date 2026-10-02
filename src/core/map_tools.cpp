@@ -1,0 +1,32 @@
+#include "core/map_tools.h"
+#include <QPainter>
+#include <algorithm>
+namespace swak {
+void MapTools::add(MapTool *tool)
+{
+    if (!tool || tools_.contains(tool)) return;
+    tools_.append(tool); connect(tool, &MapTool::changed, this, &MapTools::changed);
+    connect(tool, &QObject::destroyed, this, [this] {
+        tools_.removeIf([](const auto &entry) { return entry.isNull(); }); emit changed();
+    });
+    emit changed();
+}
+bool MapTools::handle(QEvent &event, const Viewport &view, QWidget &map)
+{
+    return std::any_of(tools_.cbegin(), tools_.cend(), [&](const auto &tool) { return tool && tool->handle(event, view, map); });
+}
+void MapTools::paint(QPainter &painter, const Viewport &view) const
+{
+    for (const auto &tool : tools_) if (tool) { painter.save(); tool->paint(painter, view); painter.restore(); }
+}
+bool MapTools::deleteSelection()
+{
+    return std::any_of(tools_.cbegin(), tools_.cend(), [](const auto &tool) { return tool && tool->deleteSelection(); });
+}
+bool MapTools::cancel()
+{
+    bool cancelled = false;
+    for (const auto &tool : tools_) if (tool) cancelled = tool->cancel() || cancelled;
+    return cancelled;
+}
+}

@@ -82,3 +82,11 @@ Tile fetching permits zero through two extra rings, with at most 64 extra tiles.
 Vector downloads have an eight MiB limit. Raster downloads retain the two MiB limit. Vector parsing permits 500000 vertices and 50000 features per tile. The estimate for retained geometry and properties cannot exceed 64 MiB per tile. Two workers and four combined requests or jobs remain the concurrency limits.
 
 Memory recovery releases cached geometry before it discards visible images. Compact images use 256 KiB each and remain inside the configured cache budget. The coverage audit respects request backoff, source generations, cancellation, and shutdown. Invalid data remains an error. It never counts a missing tile as rendered.
+
+# Local editable objects
+
+Local objects remain in the private preferences file and are not transmitted. The model accepts at most 256 records. Each formatted record contains at most 8192 bytes. Live records and deleted records reserved for undo share a 128 KiB budget. The undo stack retains at most 100 commands. Undo snapshots are process-local and disappear on restart.
+
+Titles contain at most 128 characters. Descriptions contain at most 2048 characters. Each record has at most 32 text properties. Names contain at most 64 characters, and values contain at most 256 characters. Duplicate names and reserved coordinate names prevent Apply. Geometry uses finite coordinates and bounded JSON containers, with at most eight nested levels. Circle coordinates remain within the normalized world bounds.
+
+The editor changes a copy until Apply succeeds. Move previews do not alter saved coordinates. Imported objects never enter the editable store. Selection ownership prevents a marker command from deleting imported data. Objects and undo commands use per-window ownership. Tool registration uses guarded QObject pointers and no new worker threads or timers.

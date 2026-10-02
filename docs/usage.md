@@ -198,3 +198,15 @@ Map controls require map focus. Q zooms in, and E zooms out. The four movement k
 Esc closes Information and clears the map object and CoT selection. This command works in the main window and detached panes. Modal dialogs and popup menus keep their normal Escape behavior. Information supports Esc or one function key. When an object is selected, its dismissal key takes priority over a matching map key.
 
 The map keeps clickable attribution at its bottom-right edge. Status text uses an ellipsis when the window is narrow. Hover over the status section to read its full text. Settings field labels stay on one line. Narrow forms provide horizontal scrolling for long labels. Settings notices and result messages also stay on one line, with their full text available on hover.
+
+# Local markers
+
+Focus the map and press M to create a marker. The pointer changes to the standard crosshair. Horizontal and vertical guide lines follow the pointer. Click a map position to place a draft circle. The Edit marker pane opens with editable title, description, and properties. An empty title uses New Marker.
+
+Use Add property and Remove property to change the property table. Property names must be unique. Select Apply to store the marker. The regular Information pane then shows its saved values. Cancel, Esc, or closing the editor discards the draft. Committed markers survive application restarts in the portable preferences file.
+
+Click a saved marker to select it. Right-click it for Edit, Move, or Delete. Edit opens the editable pane again. Move attaches a preview to the pointer until the next left click. Esc cancels the move and restores the original position. It also restores the marker selection. Guide lines remain visible during a move.
+
+With the map or Information pane focused, Backspace or Delete removes the selected local marker. Imported objects remain read-only. Ctrl+Z and Edit > Undo restore deleted markers, including their position and properties. The history keeps the last 100 deletions during the current session. It does not survive a restart. Creation, editing, and movement do not enter this deletion history.
+
+File > Settings > General > Markers changes circle color, radius, and guide opacity. File > Settings > Keybindings > Markers changes the creation key. It accepts one letter without modifiers. A tool activation key takes priority over a map navigation key with the same value. Choose different keys for these actions. The model allows at most 256 objects and reserves storage for undo. ID, Latitude, and Longitude are reserved property names.

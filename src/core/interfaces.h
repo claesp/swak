@@ -15,12 +15,16 @@ class ActivityModel;
 class MapSources;
 class DataSources;
 class MapSelection;
+class MapTools;
+class UserObjects;
 struct PluginServices {
     Store &store;
     ActivityModel &activity;
     MapSources &maps;
     DataSources *data = nullptr;
     MapSelection *selection = nullptr;
+    MapTools *mapTools = nullptr;
+    UserObjects *objects = nullptr;
 };
 class Plugin {
 public:

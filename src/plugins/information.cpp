@@ -1,5 +1,6 @@
 #include "core/interfaces.h"
 #include "core/store.h"
+#include "core/map_tools.h"
 #include "core/map_selection.h"
 #include <QLabel>
 #include <QPlainTextEdit>
@@ -45,7 +46,7 @@ protected:
 };
 class InformationPane final : public PaneContent, public SettingsParticipant {
 public:
-    InformationPane(MapSelection *selection, Store &store, QWidget *parent) : PaneContent(parent), selection_(selection), store_(store), owner_(parent->window())
+    InformationPane(MapSelection *selection, Store &store, MapTools *tools, QWidget *parent) : PaneContent(parent), selection_(selection), tools_(tools), store_(store), owner_(parent->window())
     {
         setObjectName(QStringLiteral("informationPane"));
         qApp->installEventFilter(this);
@@ -108,9 +109,13 @@ protected:
     {
         if (event->type() != QEvent::KeyPress || QApplication::activeModalWidget() || QApplication::activePopupWidget()) return false;
         auto *widget = qobject_cast<QWidget *>(object);
-        while (widget && widget != owner_) widget = widget->parentWidget();
+        bool inPane = false;
+        while (widget && widget != owner_) { inPane = inPane || widget == this; widget = widget->parentWidget(); }
         if (!widget) return false;
         auto *key = static_cast<QKeyEvent *>(event);
+        if (inPane && key->modifiers() == Qt::NoModifier && (key->key() == Qt::Key_Delete || key->key() == Qt::Key_Backspace)
+            && tools_ && tools_->deleteSelection()) { key->accept(); return true; }
+        if (key->key() == Qt::Key_Escape && key->modifiers() == Qt::NoModifier && tools_ && tools_->cancel()) { key->accept(); return true; }
         if (key->key() != dismissKey_ || key->modifiers() != Qt::NoModifier) return false;
         if ((!selection_ || !selection_->item()) && store_.selected().isEmpty() && !isVisible()) return false;
         if (selection_) selection_->clear();
@@ -130,6 +135,7 @@ private:
         return value == Qt::Key_Escape || (value >= Qt::Key_F1 && value <= Qt::Key_F12) ? value : 0;
     }
     MapSelection *selection_;
+    MapTools *tools_;
     Store &store_;
     QWidget *owner_;
     int dismissKey_ = Qt::Key_Escape;
@@ -145,7 +151,7 @@ class InformationPlugin final : public QObject, public Plugin, public PanePlugin
     Q_INTERFACES(swak::Plugin swak::PanePlugin)
 public:
     QString name() const override { return tr("Information"); }
-    QWidget *create(PluginServices &services, QWidget *parent) override { return new InformationPane(services.selection, services.store, parent); }
+    QWidget *create(PluginServices &services, QWidget *parent) override { return new InformationPane(services.selection, services.store, services.mapTools, parent); }
 };
 }
 #include "information.moc"

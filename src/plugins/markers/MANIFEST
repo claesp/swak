@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "org.swak.markers",
+  "name": "Markers",
+  "description": "Create, edit, move, and delete local map markers.",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entryPoint": "MarkerPlugin",
+  "linkage": "static",
+  "platforms": ["linux"],
+  "qtMajor": 6,
+  "qtMinimum": "6.4.0",
+  "interfaces": ["pane", "map-tool"],
+  "requires": [],
+  "permissions": [],
+  "settingsSchemaVersion": 1
+}
