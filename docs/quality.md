@@ -16,7 +16,7 @@ Use the build environment described in [Build and run](build.md). Run these comm
 
 # Regular runs
 
-The quick mode builds with address and undefined behavior sanitizers. It runs the map, core, internal-event, logging, preferences, and short workload suites. Each suite has a 60-second limit. A separate process enforces the limit even when the application event loop stops.
+The quick mode builds with address and undefined behavior sanitizers. It runs the data, map, core, internal-event, logging, preferences, and short workload suites. Each suite has a 60-second limit. A separate process enforces the limit even when the application event loop stops.
 
 ```sh
 python3 tools/quality.py quick
@@ -74,3 +74,9 @@ Recoverable input, file, preference, and network failures must leave the interfa
 Do not continue after detected memory corruption or catch fatal signals to hide crashes. C++ memory corruption and failing native libraries cannot be safely recovered inside the same process. Features that require isolation from native crashes need a separate worker process and a restart policy. Current static plugins share the application process. This workflow improves fault detection but does not guarantee that the application cannot crash.
 
 The compiler documents the [sanitizer and coverage flags](https://gcc.gnu.org/onlinedocs/gcc/Instrumentation-Options.html). Cppcheck documents its [analysis and suppression behavior](https://cppcheck.sourceforge.io/manual.html). Review Qt and dependency security advisories before a release.
+
+# Data feed diagnostics
+
+The data suite tests KML and KMZ decoding, malformed inputs, local HTTPS failures, cancellation, and repeated refreshes. It also tests polygon holes and date-line geometry. The GUI suite exercises management forms and draws downloaded points, lines, and polygons. The workload now decodes KML during each cycle.
+
+For a downloaded research sample, run `QT_QPA_PLATFORM=offscreen build/debug/swak_data_tests --sample /path/to/sample.kml` from the repository root. This development-only command also accepts KMZ. It reads at most the download limit plus one byte and reports shape counts or a parsing error.

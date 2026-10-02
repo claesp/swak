@@ -1,5 +1,6 @@
 #include "core/interfaces.h"
 #include "core/tiles.h"
+#include "core/data.h"
 #include <QHideEvent>
 #include <QLabel>
 #include <QDesktopServices>
@@ -59,6 +60,11 @@ public:
             if (event != events.end()) view_.center = project(event->latitude, event->longitude);
             update();
         });
+    }
+    void setDataSources(DataSources *sources)
+    {
+        dataSources_ = sources;
+        if (sources) connect(sources, &DataSources::contentChanged, this, qOverload<>(&QWidget::update));
     }
     void setMapSources(MapSources *sources)
     {
@@ -121,12 +127,12 @@ protected:
         painter.setRenderHint(QPainter::Antialiasing, antialias_);
         bool tilesPainted = false;
         for (const auto *layer : layers_) {
-            if (!tilesPainted && layer->order() > 0) { tiles_.paint(painter, view_, opacity_, smooth_, missingOpacity_); tilesPainted = true; }
+            if (!tilesPainted && layer->order() > 0) { tiles_.paint(painter, view_, opacity_, smooth_, missingOpacity_); tilesPainted = true; if (dataSources_) dataSources_->paint(painter, view_); }
             painter.save();
             layer->paint(painter, view_, store_);
             painter.restore();
         }
-        if (!tilesPainted) tiles_.paint(painter, view_, opacity_, smooth_, missingOpacity_);
+        if (!tilesPainted) { tiles_.paint(painter, view_, opacity_, smooth_, missingOpacity_); if (dataSources_) dataSources_->paint(painter, view_); }
         const auto source = sources_ ? sources_->activeSource() : QJsonObject{};
         painter.setPen(QColor("#c7d7e5"));
         const QPointF coord = view_.coordinate(cursor_);
@@ -135,39 +141,50 @@ protected:
                                          : tr("Pointer outside map");
         painter.drawText(QRect(16, height() - 30, width() - 32, 22), Qt::AlignLeft | Qt::AlignVCenter,
                          tr("%1  |  Zoom %2  |  %3 events").arg(position).arg(view_.zoom, 0, 'f', 0).arg(store_.rowCount()));
-        attribution_->setVisible(!source.isEmpty());
-        if (!source.isEmpty()) {
-            QString credit = source.value(QStringLiteral("attribution")).toString();
-            static const QRegularExpression links(QStringLiteral("https?://[^\\s|<>]+"));
-            QList<QUrl> urls;
-            auto matches = links.globalMatch(credit);
-            while (matches.hasNext()) {
-                auto candidate = matches.next().captured();
-                while (!candidate.isEmpty() && (QStringLiteral(".,;:!?").contains(candidate.back())
-                    || (candidate.endsWith(')') && candidate.count(')') > candidate.count('('))
-                    || (candidate.endsWith(']') && candidate.count(']') > candidate.count('[')))) candidate.chop(1);
-                const QUrl url(candidate, QUrl::StrictMode);
-                if (url.isValid() && !url.host().isEmpty() && url.userInfo().isEmpty()) urls.append(url);
-            }
-            credit.remove(links);
-            credit = credit.trimmed();
-            while (!credit.isEmpty() && QStringLiteral("|(").contains(credit.back())) {
-                credit.chop(1);
-                credit = credit.trimmed();
-            }
-            if (credit.isEmpty()) credit = tr("Map attribution");
-            int naturalWidth = attribution_->fontMetrics().horizontalAdvance(credit);
-            QString text = credit.toHtmlEscaped();
-            const bool linked = !urls.isEmpty();
-            if (linked) {
-                text = QStringLiteral("<a style=\"color: white\" href=\"%1\">%2</a>")
-                    .arg(urls.first().toString(QUrl::FullyEncoded).toHtmlEscaped(), text);
-                for (qsizetype i = 1; i < urls.size(); ++i) {
-                    const auto label = tr("Source %1").arg(i + 1);
-                    text += QStringLiteral(" | <a style=\"color: white\" href=\"%1\">%2</a>")
-                        .arg(urls.at(i).toString(QUrl::FullyEncoded).toHtmlEscaped(), label.toHtmlEscaped());
-                    naturalWidth += attribution_->fontMetrics().horizontalAdvance(QStringLiteral(" | ") + label);
+        QStringList credits;
+        if (!source.isEmpty()) credits.append(source.value(QStringLiteral("attribution")).toString());
+        if (dataSources_) credits.append(dataSources_->attributions());
+        attribution_->setVisible(!credits.isEmpty());
+        if (!credits.isEmpty()) {
+            QString text;
+            QString tooltip;
+            int naturalWidth = 0;
+            for (auto credit : credits) {
+                static const QRegularExpression links(QStringLiteral("https?://[^\\s|<>]+"));
+                QList<QUrl> urls;
+                auto matches = links.globalMatch(credit);
+                while (matches.hasNext()) {
+                    auto candidate = matches.next().captured();
+                    while (!candidate.isEmpty() && (QStringLiteral(".,;:!?").contains(candidate.back())
+                        || (candidate.endsWith(')') && candidate.count(')') > candidate.count('('))
+                        || (candidate.endsWith(']') && candidate.count(']') > candidate.count('[')))) candidate.chop(1);
+                    const QUrl url(candidate, QUrl::StrictMode);
+                    if (url.isValid() && !url.host().isEmpty() && url.userInfo().isEmpty()) urls.append(url);
                 }
+                credit.remove(links);
+                credit = credit.trimmed();
+                while (!credit.isEmpty() && QStringLiteral("|(").contains(credit.back())) {
+                    credit.chop(1);
+                    credit = credit.trimmed();
+                }
+                if (credit.isEmpty()) credit = tr("Map attribution");
+                int creditWidth = attribution_->fontMetrics().horizontalAdvance(credit);
+                QString line = credit.toHtmlEscaped();
+                const bool linked = !urls.isEmpty();
+                if (linked) {
+                    line = QStringLiteral("<a style=\"color: white\" href=\"%1\">%2</a>")
+                        .arg(urls.first().toString(QUrl::FullyEncoded).toHtmlEscaped(), line);
+                    for (qsizetype i = 1; i < urls.size(); ++i) {
+                        const auto label = tr("Source %1").arg(i + 1);
+                        line += QStringLiteral(" | <a style=\"color: white\" href=\"%1\">%2</a>")
+                            .arg(urls.at(i).toString(QUrl::FullyEncoded).toHtmlEscaped(), label.toHtmlEscaped());
+                        creditWidth += attribution_->fontMetrics().horizontalAdvance(QStringLiteral(" | ") + label);
+                    }
+                }
+                if (!text.isEmpty()) text += QStringLiteral("<br>");
+                text += line;
+                naturalWidth = std::max(naturalWidth, creditWidth);
+                if (tooltip.isEmpty() && linked) tooltip = urls.first().toDisplayString();
             }
             if (source.value(QStringLiteral("ignoreTls")).toBool(false)) {
                 const auto warning = tr("HTTPS certificate checks disabled");
@@ -176,7 +193,7 @@ protected:
             }
             if (!tiles_.status().isEmpty()) text += QStringLiteral("<br>") + tiles_.status().toHtmlEscaped();
             attribution_->setText(text);
-            attribution_->setToolTip(linked ? urls.first().toDisplayString() : QString{});
+            attribution_->setToolTip(tooltip);
             const auto style = QStringLiteral("QLabel { color: white; background-color: rgba(16,32,44,%1); padding: 4px; }")
                 .arg(qRound(attributionOpacity_ * 255));
             if (attribution_->styleSheet() != style) attribution_->setStyleSheet(style);
@@ -290,6 +307,7 @@ private:
     bool smooth_ = true;
     bool antialias_ = true;
     Store &store_;
+    DataSources *dataSources_ = nullptr;
     QList<MapLayer *> layers_;
     Viewport view_;
     QPointF cursor_;
@@ -308,6 +326,7 @@ public:
     {
         auto *widget = new MapWidget(services.store, layers, parent);
         widget->setMapSources(&services.maps);
+        widget->setDataSources(services.data);
         return widget;
     }
     void populateToolbar(PluginServices &services, QToolBar &toolbar, QMenu *) override

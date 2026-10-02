@@ -9,3 +9,5 @@ Q_IMPORT_PLUGIN(XyzProvider)
 Q_IMPORT_PLUGIN(WmtsProvider)
 Q_IMPORT_PLUGIN(WmsProvider)
 Q_IMPORT_PLUGIN(ActivityPlugin)
+
+Q_IMPORT_PLUGIN(KmlPlugin)

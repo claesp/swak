@@ -1,6 +1,7 @@
 #include "core/plugin_catalog.h"
 #include "core/interfaces.h"
 #include "core/maps.h"
+#include "core/data.h"
 #include "core/logging.h"
 #include <QJsonArray>
 #include <QPluginLoader>
@@ -46,6 +47,10 @@ QString validatePluginManifest(const QJsonObject &manifest, QObject *instance)
         if (extension->mapId() != manifest.value(QStringLiteral("id")).toString()) return QStringLiteral("Map plugin identifier mismatch.");
         roles.insert(extension->mapKind() == MapExtension::Kind::Provider ? QStringLiteral("map-provider") : QStringLiteral("map-tool"));
         if (extension->mapKind() == MapExtension::Kind::Provider && !qobject_cast<MapProvider *>(instance)) return QStringLiteral("Missing map provider interface.");
+    }
+    if (auto *provider = qobject_cast<DataProvider *>(instance)) {
+        if (provider->dataId() != manifest.value(QStringLiteral("id")).toString()) return QStringLiteral("Data plugin identifier mismatch.");
+        roles.insert(QStringLiteral("data-provider"));
     }
     const auto declared = manifest.value(QStringLiteral("interfaces")).toArray();
     if (declared.isEmpty() || declared.size() != roles.size()) return QStringLiteral("Plugin interface manifest mismatch.");

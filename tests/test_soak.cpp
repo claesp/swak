@@ -1,5 +1,6 @@
 #include "core/activity.h"
 #include "core/maps.h"
+#include "core/data.h"
 #include "core/interfaces.h"
 #include "app/window.h"
 #include "core/preferences.h"
@@ -38,15 +39,17 @@ private slots:
         const auto secondsText = qgetenv("SWAK_SOAK_SECONDS");
         const int seconds = secondsText.isEmpty() ? 5 : secondsText.toInt(&ok);
         QVERIFY2(secondsText.isEmpty() || (ok && seconds >= 1 && seconds <= 86400), "SWAK_SOAK_SECONDS must be between 1 and 86400.");
+        DataProvider *dataProvider = nullptr;
         Codec *codec = nullptr;
         SourcePlugin *source = nullptr;
         QList<ToolPlugin *> tools;
         for (auto *plugin : QPluginLoader::staticInstances()) {
+            if (auto *item = qobject_cast<DataProvider *>(plugin)) dataProvider = item;
             if (auto *item = qobject_cast<Codec *>(plugin)) codec = item;
             if (auto *item = qobject_cast<SourcePlugin *>(plugin)) source = item;
             if (auto *item = qobject_cast<ToolPlugin *>(plugin)) tools.append(item);
         }
-        QVERIFY(codec && source && !tools.isEmpty());
+        QVERIFY(codec && source && dataProvider && !tools.isEmpty());
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
         Preferences preferences(directory.filePath(QStringLiteral("preferences.json")));
@@ -103,6 +106,9 @@ private slots:
         int cycles = 0;
         quint32 random = 0x5357414b;
         while (elapsed.elapsed() < (static_cast<qint64>(seconds) + 2) * 1000) {
+            std::atomic_bool cancelled = false;
+            const auto document = dataProvider->decode("<kml xmlns=\"http://www.opengis.net/kml/2.2\"><Placemark><Point><coordinates>0,0</coordinates></Point></Placemark></kml>", cancelled);
+            QCOMPARE(document.shapes.size(), 1);
             event.uid = QStringLiteral("item-%1").arg(cycles % 128);
             event.time = QDateTime::currentDateTimeUtc();
             event.start = event.time;

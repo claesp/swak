@@ -3,6 +3,7 @@
 #include "core/tiles.h"
 #include "app/window.h"
 #include "app/map_manager.h"
+#include "app/data_manager.h"
 #include "core/maps.h"
 #include "tile_server.h"
 #include <QStandardPaths>
@@ -535,6 +536,63 @@ private slots:
         missing.findChild<QPushButton *>(QStringLiteral("useMapProvider"))->click();
         QVERIFY(absent.activeSource().isEmpty());
         missing.findChild<QPushButton *>(QStringLiteral("editMapProvider"))->click();
+    }
+    void dataProviders()
+    {
+        QTemporaryDir directory;
+        TileServer server; QVERIFY(server.load(QFINDTESTDATA("fixtures"))); QVERIFY(server.listen(QHostAddress::LocalHost));
+        server.body = "<kml xmlns=\"http://www.opengis.net/kml/2.2\"><Placemark><name>Feed geometry</name><MultiGeometry>"
+            "<Point><coordinates>0,0</coordinates></Point><LineString><coordinates>-25,15 25,15</coordinates></LineString>"
+            "<Polygon><outerBoundaryIs><LinearRing><coordinates>-30,-25 30,-25 30,-5 -30,-5 -30,-25</coordinates></LinearRing></outerBoundaryIs></Polygon>"
+            "</MultiGeometry></Placemark></kml>";
+        const auto profile = directory.filePath(QStringLiteral("data.json"));
+        {
+            swak::Window window(profile, QPluginLoader::staticInstances()); window.show();
+            QVERIFY(QTest::qWaitForWindowExposed(&window));
+            auto *feeds = window.findChild<swak::DataSources *>(); QVERIFY(feeds); QCOMPARE(feeds->sources().size(), 2);
+            window.findChild<QAction *>(QStringLiteral("dataProvidersAction"))->trigger();
+            auto *manager = window.findChild<swak::DataManager *>(); QVERIFY(manager);
+            auto *list = manager->findChild<QListWidget *>(QStringLiteral("dataProviderList")); QVERIFY(list);
+            QCOMPARE(list->count(), 2);
+            QTimer::singleShot(0, manager, [manager, &server] {
+                auto *dialog = manager->findChild<swak::SettingsDialog *>(); QVERIFY(dialog);
+                const auto close = qScopeGuard([dialog] { if (dialog->isVisible()) dialog->reject(); });
+                QVERIFY(!dialog->findChild<QTabWidget *>());
+                for (auto *field : dialog->findChildren<QLineEdit *>()) {
+                    if (field->objectName().endsWith(QStringLiteral("/name"))) { QVERIFY(field->text().isEmpty()); field->setText(QStringLiteral("A test feed")); }
+                    if (field->objectName().endsWith(QStringLiteral("/endpoint"))) { QVERIFY(field->text().isEmpty()); field->setText(QStringLiteral("https://127.0.0.1:%1/feed.kml").arg(server.serverPort())); }
+                    if (field->objectName().endsWith(QStringLiteral("/attribution"))) field->setText(QStringLiteral("Test data"));
+                }
+                for (auto *field : dialog->findChildren<QCheckBox *>()) if (field->objectName().endsWith(QStringLiteral("/ignoreTls"))) field->setChecked(true);
+                dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+            });
+            manager->findChild<QPushButton *>(QStringLiteral("addDataProvider"))->click();
+            QCOMPARE(list->count(), 3); QCOMPARE(list->item(0)->text(), QStringLiteral("A test feed"));
+            const auto id = list->item(0)->data(Qt::UserRole).toString(); list->item(0)->setCheckState(Qt::Checked);
+            QVERIFY(QTest::qWaitFor([&] { return feeds->shapeCount(id) == 3; }, 5000));
+            QVERIFY(QTest::qWaitForWindowExposed(manager)); QVERIFY(manager->grab().save(QStringLiteral("data-providers-smoke.png")));
+            manager->hide(); auto *map = window.findChild<QOpenGLWidget *>(); QVERIFY(map); QVERIFY(map->isValid());
+            const auto image = map->grabFramebuffer(); const auto center = image.pixelColor(image.width() / 2, image.height() / 2);
+            QVERIFY(center.red() > 120); QVERIFY(image.save(QStringLiteral("data-layer-smoke.png")));
+            QVERIFY(map->grab().save(QStringLiteral("data-attribution-smoke.png")));
+            manager->show();
+            QTimer::singleShot(0, manager, [manager] {
+                auto *dialog = manager->findChild<swak::SettingsDialog *>(); QVERIFY(dialog);
+                for (auto *field : dialog->findChildren<QDoubleSpinBox *>()) if (field->objectName().endsWith(QStringLiteral("/interval"))) field->setValue(600);
+                dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+            });
+            manager->findChild<QPushButton *>(QStringLiteral("editDataProvider"))->click();
+            QCOMPARE(feeds->sources().value(id).toObject().value(QStringLiteral("interval")).toInt(), 600);
+            auto values = feeds->sources().value(id).toObject(); values.insert(QStringLiteral("enabled"), false); QVERIFY(feeds->put(id, values).isEmpty());
+            QVERIFY(window.savePreferences()); manager->close();
+        }
+        swak::Window restored(profile, QPluginLoader::staticInstances()); auto *feeds = restored.findChild<swak::DataSources *>();
+        QCOMPARE(feeds->sources().size(), 3);
+        restored.findChild<QAction *>(QStringLiteral("dataProvidersAction"))->trigger();
+        auto *manager = restored.findChild<swak::DataManager *>();
+        manager->findChild<QListWidget *>(QStringLiteral("dataProviderList"))->setCurrentRow(0);
+        manager->findChild<QPushButton *>(QStringLiteral("removeDataProvider"))->click(); QCOMPARE(feeds->sources().size(), 2);
+        manager->close();
     }
     void pluginToolbar()
     {

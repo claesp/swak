@@ -1,5 +1,6 @@
 #include "app/window.h"
 #include "app/map_manager.h"
+#include "app/data_manager.h"
 #include "swak/version.h"
 #include "core/interfaces.h"
 #include "core/logging.h"
@@ -103,9 +104,12 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         if (auto *candidate = qobject_cast<ViewPlugin *>(plugin)) { view = candidate; names.append(candidate->name()); }
         if (auto *layer = qobject_cast<MapLayer *>(plugin)) { layers.append(layer); names.append(layer->name()); }
         if (auto *extension = qobject_cast<MapExtension *>(plugin)) names.append(extension->mapName());
+        if (auto *provider = qobject_cast<DataProvider *>(plugin)) names.append(provider->dataName());
     }
     auto *mapSources = new MapSources(plugins, this);
-    PluginServices services{store_, *activity, *mapSources};
+    auto *dataSources = new DataSources(plugins, this);
+    dataSources->setObjectName(QStringLiteral("dataSources"));
+    PluginServices services{store_, *activity, *mapSources, dataSources};
     if (view) {
         setCentralWidget(view->create(services, layers, this));
     } else {
@@ -229,6 +233,16 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         dialog->show();
     });
     connect(mapSources, &MapSources::managementRequested, manageMaps, &QAction::trigger);
+    auto *manageData = toolsMenu->addAction(tr("Data Providers"));
+    manageData->setObjectName(QStringLiteral("dataProvidersAction"));
+    connect(manageData, &QAction::triggered, this, [this, dataSources] {
+        if (auto *existing = findChild<DataManager *>()) { existing->show(); existing->raise(); return; }
+        auto *dialog = new DataManager(*dataSources, this, [this] { return savePreferences() ? QString{} : preferences_.error(); });
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        if (!dataManagerGeometry_.isEmpty()) dialog->restoreGeometry(dataManagerGeometry_);
+        connect(dialog, &QDialog::finished, this, [this, dialog] { dataManagerGeometry_ = dialog->saveGeometry(); savePreferences(); });
+        dialog->show();
+    });
     auto *pluginsMenu = new PluginMenu(tr("&Plugins"), toolsMenu);
     toolsMenu->addMenu(pluginsMenu);
     pluginsMenu->setObjectName(QStringLiteral("pluginsMenu"));
@@ -331,6 +345,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     saveTimer_.setInterval(preferenceInteger(application, QStringLiteral("saveInterval"), 750, 250, 60000));
     settingsGeometry_ = geometryBytes(application, QStringLiteral("settingsGeometry"));
     mapManagerGeometry_ = geometryBytes(application, QStringLiteral("mapManagerGeometry"));
+    dataManagerGeometry_ = geometryBytes(application, QStringLiteral("dataManagerGeometry"));
     settingsNavigation_ = application.value(QStringLiteral("settingsNavigation")).toObject();
     connect(&saveTimer_, &QTimer::timeout, this, [this] {
         if (isVisible() && !closing_ && preferences_.writable()
@@ -409,6 +424,8 @@ bool Window::savePreferences()
     application.insert(QStringLiteral("settingsGeometry"), QString::fromLatin1(settingsGeometry_.toBase64()));
     application.insert(QStringLiteral("settingsNavigation"), settingsNavigation_);
     application.insert(QStringLiteral("mapManagerGeometry"), QString::fromLatin1(mapManagerGeometry_.toBase64()));
+    if (auto *dialog = findChild<DataManager *>()) dataManagerGeometry_ = dialog->saveGeometry();
+    application.insert(QStringLiteral("dataManagerGeometry"), QString::fromLatin1(dataManagerGeometry_.toBase64()));
     document.insert(QStringLiteral("application"), application);
     document.insert(QStringLiteral("version"), 1);
     const bool saved = preferences_.save(document);

@@ -154,3 +154,9 @@ Each missing tile shows faint MISSING TILE text at 45 degrees and a faint edge. 
 Zoom uses whole levels within the active provider minimum and maximum. Each wheel step and plus or minus key changes one level. Small wheel movements accumulate until they reach a step. Home resets the center and selects level 1, within the provider limits.
 
 Provider changes and restored profiles also apply those limits. With no valid provider, whole levels 0 through 19 remain available. Old fractional values round to the nearest whole level.
+
+# Data overlays
+
+Tools > Data Providers manages KML and KMZ feeds. Enable a preset or add a direct HTTPS URL. Each enabled feed refreshes on its configured interval and draws above the map tiles.
+
+Use Edit to set its refresh interval and appearance. Remove deletes a feed, and Refresh now requests an immediate update. The same parameters appear in File > Settings > Data providers. Read [Data providers](data-providers.md) for public sources, supported geometry, and limits.

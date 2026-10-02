@@ -36,6 +36,7 @@ private:
     bool shown_ = false;
     QByteArray settingsGeometry_;
     QByteArray mapManagerGeometry_;
+    QByteArray dataManagerGeometry_;
     QJsonObject settingsNavigation_;
 };
 }

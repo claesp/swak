@@ -117,3 +117,9 @@ Help > About opens one dialog per window and releases it on close. The dialog us
 `MapSources` owns the per-window catalog and implements `SettingsParticipant`. The host discovers participants among its QObject children as well as plugin roots. `PluginServices` supplies the catalog to the view and toolbar callbacks. Only registered providers enter the manager format list. Missing providers retain their saved configuration.
 
 `TileRenderer` handles bounded HTTPS retrieval, caching, and image decoding. It cancels requests when the map hides or changes source. The map widget draws image tiles after the background layer and before event layers. A source change clears decoded images and connection state. Read [Map providers](map-providers.md) for format contracts and limits.
+
+# Data overlays
+
+DataSources owns the per-window feed catalog, refresh timers, HTTPS clients, and decoded geometry. DataProvider plugins decode bounded responses outside the interface thread. The map draws their normalized geometry through its existing OpenGL paint engine, below CoT events.
+
+DataManager uses the shared SettingsDialog for Add and Edit forms. The catalog exposes the same fields in File > Settings. Missing plugin configuration survives restarts. Read [Data providers](data-providers.md) and [Plugin API](plugin-api.md) for contracts and limits.

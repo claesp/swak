@@ -62,3 +62,7 @@ Map input limits, cache isolation, and HTTPS behavior are documented in [Map pro
 Internal-event history uses bounded memory and plain text. It does not create an event file. Worker threads submit records through a bounded inbox, without queued Qt calls for each message. Excess bursts discard the oldest pending records. Console output still requires explicit configuration.
 
 Each built-in plugin declares its API, roles, requirements, and permissions in an embedded MANIFEST. The host rejects incompatible declarations before it uses the plugin features. These declarations do not restrict native-code permissions. Static linkage and the existing trust boundary remain unchanged. See [Plugin API](plugin-api.md).
+
+# KML and KMZ feeds
+
+Data Providers adds HTTPS feed input and ZIP decompression. Read [Data providers](data-providers.md) for request isolation, cancellation, XML limits, archive limits, and supported content. Feed descriptions and linked resources never execute or load automatically. Libarchive is the only new non-Qt library.

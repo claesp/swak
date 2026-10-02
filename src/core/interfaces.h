@@ -13,10 +13,12 @@ namespace swak {
 class Store;
 class ActivityModel;
 class MapSources;
+class DataSources;
 struct PluginServices {
     Store &store;
     ActivityModel &activity;
     MapSources &maps;
+    DataSources *data = nullptr;
 };
 class Plugin {
 public:

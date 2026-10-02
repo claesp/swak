@@ -1,16 +1,16 @@
 # Plugin API
 
-This review covers all ten built-in plugins. Every plugin implements `Plugin` and uses the shared contracts in `src/core/`. The common API version is 2. No plugin depends on a concrete application window class.
+This review covers all eleven built-in plugins. Every plugin implements `Plugin` and uses the shared contracts in `src/core/`. The common API version is 2. No plugin depends on a concrete application window class.
 
 The application links plugins into the executable. Qt embeds each `src/plugins/<plugin>/MANIFEST` file through `Q_PLUGIN_METADATA`. The common metadata identifier is `org.swak.Plugin/2.0`. The application does not load external plugin binaries or search plugin directories.
 
 # Host services
 
-`PluginServices` supplies references to the event store, internal-event model, and map catalog. The host passes this context to each UI factory and menu or toolbar callback. The context exists only during the call. Plugins can capture its service pointers in callbacks whose QObject context limits their lifetime.
+`PluginServices` supplies references to the event store, internal-event model, and map catalog. Its optional `data` pointer supplies the data catalog. The host passes this context to each UI factory and menu or toolbar callback. The context exists only during the call. Plugins can capture its service pointers in callbacks whose QObject context limits their lifetime.
 
 The host owns the services for each window. Plugins must not save service pointers, menus, or widgets in their static plugin objects. Qt parents own created widgets and actions. The host destroys plugin widgets before the event store. All model and widget operations use the GUI thread.
 
-Use `services.store` for CoT data and selection. Use `services.maps` for provider discovery, selection, and catalog changes. Emit `MapSources::managementRequested` to request the provider manager. Use `services.activity` for internal-event history. No plugin searches the host widget tree to find these services.
+Use `services.store` for CoT data and selection. Use `services.maps` for provider discovery, selection, and catalog changes. Emit `MapSources::managementRequested` to request the provider manager. Use `services.activity` for internal-event history. If `services.data` is non-null, use it for data feeds and geometry. No plugin searches the host widget tree to find these services.
 
 # Feature interfaces
 
@@ -28,6 +28,7 @@ Plugins implement the feature interfaces that they need. Their manifests declare
 | `MenuPlugin` | `/2.0` | Adds actions through `populateMenu(PluginServices &, QMenu &)`. |
 | `ToolbarPlugin` | `/3.0` | Supplies `name()` and adds controls through `populateToolbar(PluginServices &, QToolBar &, QMenu *)`. |
 | `MapExtension` | `/1.0` | Supplies a stable map identifier, name, and Provider or Tool kind. |
+| `DataProvider` | `/1.0` | Supplies `dataId()`, `dataName()`, disabled `presets()`, and bounded `decode(bytes, cancelled)`. |
 | `MapProvider` | `/1.0` | Supplies source defaults, fields, validation, and tile URLs. |
 | `PreferenceParticipant` | C++ interface, no Qt identifier | Saves and restores bounded JSON under a stable component identifier. |
 | `SettingsParticipant` | `/1.0` | Adds a title, editable fields, and optional validation to preferences. |
@@ -44,6 +45,7 @@ The host owns pane placement, visibility actions, and layout persistence. Plugin
 
 | Manifest directory | Name | Roles |
 | --- | --- | --- |
+| `src/plugins/kml` | KML and KMZ data | Data provider |
 | `src/plugins/cot` | Cursor-on-Target XML | Codec |
 | `src/plugins/basemap` | Map background | Map layer |
 | `src/plugins/map` | OpenGL map | View and toolbar |
@@ -66,7 +68,7 @@ Each MANIFEST contains a JSON object. Its schema version is 1. Qt embeds the obj
 | Field | Required value or meaning |
 | --- | --- |
 | `schemaVersion` | Integer 1. |
-| `id` | Unique stable identifier under `org.swak`. Map provider identifiers must match `mapId()`. |
+| `id` | Unique stable identifier under `org.swak`. Map identifiers match `mapId()`. Data identifiers match `dataId()`. |
 | `name` | Nonempty display name, at most 512 characters. |
 | `description` | Nonempty description, at most 512 characters. |
 | `version` | Plugin version with three numeric parts. |
@@ -113,3 +115,13 @@ The map catalog preserves invalid provider entries and disables their network us
 `Store::SortRole` supplies numeric coordinates and timestamps for table order. `Qt::DisplayRole` retains localized text. `ActivityModel::SortRole` supplies timestamps and numeric severity and urgency values. Table plugins must use these roles when they sort those models.
 
 Provider forms use the host persistence callback. They keep the form open when a save fails. The public plugin interface versions remain unchanged.
+
+# Data provider contract
+
+`PluginServices::data` supplies an optional per-window `DataSources` pointer. It defaults to null for callers without data support. The view subscribes to `contentChanged` and draws data through the catalog. The catalog also implements the shared preference and configuration interfaces.
+
+DataProvider decoders run on at most two background threads. Keep them reentrant and free of QObject or GUI operations. Read the atomic cancellation flag during bounded work. Return complete normalized geometry or an error in `DataDocument`. Keep the plugin instance alive until all windows finish their workers.
+
+The host owns downloads, per-feed timers, configuration, and rendering. Data plugins supply disabled presets and decode responses. Shared data fields provide endpoint, attribution, timer, and appearance controls. Add forms select one installed format when several data plugins exist. Unknown formats remain in the saved catalog.
+
+Each data plugin declares `data-provider` in its MANIFEST. Its `dataId()` must match the manifest identifier. This version links the KML plugin statically and adds no external plugin discovery. Read [Data providers](data-providers.md) for parser limits and dependency details.

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "org.swak.kml",
+  "name": "KML and KMZ data",
+  "description": "Decode bounded KML and KMZ geometry for data feeds.",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entryPoint": "KmlPlugin",
+  "linkage": "static",
+  "platforms": ["linux"],
+  "qtMajor": 6,
+  "qtMinimum": "6.4.0",
+  "interfaces": ["data-provider"],
+  "requires": [],
+  "permissions": [],
+  "settingsSchemaVersion": 1
+}

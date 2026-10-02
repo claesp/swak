@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation: See “Plugin checkboxes restored” below. The release includes these changes.
+Latest implementation: See “KML and KMZ data providers” below. The release includes these changes.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -272,3 +272,29 @@ Tools > Plugins again has a checkbox for each pane. Mouse clicks, Return, and Sp
 The release rebuild passed. Six sanitizer suites and all 31 native GUI cases passed. Reports are `build/quality/20261002-145255-quick-115651` and `build/quality/20261002-145251-coverage-115590`. Static analysis passed in `build/quality/20261002-145257-analyze-3`. Focused native tests passed at 200 percent scaling.
 
 The native sanitizer test passed all 31 functional cases, then reported the existing Mesa leak of 240732 bytes in 1073 allocations. Its report is `build/quality/20261002-145451-gui-116287`. A 60-second workload passed in `build/quality/20261002-145612-soak-116446`. It completed 941 cycles with 6504448 bytes of peak memory growth, a 63-millisecond maximum heartbeat gap, and 0.009 idle CPU seconds. Previous platform and multi-hour test gaps remain.
+
+# KML and KMZ data providers
+
+Tools > Data Providers manages multiple KML/KMZ feeds. Add and Edit use the shared provider form. List checkboxes enable feeds. Remove deletes feeds, and Refresh now updates an enabled feed. Each feed has a persistent interval from 60 through 86400 seconds, with a default of 300. The same parameters appear in File > Settings > Data providers.
+
+The catalog starts with disabled USGS earthquake and NOAA NDBC observation presets. Research, source terms, live sample results, and supported content are in `docs/data-providers.md`. The parser accepted 30 earthquake points and 1967 NDBC locations from the sampled public responses. The NHC active KMZ contained 12 network links, which this implementation reports without following.
+
+A new static KML plugin implements DataProvider and embeds its MANIFEST. DataSources owns each window's catalog, HTTPS clients, timers, and parsed geometry. PluginServices has an optional data catalog pointer. The common Plugin API remains version 2. All eleven built-in manifests passed catalog tests.
+
+Qt handles HTTPS, XML, and background work. Libarchive handles ZIP in memory through its complete-directory reader. No file extraction or automatic linked-resource retrieval occurs. Bounds cover bytes, archive entries, XML depth, geometry, and work. Explicit counters limit active updates to two, including cancelled parsers until they finish. A regression test exercises parser cancellation while another feed waits.
+
+The GPU map draws points, lines, polygons with holes, and names above imagery and below CoT events. Feed appearance controls include color, opacity, line width, point radius, fill opacity, and labels. Credits share the existing right-aligned, clickable panel. Failed refreshes retain prior geometry and mark its credit STALE. Editing or disabling a feed clears its geometry. Missing provider configuration survives restarts.
+
+This version does not follow KML network links or load remote icons, HTML balloons, image overlays, models, or tours. It ignores KML styles and time animation. It uses flat geometry and feed appearance controls. These limits appear in the manager and manual. Multi-hour online sessions, native Wayland, hardware GPUs, and the minimum Qt version remain untested.
+
+The release executable is rebuilt at `build/release/swak`. An installation smoke test passed in `build/data-package`, including the new manual. The installed executable reports version 0.1.0. The tested stack is Qt 6.8.2, GCC 14.2, Debian 13, and libarchive 3.7.4-4+deb13u1. Release linkage contains no sanitizer library. The dependency review records open notices and the library paths used by this application.
+
+Seven sanitizer suites passed in `build/quality/20261002-153500-quick-124478`. Tests cover malformed XML, KMZ bounds, unsafe paths, duplicate documents, geometry, HTTPS failures, refresh timers, parser exceptions, cancellation, and repeated replacement. The data suite also mutates 500 short documents. Final static analysis passed in `build/quality/20261002-153546-analyze-3`.
+
+Focused native tests passed at 200 percent scaling. Screenshots in `build/data-native/hidpi` show the provider manager and downloaded points, lines, and polygons. The OpenGL framebuffer captures geometry separately from the child attribution label.
+
+A 60-second workload passed in `build/quality/20261002-153130-soak-124194`. It includes repeated KML decoding. It completed 944 cycles with 8159232 bytes of peak memory growth, a 98-millisecond maximum heartbeat gap, and 0.017 idle CPU seconds. This workload does not exercise live feeds or prove multi-hour memory stability.
+
+Final coverage passed seven suites and all 32 native GUI cases in `build/quality/20261002-153545-coverage-124767`. The data controller reached 233 of 234 executable lines. The KML plugin reached 163 of 165 lines. The manager reached 86 of 86 lines. Remaining gaps include the skipped-content status and foreign-namespace branches, plus the manager's double-click and manual-refresh callbacks. Separate live samples exercised foreign namespaces. Line coverage does not establish complete branch or input coverage.
+
+The final native sanitizer run passed all 32 functional cases, then reported the existing Mesa leak of 240732 bytes in 1073 allocations. This leak test remains failed in `build/quality/20261002-153836-gui-125700`. The final release build passed after the update counter fix. Its log is `build/data-verified-release.log`.
