@@ -2,6 +2,7 @@
 #include "core/interfaces.h"
 #include "core/maps.h"
 #include "core/data.h"
+#include "core/vector_tiles.h"
 #include "core/logging.h"
 #include <QJsonArray>
 #include <QPluginLoader>
@@ -51,6 +52,10 @@ QString validatePluginManifest(const QJsonObject &manifest, QObject *instance)
     if (auto *provider = qobject_cast<DataProvider *>(instance)) {
         if (provider->dataId() != manifest.value(QStringLiteral("id")).toString()) return QStringLiteral("Data plugin identifier mismatch.");
         roles.insert(QStringLiteral("data-provider"));
+    }
+    if (qobject_cast<VectorTileProvider *>(instance)) {
+        if (!qobject_cast<MapProvider *>(instance)) return QStringLiteral("Vector tiles require a map provider.");
+        roles.insert(QStringLiteral("vector-tiles"));
     }
     const auto declared = manifest.value(QStringLiteral("interfaces")).toArray();
     if (declared.isEmpty() || declared.size() != roles.size()) return QStringLiteral("Plugin interface manifest mismatch.");

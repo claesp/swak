@@ -16,7 +16,7 @@ Use the build environment described in [Build and run](build.md). Run these comm
 
 # Regular runs
 
-The quick mode builds with address and undefined behavior sanitizers. It runs the data, map, core, internal-event, logging, preferences, and short workload suites. Each suite has a 60-second limit. A separate process enforces the limit even when the application event loop stops.
+The quick mode builds with address and undefined behavior sanitizers. It runs the vector, data, map, core, internal-event, logging, preferences, and short workload suites. Each suite has a 60-second limit. A separate process enforces the limit even when the application event loop stops.
 
 ```sh
 python3 tools/quality.py quick
@@ -80,3 +80,5 @@ The compiler documents the [sanitizer and coverage flags](https://gcc.gnu.org/on
 The data suite tests KML and KMZ decoding, malformed inputs, local HTTPS failures, cancellation, and repeated refreshes. It also tests polygon holes and date-line geometry. The GUI suite exercises management forms and draws downloaded points, lines, and polygons. The workload now decodes KML during each cycle.
 
 For a downloaded research sample, run `QT_QPA_PLATFORM=offscreen build/debug/swak_data_tests --sample /path/to/sample.kml` from the repository root. This development-only command also accepts KMZ. It reads at most the download limit plus one byte and reports shape counts or a parsing error.
+
+The vector suite tests MVT decoding, property types, polygon holes, malformed records, numeric bounds, background cancellation, source replacement, and decoder exceptions. The native GUI suite tests layer controls, persisted choices, feature inspection, and OpenGL rendering. The workload also decodes a vector tile on each cycle. A downloaded sample can be decoded with `QT_QPA_PLATFORM=offscreen build/debug/swak_vector_tests --sample /path/to/tile.pbf`.

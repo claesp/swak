@@ -2,6 +2,8 @@
 #include "core/logging.h"
 #include "swak/version.h"
 #include <QBuffer>
+#include <QFutureWatcher>
+#include <QtConcurrentRun>
 #include <QDir>
 #include <QImageReader>
 #include <QNetworkCacheMetaData>
@@ -66,19 +68,24 @@ QList<TilePlacement> visibleTiles(const Viewport &view, int minimumZoom, int max
 }
 TileRenderer::TileRenderer(QObject *parent) : QObject(parent)
 {
+    workers_.setMaxThreadCount(2);
     schedule_.setSingleShot(true);
     connect(&schedule_, &QTimer::timeout, this, &TileRenderer::pump);
 }
-TileRenderer::~TileRenderer() { cancel(); network_.setCache(nullptr); lock_.reset(); }
+TileRenderer::~TileRenderer() { cancel(); workers_.waitForDone(); network_.setCache(nullptr); lock_.reset(); }
 void TileRenderer::cancel()
 {
     schedule_.stop();
+    ++generation_;
+    for (const auto &flag : decoding_) flag->store(true, std::memory_order_relaxed);
+    decoding_.clear();
     const auto pending = pending_;
     pending_.clear();
     for (auto *reply : pending) { reply->disconnect(this); reply->abort(); reply->deleteLater(); }
 }
 void TileRenderer::stop()
 {
+    contentVisible_ = false;
     cancel();
     visible_.clear();
     for (const auto &key : images_.keys())
@@ -89,6 +96,7 @@ void TileRenderer::setSource(MapProvider *provider, const QJsonObject &source)
     if (provider_ == provider && source_ == source && (ready_ || !provider)) return;
     cancel();
     images_.clear();
+    deferred_.clear();
     failures_.clear();
     visible_.clear();
     network_.clearAccessCache();
@@ -119,17 +127,20 @@ void TileRenderer::paint(QPainter &painter, const Viewport &view, double opacity
 {
     const bool fetching = provider_ && ready_ && opacity > 0;
     if (!fetching) stop();
+    contentVisible_ = fetching;
     const auto next = visibleTiles(view, provider_ ? source_.value(QStringLiteral("minZoom")).toInt() : 0,
         provider_ ? source_.value(QStringLiteral("maxZoom")).toInt() : 19);
     const bool moved = next.size() != visible_.size() || !std::equal(next.begin(), next.end(), visible_.begin(),
         [](const TilePlacement &a, const TilePlacement &b) { return a.key == b.key; });
     visible_ = next;
-    if (fetching && moved) schedule_.start(150);
+    if (fetching && moved) { deferred_.clear(); schedule_.start(150); }
     for (const auto &key : images_.keys()) {
         const auto *image = images_.object(key);
         if (image && image->transient && std::none_of(visible_.begin(), visible_.end(), [&](const TilePlacement &tile) { return tile.key == key; }))
             images_.remove(key);
     }
+    QList<QRectF> labels;
+    int featureBudget = 200000;
     painter.save();
     painter.setRenderHint(QPainter::SmoothPixmapTransform, smooth);
     for (const auto &tile : visible_) {
@@ -137,7 +148,8 @@ void TileRenderer::paint(QPainter &painter, const Viewport &view, double opacity
         painter.fillRect(tile.rectangle, QColor(MapBackgroundRgb));
         if (const auto *image = fetching ? images_.object(tile.key) : nullptr) {
             painter.setOpacity(std::clamp(opacity, 0.0, 1.0));
-            painter.drawImage(tile.rectangle, image->pixels);
+            if (image->vector) paintVectorTile(painter, image->vectors, tile.rectangle, source_, labels, featureBudget);
+            else painter.drawImage(tile.rectangle, image->pixels);
         } else {
             painter.setPen(QColor("#d0d7cb"));
             painter.setOpacity(std::clamp(missingOpacity, 0.0, 1.0) * 0.35);
@@ -154,6 +166,7 @@ void TileRenderer::paint(QPainter &painter, const Viewport &view, double opacity
         }
     }
     painter.restore();
+    detailLimited_ = featureBudget <= 0;
     if (fetching && !schedule_.isActive()) schedule_.start(150);
 }
 void TileRenderer::fail(const QString &key, const QString &message, int retrySeconds, bool providerWide)
@@ -178,6 +191,9 @@ void TileRenderer::pump()
         it = pending_.erase(it);
         reply->disconnect(this); reply->abort(); reply->deleteLater();
     }
+    for (auto it = decoding_.begin(); it != decoding_.end(); ++it)
+        if (std::none_of(visible_.begin(), visible_.end(), [&](const TilePlacement &tile) { return tile.key == it.key(); }))
+            it.value()->store(true, std::memory_order_relaxed);
     if (retryAt_ > now) { schedule_.start(static_cast<int>(std::min<qint64>(now.msecsTo(retryAt_), 3600000))); return; }
     qint64 nextRetry = 3600000;
     bool waiting = false;
@@ -187,14 +203,14 @@ void TileRenderer::pump()
             nextRetry = std::min(nextRetry, now.msecsTo(failure->retryAt));
             continue;
         }
-        if (pending_.size() >= 4) continue;
+        if (pending_.size() + activeJobs_ >= 4 || deferred_.contains(tile.key)) continue;
         const auto *cached = images_.object(tile.key);
-        if ((cached && (cached->transient || cached->expires > now)) || pending_.contains(tile.key)) continue;
+        if ((cached && (cached->transient || cached->expires > now)) || pending_.contains(tile.key) || decoding_.contains(tile.key)) continue;
         const auto url = provider_->tileUrl(source_, tile.z, tile.x, tile.y);
         if (!url.isValid() || url.scheme() != QStringLiteral("https") || url.host().isEmpty()) continue;
         QNetworkRequest request(url);
         request.setRawHeader("User-Agent", "SWAK/" SWAK_VERSION " (native map viewer)");
-        request.setRawHeader("Accept", "image/png,image/jpeg,image/webp");
+        request.setRawHeader("Accept", dynamic_cast<VectorTileProvider *>(provider_) ? "application/vnd.mapbox-vector-tile,application/x-protobuf" : "image/png,image/jpeg,image/webp");
         request.setRawHeader("Accept-Encoding", "identity");
         request.setTransferTimeout(10000);
         request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
@@ -220,8 +236,10 @@ void TileRenderer::pump()
             pending_.remove(key);
             data->append(reply->read(MaxTileBytes + 1 - data->size()));
             const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-            const auto image = reply->error() == QNetworkReply::NoError && status == 200 ? decodeMapTile(*data) : QImage{};
-            if (image.isNull()) {
+            const bool vector = dynamic_cast<VectorTileProvider *>(provider_) != nullptr;
+            const bool responseOk = reply->error() == QNetworkReply::NoError && status == 200 && data->size() <= MaxTileBytes;
+            const auto image = !vector && reply->error() == QNetworkReply::NoError && status == 200 ? decodeMapTile(*data) : QImage{};
+            if (!responseOk || (!vector && image.isNull())) {
                 if (disk_) disk_->remove(reply->url());
                 fail(key, tr("Map tile failed. Check the provider, HTTPS certificate, and service limits."),
                     reply->rawHeader("Retry-After").toInt(), status == 429 || status == 503
@@ -234,9 +252,12 @@ void TileRenderer::pump()
                 const bool transient = !metadata.isValid() || control.contains("no-store") || control.contains("no-cache") ||
                     (expires.isValid() && expires <= QDateTime::currentDateTimeUtc());
                 if (!expires.isValid()) expires = QDateTime::currentDateTimeUtc().addDays(7);
-                images_.insert(key, new Image{image, expires, transient}, static_cast<int>(image.sizeInBytes() / 1024));
-                if (failures_.isEmpty()) status_.clear();
-                emit changed();
+                if (vector) decodeVector(key, std::move(*data), reply->url(), expires, transient);
+                else {
+                    images_.insert(key, new Image{image, {}, false, expires, transient}, static_cast<int>(image.sizeInBytes() / 1024));
+                    if (failures_.isEmpty()) status_.clear();
+                    emit changed();
+                }
             }
             reply->deleteLater();
             schedule_.start(150);
@@ -244,4 +265,68 @@ void TileRenderer::pump()
     }
     if (waiting && !schedule_.isActive()) schedule_.start(static_cast<int>(std::max<qint64>(1, nextRetry)));
 }
+void TileRenderer::decodeVector(const QString &key, QByteArray bytes, const QUrl &url, QDateTime expires, bool transient)
+{
+    const auto *decoder = dynamic_cast<VectorTileProvider *>(provider_);
+    const auto generation = generation_;
+    auto flag = std::make_shared<std::atomic_bool>(false);
+    decoding_.insert(key, flag);
+    ++activeJobs_;
+    auto *watcher = new QFutureWatcher<VectorTile>(this);
+    connect(watcher, &QFutureWatcher<VectorTile>::finished, this, [this, watcher, key, url, flag, generation, expires, transient] {
+        --activeJobs_;
+        const auto result = watcher->result();
+        watcher->deleteLater();
+        if (generation == generation_) {
+            decoding_.remove(key);
+            if (!flag->load(std::memory_order_relaxed)) {
+                if (!result.error.isEmpty()) {
+                    if (disk_) disk_->remove(url);
+                    fail(key, result.error, 30, false);
+                } else {
+                    failures_.remove(key);
+                    const auto *previous = images_.object(key);
+                    const int previousCost = previous ? previous->vectors.costKiB : 0;
+                    if (images_.totalCost() - previousCost + result.costKiB > images_.maxCost()) {
+                        for (const auto &cached : images_.keys())
+                            if (std::none_of(visible_.begin(), visible_.end(), [&](const TilePlacement &tile) { return tile.key == cached; }))
+                                images_.remove(cached);
+                    }
+                    if (images_.totalCost() - previousCost + result.costKiB > images_.maxCost()) {
+                        deferred_.insert(key);
+                        status_ = tr("Vector cache limit reached. Change the view to load other tiles.");
+                        logMessage(Severity::Warning, Urgency::Attention, QStringLiteral("swak.maps"), status_);
+                        emit changed();
+                        return;
+                    }
+                    images_.insert(key, new Image{{}, result, true, expires, transient}, result.costKiB);
+                    if (failures_.isEmpty() && deferred_.isEmpty()) status_.clear();
+                    emit changed();
+                }
+            }
+        }
+        if (ready_ && !visible_.isEmpty()) schedule_.start(150);
+    });
+    watcher->setFuture(QtConcurrent::run(&workers_, [decoder, bytes = std::move(bytes), flag] {
+        try { return decoder->decodeTile(bytes, *flag); }
+        catch (const std::exception &) { VectorTile result; result.error = tr("Vector tile decoder failed."); return result; }
+    }));
+}
+QStringList TileRenderer::layers() const
+{
+    QStringList result;
+    if (const auto *decoder = dynamic_cast<VectorTileProvider *>(provider_)) result = decoder->layerNames();
+    for (const auto &tile : visible_) if (const auto *image = images_.object(tile.key); image && image->vector)
+        for (const auto &layer : image->vectors.layers) if (!result.contains(layer) && result.size() < 64) result.append(layer);
+    return result;
+}
+QList<QJsonObject> TileRenderer::featuresAt(QPointF position) const
+{
+    if (!contentVisible_) return {};
+    for (const auto &tile : visible_) if (tile.rectangle.contains(position))
+        if (const auto *image = images_.object(tile.key); image && image->vector)
+            return vectorFeaturesAt(image->vectors, tile.rectangle, position, source_);
+    return {};
+}
+
 }

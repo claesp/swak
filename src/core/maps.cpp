@@ -55,7 +55,8 @@ MapSources::MapSources(const QList<QObject *> &plugins, QObject *parent) : QObje
         source.insert(QStringLiteral("format"), format->mapId());
         entries.insert(format->mapId(), source);
     }
-    values_ = {{QStringLiteral("network"), false}, {QStringLiteral("active"), QString{}}, {QStringLiteral("sources"), entries}};
+    QJsonArray known; for (const auto *format : providers_) known.append(format->mapId());
+    values_ = {{QStringLiteral("knownProviders"), known}, {QStringLiteral("network"), false}, {QStringLiteral("active"), QString{}}, {QStringLiteral("sources"), entries}};
 }
 MapProvider *MapSources::provider(const QJsonObject &source) const
 {
@@ -112,6 +113,19 @@ void MapSources::restorePreferences(const QJsonObject &values)
     structural.insert(QStringLiteral("sources"), entries);
     if (!validateSettings(structural).isEmpty()) return;
     values_ = values;
+    auto known = values.value(QStringLiteral("knownProviders")).toArray();
+    if (!values.contains(QStringLiteral("knownProviders")))
+        known = {QStringLiteral("org.swak.xyz"), QStringLiteral("org.swak.wmts"), QStringLiteral("org.swak.wms")};
+    auto restored = sources();
+    for (const auto *format : providers_) if (!known.contains(format->mapId())) {
+        known.append(format->mapId());
+        if (!restored.contains(format->mapId()) && restored.size() < 32) {
+            auto source = format->defaults(); source.insert(QStringLiteral("format"), format->mapId());
+            restored.insert(format->mapId(), source);
+        }
+    }
+    values_.insert(QStringLiteral("sources"), restored);
+    values_.insert(QStringLiteral("knownProviders"), known);
     for (const auto &entry : sources()) {
         const auto source = entry.toObject();
         if (const auto *format = provider(source); format && !format->validate(source).isEmpty())

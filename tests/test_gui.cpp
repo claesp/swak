@@ -6,6 +6,9 @@
 #include "app/data_manager.h"
 #include "core/maps.h"
 #include "tile_server.h"
+#include "vector_fixture.h"
+#include <QContextMenuEvent>
+#include <QPlainTextEdit>
 #include <QStandardPaths>
 #include <QDesktopServices>
 #include "swak/version.h"
@@ -379,7 +382,7 @@ private slots:
             auto *maps = window.findChild<swak::MapSources *>();
             auto *menu = button->menu();
             QMetaObject::invokeMethod(menu, "aboutToShow");
-            QCOMPARE(menu->actions().size(), 6);
+            QCOMPARE(menu->actions().size(), 7);
             QCOMPARE(menu->actions().first()->text(), QStringLiteral("No map provider"));
             QVERIFY(menu->actions().first()->isChecked());
             menu->actions().at(1)->trigger();
@@ -405,6 +408,61 @@ private slots:
         QCOMPARE(restored.findChild<QTableView *>(QStringLiteral("activityTable"))->horizontalHeader()->sectionSize(0), 250);
     }
 
+    void vectorMapAndInformation()
+    {
+        QTemporaryDir directory;
+        TileServer server; server.body = vector_fixture::sample();
+        QVERIFY(server.load(QFINDTESTDATA("fixtures"))); QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+        const auto path = directory.filePath(QStringLiteral("vector.json"));
+        {
+            swak::Window window(path, QPluginLoader::staticInstances());
+            auto *sources = window.findChild<swak::MapSources *>();
+            const auto id = QStringLiteral("org.swak.mvt");
+            auto source = sources->sources().value(id).toObject();
+            source.insert(QStringLiteral("endpoint"), QStringLiteral("https://localhost:%1/{z}/{x}/{y}.pbf").arg(server.serverPort()));
+            source.insert(QStringLiteral("ignoreTls"), true);
+            QVERIFY(sources->put(id, source).isEmpty()); sources->select(id);
+            auto *map = window.findChild<QOpenGLWidget *>(); QVERIFY(map);
+            auto *preferences = dynamic_cast<swak::PreferenceParticipant *>(map); QVERIFY(preferences);
+            preferences->restorePreferences(QJsonObject{{QStringLiteral("zoom"), 0}});
+            window.show(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+            QVERIFY(QTest::qWaitFor([&] {
+                const auto frame = map->grabFramebuffer();
+                return !frame.isNull() && frame.pixelColor(frame.width()/2 - 70, frame.height()/2 - 70) == QColor("#92bfd0");
+            }, 5000));
+            QVERIFY(map->grabFramebuffer().save(QStringLiteral("vector-map-smoke.png")));
+            QTimer::singleShot(0, map, [] {
+                auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget()); QVERIFY(menu);
+                auto *action = menu->findChild<QAction *>(QStringLiteral("mapInformation")); QVERIFY(action); QVERIFY(action->isEnabled());
+                action->trigger(); menu->close();
+            });
+            QContextMenuEvent information(QContextMenuEvent::Keyboard, map->rect().center(), map->mapToGlobal(map->rect().center()));
+            QApplication::sendEvent(map, &information);
+            auto *dialog = map->findChild<QDialog *>(QStringLiteral("mapInformationDialog")); QVERIFY(dialog);
+            QVERIFY(QTest::qWaitForWindowExposed(dialog));
+            const auto details = dialog->findChild<QPlainTextEdit *>(QStringLiteral("mapFeatureProperties"))->toPlainText();
+            QVERIFY(details.contains(QStringLiteral("Test place"))); QVERIFY(details.contains(QStringLiteral("cafe")));
+            QVERIFY(dialog->grab().save(QStringLiteral("vector-information-smoke.png")));
+            dialog->close();
+            QTimer::singleShot(0, map, [] {
+                auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget()); QVERIFY(menu);
+                bool changed = false;
+                for (auto *action : menu->actions()) if (auto *layers = action->menu())
+                    for (auto *layer : layers->actions()) if (layer->text() == QStringLiteral("poi")) {
+                        QVERIFY(layer->isChecked()); layer->trigger(); changed = true;
+                    }
+                QVERIFY(changed); menu->close();
+            });
+            QContextMenuEvent layers(QContextMenuEvent::Keyboard, map->rect().center(), map->mapToGlobal(map->rect().center()));
+            QApplication::sendEvent(map, &layers);
+            QVERIFY(!sources->activeSource().value(QStringLiteral("visibleLayers")).toObject().value(QStringLiteral("poi")).toBool(true));
+            QVERIFY(window.savePreferences());
+        }
+        swak::Window restored(path, QPluginLoader::staticInstances());
+        const auto source = restored.findChild<swak::MapSources *>()->activeSource();
+        QVERIFY(!source.value(QStringLiteral("visibleLayers")).toObject().value(QStringLiteral("poi")).toBool(true));
+    }
+
     void mapProvidersAndGpu()
     {
         QTemporaryDir directory;
@@ -418,7 +476,7 @@ private slots:
         auto &window = *owner;
         auto *sources = window.findChild<swak::MapSources *>();
         QVERIFY(sources);
-        QCOMPARE(sources->providers().size(), 3);
+        QCOMPARE(sources->providers().size(), 4);
         QVERIFY(!sources->networkEnabled());
         const auto id = QStringLiteral("org.swak.xyz");
         auto source = sources->sources().value(id).toObject();
@@ -466,7 +524,7 @@ private slots:
         QVERIFY(dialog);
         QVERIFY(QTest::qWaitForWindowExposed(dialog));
         auto *list = dialog->findChild<QListWidget *>(QStringLiteral("mapProviderList"));
-        QCOMPARE(list->count(), 3);
+        QCOMPARE(list->count(), 4);
         QVERIFY(dialog->grab().save(QStringLiteral("map-providers-smoke.png")));
         dialog->findChild<QPushButton *>(QStringLiteral("useMapProvider"))->click();
         QCOMPARE(sources->activeId(), id);
@@ -485,7 +543,7 @@ private slots:
             QVERIFY(editor->grab().save(QStringLiteral("add-provider-smoke.png")));
         });
         dialog->findChild<QPushButton *>(QStringLiteral("addMapProvider"))->click();
-        QCOMPARE(list->count(), 3);
+        QCOMPARE(list->count(), 4);
         QTimer::singleShot(0, dialog, [dialog, id, source] {
             auto *editor = dialog->findChild<swak::SettingsDialog *>();
             QVERIFY(editor);
@@ -500,9 +558,9 @@ private slots:
             editor->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
         });
         dialog->findChild<QPushButton *>(QStringLiteral("addMapProvider"))->click();
-        QCOMPARE(list->count(), 4);
+        QCOMPARE(list->count(), 5);
         dialog->findChild<QPushButton *>(QStringLiteral("removeMapProvider"))->click();
-        QCOMPARE(list->count(), 3);
+        QCOMPARE(list->count(), 4);
         for (int i = 0; i < list->count(); ++i) if (list->item(i)->data(Qt::UserRole).toString() == id) list->setCurrentRow(i);
         QTimer::singleShot(0, dialog, [dialog, id] {
             auto *editor = dialog->findChild<swak::SettingsDialog *>();

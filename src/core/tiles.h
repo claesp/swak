@@ -1,6 +1,9 @@
 #pragma once
 #include "core/maps.h"
 #include "core/projection.h"
+#include "core/vector_tiles.h"
+#include <QThreadPool>
+#include <QSet>
 #include <QCache>
 #include <QImage>
 #include <QNetworkAccessManager>
@@ -22,17 +25,20 @@ public:
     ~TileRenderer() override;
     void setSource(MapProvider *provider, const QJsonObject &source);
     void paint(QPainter &painter, const Viewport &view, double opacity, bool smooth, double missingOpacity = 0.2);
-    const QString &status() const { return status_; }
+    QString status() const { return detailLimited_ ? tr("Map detail limit reached. Zoom in or hide layers.") : status_; }
     // Network tests inspect the request bound and cancellation.
     // cppcheck-suppress unusedFunction
     qsizetype pendingCount() const { return pending_.size(); }
     void stop();
+    QStringList layers() const;
+    QList<QJsonObject> featuresAt(QPointF position) const;
 signals:
     void changed();
 private:
-    struct Image { QImage pixels; QDateTime expires; bool transient; };
+    struct Image { QImage pixels; VectorTile vectors; bool vector = false; QDateTime expires; bool transient = false; };
     void pump();
     void cancel();
+    void decodeVector(const QString &key, QByteArray bytes, const QUrl &url, QDateTime expires, bool transient);
     void fail(const QString &key, const QString &message, int retrySeconds, bool providerWide);
     QNetworkAccessManager network_;
     QNetworkDiskCache *disk_ = nullptr;
@@ -48,5 +54,12 @@ private:
     QCache<QString, Failure> failures_{256};
     QString status_;
     bool ready_ = false;
+    bool detailLimited_ = false;
+    bool contentVisible_ = false;
+    QThreadPool workers_;
+    QHash<QString, std::shared_ptr<std::atomic_bool>> decoding_;
+    quint64 generation_ = 0;
+    int activeJobs_ = 0;
+    QSet<QString> deferred_;
 };
 }

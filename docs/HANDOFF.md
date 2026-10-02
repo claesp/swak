@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation: See “KML and KMZ data providers” below. The release includes these changes.
+Latest implementation: See “OpenFreeMap and vector layers” below. The release includes these changes.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -298,3 +298,27 @@ A 60-second workload passed in `build/quality/20261002-153130-soak-124194`. It i
 Final coverage passed seven suites and all 32 native GUI cases in `build/quality/20261002-153545-coverage-124767`. The data controller reached 233 of 234 executable lines. The KML plugin reached 163 of 165 lines. The manager reached 86 of 86 lines. Remaining gaps include the skipped-content status and foreign-namespace branches, plus the manager's double-click and manual-refresh callbacks. Separate live samples exercised foreign namespaces. Line coverage does not establish complete branch or input coverage.
 
 The final native sanitizer run passed all 32 functional cases, then reported the existing Mesa leak of 240732 bytes in 1073 allocations. This leak test remains failed in `build/quality/20261002-153836-gui-125700`. The final release build passed after the update counter fix. Its log is `build/data-verified-release.log`.
+
+# OpenFreeMap and vector layers
+
+The October 2 update adds OpenFreeMap to Map Providers through the MVT plugin. Existing profiles receive the preset once. The catalog records known provider identifiers so deleted presets stay deleted. The preset uses the latest tile alias and zoom levels 0 through 14. Online access stays disabled until the user selects a provider.
+
+The plugin implements MapProvider and the new VectorTileProvider capability. All twelve manifests use common Plugin API 2. The decoder accepts bounded MVT layer versions 1 and 2. It returns owning geometry, exact identifiers, properties, colors, and label flags. The host decodes on two workers and paints through the existing OpenGL map. Four slots cover both downloads and decode jobs. Cancellation flags and source generations prevent stale results.
+
+Right-click opens Map layers and Map information. The keyboard Menu key uses the map center. Layer visibility, label appearance, language, line width, and point radius use shared provider configuration. The information dialog shows plain-text properties for up to twelve matches. Layer choices and dialog geometry survive restarts. Missing plugins retain their configuration.
+
+The renderer uses a native OpenMapTiles palette, system fonts, and simple markers. It does not interpret MapLibre style documents, sprites, terrain, or remote fonts. It does not import TileJSON at runtime or add geocoding and routing. Research and source terms are in `docs/map-providers.md`. Live decoding accepted 79 features in a world tile and 4142 features in a Stockholm tile with POIs.
+
+Protozero 1.8.2 supplies binary field decoding. Its unmodified headers add about 204 KiB to the source tree and no separate runtime library. `docs/dependencies.md` records the archive digest, upstream security review, motivation, and license notices. Installation includes both upstream license files. The host retains HTTPS validation, timeout, cache, retry, and disabled logging defaults.
+
+Input limits cover bytes, layers, dictionaries, properties, geometry commands, vertices, and coordinates. Frame limits cover vertices and labels. When visible geometry fills the cache, other tiles wait for a view change. This prevents repeated eviction and decoding loops. Tests exercise cache pressure, cancellation during replacement and shutdown, decoder exceptions, malformed input, holes, property types, and native interactions.
+
+The release rebuild passed with Qt 6.8.2, GCC 14.2, and Debian 13. The executable remains `build/release/swak`, version 0.1.0. Eight sanitizer suites passed in `build/quality/20261002-161346-quick-132028`. Static analysis passed in `build/quality/20261002-161508-analyze-3`. Focused native tests passed at normal and 200 percent scaling. Screenshots are under `build/openfreemap-native`.
+
+All 33 native GUI cases passed under sanitizers. LeakSanitizer then reported 169724 bytes in 756 allocations from `libGLX_mesa.so.0`. This is the existing driver leak class, with a different allocation count in this run. The native leak test remains failed in `build/quality/20261002-161649-gui-133579`. No suppression or false success was added. Hardware GPUs, native Wayland, minimum Qt compatibility, and multi-hour live-map sessions remain untested in this pass.
+
+Final coverage passed eight suites and all 33 native GUI cases in `build/quality/20261002-161805-coverage-134052`. The MVT plugin reached 206 of 209 executable lines. The shared vector painter reached 71 of 71 lines. The tile controller reached 277 of 278 lines, and the provider catalog reached 140 of 140. Remaining parser misses include a defensive switch default after its tag guard and compiler-attributed closing lines. No parser function remained uncalled. Existing map mouse controls, some arrow keys, and gesture paths remain coverage gaps. Line coverage does not establish complete branch or input coverage.
+
+The final vector sanitizer run passed nine cases in `build/openfreemap-vector-sanitize-final.log`. It includes panning away during decoding and unknown extension fields. A 60-second sanitizer workload passed in `build/quality/20261002-161801-soak-134020`. It completed 972 cycles with 8220672 bytes of peak memory growth, a 77-millisecond maximum heartbeat gap, and 0.022 idle CPU seconds. This short workload does not replace the documented multi-hour release qualification.
+
+The installation smoke test passed in `build/openfreemap-package`. The installed application reports version 0.1.0 and includes the manuals and both protozero license notices. Release linkage contains no sanitizer library or new runtime dependency. The final build and installation logs are `build/openfreemap-release-final.log` and `build/openfreemap-install.log`.

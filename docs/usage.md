@@ -160,3 +160,5 @@ Provider changes and restored profiles also apply those limits. With no valid pr
 Tools > Data Providers manages KML and KMZ feeds. Enable a preset or add a direct HTTPS URL. Each enabled feed refreshes on its configured interval and draws above the map tiles.
 
 Use Edit to set its refresh interval and appearance. Remove deletes a feed, and Refresh now requests an immediate update. The same parameters appear in File > Settings > Data providers. Read [Data providers](data-providers.md) for public sources, supported geometry, and limits.
+
+OpenFreeMap is available in Map Providers and the provider dropdown. It supplies native vector maps with layers, labels, and points of interest. Right-click the map to change Map layers or inspect Map information. The keyboard Menu key uses the map center. File > Settings > Map providers contains the same layer controls and vector appearance parameters. Read `map-providers.md` for source terms and supported formats.

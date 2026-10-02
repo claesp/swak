@@ -66,3 +66,5 @@ Each built-in plugin declares its API, roles, requirements, and permissions in a
 # KML and KMZ feeds
 
 Data Providers adds HTTPS feed input and ZIP decompression. Read [Data providers](data-providers.md) for request isolation, cancellation, XML limits, archive limits, and supported content. Feed descriptions and linked resources never execute or load automatically. Libarchive is the only new non-Qt library.
+
+MVT tiles cross an additional binary-input boundary. The pinned protozero decoder reads binary fields. Application limits cover wire types, lengths, dictionaries, features, commands, vertices, property storage, and coordinate arithmetic. Worker cancellation and source generations prevent stale results. Map information presents plain text without active links. No remote style expression, script, sprite, or font is executed or loaded. Read `docs/dependencies.md` for provenance and advisory review.

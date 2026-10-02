@@ -1,6 +1,6 @@
 # Plugin API
 
-This review covers all eleven built-in plugins. Every plugin implements `Plugin` and uses the shared contracts in `src/core/`. The common API version is 2. No plugin depends on a concrete application window class.
+This review covers all twelve built-in plugins. Every plugin implements `Plugin` and uses the shared contracts in `src/core/`. The common API version is 2. No plugin depends on a concrete application window class.
 
 The application links plugins into the executable. Qt embeds each `src/plugins/<plugin>/MANIFEST` file through `Q_PLUGIN_METADATA`. The common metadata identifier is `org.swak.Plugin/2.0`. The application does not load external plugin binaries or search plugin directories.
 
@@ -29,6 +29,7 @@ Plugins implement the feature interfaces that they need. Their manifests declare
 | `ToolbarPlugin` | `/3.0` | Supplies `name()` and adds controls through `populateToolbar(PluginServices &, QToolBar &, QMenu *)`. |
 | `MapExtension` | `/1.0` | Supplies a stable map identifier, name, and Provider or Tool kind. |
 | `DataProvider` | `/1.0` | Supplies `dataId()`, `dataName()`, disabled `presets()`, and bounded `decode(bytes, cancelled)`. |
+| `VectorTileProvider` | `/1.0` | Supplies bounded vector decoding and known layer names. |
 | `MapProvider` | `/1.0` | Supplies source defaults, fields, validation, and tile URLs. |
 | `PreferenceParticipant` | C++ interface, no Qt identifier | Saves and restores bounded JSON under a stable component identifier. |
 | `SettingsParticipant` | `/1.0` | Adds a title, editable fields, and optional validation to preferences. |
@@ -53,6 +54,7 @@ The host owns pane placement, visibility actions, and layout persistence. Plugin
 | `src/plugins/editor` | CoT Event Generator | Tool |
 | `src/plugins/udp` | UDP receiver | Source |
 | `src/plugins/activity` | Internal events | Pane and menu |
+| `src/plugins/mvt` | MVT vector tiles | Map provider and vector tiles |
 | `src/plugins/xyz` | XYZ image tiles | Map provider |
 | `src/plugins/wmts` | WMTS image tiles | Map provider |
 | `src/plugins/wms` | WMS images | Map provider |
@@ -125,3 +127,13 @@ DataProvider decoders run on at most two background threads. Keep them reentrant
 The host owns downloads, per-feed timers, configuration, and rendering. Data plugins supply disabled presets and decode responses. Shared data fields provide endpoint, attribution, timer, and appearance controls. Add forms select one installed format when several data plugins exist. Unknown formats remain in the saved catalog.
 
 Each data plugin declares `data-provider` in its MANIFEST. Its `dataId()` must match the manifest identifier. This version links the KML plugin statically and adds no external plugin discovery. Read [Data providers](data-providers.md) for parser limits and dependency details.
+
+# Vector tile capability
+
+`VectorTileProvider` adds the optional interface `org.swak.VectorTiles/1.0` to a MapProvider. Its manifest declares both `map-provider` and `vector-tiles`. The host rejects the vector role without the map provider role. The common Plugin API remains version 2, and MapProvider remains version 1. All plugins still use the same toolchain and Qt installation.
+
+`decodeTile(bytes, cancelled)` runs on a host worker and returns an owning VectorTile value. The provider must support concurrent calls and cooperative cancellation. It must bound input, output, and work. It must not retain borrowed input or access widgets. An error produces a nonempty error string. A valid empty tile has no features and no error. The host converts standard exceptions into a controlled tile failure.
+
+VectorFeature stores a layer name, an exact identifier string, properties, a geometry kind, and tile-local coordinates normalized by the tile extent. The provider also supplies each feature color and a label-only flag. Polygon paths use odd-even filling for holes. The renderer clips buffered geometry to its tile. The cache uses the provider's conservative `costKiB` estimate. The static provider must outlive its host workers.
+
+`layerNames()` supplies known layer names before tiles arrive. The host adds names from decoded tiles. The MVT provider uses `visibleLayers` Boolean entries, with absent names visible by default. The shared settings form exposes OpenMapTiles layers and appearance controls. The map context menu changes the same persisted entries. Map information reads loaded feature properties without another network request.

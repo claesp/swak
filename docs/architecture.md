@@ -123,3 +123,5 @@ Help > About opens one dialog per window and releases it on close. The dialog us
 DataSources owns the per-window feed catalog, refresh timers, HTTPS clients, and decoded geometry. DataProvider plugins decode bounded responses outside the interface thread. The map draws their normalized geometry through its existing OpenGL paint engine, below CoT events.
 
 DataManager uses the shared SettingsDialog for Add and Edit forms. The catalog exposes the same fields in File > Settings. Missing plugin configuration survives restarts. Read [Data providers](data-providers.md) and [Plugin API](plugin-api.md) for contracts and limits.
+
+The MVT plugin supplies OpenFreeMap through the existing MapProvider catalog. Its VectorTileProvider capability decodes bounded vector tiles on two host workers. Qt paints the resulting paths and labels through the existing OpenGL map. The host limits combined downloads and decode work to four jobs and discards cancelled results. The same catalog controls attribution, HTTPS, cache, appearance, and saved layer visibility.

@@ -2,6 +2,13 @@
 #include "core/tiles.h"
 #include "core/data.h"
 #include <QHideEvent>
+#include <QContextMenuEvent>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QPlainTextEdit>
+#include <QVBoxLayout>
+#include <QPointer>
+#include <QJsonDocument>
 #include <QLabel>
 #include <QDesktopServices>
 #include <QRegularExpression>
@@ -35,7 +42,7 @@ public:
         setMinimumSize(320, 240);
         setFocusPolicy(Qt::StrongFocus);
         setAccessibleName(tr("Event map"));
-        setAccessibleDescription(tr("Drag to pan. Use the wheel or plus and minus keys to zoom. Press Home to reset."));
+        setAccessibleDescription(tr("Drag to pan. Use the wheel or plus and minus keys to zoom. Press Home to reset. Right-click for map layers and information."));
         setMouseTracking(true);
         attribution_ = new QLabel(this);
         attribution_->setObjectName(QStringLiteral("mapAttribution"));
@@ -95,13 +102,14 @@ public:
     }
     QJsonObject savePreferences() const override
     {
-        return {{QStringLiteral("centerX"), view_.center.x()}, {QStringLiteral("centerY"), view_.center.y()},
+        return {{QStringLiteral("informationGeometry"), QString::fromLatin1((information_ ? information_->saveGeometry() : informationGeometry_).toBase64())}, {QStringLiteral("centerX"), view_.center.x()}, {QStringLiteral("centerY"), view_.center.y()},
                 {QStringLiteral("zoom"), view_.zoom}, {QStringLiteral("opacity"), opacity_},
                 {QStringLiteral("missingOpacity"), missingOpacity_},
                 {QStringLiteral("attributionOpacity"), attributionOpacity_}, {QStringLiteral("smooth"), smooth_}, {QStringLiteral("antialias"), antialias_}};
     }
     void restorePreferences(const QJsonObject &values) override
     {
+        informationGeometry_ = QByteArray::fromBase64(values.value(QStringLiteral("informationGeometry")).toString().left(8192).toLatin1());
         view_.center = {preferenceNumber(values, QStringLiteral("centerX"), 0.5, 0, 1),
                         preferenceNumber(values, QStringLiteral("centerY"), 0.5, 0, 1)};
         view_.zoom = preferenceNumber(values, QStringLiteral("zoom"), 1, 0, 19);
@@ -115,6 +123,38 @@ public:
         update();
     }
 protected:
+    void contextMenuEvent(QContextMenuEvent *event) override
+    {
+        const QPoint position = event->reason() == QContextMenuEvent::Keyboard ? rect().center() : event->pos();
+        const auto features = tiles_.featuresAt(position);
+        QMenu menu(this);
+        menu.setObjectName(QStringLiteral("mapContextMenu"));
+        auto *information = menu.addAction(tr("Map information"));
+        information->setObjectName(QStringLiteral("mapInformation"));
+        information->setEnabled(!features.isEmpty());
+        connect(information, &QAction::triggered, this, [this, features] { showInformation(features); });
+        auto names = tiles_.layers();
+        if (!names.isEmpty() && sources_) {
+            auto *layers = menu.addMenu(tr("Map layers"));
+            const QCollator collator;
+            std::sort(names.begin(), names.end(), [&](const auto &a, const auto &b) { return collator.compare(a, b) < 0; });
+            for (const auto &name : names) {
+                auto *action = layers->addAction(name);
+                action->setCheckable(true);
+                action->setChecked(vectorLayerVisible(sources_->activeSource(), name));
+                connect(action, &QAction::triggered, this, [this, name](bool visible) {
+                    auto source = sources_->activeSource();
+                    if (source.isEmpty()) return;
+                    auto visibility = source.value(QStringLiteral("visibleLayers")).toObject();
+                    visibility.insert(name, visible);
+                    source.insert(QStringLiteral("visibleLayers"), visibility);
+                    sources_->put(sources_->activeId(), source);
+                });
+            }
+        }
+        menu.exec(mapToGlobal(position));
+        event->accept();
+    }
     void hideEvent(QHideEvent *event) override { tiles_.stop(); QOpenGLWidget::hideEvent(event); }
     void initializeGL() override { initializeOpenGLFunctions(); }
     void paintGL() override
@@ -271,6 +311,42 @@ protected:
         update();
     }
 private:
+    void showInformation(const QList<QJsonObject> &features)
+    {
+        if (information_) information_->close();
+        auto *dialog = new QDialog(this);
+        information_ = dialog;
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->setObjectName(QStringLiteral("mapInformationDialog"));
+        dialog->setWindowTitle(tr("Map information"));
+        dialog->resize(520, 420);
+        auto *layout = new QVBoxLayout(dialog);
+        auto *text = new QPlainTextEdit(dialog);
+        text->setObjectName(QStringLiteral("mapFeatureProperties"));
+        text->setReadOnly(true);
+        QString details;
+        const QCollator collator;
+        for (const auto &feature : features) {
+            details += tr("Layer: %1\nFeature ID: %2\n").arg(feature.value(QStringLiteral("layer")).toString(), feature.value(QStringLiteral("id")).toString());
+            const auto properties = feature.value(QStringLiteral("properties")).toObject();
+            auto keys = properties.keys();
+            std::sort(keys.begin(), keys.end(), [&](const auto &a, const auto &b) { return collator.compare(a, b) < 0; });
+            for (const auto &key : keys) {
+                const auto value = properties.value(key);
+                details += key + QStringLiteral(": ") + (value.isString() ? value.toString() : value.isBool() ?
+                    (value.toBool() ? QStringLiteral("true") : QStringLiteral("false")) : QString::number(value.toDouble(), 'g', 16)) + QLatin1Char('\n');
+            }
+            details += QLatin1Char('\n');
+        }
+        text->setPlainText(details);
+        layout->addWidget(text);
+        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
+        connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::close);
+        layout->addWidget(buttons);
+        if (!informationGeometry_.isEmpty()) dialog->restoreGeometry(informationGeometry_);
+        connect(dialog, &QDialog::finished, this, [this, dialog] { informationGeometry_ = dialog->saveGeometry(); });
+        dialog->show();
+    }
     std::pair<int, int> zoomLimits() const
     {
         const auto source = sources_ ? sources_->activeSource() : QJsonObject{};
@@ -297,6 +373,8 @@ private:
         clampCenter();
         update();
     }
+    QPointer<QDialog> information_;
+    QByteArray informationGeometry_;
     MapSources *sources_ = nullptr;
     TileRenderer tiles_;
     QLabel *attribution_;

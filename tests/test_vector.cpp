@@ -1,0 +1,230 @@
+#include "core/maps.h"
+#include "core/tiles.h"
+#include "core/vector_tiles.h"
+#include "tile_server.h"
+#include "vector_fixture.h"
+#include <QPluginLoader>
+#include <QPainter>
+#include <QTest>
+#include <QSignalSpy>
+#include <QStandardPaths>
+#include <QJsonArray>
+#include <QFile>
+#include <QApplication>
+#include <thread>
+#include <chrono>
+Q_IMPORT_PLUGIN(MvtProvider)
+using namespace swak;
+class SlowVector : public MapProvider, public VectorTileProvider {
+public:
+    MapProvider &base;
+    mutable std::atomic_int started{0};
+    mutable std::atomic_int finished{0};
+    bool throws = false;
+    VectorTileProvider *inflated = nullptr;
+    explicit SlowVector(MapProvider &provider) : base(provider) {}
+    QString mapId() const override { return base.mapId(); }
+    QString mapName() const override { return base.mapName(); }
+    QJsonObject defaults() const override { return base.defaults(); }
+    QList<SettingField> fields() const override { return base.fields(); }
+    QString validate(const QJsonObject &source) const override { return base.validate(source); }
+    QUrl tileUrl(const QJsonObject &source, int z, int x, int y) const override { return base.tileUrl(source, z, x, y); }
+    QStringList layerNames() const override { return {}; }
+    VectorTile decodeTile(const QByteArray &bytes, const std::atomic_bool &cancelled) const override
+    {
+        ++started;
+        if (inflated) { auto result = inflated->decodeTile(bytes, cancelled); result.costKiB = 40000; ++finished; return result; }
+        if (throws) { ++finished; throw std::runtime_error("test decoder failure"); }
+        for (int i = 0; i < 2000 && !cancelled.load(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        ++finished;
+        return {};
+    }
+};
+class VectorTest final : public QObject {
+    Q_OBJECT
+    MapProvider *provider_ = nullptr;
+    VectorTileProvider *decoder_ = nullptr;
+    std::atomic_bool cancelled_{false};
+private slots:
+    void initTestCase()
+    {
+        QStandardPaths::setTestModeEnabled(true);
+        for (auto *object : QPluginLoader::staticInstances()) {
+            if (auto *provider = qobject_cast<MapProvider *>(object)) provider_ = provider;
+            if (auto *decoder = qobject_cast<VectorTileProvider *>(object)) decoder_ = decoder;
+        }
+        QVERIFY(provider_); QVERIFY(decoder_);
+    }
+    void decodeAndInspect()
+    {
+        const auto tile = decoder_->decodeTile(vector_fixture::sample(), cancelled_);
+        QVERIFY2(tile.error.isEmpty(), qPrintable(tile.error));
+        QCOMPARE(tile.features.size(), 3);
+        QCOMPARE(tile.layers.size(), 3);
+        QCOMPARE(tile.features.last().id, QStringLiteral("9007199254740993"));
+        QCOMPARE(tile.features.last().points.first(), QPointF(0.5, 0.5));
+        QCOMPARE(tile.features.last().properties.value(QStringLiteral("class")).toString(), QStringLiteral("cafe"));
+        const auto hits = vectorFeaturesAt(tile, QRectF(0, 0, 256, 256), QPointF(128, 128), provider_->defaults());
+        QCOMPARE(hits.size(), 3);
+        QCOMPARE(hits.first().value(QStringLiteral("layer")).toString(), QStringLiteral("poi"));
+        auto source = provider_->defaults();
+        source.insert(QStringLiteral("visibleLayers"), QJsonObject{{QStringLiteral("poi"), false}});
+        QCOMPARE(vectorFeaturesAt(tile, QRectF(0, 0, 256, 256), QPointF(128, 128), source).size(), 2);
+        QVERIFY(vectorFeaturesAt(tile, QRectF(0, 0, 256, 256), QPointF(-1, -1), source).isEmpty());
+        QImage canvas(256, 256, QImage::Format_RGB32);
+        QPainter painter(&canvas); QList<QRectF> labels; int budget = 10000;
+        paintVectorTile(painter, tile, QRectF(0, 0, 256, 256), source, labels, budget);
+        QCOMPARE(canvas.pixelColor(50, 50), QColor("#92bfd0"));
+        QVERIFY(!labels.isEmpty());
+    }
+    void invalidInput()
+    {
+        const auto good = vector_fixture::sample();
+        QVERIFY(!decoder_->decodeTile(QByteArray(2 * 1024 * 1024 + 1, 'x'), cancelled_).error.isEmpty());
+        QVERIFY(!decoder_->decodeTile(QByteArray::fromHex("1affffffff7f"), cancelled_).error.isEmpty());
+        QVERIFY(!decoder_->decodeTile(vector_fixture::layer("poi", vector_fixture::feature(1, vector_fixture::geometry({0}))), cancelled_).error.isEmpty());
+        QVERIFY(!decoder_->decodeTile(vector_fixture::layer("poi", vector_fixture::feature(1, vector_fixture::geometry({9, 1}))), cancelled_).error.isEmpty());
+        QVERIFY(!decoder_->decodeTile(vector_fixture::layer("poi", vector_fixture::feature(1, vector_fixture::geometry({9, 1, 1})), 3), cancelled_).error.isEmpty());
+        QVERIFY(!decoder_->decodeTile(good + good, cancelled_).error.isEmpty());
+        cancelled_.store(true); QVERIFY(!decoder_->decodeTile(good, cancelled_).error.isEmpty()); cancelled_.store(false);
+        for (qsizetype i = 0; i < good.size(); ++i) {
+            auto bytes = good; bytes[i] = static_cast<char>(0xff); decoder_->decodeTile(bytes, cancelled_);
+            decoder_->decodeTile(good.left(i), cancelled_);
+        }
+    }
+    void preferences()
+    {
+        const QString id = provider_->mapId();
+        MapSources sources(QPluginLoader::staticInstances());
+        auto legacy = sources.savePreferences();
+        legacy.remove(QStringLiteral("knownProviders")); legacy.insert(QStringLiteral("sources"), QJsonObject{});
+        sources.restorePreferences(legacy);
+        QVERIFY(sources.sources().contains(id));
+        sources.remove(id); const auto saved = sources.savePreferences();
+        MapSources restored(QPluginLoader::staticInstances()); restored.restorePreferences(saved);
+        QVERIFY(!restored.sources().contains(id));
+        auto source = provider_->defaults();
+        source.insert(QStringLiteral("format"), id);
+        source.insert(QStringLiteral("visibleLayers"), QJsonObject{{QStringLiteral("poi"), false}});
+        QVERIFY(sources.put(id, source).isEmpty()); sources.select(id);
+        restored.restorePreferences(sources.savePreferences());
+        QVERIFY(!vectorLayerVisible(restored.activeSource(), QStringLiteral("poi")));
+        QCOMPARE(restored.activeSource().value(QStringLiteral("maxZoom")).toInt(), 14);
+        source.insert(QStringLiteral("labelSize"), 100); QVERIFY(!provider_->validate(source).isEmpty());
+        source = provider_->defaults(); source.insert(QStringLiteral("language"), QStringLiteral("../bad")); QVERIFY(!provider_->validate(source).isEmpty());
+    }
+    void cancellationAndExceptions()
+    {
+        TileServer server; server.body = vector_fixture::sample();
+        QVERIFY(server.load(QFINDTESTDATA("fixtures"))); QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+        auto source = provider_->defaults();
+        source.insert(QStringLiteral("endpoint"), QStringLiteral("https://localhost:%1/slow/{z}/{x}/{y}.pbf").arg(server.serverPort()));
+        source.insert(QStringLiteral("ignoreTls"), true);
+        SlowVector slow(*provider_);
+        QImage canvas(512, 512, QImage::Format_RGB32);
+        const auto draw = [&](TileRenderer &renderer) { QPainter painter(&canvas); renderer.paint(painter, {QSizeF(512, 512), QPointF(0.5, 0.5), 1}, 1, false); };
+        {
+            TileRenderer renderer; renderer.setSource(&slow, source); draw(renderer);
+            QVERIFY(QTest::qWaitFor([&] { return slow.started.load() >= 2; }, 5000));
+            { QPainter painter(&canvas); renderer.paint(painter, {QSizeF(512, 512), QPointF(0, 0), 1}, 1, false); }
+            QVERIFY(QTest::qWaitFor([&] { return slow.finished.load() >= 1; }, 1000));
+            renderer.setSource(provider_, source); draw(renderer);
+            QVERIFY(QTest::qWaitFor([&] { return !renderer.featuresAt(QPointF(128, 128)).isEmpty(); }, 5000));
+            QVERIFY(slow.finished.load() >= 2);
+            renderer.setSource(&slow, source); draw(renderer);
+            QVERIFY(QTest::qWaitFor([&] { return slow.started.load() > slow.finished.load(); }, 5000));
+        }
+        QCOMPARE(slow.started.load(), slow.finished.load());
+        slow.throws = true;
+        TileRenderer renderer; renderer.setSource(&slow, source); draw(renderer);
+        QVERIFY(QTest::qWaitFor([&] { return !renderer.status().isEmpty(); }, 5000));
+        QVERIFY(renderer.featuresAt(QPointF(128, 128)).isEmpty());
+    }
+    void cachePressure()
+    {
+        TileServer server; server.body = vector_fixture::sample();
+        QVERIFY(server.load(QFINDTESTDATA("fixtures"))); QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+        auto source = provider_->defaults();
+        source.insert(QStringLiteral("endpoint"), QStringLiteral("https://localhost:%1/large/{z}/{x}/{y}.pbf").arg(server.serverPort()));
+        source.insert(QStringLiteral("ignoreTls"), true);
+        SlowVector large(*provider_); large.inflated = decoder_;
+        TileRenderer renderer; renderer.setSource(&large, source);
+        QImage canvas(512, 512, QImage::Format_RGB32);
+        const auto draw = [&] { QPainter painter(&canvas); renderer.paint(painter, {QSizeF(512, 512), QPointF(0.5, 0.5), 1}, 1, false); };
+        draw();
+        QVERIFY(QTest::qWaitFor([&] { return large.finished.load() == 4; }, 5000));
+        QVERIFY(QTest::qWaitFor([&] { return renderer.status().contains(QStringLiteral("cache limit")); }, 1000));
+        draw();
+        QVERIFY(!QTest::qWaitFor([&] { return large.started.load() > 4; }, 500));
+        renderer.stop();
+    }
+    void holesAndProperties()
+    {
+        using namespace vector_fixture;
+        auto bytes = layer("landuse", feature(3, geometry({9, 0, 0, 26, 8192, 0, 0, 8192, 8191, 0, 15,
+            9, 2048, 6143, 26, 0, 4096, 4096, 0, 0, 4095, 15})));
+        const auto tile = decoder_->decodeTile(bytes, cancelled_); QVERIFY(tile.error.isEmpty());
+        QVERIFY(!tile.features.first().path.contains(QPointF(0.5, 0.5)));
+        QVERIFY(tile.features.first().path.contains(QPointF(0.1, 0.1)));
+        const auto point = feature(1, geometry({9, 4096, 4096}));
+        for (const auto &value : {number(4, 123), number(5, 123), number(6, 1), number(7, 1),
+                 QByteArray::fromHex("150000803f"), QByteArray::fromHex("19000000000000f03f")}) {
+            const auto message = field(3, field(1, "poi") + field(2, point) + field(3, "name") + field(3, "value") +
+                field(4, field(1, "Test")) + field(4, value + number(20, 1)) + number(15, 2) + number(20, 1));
+            const auto decoded = decoder_->decodeTile(message, cancelled_);
+            QVERIFY(decoded.error.isEmpty()); QVERIFY(decoded.features.first().properties.contains(QStringLiteral("value")));
+        }
+        const auto bad = field(3, field(1, "poi") + field(2, point) + number(15, 4294967298ULL));
+        QVERIFY(!decoder_->decodeTile(bad, cancelled_).error.isEmpty());
+        QImage canvas(256, 256, QImage::Format_RGB32); QPainter painter(&canvas); QList<QRectF> labels; int budget = 1;
+        paintVectorTile(painter, tile, QRectF(0, 0, 256, 256), provider_->defaults(), labels, budget);
+        QCOMPARE(budget, 0);
+    }
+    void networkAndReplacement()
+    {
+        TileServer server; server.body = vector_fixture::sample();
+        QVERIFY(server.load(QFINDTESTDATA("fixtures"))); QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+        auto source = provider_->defaults();
+        source.insert(QStringLiteral("endpoint"), QStringLiteral("https://localhost:%1/{z}/{x}/{y}.pbf").arg(server.serverPort()));
+        source.insert(QStringLiteral("ignoreTls"), true);
+        TileRenderer renderer;
+        QImage canvas(256, 256, QImage::Format_RGB32);
+        const auto draw = [&] { QPainter painter(&canvas); renderer.paint(painter, {QSizeF(256, 256), QPointF(0.5, 0.5), 0}, 1, false); };
+        renderer.setSource(provider_, source); draw();
+        QVERIFY(QTest::qWaitFor([&] { return !renderer.featuresAt(QPointF(128, 128)).isEmpty(); }, 5000));
+        draw(); QCOMPARE(canvas.pixelColor(50, 50), QColor("#92bfd0"));
+        QVERIFY(renderer.layers().contains(QStringLiteral("poi")));
+        source.insert(QStringLiteral("visibleLayers"), QJsonObject{{QStringLiteral("poi"), false}});
+        renderer.setSource(provider_, source); draw();
+        QVERIFY(QTest::qWaitFor([&] { return renderer.featuresAt(QPointF(128, 128)).size() == 2; }, 5000));
+        renderer.setSource(nullptr, {}); QVERIFY(renderer.featuresAt(QPointF(128, 128)).isEmpty());
+        source.insert(QStringLiteral("endpoint"), QStringLiteral("https://localhost:%1/invalid/{z}/{x}/{y}.pbf").arg(server.serverPort()));
+        server.body = "bad tile"; renderer.setSource(provider_, source); draw();
+        QVERIFY(QTest::qWaitFor([&] { return !renderer.status().isEmpty(); }, 5000));
+        QVERIFY(renderer.featuresAt(QPointF(128, 128)).isEmpty());
+        renderer.stop();
+        QVERIFY(renderer.featuresAt(QPointF(128, 128)).isEmpty());
+    }
+};
+int main(int argc, char **argv)
+{
+    QApplication app(argc, argv);
+    if (argc == 3 && (QByteArray(argv[1]) == "--sample" || QByteArray(argv[1]) == "--render-sample")) {
+        QFile file(QString::fromLocal8Bit(argv[2])); if (!file.open(QIODevice::ReadOnly)) return 2;
+        const auto bytes = file.read(2 * 1024 * 1024 + 1); std::atomic_bool cancelled{false};
+        for (auto *object : QPluginLoader::staticInstances()) if (auto *decoder = qobject_cast<VectorTileProvider *>(object)) {
+            const auto tile = decoder->decodeTile(bytes, cancelled);
+            qInfo().noquote() << "Features:" << tile.features.size() << "Layers:" << tile.layers.join(',') << "Error:" << tile.error;
+            if (tile.error.isEmpty() && QByteArray(argv[1]) == "--render-sample") {
+                QImage image(1024, 1024, QImage::Format_RGB32);
+                { QPainter painter(&image); painter.setRenderHint(QPainter::Antialiasing); QList<QRectF> labels; int budget = 200000;
+                  paintVectorTile(painter, tile, QRectF(0, 0, 1024, 1024), qobject_cast<MapProvider *>(object)->defaults(), labels, budget); }
+                if (!image.save(QStringLiteral("vector-sample.png"))) return 2;
+            }
+            return tile.error.isEmpty() ? 0 : 1;
+        }
+        return 2;
+    }
+    VectorTest test; return QTest::qExec(&test, argc, argv);
+}
+#include "test_vector.moc"

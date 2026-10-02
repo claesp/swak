@@ -66,3 +66,5 @@ The ordinary CTest suite uses the offscreen platform and does not test rendering
 # Release hardening
 
 Optimized GCC and Clang builds set `_FORTIFY_SOURCE=2` unless the toolchain supplies its own value. This enables supported library bounds diagnostics. Existing stack protection and linker protection remain enabled. Tests and sanitizers remain excluded from the release preset.
+
+The MVT provider uses pinned protozero headers included in the source tree. Builds do not fetch them. Read `docs/dependencies.md` for provenance, licenses, and the security review.

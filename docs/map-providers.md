@@ -1,6 +1,6 @@
 # Map providers
 
-Research date: October 2, 2026. A provider supplies map images. A format plugin converts the selected source configuration into tile requests. This implementation supports XYZ, WMTS 1.0 KVP, and WMS 1.3 images in Web Mercator, also called EPSG:3857.
+Research date: October 2, 2026. A provider supplies map images or vector geometry. MVT is the Mapbox Vector Tile format. A format plugin converts the selected source configuration into tile requests. This implementation supports XYZ, WMTS 1.0 KVP, WMS 1.3 images, and MVT vector tiles in Web Mercator, also called EPSG:3857.
 
 # Sources and requirements
 
@@ -22,7 +22,7 @@ WMTS uses the `GetTile` KVP request. Configure the layer, style, image format, m
 
 WMS uses `GetMap`, version 1.3.0, `CRS=EPSG:3857`, and a bounding box in meters. SWAK divides the viewport into 256-pixel requests so images can use the same cache and renderer. Configure layer names, style names, and PNG or JPEG output. WMS service URLs and WMTS service URLs must not contain query parameters.
 
-Capabilities discovery, arbitrary projections, irregular WMTS grids, vector tiles, and offline map archives are outside this implementation. The plugins reject unsupported images instead of interpreting them as tiles. A WMS XML error response appears as a tile failure. SWAK does not parse remote map XML or execute remote styles.
+Capabilities discovery, arbitrary projections, irregular WMTS grids, and offline map archives are outside this implementation. The plugins reject unsupported images instead of interpreting them as tiles. A WMS XML error response appears as a tile failure. SWAK does not parse remote map XML or execute remote styles.
 
 # Manage sources
 
@@ -42,7 +42,7 @@ Certificate and hostname checks are enabled by default. Each source has an expli
 
 SWAK uses the existing Qt Network library for asynchronous HTTPS and Qt image readers for raster decoding. These are existing dependencies. It does not add a browser engine or a GIS runtime. Images render through QPainter on QOpenGLWidget, which uses the OpenGL paint engine for texture upload, scaling, and composition.
 
-The renderer permits four active requests and 256 visible tiles. Each response has a two MiB limit, a ten-second inactivity limit, and a fifteen-second total limit. Decoding accepts only 256-by-256 images. The decoded-image cache holds at most 64 MiB. Failed requests pause for at least 30 seconds. Integer Retry-After values extend this delay up to one hour.
+The renderer permits four active requests and 256 visible tiles. Each response has a two MiB limit, a ten-second inactivity limit, and a fifteen-second total limit. Decoding accepts only 256-by-256 images. The decoded-tile cache holds at most 64 MiB. Failed requests pause for at least 30 seconds. Integer Retry-After values extend this delay up to one hour.
 
 The disk cache uses Qt HTTP caching. Entries without an expiry get a seven-day default. Verified and unchecked HTTPS responses use separate caches, each limited to 128 MiB. Non-cacheable images remain in memory only while their tiles stay in the view.
 
@@ -64,3 +64,33 @@ A failed tile has a bounded retry delay from 30 seconds through one hour. Other 
 An expired image remains visible while its replacement loads. Images without usable cache metadata remain only in the current view. Hiding the map releases those images. Failure records have a limit of 256 entries.
 
 URL-only attribution shows a visible Map attribution link. Additional URLs have separate Source links. The link parser removes trailing sentence punctuation and unmatched closing brackets.
+
+# OpenFreeMap and vector maps
+
+OpenFreeMap supplies free vector tiles without registration or an API key. Vector tiles contain geometry and feature properties. Its service does not supply raster maps, geocoding, routing, or elevation queries. Read the [service description](https://github.com/hyperknot/openfreemap) and [quick start](https://openfreemap.org/quick_start/).
+
+The preset uses `https://tiles.openfreemap.org/planet/latest/{z}/{x}/{y}.pbf`. The October 2 catalog identifies zoom levels 0 through 14 and OpenMapTiles schema 3.16.0. The latest alias follows the deployed dataset. The public [TileJSON catalog](https://tiles.openfreemap.org/planet/latest) describes tile URLs, bounds, layers, and properties. SWAK uses that research for its preset. It does not import TileJSON or MapLibre style documents at runtime.
+
+The provider supports the published [MVT format](https://github.com/mapbox/vector-tile-spec), which uses Protocol Buffers to encode binary records. The plugin accepts layer versions 1 and 2. It draws points, lines, polygons, polygon holes, and multiple geometry parts. Feature properties include text, Boolean values, and numbers. Integer properties and identifiers retain their exact decimal representation, including values above the JSON floating-point precision limit.
+
+The built-in style follows the [OpenMapTiles layer schema](https://openmaptiles.org/docs/schema/). It draws land, water, roads, buildings, boundaries, places, and POIs. A POI is a point of interest. Examples include shops, cafes, and stations. The tile source determines which features appear at each zoom. Unknown layers remain available with a generic geometry style.
+
+Select OpenFreeMap in Tools > Map Providers or the main toolbar. Online access stays disabled until a provider is selected. Existing profiles receive the new preset once. Removing the preset keeps it removed after restart. An unavailable plugin preserves its saved configuration.
+
+Right-click the map, then open Map layers to show or hide individual layers. The keyboard Menu key opens the same controls at the map center. Right-click a feature and select Map information to inspect its layer, identifier, and properties. The information window shows up to twelve matching features. It treats all properties as plain text and does not follow embedded URLs.
+
+File > Settings > Map providers contains layer visibility, labels, label size, preferred language, line width, and point radius. The provider editor exposes the same controls. An empty language code uses local names. A language such as `en` or `sv` selects the corresponding name when available. The context menu lists known layers and additional layers from loaded tiles. Layer choices and the information window geometry survive restarts.
+
+The native renderer uses a fixed color palette. It does not implement MapLibre expressions, sprites, remote fonts, terrain, building extrusion, route calculation, or a POI search service. It uses the system font and simple point markers. Label placement suppresses overlapping labels and limits each frame to 200 labels. These maps do not reproduce the Liberty, Bright, or other web styles.
+
+Keep the OpenFreeMap, OpenMapTiles, and OpenStreetMap credits visible. The preset includes links to all three sources. OpenStreetMap data uses the [Open Database License](https://www.openstreetmap.org/copyright). The OpenMapTiles schema uses BSD and CC-BY terms described in its [license](https://github.com/openmaptiles/openmaptiles/blob/master/LICENSE.md). Service software licenses do not replace data attribution requirements.
+
+# Vector input limits
+
+Vector requests use the same HTTPS, cache, timeout, and retry controls as image tiles. Responses must contain raw MVT bytes. SWAK requests identity encoding and does not open gzip archives as tiles. Downloads and pending decode tasks share a limit of four. Two background workers decode tiles. Source changes, hiding, and shutdown cancel obsolete work. The renderer discards results from earlier source generations.
+
+A tile has limits of two MiB, 64 layers, 20000 features, and 100000 vertices. Each feature accepts up to 256 property pairs. Each layer dictionary accepts up to 16384 keys and values. The parser also bounds text, geometry commands, coordinate ranges, and retained properties. Invalid tiles enter the normal retry path. The cache accounts for decoded geometry and properties within its existing 64 MiB budget. If visible tiles fill the cache, SWAK defers other tiles until the view changes. This prevents repeated eviction and decoding loops.
+
+Each frame permits up to 200000 vector vertices. If the map reaches this limit, its status asks the user to zoom in or hide layers. Feature inspection follows visible layer choices. MVT parsing does not fetch linked resources or execute styles. Development tests cover truncated records, malformed commands, oversized numbers, property types, holes, cancellation, replacement, and worker exceptions.
+
+Live research accepted a world tile with 79 features and a Stockholm tile with 4142 features. The Stockholm sample used tile `14/9014/4818` and contained POIs. These counts describe the sampled dataset, not a fixed service guarantee. Automated tests use local synthetic tiles, so they do not depend on public service availability.

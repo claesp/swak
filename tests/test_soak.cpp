@@ -1,3 +1,5 @@
+#include "core/vector_tiles.h"
+#include "vector_fixture.h"
 #include "core/activity.h"
 #include "core/maps.h"
 #include "core/data.h"
@@ -40,11 +42,13 @@ private slots:
         const int seconds = secondsText.isEmpty() ? 5 : secondsText.toInt(&ok);
         QVERIFY2(secondsText.isEmpty() || (ok && seconds >= 1 && seconds <= 86400), "SWAK_SOAK_SECONDS must be between 1 and 86400.");
         DataProvider *dataProvider = nullptr;
+        VectorTileProvider *vectorProvider = nullptr;
         Codec *codec = nullptr;
         SourcePlugin *source = nullptr;
         QList<ToolPlugin *> tools;
         for (auto *plugin : QPluginLoader::staticInstances()) {
             if (auto *item = qobject_cast<DataProvider *>(plugin)) dataProvider = item;
+            if (auto *item = qobject_cast<VectorTileProvider *>(plugin)) vectorProvider = item;
             if (auto *item = qobject_cast<Codec *>(plugin)) codec = item;
             if (auto *item = qobject_cast<SourcePlugin *>(plugin)) source = item;
             if (auto *item = qobject_cast<ToolPlugin *>(plugin)) tools.append(item);
@@ -107,6 +111,10 @@ private slots:
         quint32 random = 0x5357414b;
         while (elapsed.elapsed() < (static_cast<qint64>(seconds) + 2) * 1000) {
             std::atomic_bool cancelled = false;
+            QVERIFY(vectorProvider);
+            const auto vector = vectorProvider->decodeTile(vector_fixture::sample(), cancelled);
+            QVERIFY(vector.error.isEmpty());
+            QCOMPARE(vector.features.size(), 3);
             const auto document = dataProvider->decode("<kml xmlns=\"http://www.opengis.net/kml/2.2\"><Placemark><Point><coordinates>0,0</coordinates></Point></Placemark></kml>", cancelled);
             QCOMPARE(document.shapes.size(), 1);
             event.uid = QStringLiteral("item-%1").arg(cycles % 128);

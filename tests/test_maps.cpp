@@ -65,7 +65,7 @@ private slots:
     void formats()
     {
         MapSources sources(QPluginLoader::staticInstances());
-        QCOMPARE(sources.providers().size(), 3);
+        QCOMPARE(sources.providers().size(), 4);
         QVERIFY(!sources.networkEnabled());
         QVERIFY(sources.activeSource().isEmpty());
         for (auto *provider : sources.providers()) {
@@ -78,7 +78,7 @@ private slots:
             QVERIFY(!provider->mapName().isEmpty());
             auto invalidFormat = source;
             invalidFormat.insert(QStringLiteral("imageFormat"), QStringLiteral("unknown"));
-            if (provider->mapId() != QStringLiteral("org.swak.xyz")) QVERIFY(!provider->validate(invalidFormat).isEmpty());
+            if (provider->mapId() == QStringLiteral("org.swak.wms") || provider->mapId() == QStringLiteral("org.swak.wmts")) QVERIFY(!provider->validate(invalidFormat).isEmpty());
             auto bad = source;
             bad.insert(QStringLiteral("endpoint"), QStringLiteral("http://example.com"));
             QVERIFY(!provider->validate(bad).isEmpty());
