@@ -28,8 +28,8 @@ QJsonValue editorValue(QWidget *editor)
     return {};
 }
 }
-SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString()> save, QWidget *parent)
-    : QDialog(parent), pages_(std::move(pages)), save_(std::move(save))
+SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString()> save, QWidget *parent, bool providerForm, bool newProvider)
+    : QDialog(parent), pages_(std::move(pages)), save_(std::move(save)), newProvider_(newProvider)
 {
     setObjectName(QStringLiteral("settingsDialog"));
     setWindowTitle(tr("Settings"));
@@ -40,12 +40,27 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
     std::stable_sort(pages_.begin(), pages_.end(), [&collator](const SettingsPage &a, const SettingsPage &b) {
         return collator.compare(a.title, b.title) < 0;
     });
-    auto *tabs = new QTabWidget(this);
-    tabs->setObjectName(QStringLiteral("settingsTabs"));
-    layout->addWidget(tabs, 1);
+    QTabWidget *tabs = providerForm ? nullptr : new QTabWidget(this);
+    if (tabs) {
+        tabs->setObjectName(QStringLiteral("settingsTabs"));
+        layout->addWidget(tabs, 1);
+    }
     std::array<QListWidget *, 2> lists{};
     std::array<QStackedWidget *, 2> stacks{};
-    for (int i = 0; i < 2; ++i) {
+    if (providerForm) {
+        auto *stack = new QStackedWidget(this);
+        stacks[0] = stack;
+        if (newProvider) {
+            auto *choice = new QComboBox(this);
+            choice->setObjectName(QStringLiteral("mapProviderFormats"));
+            choice->setAccessibleName(tr("Provider format"));
+            for (const auto &page : pages_) choice->addItem(page.title);
+            providerChoice_ = choice;
+            layout->addWidget(choice);
+            connect(choice, &QComboBox::currentIndexChanged, stack, &QStackedWidget::setCurrentIndex);
+        }
+        layout->addWidget(stack, 1);
+    } else for (int i = 0; i < 2; ++i) {
         auto *tab = new QWidget(tabs);
         auto *body = new QHBoxLayout(tab);
         auto *sections = new QListWidget(tab);
@@ -61,16 +76,18 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
         connect(sections, &QListWidget::currentRowChanged, stack, &QStackedWidget::setCurrentIndex);
     }
     for (const auto &page : pages_) {
-        const size_t group = page.paneCustomization ? 1 : 0;
-        lists.at(group)->addItem(page.title);
-        lists.at(group)->item(lists.at(group)->count() - 1)->setData(Qt::UserRole, page.id);
+        const size_t group = !providerForm && page.paneCustomization ? 1 : 0;
+        if (lists.at(group)) {
+            lists.at(group)->addItem(page.title);
+            lists.at(group)->item(lists.at(group)->count() - 1)->setData(Qt::UserRole, page.id);
+        }
         auto *stack = stacks.at(group);
         auto *scroll = new QScrollArea(stack);
         scroll->setWidgetResizable(true);
         auto *content = new QWidget(scroll);
         auto *form = new QFormLayout(content);
         form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-        form->setRowWrapPolicy(QFormLayout::WrapAllRows);
+        form->setRowWrapPolicy(providerForm ? QFormLayout::DontWrapRows : QFormLayout::WrapAllRows);
         form->setLabelAlignment(Qt::AlignLeft);
         QList<QWidget *> editors;
         if (page.fields.isEmpty()) {
@@ -125,7 +142,7 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
             else {
                 auto *label = new QLabel(field.label, content);
                 label->setTextFormat(Qt::PlainText);
-                label->setWordWrap(true);
+                label->setWordWrap(!providerForm);
                 label->setBuddy(editor);
                 form->addRow(label, editor);
             }
@@ -135,23 +152,23 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
         scroll->setWidget(content);
         stack->addWidget(scroll);
     }
-    for (auto *sections : lists) sections->setCurrentRow(0);
+    for (auto *sections : lists) if (sections) sections->setCurrentRow(0);
     status_ = new QLabel(this);
     status_->setObjectName(QStringLiteral("settingsStatus"));
     status_->setTextFormat(Qt::PlainText);
     status_->setWordWrap(true);
     layout->addWidget(status_);
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Apply | QDialogButtonBox::Cancel, this);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel | (newProvider ? QDialogButtonBox::NoButton : QDialogButtonBox::Apply), this);
     buttons->setObjectName(QStringLiteral("settingsButtons"));
     connect(buttons, &QDialogButtonBox::accepted, this, [this] { if (applyChanges()) accept(); });
-    connect(buttons->button(QDialogButtonBox::Apply), &QPushButton::clicked, this, [this] { applyChanges(); });
+    if (!newProvider) connect(buttons->button(QDialogButtonBox::Apply), &QPushButton::clicked, this, [this] { applyChanges(); });
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     layout->addWidget(buttons);
 }
 QJsonObject SettingsDialog::navigation() const
 {
     QJsonObject values;
-    values.insert(QStringLiteral("tab"), findChild<QTabWidget *>()->currentIndex() == 1 ? QStringLiteral("panes") : QStringLiteral("general"));
+    if (auto *tabs = findChild<QTabWidget *>()) values.insert(QStringLiteral("tab"), tabs->currentIndex() == 1 ? QStringLiteral("panes") : QStringLiteral("general"));
     for (auto *list : findChildren<QListWidget *>()) {
         if (list->currentItem()) values.insert(list->objectName(), list->currentItem()->data(Qt::UserRole).toString());
     }
@@ -159,7 +176,7 @@ QJsonObject SettingsDialog::navigation() const
 }
 void SettingsDialog::restoreNavigation(const QJsonObject &values)
 {
-    findChild<QTabWidget *>()->setCurrentIndex(values.value(QStringLiteral("tab")).toString() == QStringLiteral("panes") ? 1 : 0);
+    if (auto *tabs = findChild<QTabWidget *>()) tabs->setCurrentIndex(values.value(QStringLiteral("tab")).toString() == QStringLiteral("panes") ? 1 : 0);
     for (auto *list : findChildren<QListWidget *>()) {
         const auto id = values.value(list->objectName()).toString();
         for (int i = 0; i < list->count(); ++i) {
@@ -169,6 +186,7 @@ void SettingsDialog::restoreNavigation(const QJsonObject &values)
 }
 bool SettingsDialog::applyChanges()
 {
+    const int selected = providerChoice_ ? providerChoice_->currentIndex() : -1;
     QList<QJsonObject> values;
     for (qsizetype i = 0; i < pages_.size(); ++i) {
         auto updated = QJsonValue(pages_.at(i).values);
@@ -179,15 +197,16 @@ bool SettingsDialog::applyChanges()
                 updated = withSettingValue(updated, pages_.at(i).fields.at(j).path, value);
         }
         const auto object = updated.toObject();
-        if (pages_.at(i).validate && object != pages_.at(i).values) {
+        if ((selected < 0 || i == selected) && pages_.at(i).validate && (newProvider_ || object != pages_.at(i).values)) {
             const auto error = pages_.at(i).validate(object);
             if (!error.isEmpty()) { status_->setText(pages_.at(i).title + QStringLiteral(": ") + error); return false; }
         }
         values.append(object);
     }
     for (qsizetype i = 0; i < pages_.size(); ++i) {
+        if (selected >= 0 && i != selected) continue;
         auto &page = pages_[i];
-        if (values.at(i) != page.values && page.apply) page.apply(values.at(i));
+        if ((newProvider_ || values.at(i) != page.values) && page.apply) page.apply(values.at(i));
         page.values = values.at(i);
         for (auto *editor : editors_.at(i)) editor->setProperty("initialSettingValue", editorValue(editor).toVariant());
     }

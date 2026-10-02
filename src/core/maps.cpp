@@ -1,6 +1,5 @@
 #include "core/maps.h"
 #include <QRegularExpression>
-#include <QUuid>
 #include <cmath>
 #include <algorithm>
 
@@ -133,15 +132,5 @@ void MapSources::select(const QString &id)
     values_.insert(QStringLiteral("active"), id);
     values_.insert(QStringLiteral("network"), !id.isEmpty());
     emit changed();
-}
-QString MapSources::add(const QString &format)
-{
-    for (const auto *entry : providers_) if (entry->mapId() == format && sources().size() < 32) {
-        auto source = entry->defaults();
-        source.insert(QStringLiteral("format"), format);
-        const auto id = QUuid::createUuid().toString(QUuid::WithoutBraces);
-        if (put(id, source).isEmpty()) return id;
-    }
-    return {};
 }
 }

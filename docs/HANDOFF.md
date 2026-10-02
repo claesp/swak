@@ -186,3 +186,13 @@ Coverage passed all five standard suites and all 24 native GUI cases. The report
 Native provider and Settings tests passed at normal and 200 percent scaling. The full native sanitizer test passed 24 GUI cases, then failed on the existing Mesa leak of 240732 bytes in 1073 allocations. The report is `build/quality/20261002-111718-gui-80973`. No application memory error appeared in that run. Hardware GPU, Wayland, and multi-hour online sessions remain untested. Capabilities import, vector tiles, offline archives, and other projections remain outside this implementation.
 
 The final sanitizer run passed all five suites, including expired-cache revalidation and lock recovery. Its report is `build/quality/20261002-112011-quick-81628`. Final Cppcheck analysis passed in `build/quality/20261002-112012-analyze-2`. The development executable includes the map work. The release executable still needs a rebuild.
+
+# Provider forms and attribution updated October 2
+
+Map attribution now aligns to the right over a translucent background. The visible text excludes the license URL. Mouse and keyboard activation open that URL through the default browser. Only HTTP and HTTPS URLs without credentials can open. All text passes HTML escaping before link creation. File > Settings > Map includes attribution background opacity, with a default of 0.55.
+
+The provider manager no longer contains a format selector. Add opens an unsaved form with empty text fields and a format selector. Numeric values and image formats retain safe defaults. Cancel does not create a provider. OK requires valid input and saves only the selected format. Edit uses a single form without the General and Panes tabs. Its labels do not wrap. The unused preset-copying method was removed.
+
+The debug build passed with Qt 6.8.2 and GCC 14.2. All 24 native GUI cases passed. Focused provider and Settings cases also passed at 200 percent scaling. Tests cover blank input, cancellation, successful creation, editing, keyboard link activation, and horizontal overflow. Native screenshots show the compact attribution and readable provider labels. Browser activation uses a test handler, so tests do not launch an external browser.
+
+Static analysis passed in `build/quality/20261002-123602-analyze-2`. All five sanitizer suites passed in `build/quality/20261002-123610-quick-86545`. This pass did not repeat GUI leak analysis, coverage collection, Wayland tests, hardware GPU tests, or long-session tests. Previous coverage gaps and the external Mesa leak remain documented above. The release executable contains the earlier map implementation and needs a rebuild for these interface changes.

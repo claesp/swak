@@ -4,6 +4,7 @@
 #include <functional>
 
 class QLabel;
+class QComboBox;
 namespace swak {
 struct SettingsPage {
     QString id;
@@ -17,7 +18,7 @@ struct SettingsPage {
 class SettingsDialog final : public QDialog {
     Q_OBJECT
 public:
-    SettingsDialog(QList<SettingsPage> pages, std::function<QString()> save, QWidget *parent);
+    SettingsDialog(QList<SettingsPage> pages, std::function<QString()> save, QWidget *parent, bool providerForm = false, bool newProvider = false);
     QJsonObject navigation() const;
     void restoreNavigation(const QJsonObject &values);
 private:
@@ -26,5 +27,7 @@ private:
     QList<QList<QWidget *>> editors_;
     std::function<QString()> save_;
     QLabel *status_;
+    bool newProvider_ = false;
+    QComboBox *providerChoice_ = nullptr;
 };
 }

@@ -1,6 +1,10 @@
 #include "core/interfaces.h"
 #include "core/tiles.h"
 #include <QHideEvent>
+#include <QLabel>
+#include <QDesktopServices>
+#include <QRegularExpression>
+#include <QUrl>
 #include "core/projection.h"
 #include "core/store.h"
 #include "core/preferences.h"
@@ -27,6 +31,19 @@ public:
         setAccessibleName(tr("Event map"));
         setAccessibleDescription(tr("Drag to pan. Use the wheel or plus and minus keys to zoom. Press Home to reset."));
         setMouseTracking(true);
+        attribution_ = new QLabel(this);
+        attribution_->setObjectName(QStringLiteral("mapAttribution"));
+        attribution_->setAlignment(Qt::AlignRight);
+        attribution_->setWordWrap(true);
+        attribution_->setTextFormat(Qt::RichText);
+        attribution_->setTextInteractionFlags(Qt::LinksAccessibleByMouse | Qt::LinksAccessibleByKeyboard);
+        attribution_->setFocusPolicy(Qt::StrongFocus);
+        connect(attribution_, &QLabel::linkActivated, this, [](const QString &link) {
+            const QUrl url(link, QUrl::StrictMode);
+            if (url.isValid() && !url.host().isEmpty() && url.userInfo().isEmpty()
+                && (url.scheme() == QStringLiteral("https") || url.scheme() == QStringLiteral("http")))
+                QDesktopServices::openUrl(url);
+        });
         std::sort(layers_.begin(), layers_.end(), [](const auto *a, const auto *b) { return a->order() < b->order(); });
         connect(&store_, &Store::changed, this, QOverload<>::of(&MapWidget::update));
         connect(&store_, &Store::selectionChanged, this, [this] {
@@ -58,6 +75,7 @@ public:
                 numberSetting(QStringLiteral("centerY"), tr("Vertical center (0–1)"), 0, 1, 6),
                 numberSetting(QStringLiteral("zoom"), tr("Zoom"), 0, 19, 2),
                 numberSetting(QStringLiteral("opacity"), tr("Provider opacity"), 0, 1, 2),
+                numberSetting(QStringLiteral("attributionOpacity"), tr("Attribution background opacity"), 0, 1, 2),
                 booleanSetting(QStringLiteral("smooth"), tr("Smooth image scaling")),
                 booleanSetting(QStringLiteral("antialias"), tr("Smooth vector edges"))};
     }
@@ -65,7 +83,7 @@ public:
     {
         return {{QStringLiteral("centerX"), view_.center.x()}, {QStringLiteral("centerY"), view_.center.y()},
                 {QStringLiteral("zoom"), view_.zoom}, {QStringLiteral("opacity"), opacity_},
-                {QStringLiteral("smooth"), smooth_}, {QStringLiteral("antialias"), antialias_}};
+                {QStringLiteral("attributionOpacity"), attributionOpacity_}, {QStringLiteral("smooth"), smooth_}, {QStringLiteral("antialias"), antialias_}};
     }
     void restorePreferences(const QJsonObject &values) override
     {
@@ -73,6 +91,7 @@ public:
                         preferenceNumber(values, QStringLiteral("centerY"), 0.5, 0, 1)};
         view_.zoom = preferenceNumber(values, QStringLiteral("zoom"), 1, 0, 19);
         opacity_ = preferenceNumber(values, QStringLiteral("opacity"), 1, 0, 1);
+        attributionOpacity_ = preferenceNumber(values, QStringLiteral("attributionOpacity"), 0.55, 0, 1);
         smooth_ = values.value(QStringLiteral("smooth")).toBool(true);
         antialias_ = values.value(QStringLiteral("antialias")).toBool(true);
         update();
@@ -109,15 +128,35 @@ protected:
         if (store_.rowCount() == 0) {
             painter.drawText(rect(), Qt::AlignCenter, tr("No events yet.\nGenerate an event or start a receiver."));
         }
+        attribution_->setVisible(!source.isEmpty());
         if (!source.isEmpty()) {
             QString credit = source.value(QStringLiteral("attribution")).toString();
-            if (source.value(QStringLiteral("ignoreTls")).toBool(false)) credit += tr("\nHTTPS certificate checks disabled");
-            if (!tiles_.status().isEmpty()) credit += QLatin1Char('\n') + tiles_.status();
-            const int textHeight = painter.fontMetrics().boundingRect(QRect(0, 0, width() - 24, 300), Qt::TextWordWrap, credit).height();
-            const QRect panel(0, height() - 38 - textHeight, width(), textHeight + 8);
-            painter.fillRect(panel, QColor("#10202c"));
-            painter.setPen(Qt::white);
-            painter.drawText(panel.adjusted(12, 4, -12, -4), Qt::TextWordWrap, credit);
+            static const QRegularExpression links(QStringLiteral("https?://[^\\s|<>]+"));
+            const auto match = links.match(credit);
+            const QUrl url(match.captured(), QUrl::StrictMode);
+            credit.remove(links);
+            credit = credit.trimmed();
+            while (credit.endsWith(QLatin1Char('|'))) { credit.chop(1); credit = credit.trimmed(); }
+            int naturalWidth = attribution_->fontMetrics().horizontalAdvance(credit);
+            QString text = credit.toHtmlEscaped();
+            const bool linked = match.hasMatch() && url.isValid() && !url.host().isEmpty() && url.userInfo().isEmpty();
+            if (linked) text = QStringLiteral("<a style=\"color: white\" href=\"%1\">%2</a>")
+                .arg(url.toString(QUrl::FullyEncoded).toHtmlEscaped(), text);
+            if (source.value(QStringLiteral("ignoreTls")).toBool(false)) {
+                const auto warning = tr("HTTPS certificate checks disabled");
+                text += QStringLiteral("<br>") + warning.toHtmlEscaped();
+                naturalWidth = std::max(naturalWidth, attribution_->fontMetrics().horizontalAdvance(warning));
+            }
+            if (!tiles_.status().isEmpty()) text += QStringLiteral("<br>") + tiles_.status().toHtmlEscaped();
+            attribution_->setText(text);
+            attribution_->setToolTip(linked ? url.toDisplayString() : QString{});
+            const auto style = QStringLiteral("QLabel { color: white; background-color: rgba(16,32,44,%1); padding: 4px; }")
+                .arg(qRound(attributionOpacity_ * 255));
+            if (attribution_->styleSheet() != style) attribution_->setStyleSheet(style);
+            naturalWidth = std::max(naturalWidth, attribution_->fontMetrics().horizontalAdvance(tiles_.status()));
+            const int panelWidth = std::min(width() - 24, naturalWidth + 16);
+            const int panelHeight = attribution_->heightForWidth(panelWidth);
+            attribution_->setGeometry(width() - 12 - panelWidth, height() - 34 - panelHeight, panelWidth, panelHeight);
         }
         if (hasFocus()) {
             painter.setPen(QPen(QColor("#5fd6ff"), 2));
@@ -198,6 +237,8 @@ private:
     }
     MapSources *sources_ = nullptr;
     TileRenderer tiles_;
+    QLabel *attribution_;
+    double attributionOpacity_ = 0.55;
     double opacity_ = 1;
     bool smooth_ = true;
     bool antialias_ = true;

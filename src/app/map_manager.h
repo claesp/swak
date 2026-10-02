@@ -2,7 +2,6 @@
 #include "core/maps.h"
 #include <QDialog>
 class QListWidget;
-class QComboBox;
 class QLabel;
 namespace swak {
 class MapManager final : public QDialog {
@@ -14,7 +13,7 @@ private:
     void edit();
     MapSources &sources_;
     QListWidget *list_;
-    QComboBox *formats_;
+
     QLabel *status_;
 };
 }

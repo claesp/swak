@@ -1,13 +1,13 @@
 #include "app/map_manager.h"
 #include "app/settings_dialog.h"
 #include <QListWidget>
-#include <QComboBox>
 #include <QLabel>
 #include <QPushButton>
 #include <QDialogButtonBox>
 #include <QVBoxLayout>
 #include <QCollator>
 #include <algorithm>
+#include <QUuid>
 namespace swak {
 MapManager::MapManager(MapSources &sources, QWidget *parent) : QDialog(parent), sources_(sources)
 {
@@ -23,14 +23,6 @@ MapManager::MapManager(MapSources &sources, QWidget *parent) : QDialog(parent), 
     list_->setAccessibleName(tr("Map providers"));
     layout->addWidget(list_);
     auto *row = new QHBoxLayout;
-    formats_ = new QComboBox(this);
-    formats_->setObjectName(QStringLiteral("mapProviderFormats"));
-    formats_->setAccessibleName(tr("Provider format"));
-    auto providers = sources_.providers();
-    const QCollator collator;
-    std::sort(providers.begin(), providers.end(), [&collator](const auto *a, const auto *b) { return collator.compare(a->mapName(), b->mapName()) < 0; });
-    for (const auto *provider : providers) formats_->addItem(provider->mapName(), provider->mapId());
-    row->addWidget(formats_, 1);
     auto *add = new QPushButton(tr("Add"), this);
     add->setObjectName(QStringLiteral("addMapProvider"));
     row->addWidget(add);
@@ -56,10 +48,26 @@ MapManager::MapManager(MapSources &sources, QWidget *parent) : QDialog(parent), 
     layout->addWidget(buttons);
     connect(&sources_, &MapSources::changed, this, &MapManager::refresh);
     connect(add, &QPushButton::clicked, this, [this] {
-        const auto id = sources_.add(formats_->currentData().toString());
-        for (int i = 0; i < list_->count(); ++i) if (list_->item(i)->data(Qt::UserRole).toString() == id) list_->setCurrentRow(i);
-        if (!id.isEmpty()) edit();
-        else status_->setText(tr("No provider was added. Select an available format and keep at most 32 entries."));
+        if (sources_.sources().size() >= 32 || sources_.providers().isEmpty()) {
+            status_->setText(tr("No provider was added. An available format and fewer than 32 entries are required."));
+            return;
+        }
+        const auto id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        QList<SettingsPage> pages;
+        for (auto *provider : sources_.providers()) {
+            auto values = provider->defaults();
+            values.insert(QStringLiteral("format"), provider->mapId());
+            for (const auto &field : provider->fields())
+                if (field.kind == SettingField::Kind::Text) values.insert(field.path, QString{});
+            pages.append({provider->mapId(), provider->mapName(), provider->fields(), values,
+                [provider](const QJsonObject &value) { return provider->validate(value); },
+                [this, id](const QJsonObject &value) { sources_.put(id, value); }});
+        }
+        SettingsDialog dialog(pages, [] { return QString{}; }, this, true, true);
+        dialog.setWindowTitle(tr("Add provider"));
+        if (dialog.exec() == QDialog::Accepted)
+            for (int i = 0; i < list_->count(); ++i)
+                if (list_->item(i)->data(Qt::UserRole).toString() == id) list_->setCurrentRow(i);
     });
     connect(editButton, &QPushButton::clicked, this, &MapManager::edit);
     connect(list_, &QListWidget::itemDoubleClicked, this, [this] { edit(); });
@@ -109,7 +117,8 @@ void MapManager::edit()
     if (!provider) { status_->setText(tr("Install the missing provider plugin to edit this entry.")); return; }
     SettingsDialog dialog({{id, source.value(QStringLiteral("name")).toString(), provider->fields(), source,
         [provider](const QJsonObject &values) { return provider->validate(values); },
-        [this, id](const QJsonObject &values) { sources_.put(id, values); }}}, [] { return QString{}; }, this);
+        [this, id](const QJsonObject &values) { sources_.put(id, values); }}}, [] { return QString{}; }, this, true);
+    dialog.setWindowTitle(tr("Edit provider"));
     dialog.exec();
 }
 }

@@ -78,9 +78,8 @@ private slots:
     void portableProviders()
     {
         MapSources sources(QPluginLoader::staticInstances());
-        QVERIFY(sources.add(QStringLiteral("missing.format")).isEmpty());
-        const auto id = sources.add(QStringLiteral("org.swak.xyz"));
-        QVERIFY(!id.isEmpty());
+        const auto id = QStringLiteral("custom.xyz");
+        QVERIFY(sources.put(id, sources.sources().value(QStringLiteral("org.swak.xyz")).toObject()).isEmpty());
         sources.select(id);
         QVERIFY(!sources.activeSource().isEmpty());
         const auto saved = sources.savePreferences();

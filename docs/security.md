@@ -13,7 +13,7 @@ The application applies these input limits:
 
 The parser rejects document type declarations, entity references, processing instructions, null bytes, and unsupported encodings. It rejects duplicate point, detail, and contact elements. Unknown elements are accepted only within bounded detail content and are then discarded.
 
-Text fields exclude control, format, and surrogate characters. This restriction excludes supplementary Unicode characters, including many emoji. The interface presents external text as plain text, not HTML.
+Text fields exclude control, format, and surrogate characters. This restriction excludes supplementary Unicode characters, including many emoji. The interface presents external text as plain text. The attribution link escapes all source text before it creates HTML. User actions can open HTTP or HTTPS license links through the default browser. Links with credentials or other schemes cannot open.
 
 Coordinates must be finite decimal numbers within geographic ranges. Altitude must lie between minus 100 million and plus 100 million meters. Horizontal and vertical uncertainty must lie between zero and 100 million meters.
 

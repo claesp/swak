@@ -43,7 +43,6 @@ public:
     QString put(const QString &id, const QJsonObject &source);
     void remove(const QString &id);
     void select(const QString &id);
-    QString add(const QString &format);
     bool networkEnabled() const { return values_.value(QStringLiteral("network")).toBool(false); }
 signals:
     void changed();

@@ -3,6 +3,7 @@
 #include "core/maps.h"
 #include "tile_server.h"
 #include <QStandardPaths>
+#include <QDesktopServices>
 #include "swak/version.h"
 #include "core/logging.h"
 #include "app/settings_dialog.h"
@@ -11,6 +12,7 @@
 #include <QComboBox>
 #include <QListWidget>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QTabWidget>
 #include <QCollator>
 #include <QScopeGuard>
@@ -46,6 +48,14 @@
 #include <QFile>
 #include <QUdpSocket>
 #include <QLabel>
+
+class BrowserCapture final : public QObject {
+    Q_OBJECT
+public:
+    QUrl opened;
+public slots:
+    void open(const QUrl &url) { opened = url; }
+};
 
 class ExampleSettings final : public QObject, public swak::SettingsParticipant {
 public:
@@ -130,6 +140,20 @@ private slots:
                 if (frame.pixelColor(frame.width() / 2 + dx, frame.height() / 2 + dy) != QColor("#eb426a")) return false;
             return true;
         }, 5000));
+        auto *credit = map->findChild<QLabel *>(QStringLiteral("mapAttribution"));
+        QVERIFY(credit);
+        QCOMPARE(credit->alignment(), Qt::AlignRight);
+        QVERIFY(credit->text().contains(QStringLiteral("href=")));
+        QVERIFY(!credit->text().contains(QStringLiteral("| https")));
+        QVERIFY(credit->styleSheet().contains(QStringLiteral("140")));
+        BrowserCapture browser;
+        QDesktopServices::setUrlHandler(QStringLiteral("https"), &browser, "open");
+        const auto resetHandler = qScopeGuard([] { QDesktopServices::unsetUrlHandler(QStringLiteral("https")); });
+        credit->setFocus();
+        QTest::keyClick(credit, Qt::Key_Tab);
+        QTest::keyClick(credit, Qt::Key_Return);
+        QCOMPARE(browser.opened, QUrl(QStringLiteral("https://www.openstreetmap.org/copyright")));
+        QVERIFY(window.screen()->grabWindow(window.winId()).save(QStringLiteral("map-attribution-smoke.png")));
         QVERIFY(map->grabFramebuffer().save(QStringLiteral("provider-map-smoke.png")));
         window.findChild<QAction *>(QStringLiteral("mapProvidersAction"))->trigger();
         auto *dialog = window.findChild<swak::MapManager *>();
@@ -140,8 +164,34 @@ private slots:
         QVERIFY(dialog->grab().save(QStringLiteral("map-providers-smoke.png")));
         dialog->findChild<QPushButton *>(QStringLiteral("useMapProvider"))->click();
         QCOMPARE(sources->activeId(), id);
+        QVERIFY(!dialog->findChild<QComboBox *>());
         QTimer::singleShot(0, dialog, [dialog] {
-            if (auto *editor = dialog->findChild<swak::SettingsDialog *>()) editor->reject();
+            auto *editor = dialog->findChild<swak::SettingsDialog *>();
+            QVERIFY(editor);
+            const auto close = qScopeGuard([editor] { editor->reject(); });
+            QVERIFY(!editor->findChild<QTabWidget *>());
+            for (auto *field : editor->findChildren<QLineEdit *>())
+                if (field->objectName().contains(QLatin1Char('/'))) QVERIFY(field->text().isEmpty());
+            editor->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+            QVERIFY(editor->isVisible());
+            QVERIFY(!editor->findChild<QLabel *>(QStringLiteral("settingsStatus"))->text().isEmpty());
+            QVERIFY(QTest::qWaitForWindowExposed(editor));
+            QVERIFY(editor->grab().save(QStringLiteral("add-provider-smoke.png")));
+        });
+        dialog->findChild<QPushButton *>(QStringLiteral("addMapProvider"))->click();
+        QCOMPARE(list->count(), 3);
+        QTimer::singleShot(0, dialog, [dialog, id, source] {
+            auto *editor = dialog->findChild<swak::SettingsDialog *>();
+            QVERIFY(editor);
+            const auto close = qScopeGuard([editor] { if (editor->isVisible()) editor->reject(); });
+            auto *formats = editor->findChild<QComboBox *>(QStringLiteral("mapProviderFormats"));
+            for (int i = 0; i < formats->count(); ++i) {
+                formats->setCurrentIndex(i);
+                if (editor->findChild<QLineEdit *>(id + QStringLiteral("/name"))->isVisible()) break;
+            }
+            for (const auto &key : {QStringLiteral("name"), QStringLiteral("endpoint"), QStringLiteral("attribution")})
+                editor->findChild<QLineEdit *>(id + '/' + key)->setText(source.value(key).toString());
+            editor->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
         });
         dialog->findChild<QPushButton *>(QStringLiteral("addMapProvider"))->click();
         QCOMPARE(list->count(), 4);
@@ -151,6 +201,13 @@ private slots:
         QTimer::singleShot(0, dialog, [dialog, id] {
             auto *editor = dialog->findChild<swak::SettingsDialog *>();
             if (!editor) return;
+            const auto close = qScopeGuard([editor] { if (editor->isVisible()) editor->reject(); });
+            QVERIFY(!editor->findChild<QTabWidget *>());
+            for (auto *label : editor->findChildren<QLabel *>())
+                if (label->text() == QStringLiteral("Attribution and license URL")) QVERIFY(!label->wordWrap());
+            QVERIFY(QTest::qWaitForWindowExposed(editor));
+            QVERIFY(QTest::qWaitFor([editor] { return editor->findChild<QScrollArea *>()->horizontalScrollBar()->maximum() == 0; }));
+            QVERIFY(editor->grab().save(QStringLiteral("edit-provider-smoke.png")));
             editor->findChild<QLineEdit *>(id + QStringLiteral("/name"))->setText(QStringLiteral("Local test map"));
             editor->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
         });
