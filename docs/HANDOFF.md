@@ -21,7 +21,7 @@ Preserve these development requirements:
 - Keep the application small, fast, and secure.
 - Add external dependencies only with a documented reason.
 
-The Qt skill is at `/home/clpe/.codex/skills/qt-linux-gui/SKILL.md`. The Simple English skill was supplied in the conversation and is also available through the installed plugin. Use the skill locations available in the next session if plugin paths change.
+The Qt skill is at `/home/clpe/.codex/skills/qt-linux-gui/SKILL.md` for Codex. Claude Code uses an adapted copy at `/home/clpe/.claude/skills/qt-linux-gui/SKILL.md`. That copy omits the Codex interface file and adds Claude Code guidance for native GUI inspection. The Simple English skill was supplied in the conversation and is also available through the installed plugin. Claude Code does not have the Simple English skill. Use the skill locations available in the next session if plugin paths change.
 
 # Current implementation
 
