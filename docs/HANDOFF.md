@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest review: [Qt skill review, October 2](review-2026-10-02.md). It records three open defects in provider recovery, provider save reporting, and coordinate sorting. Application code remains at `2d904ab`. The review includes fresh sanitizer, static-analysis, and native GUI results. Later sections below contain historical implementation snapshots.
+Latest review: [Claude Code Qt skill review, October 2](review-2026-10-02-claude.md). It adds five P2 defects in expiring selections, preference save errors, receiver logging, failed tiles, and URL-only attribution. It also lists P3 findings. The three defects in the [earlier review](review-2026-10-02.md) remain open. Application code remains at `2d904ab`. Later sections below contain historical implementation snapshots.
 
 This handoff records the project state on October 2, 2026. The repository is `/home/clpe/code/swak`, and the branch is `main`.
 
@@ -135,7 +135,7 @@ Use `python3 tools/quality.py quick` for sanitizer tests. Other modes are `gui`,
 
 The quick suite, three runner tests, static analysis, native coverage, and release build passed. A 60-second headless soak passed. A ten-second native soak passed its assertions but failed leak detection with the previously documented Mesa allocations. Coverage reached 87.7 percent of source lines and 89.5 percent of functions. Read `docs/testing.md` for remaining paths and measurements. Multi-hour stability remains untested.
 
-Cppcheck 2.17.1 and its XML library were extracted under `/tmp/swak-quality-tools/root` for this session. This temporary installation is not part of the application. A normal Debian development host can install Cppcheck through its package manager. `AGENTS.md` now requires regular diagnostics, coverage review, dead-code review, and resilient error handling.
+Cppcheck 2.17.1 and its XML library were extracted under `/tmp/swak-quality-tools/root` for this session. This temporary installation is not part of the application. Add `/tmp/swak-quality-tools/root/usr/bin` to `PATH` and `/tmp/swak-quality-tools/root/usr/lib/x86_64-linux-gnu` to `LD_LIBRARY_PATH` before the analysis mode. A normal Debian development host can install Cppcheck through its package manager. `AGENTS.md` now requires regular diagnostics, coverage review, dead-code review, and resilient error handling.
 
 # Settings and logging added October 2
 
