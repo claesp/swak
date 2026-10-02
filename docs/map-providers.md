@@ -30,7 +30,7 @@ Open Tools > Map Providers. The list contains registered provider presets and sa
 
 1. Select a source and select Edit to change its configuration.
 2. Select Use provider to enable online requests for that source.
-3. Select Use offline map to stop requests and show the schematic reference map.
+3. Select Clear selection to stop requests and show the plain green background.
 
 Select Add to open a blank provider form. Select the format in that form. Enter the source details, then select OK. Cancel discards the form. Remove deletes the selected source configuration. Changes save through the portable preferences file. An absent plugin does not erase its source configuration. Online maps start disabled in a fresh profile.
 

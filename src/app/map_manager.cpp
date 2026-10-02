@@ -43,9 +43,9 @@ MapManager::MapManager(MapSources &sources, QWidget *parent, std::function<QStri
     status_->setWordWrap(true);
     layout->addWidget(status_);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
-    auto *offline = buttons->addButton(tr("Use offline map"), QDialogButtonBox::ActionRole);
-    offline->setObjectName(QStringLiteral("offlineMap"));
-    connect(offline, &QPushButton::clicked, this, [this] { sources_.select({}); });
+    auto *clearProvider = buttons->addButton(tr("Clear selection"), QDialogButtonBox::ActionRole);
+    clearProvider->setObjectName(QStringLiteral("clearMapProvider"));
+    connect(clearProvider, &QPushButton::clicked, this, [this] { sources_.select({}); });
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::close);
     layout->addWidget(buttons);
     connect(&sources_, &MapSources::changed, this, &MapManager::refresh);
@@ -113,7 +113,7 @@ void MapManager::refresh()
     }
     if (!list_->currentItem() && list_->count()) list_->setCurrentRow(0);
     const auto source = sources_.activeSource();
-    status_->setText(source.isEmpty() ? tr("Offline reference map is active.") : tr("Active: %1%2").arg(source.value(QStringLiteral("name")).toString(),
+    status_->setText(source.isEmpty() ? tr("No map provider selected.") : tr("Active: %1%2").arg(source.value(QStringLiteral("name")).toString(),
         source.value(QStringLiteral("ignoreTls")).toBool() ? tr(" | Certificate checks are disabled.") : QString{}));
 }
 void MapManager::edit()

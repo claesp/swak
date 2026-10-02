@@ -11,6 +11,7 @@
 #include <memory>
 class QPainter;
 namespace swak {
+inline constexpr QRgb MapBackgroundRgb = qRgb(48, 61, 43);
 QImage decodeMapTile(const QByteArray &bytes);
 struct TilePlacement { QString key; int z; int x; int y; QRectF rectangle; };
 QList<TilePlacement> visibleTiles(const Viewport &view, int minimumZoom, int maximumZoom);
@@ -20,7 +21,7 @@ public:
     explicit TileRenderer(QObject *parent = nullptr);
     ~TileRenderer() override;
     void setSource(MapProvider *provider, const QJsonObject &source);
-    void paint(QPainter &painter, const Viewport &view, double opacity, bool smooth);
+    void paint(QPainter &painter, const Viewport &view, double opacity, bool smooth, double missingOpacity = 0.2);
     const QString &status() const { return status_; }
     // Network tests inspect the request bound and cancellation.
     // cppcheck-suppress unusedFunction

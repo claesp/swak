@@ -122,11 +122,11 @@ The application logging controls classify this message as Warning severity with 
 
 # Online maps
 
-Open Tools > Map Providers to select or configure an online map. A fresh profile uses the offline reference map. File > Settings contains source and rendering controls. Read [Map providers](map-providers.md) for sources, formats, attribution, and HTTPS behavior.
+Open Tools > Map Providers to select or configure an online map. A fresh profile has no map provider and shows a plain green background. File > Settings contains source and rendering controls. Read [Map providers](map-providers.md) for sources, formats, attribution, and HTTPS behavior.
 
 # Internal events and map selection
 
-The map toolbar button selects an online provider or the offline map. Unavailable providers remain visible but disabled. Map Providers opens the manager from that dropdown.
+The map toolbar button selects an online provider or clears the selection. Unavailable providers remain visible but disabled. Map Providers opens the manager from that dropdown.
 
 The bottom status field shows the latest internal event for three seconds. New events restart the timer. Errors use red text. Tools > Plugins > Internal events > Show pane opens the retained history. Clear removes its rows and pending entries.
 
@@ -141,3 +141,14 @@ A lock permission error permits read-only use of an existing valid profile. A pr
 Invalid map providers remain in the profile and cannot fetch tiles. Other valid providers remain usable. Correct the invalid entry in Map Providers.
 
 The receiver updates its pane for each batch. Internal events contain at most one traffic summary each second. A later clean batch clears the pane error. Summaries classify new rejections without retaining an old warning forever.
+
+
+# Map background and zoom
+
+The map uses NATO-style green (`#303D2B`) beneath its tiles. No map provider clears the selection. The old schematic map is removed.
+
+Each missing tile shows faint MISSING TILE text and a faint edge. File > Settings > Map controls Missing tile marker opacity. A loaded tile replaces its marker. Missing providers and unavailable tiles use the same background.
+
+Zoom uses whole levels within the active provider minimum and maximum. Each wheel step and plus or minus key changes one level. Small wheel movements accumulate until they reach a step. Home resets the center and selects level 1, within the provider limits.
+
+Provider changes and restored profiles also apply those limits. With no valid provider, whole levels 0 through 19 remain available. Old fractional values round to the nearest whole level.

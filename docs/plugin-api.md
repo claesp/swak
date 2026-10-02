@@ -45,7 +45,7 @@ The host owns pane placement, visibility actions, and layout persistence. Plugin
 | Manifest directory | Name | Roles |
 | --- | --- | --- |
 | `src/plugins/cot` | Cursor-on-Target XML | Codec |
-| `src/plugins/basemap` | Offline reference map | Map layer |
+| `src/plugins/basemap` | Map background | Map layer |
 | `src/plugins/map` | OpenGL map | View and toolbar |
 | `src/plugins/tracks` | CoT Events | Map layer, tool, menu, and toolbar |
 | `src/plugins/editor` | CoT Event Generator | Tool |

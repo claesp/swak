@@ -1,6 +1,8 @@
 # Session handoff
 
-Latest implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
+Latest implementation: See “Map background and whole zoom levels” below. The release includes these changes.
+
+Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
 Latest review: [Claude Code Qt skill review, October 2](review-2026-10-02-claude.md). It adds five P2 defects in expiring selections, preference save errors, receiver logging, failed tiles, and URL-only attribution. It also lists P3 findings. The three defects in the [earlier review](review-2026-10-02.md) remain open. Application code remains at `2d904ab`. Later sections below contain historical implementation snapshots.
 
@@ -226,3 +228,19 @@ Static analysis passed in `build/quality/20261002-131004-analyze-2`. Final sanit
 The native GUI sanitizer run passed 25 functional cases but failed on the existing Mesa leak of 240732 bytes in 1073 allocations. Its report is `build/quality/20261002-130808-gui-93592`. No application memory fault appeared in that run.
 
 A 60-second sanitizer workload passed in `build/quality/20261002-131330-soak-95009`. It completed 912 cycles, with 6893568 bytes of peak growth after warmup, a 171-millisecond maximum heartbeat gap, and 0.028 idle CPU seconds. The first attempt exposed an incorrect test assumption about mutated expiry times. The test now expires events after the latest accepted expiry time. It does not change application expiry behavior. Two-hour workloads, native Wayland, and hardware GPU sessions remain untested in this pass.
+
+# Map background and whole zoom levels
+
+The October 2 update removes the schematic offline map. The background uses NATO-style green, `#303D2B`. Each missing tile shows faint MISSING TILE text and a faint edge. The Map configuration controls marker opacity. The provider dropdown contains No map provider to clear the selection. The manager uses Clear selection.
+
+The background plugin keeps its identifier and manifest entry point for compatibility. Its name changes to Map background. The tile renderer uses the same green as the OpenGL clear color. No external dependency was added.
+
+Zoom now uses whole levels within the selected provider limits. Wheel input accumulates partial steps. Keys, Home, provider changes, and restored preferences apply the same limits. Old fractional values round to the nearest whole level. Without a valid provider, levels 0 through 19 remain available.
+
+Debug and release builds passed with Qt 6.8.2 and GCC 14.2. The release executable is `build/release/swak`. Six sanitizer suites passed in `build/quality/20261002-142842-quick-109181`. Static analysis passed in `build/quality/20261002-143111-analyze-2`.
+
+Coverage passed six suites and all 30 native GUI cases in `build/quality/20261002-142950-coverage-109585`. Tests cover marker appearance, transparent markers, restored fractional zoom, provider changes, and input limits. The tile renderer reached 203 of 203 executable lines. The background plugin reached six of six lines. The map plugin reached 243 of 280 lines. Remaining map gaps include mouse controls, arrow keys, and wheel gesture phases. Line coverage does not establish complete input coverage.
+
+Focused native tests passed at 200 percent scaling. Screenshots in `build/map-background/hidpi` show the faint tile markers against the green background. All 30 native GUI cases also passed under sanitizers. LeakSanitizer then reported the existing Mesa leak of 240732 bytes in 1073 allocations. The report is `build/quality/20261002-143110-gui-110357`. This native leak test remains failed.
+
+A 60-second sanitizer workload passed in `build/quality/20261002-143247-soak-110973`. It completed 951 cycles. Peak memory growth after warmup was 6438912 bytes. The maximum heartbeat gap was 60 milliseconds. Idle CPU use was 0.007 seconds. Multi-hour sessions, hardware GPUs, native Wayland, and the minimum Qt version remain untested in this pass.

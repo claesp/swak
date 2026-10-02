@@ -66,6 +66,8 @@ public:
         sources_ = sources;
         const auto apply = [this] {
             const auto source = sources_->activeSource();
+            normalizeZoom();
+            wheelRemainder_ = 0;
             tiles_.setSource(sources_->provider(source), source);
             update();
         };
@@ -78,7 +80,8 @@ public:
     {
         return {numberSetting(QStringLiteral("centerX"), tr("Horizontal center (0–1)"), 0, 1, 6),
                 numberSetting(QStringLiteral("centerY"), tr("Vertical center (0–1)"), 0, 1, 6),
-                numberSetting(QStringLiteral("zoom"), tr("Zoom"), 0, 19, 2),
+                numberSetting(QStringLiteral("zoom"), tr("Zoom"), zoomLimits().first, zoomLimits().second),
+                numberSetting(QStringLiteral("missingOpacity"), tr("Missing tile marker opacity"), 0, 1, 2),
                 numberSetting(QStringLiteral("opacity"), tr("Provider opacity"), 0, 1, 2),
                 numberSetting(QStringLiteral("attributionOpacity"), tr("Attribution background opacity"), 0, 1, 2),
                 booleanSetting(QStringLiteral("smooth"), tr("Smooth image scaling")),
@@ -88,6 +91,7 @@ public:
     {
         return {{QStringLiteral("centerX"), view_.center.x()}, {QStringLiteral("centerY"), view_.center.y()},
                 {QStringLiteral("zoom"), view_.zoom}, {QStringLiteral("opacity"), opacity_},
+                {QStringLiteral("missingOpacity"), missingOpacity_},
                 {QStringLiteral("attributionOpacity"), attributionOpacity_}, {QStringLiteral("smooth"), smooth_}, {QStringLiteral("antialias"), antialias_}};
     }
     void restorePreferences(const QJsonObject &values) override
@@ -95,6 +99,9 @@ public:
         view_.center = {preferenceNumber(values, QStringLiteral("centerX"), 0.5, 0, 1),
                         preferenceNumber(values, QStringLiteral("centerY"), 0.5, 0, 1)};
         view_.zoom = preferenceNumber(values, QStringLiteral("zoom"), 1, 0, 19);
+        normalizeZoom();
+        wheelRemainder_ = 0;
+        missingOpacity_ = preferenceNumber(values, QStringLiteral("missingOpacity"), 0.2, 0, 1);
         opacity_ = preferenceNumber(values, QStringLiteral("opacity"), 1, 0, 1);
         attributionOpacity_ = preferenceNumber(values, QStringLiteral("attributionOpacity"), 0.55, 0, 1);
         smooth_ = values.value(QStringLiteral("smooth")).toBool(true);
@@ -106,33 +113,31 @@ protected:
     void initializeGL() override { initializeOpenGLFunctions(); }
     void paintGL() override
     {
-        glClearColor(0.04F, 0.09F, 0.13F, 1.0F);
+        glClearColor(static_cast<float>(qRed(MapBackgroundRgb)) / 255,
+            static_cast<float>(qGreen(MapBackgroundRgb)) / 255, static_cast<float>(qBlue(MapBackgroundRgb)) / 255, 1.0F);
         glClear(GL_COLOR_BUFFER_BIT);
         view_.size = size();
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, antialias_);
         bool tilesPainted = false;
         for (const auto *layer : layers_) {
-            if (!tilesPainted && layer->order() > 0) { tiles_.paint(painter, view_, opacity_, smooth_); tilesPainted = true; }
+            if (!tilesPainted && layer->order() > 0) { tiles_.paint(painter, view_, opacity_, smooth_, missingOpacity_); tilesPainted = true; }
             painter.save();
             layer->paint(painter, view_, store_);
             painter.restore();
         }
-        if (!tilesPainted) tiles_.paint(painter, view_, opacity_, smooth_);
+        if (!tilesPainted) tiles_.paint(painter, view_, opacity_, smooth_, missingOpacity_);
         const auto source = sources_ ? sources_->activeSource() : QJsonObject{};
         painter.setPen(QColor("#c7d7e5"));
         painter.drawText(QRect(16, 12, width() - 32, 44), Qt::AlignLeft | Qt::AlignTop,
-                         (source.isEmpty() ? tr("OFFLINE MAP | Schematic land outlines") : source.value(QStringLiteral("name")).toString()) +
+                         (source.isEmpty() ? tr("No map provider selected") : source.value(QStringLiteral("name")).toString()) +
                          tr("\nDrag to pan · Scroll to zoom · Home to reset"));
         const QPointF coord = view_.coordinate(cursor_);
         const bool onWorld = coord.x() >= -180 && coord.x() <= 180 && coord.y() >= -85.051129 && coord.y() <= 85.051129;
         const QString position = onWorld ? tr("%1°, %2°").arg(coord.y(), 0, 'f', 4).arg(coord.x(), 0, 'f', 4)
                                          : tr("Pointer outside map");
         painter.drawText(QRect(16, height() - 30, width() - 32, 22), Qt::AlignLeft | Qt::AlignVCenter,
-                         tr("%1  |  Zoom %2  |  %3 events").arg(position).arg(view_.zoom, 0, 'f', 1).arg(store_.rowCount()));
-        if (store_.rowCount() == 0) {
-            painter.drawText(rect(), Qt::AlignCenter, tr("No events yet.\nGenerate an event or start a receiver."));
-        }
+                         tr("%1  |  Zoom %2  |  %3 events").arg(position).arg(view_.zoom, 0, 'f', 0).arg(store_.rowCount()));
         attribution_->setVisible(!source.isEmpty());
         if (!source.isEmpty()) {
             QString credit = source.value(QStringLiteral("attribution")).toString();
@@ -227,15 +232,21 @@ protected:
     }
     void wheelEvent(QWheelEvent *event) override
     {
-        zoomAt(event->position(), event->angleDelta().y() / 480.0);
+        if (event->phase() == Qt::ScrollBegin) wheelRemainder_ = 0;
+        const int delta = event->angleDelta().y() != 0 ? event->angleDelta().y() : event->pixelDelta().y();
+        wheelRemainder_ += std::clamp(delta, -1200, 1200);
+        const int steps = wheelRemainder_ / 120;
+        wheelRemainder_ %= 120;
+        if (steps) zoomAt(event->position(), steps);
+        if (event->phase() == Qt::ScrollEnd) wheelRemainder_ = 0;
         event->accept();
     }
     void keyPressEvent(QKeyEvent *event) override
     {
         switch (event->key()) {
-        case Qt::Key_Plus: case Qt::Key_Equal: zoomAt(rect().center(), 0.5); break;
-        case Qt::Key_Minus: zoomAt(rect().center(), -0.5); break;
-        case Qt::Key_Home: view_.center = {0.5, 0.5}; view_.zoom = 1; break;
+        case Qt::Key_Plus: case Qt::Key_Equal: zoomAt(rect().center(), 1); break;
+        case Qt::Key_Minus: zoomAt(rect().center(), -1); break;
+        case Qt::Key_Home: view_.center = {0.5, 0.5}; view_.zoom = 1; normalizeZoom(); wheelRemainder_ = 0; break;
         case Qt::Key_Left: view_.center.rx() -= 64 / view_.scale(); break;
         case Qt::Key_Right: view_.center.rx() += 64 / view_.scale(); break;
         case Qt::Key_Up: view_.center.ry() -= 64 / view_.scale(); break;
@@ -246,16 +257,28 @@ protected:
         update();
     }
 private:
+    std::pair<int, int> zoomLimits() const
+    {
+        const auto source = sources_ ? sources_->activeSource() : QJsonObject{};
+        return source.isEmpty() ? std::pair{0, 19} : std::pair{source.value(QStringLiteral("minZoom")).toInt(),
+            source.value(QStringLiteral("maxZoom")).toInt()};
+    }
+    void normalizeZoom()
+    {
+        const auto [minimum, maximum] = zoomLimits();
+        view_.zoom = std::clamp(std::round(view_.zoom), static_cast<double>(minimum), static_cast<double>(maximum));
+    }
     void clampCenter()
     {
         view_.center.setX(std::clamp(view_.center.x(), 0.0, 1.0));
         view_.center.setY(std::clamp(view_.center.y(), 0.0, 1.0));
     }
-    void zoomAt(QPointF anchor, double delta)
+    void zoomAt(QPointF anchor, int delta)
     {
         const QPointF offset = anchor - QPointF(width() / 2.0, height() / 2.0);
         const QPointF before = view_.center + offset / view_.scale();
-        view_.zoom = std::clamp(view_.zoom + delta, 0.0, 19.0);
+        view_.zoom += delta;
+        normalizeZoom();
         view_.center = before - offset / view_.scale();
         clampCenter();
         update();
@@ -265,6 +288,8 @@ private:
     QLabel *attribution_;
     double attributionOpacity_ = 0.55;
     double opacity_ = 1;
+    double missingOpacity_ = 0.2;
+    int wheelRemainder_ = 0;
     bool smooth_ = true;
     bool antialias_ = true;
     Store &store_;
@@ -303,15 +328,15 @@ public:
         toolbar.addWidget(mapButton);
         const auto updateMapButton = [mapButton, mapSources] {
             const auto source = mapSources->activeSource();
-            mapButton->setText(source.isEmpty() ? tr("Offline map") : source.value(QStringLiteral("name")).toString());
+            mapButton->setText(source.isEmpty() ? tr("No map provider") : source.value(QStringLiteral("name")).toString());
         };
         connect(mapSources, &MapSources::changed, mapButton, updateMapButton);
         connect(mapMenu, &QMenu::aboutToShow, mapMenu, [mapMenu, mapSources] {
             mapMenu->clear();
-            auto *offline = mapMenu->addAction(tr("Offline map"));
-            offline->setCheckable(true);
-            offline->setChecked(mapSources->activeSource().isEmpty());
-            connect(offline, &QAction::triggered, mapSources, [mapSources] { mapSources->select({}); });
+            auto *clearProvider = mapMenu->addAction(tr("No map provider"));
+            clearProvider->setCheckable(true);
+            clearProvider->setChecked(mapSources->activeSource().isEmpty());
+            connect(clearProvider, &QAction::triggered, mapSources, [mapSources] { mapSources->select({}); });
             const auto sources = mapSources->sources();
             auto ids = sources.keys();
             const QCollator collator;

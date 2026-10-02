@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "id": "org.swak.basemap",
-  "name": "Offline reference map",
-  "description": "Draw schematic land outlines and a coordinate grid.",
+  "name": "Map background",
+  "description": "Draw the plain green map background.",
   "version": "0.1.0",
   "apiVersion": 2,
   "entryPoint": "BasemapPlugin",

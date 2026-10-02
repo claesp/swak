@@ -3,6 +3,7 @@
 #include "tile_server.h"
 #include <QPluginLoader>
 #include <QPainter>
+#include <QGuiApplication>
 #include <QSignalSpy>
 #include <QStandardPaths>
 #include <QTemporaryDir>
@@ -31,6 +32,32 @@ class MapTest final : public QObject {
         renderer.paint(painter, Viewport{QSizeF(256, 256), QPointF(0.5, 0.5), 0}, 1, false);
     }
 private slots:
+    void missingTiles()
+    {
+        TileRenderer renderer;
+        QImage canvas(512, 512, QImage::Format_RGB32);
+        canvas.fill(Qt::black);
+        const Viewport view{QSizeF(512, 512), QPointF(0.5, 0.5), 1};
+        { QPainter painter(&canvas); renderer.paint(painter, view, 1, false); }
+        QCOMPARE(renderer.pendingCount(), 0);
+        for (int y : {0, 256}) for (int x : {0, 256}) {
+            QCOMPARE(canvas.pixelColor(x + 20, y + 20), QColor(MapBackgroundRgb));
+            int textPixels = 0;
+            for (int py = y + 100; py < y + 156; ++py)
+                for (int px = x + 50; px < x + 206; ++px) {
+                    const auto color = canvas.pixelColor(px, py);
+                    if (color != QColor(MapBackgroundRgb)) {
+                        ++textPixels;
+                        QVERIFY(color.red() < 100);
+                        QVERIFY(color.green() < 110);
+                    }
+                }
+            QVERIFY(textPixels > 20);
+        }
+        { QPainter painter(&canvas); renderer.paint(painter, view, 1, false, 0); }
+        for (int y = 0; y < 512; ++y) for (int x = 0; x < 512; ++x)
+            QCOMPARE(canvas.pixelColor(x, y), QColor(MapBackgroundRgb));
+    }
     void formats()
     {
         MapSources sources(QPluginLoader::staticInstances());
@@ -310,7 +337,7 @@ private slots:
         draw(renderer, canvas);
         QVERIFY(QTest::qWaitFor([&] { return !renderer.status().isEmpty(); }, 5000));
         QCOMPARE(renderer.pendingCount(), 0);
-        QCOMPARE(canvas.pixelColor(128, 128), QColor(Qt::black));
+        QCOMPARE(canvas.pixelColor(20, 20), QColor(MapBackgroundRgb));
         draw(renderer, canvas);
         QVERIFY(!QTest::qWaitFor([&] { return server.requests.size() > 1; }, 300));
     }
@@ -365,7 +392,7 @@ private slots:
 };
 int main(int argc, char **argv)
 {
-    QCoreApplication app(argc, argv);
+    QGuiApplication app(argc, argv);
     QTemporaryDir cache;
     qputenv("XDG_CACHE_HOME", cache.path().toUtf8());
     app.setApplicationName(QStringLiteral("swak-map-tests"));

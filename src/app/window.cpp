@@ -272,7 +272,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         savePreferences();
         const auto source = mapSources->activeSource();
         logMessage(Severity::Info, Urgency::Routine, QStringLiteral("swak.maps"), source.isEmpty()
-            ? tr("Offline map selected.") : tr("Map provider: %1").arg(source.value(QStringLiteral("name")).toString()));
+            ? tr("Map provider cleared.") : tr("Map provider: %1").arg(source.value(QStringLiteral("name")).toString()));
     });
     logMessage(Severity::Info, Urgency::Routine, QStringLiteral("swak.application"), tr("Workspace ready."));
     preferencesStatus_->setText(preferences_.error());

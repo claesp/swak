@@ -17,7 +17,7 @@ The extension levels are:
 
 The CoT plugin implements `Codec`. The UDP plugin implements `SourcePlugin`. The OpenGL map plugin implements `ViewPlugin`.
 
-The basemap plugin draws the offline reference shapes at order zero. The tracks plugin draws events at order 100 and also provides the event table. The editor plugin provides generation, file import, XML preview, and export.
+The basemap plugin draws the plain green background at order zero. The tracks plugin draws events at order 100 and also provides the event table. The editor plugin provides generation, file import, XML preview, and export.
 
 The map uses `QOpenGLWidget` and the Qt OpenGL paint engine. Each layer receives a saved painter state and logical screen coordinates. Qt handles the conversion to physical pixels on scaled displays.
 
@@ -112,8 +112,8 @@ Help > About opens one dialog per window and releases it on close. The dialog us
 
 # Map registration
 
-`MapExtension` registers a stable map identifier, a name, and a kind: Provider or Tool. A provider also implements `MapProvider`, which supplies defaults, editable fields, validation, and a tile URL builder. The XYZ, WMTS, and WMS plugins register both interfaces. No map tool exists yet. The offline schematic remains an internal map layer.
+`MapExtension` registers a stable map identifier, a name, and a kind: Provider or Tool. A provider also implements `MapProvider`, which supplies defaults, editable fields, validation, and a tile URL builder. The XYZ, WMTS, and WMS plugins register both interfaces. No map tool exists yet. The green background remains an internal map layer.
 
 `MapSources` owns the per-window catalog and implements `SettingsParticipant`. The host discovers participants among its QObject children as well as plugin roots. `PluginServices` supplies the catalog to the view and toolbar callbacks. Only registered providers enter the manager format list. Missing providers retain their saved configuration.
 
-`TileRenderer` handles bounded HTTPS retrieval, caching, and image decoding. It cancels requests when the map hides or changes source. The map widget draws image tiles after the schematic layer and before event layers. A source change clears decoded images and connection state. Read [Map providers](map-providers.md) for format contracts and limits.
+`TileRenderer` handles bounded HTTPS retrieval, caching, and image decoding. It cancels requests when the map hides or changes source. The map widget draws image tiles after the background layer and before event layers. A source change clears decoded images and connection state. Read [Map providers](map-providers.md) for format contracts and limits.

@@ -115,30 +115,40 @@ void TileRenderer::setSource(MapProvider *provider, const QJsonObject &source)
     ready_ = true;
     emit changed();
 }
-void TileRenderer::paint(QPainter &painter, const Viewport &view, double opacity, bool smooth)
+void TileRenderer::paint(QPainter &painter, const Viewport &view, double opacity, bool smooth, double missingOpacity)
 {
-    if (!provider_ || !ready_) return;
-    if (opacity <= 0) { stop(); return; }
-    const auto next = visibleTiles(view, source_.value(QStringLiteral("minZoom")).toInt(), source_.value(QStringLiteral("maxZoom")).toInt());
+    const bool fetching = provider_ && ready_ && opacity > 0;
+    if (!fetching) stop();
+    const auto next = visibleTiles(view, provider_ ? source_.value(QStringLiteral("minZoom")).toInt() : 0,
+        provider_ ? source_.value(QStringLiteral("maxZoom")).toInt() : 19);
     const bool moved = next.size() != visible_.size() || !std::equal(next.begin(), next.end(), visible_.begin(),
         [](const TilePlacement &a, const TilePlacement &b) { return a.key == b.key; });
     visible_ = next;
-    if (moved) schedule_.start(150);
+    if (fetching && moved) schedule_.start(150);
     for (const auto &key : images_.keys()) {
         const auto *image = images_.object(key);
         if (image && image->transient && std::none_of(visible_.begin(), visible_.end(), [&](const TilePlacement &tile) { return tile.key == key; }))
             images_.remove(key);
     }
     painter.save();
-    painter.setOpacity(std::clamp(opacity, 0.0, 1.0));
     painter.setRenderHint(QPainter::SmoothPixmapTransform, smooth);
     for (const auto &tile : visible_) {
-        if (const auto *image = images_.object(tile.key)) {
+        painter.setOpacity(1);
+        painter.fillRect(tile.rectangle, QColor(MapBackgroundRgb));
+        if (const auto *image = fetching ? images_.object(tile.key) : nullptr) {
+            painter.setOpacity(std::clamp(opacity, 0.0, 1.0));
             painter.drawImage(tile.rectangle, image->pixels);
+        } else {
+            painter.setPen(QColor("#d0d7cb"));
+            painter.setOpacity(std::clamp(missingOpacity, 0.0, 1.0) * 0.35);
+            painter.setBrush(Qt::NoBrush);
+            painter.drawRect(tile.rectangle);
+            painter.setOpacity(std::clamp(missingOpacity, 0.0, 1.0));
+            painter.drawText(tile.rectangle, Qt::AlignCenter, tr("MISSING TILE"));
         }
     }
     painter.restore();
-    if (!schedule_.isActive()) schedule_.start(150);
+    if (fetching && !schedule_.isActive()) schedule_.start(150);
 }
 void TileRenderer::fail(const QString &key, const QString &message, int retrySeconds, bool providerWide)
 {

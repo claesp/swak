@@ -1,5 +1,6 @@
 #include "core/activity.h"
 #include "core/maps.h"
+#include "core/tiles.h"
 #include "app/window.h"
 #include "app/map_manager.h"
 #include "core/maps.h"
@@ -20,6 +21,7 @@
 #include <QScopeGuard>
 #include "core/interfaces.h"
 #include <QApplication>
+#include <QWheelEvent>
 #include <QAbstractItemModelTester>
 #include <QDoubleSpinBox>
 #include <QImage>
@@ -111,6 +113,89 @@ public:
 class GuiTest final : public QObject {
     Q_OBJECT
 private slots:
+    void integerMapZoomAndBackground()
+    {
+        QTemporaryDir directory;
+        TileServer server;
+        QVERIFY(server.load(QFINDTESTDATA("fixtures")));
+        QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+        server.hold = true;
+        swak::Window window(directory.filePath(QStringLiteral("zoom.json")), QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *map = window.findChild<QOpenGLWidget *>();
+        auto *settings = dynamic_cast<swak::SettingsParticipant *>(map);
+        auto *sources = window.findChild<swak::MapSources *>();
+        QVERIFY(map && settings && sources);
+        const auto zoom = [&] { return settings->savePreferences().value(QStringLiteral("zoom")).toDouble(); };
+        const auto initial = map->grabFramebuffer();
+        QCOMPARE(initial.pixelColor(20, initial.height() / 2), QColor(swak::MapBackgroundRgb));
+        const auto id = QStringLiteral("org.swak.xyz");
+        auto source = sources->sources().value(id).toObject();
+        source.insert(QStringLiteral("endpoint"), QStringLiteral("https://localhost:%1/{z}/{x}/{y}.png").arg(server.serverPort()));
+        source.insert(QStringLiteral("ignoreTls"), true);
+        source.insert(QStringLiteral("minZoom"), 3);
+        source.insert(QStringLiteral("maxZoom"), 5);
+        QVERIFY(sources->put(id, source).isEmpty());
+        sources->select(id);
+        QCOMPARE(zoom(), 3.0);
+        bool bounded = false;
+        for (const auto &field : settings->settingsFields()) if (field.path == QStringLiteral("zoom")) {
+            QCOMPARE(field.minimum, 3.0); QCOMPARE(field.maximum, 5.0); QCOMPARE(field.decimals, 0);
+            bounded = true;
+        }
+        QVERIFY(bounded);
+        for (int i = 0; i < 5; ++i) QTest::keyClick(map, Qt::Key_Plus);
+        QCOMPARE(zoom(), 5.0);
+        QTest::keyClick(map, Qt::Key_Minus);
+        QCOMPARE(zoom(), 4.0);
+        const auto wheel = [&](int delta) {
+            QWheelEvent event(QPointF(map->rect().center()), QPointF(map->mapToGlobal(map->rect().center())), {}, QPoint(0, delta),
+                Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QApplication::sendEvent(map, &event);
+        };
+        wheel(60); QCOMPARE(zoom(), 4.0);
+        wheel(60); QCOMPARE(zoom(), 5.0);
+        wheel(120); QCOMPARE(zoom(), 5.0);
+        wheel(-120); QCOMPARE(zoom(), 4.0);
+        QTest::keyClick(map, Qt::Key_Home);
+        QCOMPARE(zoom(), 3.0);
+        auto values = settings->savePreferences();
+        values.insert(QStringLiteral("zoom"), 4.6);
+        settings->restorePreferences(values);
+        QCOMPARE(zoom(), 5.0);
+        source.insert(QStringLiteral("minZoom"), 0);
+        source.insert(QStringLiteral("maxZoom"), 2);
+        QVERIFY(sources->put(id, source).isEmpty());
+        QCOMPARE(zoom(), 2.0);
+        for (int i = 0; i < 5; ++i) QTest::keyClick(map, Qt::Key_Minus);
+        QCOMPARE(zoom(), 0.0);
+        QTest::keyClick(map, Qt::Key_Plus);
+        QCOMPARE(zoom(), 1.0);
+        QVERIFY(map->grabFramebuffer().save(QStringLiteral("missing-provider-tiles.png")));
+        sources->select({});
+        QVERIFY(map->grabFramebuffer().save(QStringLiteral("no-provider-background.png")));
+        QVERIFY(window.savePreferences());
+        auto catalog = sources->savePreferences();
+        source.insert(QStringLiteral("minZoom"), 3);
+        source.insert(QStringLiteral("maxZoom"), 5);
+        auto entries = sources->sources();
+        entries.insert(id, source);
+        catalog.insert(QStringLiteral("sources"), entries);
+        catalog.insert(QStringLiteral("active"), id);
+        catalog.insert(QStringLiteral("network"), true);
+        const auto legacyPath = directory.filePath(QStringLiteral("legacy-zoom.json"));
+        {
+            swak::Preferences legacy(legacyPath);
+            QVERIFY(legacy.save({{QStringLiteral("version"), 1}, {QStringLiteral("components"),
+                QJsonObject{{QStringLiteral("org.swak.maps"), catalog},
+                    {QStringLiteral("org.swak.map"), QJsonObject{{QStringLiteral("zoom"), 4.6}}}}}}));
+        }
+        swak::Window restored(legacyPath, QPluginLoader::staticInstances());
+        auto *restoredMap = dynamic_cast<swak::SettingsParticipant *>(restored.findChild<QOpenGLWidget *>());
+        QVERIFY(restoredMap);
+        QCOMPARE(restoredMap->savePreferences().value(QStringLiteral("zoom")).toDouble(), 5.0);
+    }
     void selectionExpiryAndNumericSort()
     {
         QTemporaryDir directory;
@@ -294,7 +379,7 @@ private slots:
             auto *menu = button->menu();
             QMetaObject::invokeMethod(menu, "aboutToShow");
             QCOMPARE(menu->actions().size(), 6);
-            QCOMPARE(menu->actions().first()->text(), QStringLiteral("Offline map"));
+            QCOMPARE(menu->actions().first()->text(), QStringLiteral("No map provider"));
             QVERIFY(menu->actions().first()->isChecked());
             menu->actions().at(1)->trigger();
             QVERIFY(!maps->activeSource().isEmpty());
@@ -434,7 +519,7 @@ private slots:
         dialog->findChild<QPushButton *>(QStringLiteral("editMapProvider"))->click();
         source.insert(QStringLiteral("name"), QStringLiteral("Local test map"));
         QCOMPARE(sources->sources().value(id).toObject(), source);
-        dialog->findChild<QPushButton *>(QStringLiteral("offlineMap"))->click();
+        dialog->findChild<QPushButton *>(QStringLiteral("clearMapProvider"))->click();
         QVERIFY(!sources->networkEnabled());
         QVERIFY(window.savePreferences());
         dialog->close();
@@ -1195,7 +1280,7 @@ private slots:
         QTest::keyClick(map, Qt::Key_Home);
         const QImage frame = map->grabFramebuffer();
         QVERIFY(!frame.isNull());
-        QVERIFY(frame.pixelColor(frame.width() / 2, frame.height() / 2) != frame.pixelColor(0, 0));
+        QCOMPARE(frame.pixelColor(20, frame.height() / 2), QColor(swak::MapBackgroundRgb));
         QVERIFY(frame.save(QStringLiteral("map-smoke.png")));
         QSignalSpy frames(map, &QOpenGLWidget::frameSwapped);
         map->update();
