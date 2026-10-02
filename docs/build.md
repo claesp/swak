@@ -24,7 +24,7 @@ For a nonstandard Qt installation, set `CMAKE_PREFIX_PATH` during configuration.
 cmake --preset debug -DCMAKE_PREFIX_PATH=/path/to/qt
 ```
 
-The release preset uses a separate directory. Run the following commands from the repository root. Installation includes the executable, desktop entry, icon, and documentation.
+Always rebuild the release executable after application changes, before completing the task. The release preset uses a separate directory. Run the following commands from the repository root. Installation includes the executable, desktop entry, icon, and documentation.
 
 ```sh
 cmake --preset release

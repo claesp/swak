@@ -196,3 +196,7 @@ The provider manager no longer contains a format selector. Add opens an unsaved 
 The debug build passed with Qt 6.8.2 and GCC 14.2. All 24 native GUI cases passed. Focused provider and Settings cases also passed at 200 percent scaling. Tests cover blank input, cancellation, successful creation, editing, keyboard link activation, and horizontal overflow. Native screenshots show the compact attribution and readable provider labels. Browser activation uses a test handler, so tests do not launch an external browser.
 
 Static analysis passed in `build/quality/20261002-123602-analyze-2`. All five sanitizer suites passed in `build/quality/20261002-123610-quick-86545`. This pass did not repeat GUI leak analysis, coverage collection, Wayland tests, hardware GPU tests, or long-session tests. Previous coverage gaps and the external Mesa leak remain documented above. The release executable contains the earlier map implementation and needs a rebuild for these interface changes.
+
+# Release rebuild requirement added October 2
+
+`AGENTS.md` now requires a release rebuild before completing each task that changes the application. `docs/build.md` records the same requirement. The Ninja release build passed and includes the provider forms and attribution changes from `e2f4129`. The executable is `build/release/swak`. Its version command reports SWAK 0.1.0. This task changes documentation only and uses the functional test results recorded above.

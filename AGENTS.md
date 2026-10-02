@@ -25,6 +25,8 @@ Follow these standing requirements:
 - Keep project documentation and session notes under `docs/`.
 - Preserve unrelated user changes.
 - Test the affected behavior before committing functional changes.
+- Always rebuild the release executable with the CMake release preset before completing a task that changes the application.
+- Report any release build failure before handing the task back to the user.
 - Commit all completed functional changes with Git.
 
 Read [docs/build.md](docs/build.md) for build and test commands. Read [docs/security.md](docs/security.md) before changing input handling. Read [docs/architecture.md](docs/architecture.md) before changing plugin interfaces.
