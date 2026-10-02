@@ -1,5 +1,7 @@
 # Session handoff
 
+Latest review: [Qt skill review, October 2](review-2026-10-02.md). It records three open defects in provider recovery, provider save reporting, and coordinate sorting. Application code remains at `2d904ab`. The review includes fresh sanitizer, static-analysis, and native GUI results. Later sections below contain historical implementation snapshots.
+
 This handoff records the project state on October 2, 2026. The repository is `/home/clpe/code/swak`, and the branch is `main`.
 
 The repository root contains `AGENTS.md` as the entry point for agents that support automatic instruction discovery. It directs agents to this handoff. Agents without that support need an explicit instruction to read these files.
