@@ -34,7 +34,7 @@ public:
 };
 bool vectorLayerVisible(const QJsonObject &source, const QString &layer);
 void paintVectorTile(QPainter &painter, const VectorTile &tile, const QRectF &rectangle, const QJsonObject &source,
-                     QList<QRectF> &labels, int &featureBudget);
+                     QList<QRectF> &labels, const std::atomic_bool *cancelled = nullptr);
 QList<QJsonObject> vectorFeaturesAt(const VectorTile &tile, const QRectF &rectangle, QPointF position, const QJsonObject &source);
 }
 Q_DECLARE_INTERFACE(swak::VectorTileProvider, "org.swak.VectorTiles/1.0")

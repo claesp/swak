@@ -75,7 +75,7 @@ TileRenderer::TileRenderer(QObject *parent) : QObject(parent)
 QString TileRenderer::status() const
 {
     if (!deferred_.isEmpty()) return tr("Map memory limit reached. Increase Tile memory cache in Settings.");
-    return detailLimited_ ? tr("Map detail limit reached. Zoom in or hide layers.") : status_;
+    return status_;
 }
 void TileRenderer::setMemoryLimit(int mebibytes)
 {
@@ -84,7 +84,6 @@ void TileRenderer::setMemoryLimit(int mebibytes)
     cancel();
     images_.clear();
     images_.setMaxCost(limit);
-    requested_.clear();
     visible_.clear();
     deferred_.clear();
     pressureZoom_ = 19;
@@ -117,7 +116,6 @@ void TileRenderer::setSource(MapProvider *provider, const QJsonObject &source)
     deferred_.clear();
     failures_.clear();
     visible_.clear();
-    requested_.clear();
     pressureZoom_ = 19;
     network_.clearAccessCache();
     network_.setCache(nullptr);
@@ -148,15 +146,19 @@ void TileRenderer::paint(QPainter &painter, const Viewport &view, double opacity
     const bool fetching = provider_ && ready_ && opacity > 0;
     if (!fetching) stop();
     contentVisible_ = fetching;
+    const bool antialias = painter.testRenderHint(QPainter::Antialiasing);
+    if (antialias_ != antialias && dynamic_cast<VectorTileProvider *>(provider_)) {
+        cancel();
+        images_.clear();
+        deferred_.clear();
+    }
+    antialias_ = antialias;
     const int minimum = provider_ ? source_.value(QStringLiteral("minZoom")).toInt() : 0;
     const int maximum = provider_ ? source_.value(QStringLiteral("maxZoom")).toInt() : 19;
     const auto requested = visibleTiles(view, minimum, maximum);
-    const bool newView = view.zoom != requestedZoom_ || requested.size() != requested_.size()
-        || !std::equal(requested.begin(), requested.end(), requested_.begin(),
-            [](const TilePlacement &a, const TilePlacement &b) { return a.key == b.key; });
-    if (newView) pressureZoom_ = maximum;
+    // Keep the reduced detail level while panning to avoid repeated cache resets.
+    if (view.zoom != requestedZoom_) pressureZoom_ = maximum;
     requestedZoom_ = view.zoom;
-    requested_ = requested;
     const auto next = pressureZoom_ < maximum ? visibleTiles(view, minimum, pressureZoom_) : requested;
     const bool moved = next.size() != visible_.size() || !std::equal(next.begin(), next.end(), visible_.begin(),
         [](const TilePlacement &a, const TilePlacement &b) { return a.key == b.key; });
@@ -167,8 +169,6 @@ void TileRenderer::paint(QPainter &painter, const Viewport &view, double opacity
         if (image && image->transient && std::none_of(visible_.begin(), visible_.end(), [&](const TilePlacement &tile) { return tile.key == key; }))
             images_.remove(key);
     }
-    QList<QRectF> labels;
-    int featureBudget = 200000;
     painter.save();
     painter.setRenderHint(QPainter::SmoothPixmapTransform, smooth);
     for (const auto &tile : visible_) {
@@ -176,8 +176,7 @@ void TileRenderer::paint(QPainter &painter, const Viewport &view, double opacity
         painter.fillRect(tile.rectangle, QColor(MapBackgroundRgb));
         if (const auto *image = fetching ? images_.object(tile.key) : nullptr) {
             painter.setOpacity(std::clamp(opacity, 0.0, 1.0));
-            if (image->vector) paintVectorTile(painter, image->vectors, tile.rectangle, source_, labels, featureBudget);
-            else painter.drawImage(tile.rectangle, image->pixels);
+            painter.drawImage(tile.rectangle, image->pixels);
         } else {
             painter.setPen(QColor("#d0d7cb"));
             painter.setOpacity(std::clamp(missingOpacity, 0.0, 1.0) * 0.35);
@@ -194,7 +193,6 @@ void TileRenderer::paint(QPainter &painter, const Viewport &view, double opacity
         }
     }
     painter.restore();
-    detailLimited_ = featureBudget <= 0;
     if (fetching && !schedule_.isActive()) schedule_.start(150);
 }
 void TileRenderer::fail(const QString &key, const QString &message, int retrySeconds, bool providerWide)
@@ -300,10 +298,11 @@ void TileRenderer::decodeVector(const QString &key, QByteArray bytes, const QUrl
     auto flag = std::make_shared<std::atomic_bool>(false);
     decoding_.insert(key, flag);
     ++activeJobs_;
-    auto *watcher = new QFutureWatcher<VectorTile>(this);
-    connect(watcher, &QFutureWatcher<VectorTile>::finished, this, [this, watcher, key, url, flag, generation, expires, transient] {
+    auto *watcher = new QFutureWatcher<Image>(this);
+    connect(watcher, &QFutureWatcher<Image>::finished, this, [this, watcher, key, url, flag, generation, expires, transient] {
         --activeJobs_;
-        const auto result = watcher->result();
+        const auto prepared = watcher->result();
+        const auto &result = prepared.vectors;
         watcher->deleteLater();
         if (generation == generation_) {
             decoding_.remove(key);
@@ -338,7 +337,7 @@ void TileRenderer::decodeVector(const QString &key, QByteArray bytes, const QUrl
                         emit changed();
                         return;
                     }
-                    images_.insert(key, new Image{{}, result, true, expires, transient}, result.costKiB);
+                    images_.insert(key, new Image{prepared.pixels, result, true, expires, transient}, result.costKiB);
                     if (failures_.isEmpty() && deferred_.isEmpty()) status_.clear();
                     emit changed();
                 }
@@ -346,9 +345,29 @@ void TileRenderer::decodeVector(const QString &key, QByteArray bytes, const QUrl
         }
         if (ready_ && !visible_.isEmpty()) schedule_.start(150);
     });
-    watcher->setFuture(QtConcurrent::run(&workers_, [decoder, bytes = std::move(bytes), flag] {
-        try { return decoder->decodeTile(bytes, *flag); }
-        catch (const std::exception &) { VectorTile result; result.error = tr("Vector tile decoder failed."); return result; }
+    const auto source = source_;
+    const bool antialias = antialias_;
+    watcher->setFuture(QtConcurrent::run(&workers_, [decoder, bytes = std::move(bytes), flag, source, antialias] {
+        Image prepared;
+        try {
+            prepared.vectors = decoder->decodeTile(bytes, *flag);
+            if (!prepared.vectors.error.isEmpty() || flag->load(std::memory_order_relaxed)) return prepared;
+            // Two pixels per logical pixel keep ordinary high-DPI views sharp.
+            prepared.pixels = QImage(512, 512, QImage::Format_ARGB32_Premultiplied);
+            if (prepared.pixels.isNull()) {
+                prepared.vectors.error = tr("Vector tile image allocation failed.");
+                return prepared;
+            }
+            QPainter painter(&prepared.pixels);
+            painter.scale(2, 2);
+            painter.setRenderHint(QPainter::Antialiasing, antialias);
+            QList<QRectF> labels;
+            paintVectorTile(painter, prepared.vectors, QRectF(0, 0, 256, 256), source, labels, flag.get());
+            prepared.vectors.costKiB += static_cast<int>(prepared.pixels.sizeInBytes() / 1024);
+        } catch (const std::exception &) {
+            prepared.vectors.error = tr("Vector tile preparation failed.");
+        }
+        return prepared;
     }));
 }
 QStringList TileRenderer::layers() const

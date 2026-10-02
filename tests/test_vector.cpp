@@ -11,6 +11,7 @@
 #include <QJsonArray>
 #include <QFile>
 #include <QApplication>
+#include <QElapsedTimer>
 #include <thread>
 #include <chrono>
 Q_IMPORT_PLUGIN(MvtProvider)
@@ -21,6 +22,7 @@ public:
     mutable std::atomic_int started{0};
     mutable std::atomic_int finished{0};
     bool throws = false;
+    bool dense = false;
     VectorTileProvider *inflated = nullptr;
     explicit SlowVector(MapProvider &provider) : base(provider) {}
     QString mapId() const override { return base.mapId(); }
@@ -33,7 +35,15 @@ public:
     VectorTile decodeTile(const QByteArray &bytes, const std::atomic_bool &cancelled) const override
     {
         ++started;
-        if (inflated) { auto result = inflated->decodeTile(bytes, cancelled); result.costKiB = 40000; ++finished; return result; }
+        if (inflated) {
+            auto result = inflated->decodeTile(bytes, cancelled);
+            if (dense && !result.features.isEmpty()) {
+                auto &path = result.features.first().path;
+                for (int i = 0; i < 60000 && !cancelled.load(); ++i) path.lineTo(0.02 + i * 0.000001, 0.02);
+                path.closeSubpath();
+            }
+            result.costKiB = 40000; ++finished; return result;
+        }
         if (throws) { ++finished; throw std::runtime_error("test decoder failure"); }
         for (int i = 0; i < 2000 && !cancelled.load(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(1));
         ++finished;
@@ -72,8 +82,8 @@ private slots:
         QCOMPARE(vectorFeaturesAt(tile, QRectF(0, 0, 256, 256), QPointF(128, 128), source).size(), 2);
         QVERIFY(vectorFeaturesAt(tile, QRectF(0, 0, 256, 256), QPointF(-1, -1), source).isEmpty());
         QImage canvas(256, 256, QImage::Format_RGB32);
-        QPainter painter(&canvas); QList<QRectF> labels; int budget = 10000;
-        paintVectorTile(painter, tile, QRectF(0, 0, 256, 256), source, labels, budget);
+        QPainter painter(&canvas); QList<QRectF> labels;
+        paintVectorTile(painter, tile, QRectF(0, 0, 256, 256), source, labels);
         QCOMPARE(canvas.pixelColor(50, 50), QColor("#92bfd0"));
         QVERIFY(!labels.isEmpty());
     }
@@ -153,13 +163,13 @@ private slots:
         const auto draw = [&] { QPainter painter(&canvas); renderer.paint(painter, {QSizeF(512, 512), QPointF(0.5, 0.5), 1}, 1, false); };
         connect(&renderer, &TileRenderer::changed, &renderer, draw);
         draw();
-        QVERIFY(QTest::qWaitFor([&] { return renderer.memoryCostKiB() == 160000; }, 5000));
+        QVERIFY(QTest::qWaitFor([&] { return renderer.memoryCostKiB() == 164096; }, 5000));
         QVERIFY(renderer.status().isEmpty());
-        QCOMPARE(renderer.memoryCostKiB(), 160000);
+        QCOMPARE(renderer.memoryCostKiB(), 164096);
         for (int y : {128, 384}) for (int x : {128, 384}) QVERIFY(!renderer.featuresAt(QPointF(x, y)).isEmpty());
         renderer.setMemoryLimit(64);
         QVERIFY(QTest::qWaitFor([&] { return !renderer.featuresAt(QPointF(256, 256)).isEmpty(); }, 5000));
-        QCOMPARE(renderer.memoryCostKiB(), 40000);
+        QCOMPARE(renderer.memoryCostKiB(), 41024);
         QVERIFY(renderer.status().isEmpty());
         const int decoded = large.started.load();
         draw();
@@ -170,8 +180,41 @@ private slots:
         QVERIFY(QTest::qWaitFor([&] { return renderer.status().contains(QStringLiteral("memory limit")); }, 5000));
         QVERIFY(renderer.memoryCostKiB() <= 64 * 1024);
         renderer.setMemoryLimit(256);
-        QVERIFY(QTest::qWaitFor([&] { return renderer.memoryCostKiB() == 160000; }, 5000));
+        QVERIFY(QTest::qWaitFor([&] { return renderer.memoryCostKiB() == 164096; }, 5000));
         QVERIFY(renderer.status().isEmpty());
+        renderer.stop();
+    }
+    void densePanning()
+    {
+        TileServer server; server.body = vector_fixture::sample();
+        QVERIFY(server.load(QFINDTESTDATA("fixtures"))); QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+        auto source = provider_->defaults();
+        source.insert(QStringLiteral("endpoint"), QStringLiteral("https://localhost:%1/dense/{z}/{x}/{y}.pbf").arg(server.serverPort()));
+        source.insert(QStringLiteral("ignoreTls"), true);
+        SlowVector dense(*provider_); dense.inflated = decoder_; dense.dense = true;
+        TileRenderer renderer; renderer.setSource(&dense, source);
+        QImage canvas(512, 512, QImage::Format_RGB32);
+        const auto draw = [&](double offset) {
+            QPainter painter(&canvas);
+            renderer.paint(painter, {QSizeF(512, 512), QPointF(0.5 + offset, 0.5), 1}, 1, false);
+        };
+        draw(0);
+        QVERIFY(QTest::qWaitFor([&] { return renderer.memoryCostKiB() == 164096; }, 5000));
+        draw(0);
+        // Every tile must retain its geometry after the old frame budget is exceeded.
+        for (int y : {50, 306}) for (int x : {50, 306}) QCOMPARE(canvas.pixelColor(x, y), QColor("#92bfd0"));
+        const int decoded = dense.started.load();
+        QElapsedTimer clock; clock.start();
+        for (int i = 0; i < 120; ++i) draw((i % 20) / 10000.0);
+        qInfo() << "Dense cached pan, 120 frames, milliseconds:" << clock.elapsed();
+        QCOMPARE(dense.started.load(), decoded);
+        QCOMPARE(renderer.memoryCostKiB(), 164096);
+        QVERIFY(renderer.status().isEmpty());
+        source.insert(QStringLiteral("visibleLayers"), QJsonObject{{QStringLiteral("water"), false}});
+        renderer.setSource(&dense, source); draw(0);
+        QVERIFY(QTest::qWaitFor([&] { return renderer.memoryCostKiB() == 164096; }, 5000));
+        draw(0);
+        for (int y : {50, 306}) for (int x : {50, 306}) QCOMPARE(canvas.pixelColor(x, y), QColor("#e9e6dc"));
         renderer.stop();
     }
     void holesAndProperties()
@@ -192,9 +235,14 @@ private slots:
         }
         const auto bad = field(3, field(1, "poi") + field(2, point) + number(15, 4294967298ULL));
         QVERIFY(!decoder_->decodeTile(bad, cancelled_).error.isEmpty());
-        QImage canvas(256, 256, QImage::Format_RGB32); QPainter painter(&canvas); QList<QRectF> labels; int budget = 1;
-        paintVectorTile(painter, tile, QRectF(0, 0, 256, 256), provider_->defaults(), labels, budget);
-        QCOMPARE(budget, 0);
+        QImage canvas(256, 256, QImage::Format_RGB32); QPainter painter(&canvas); QList<QRectF> labels;
+        paintVectorTile(painter, tile, QRectF(0, 0, 256, 256), provider_->defaults(), labels);
+        QCOMPARE(canvas.pixelColor(128, 128), QColor("#e9e6dc"));
+        QCOMPARE(canvas.pixelColor(25, 25), tile.features.first().color);
+        cancelled_.store(true);
+        paintVectorTile(painter, tile, QRectF(0, 0, 256, 256), provider_->defaults(), labels, &cancelled_);
+        QCOMPARE(canvas.pixelColor(25, 25), QColor("#e9e6dc"));
+        cancelled_.store(false);
     }
     void networkAndReplacement()
     {
@@ -225,7 +273,7 @@ private slots:
 int main(int argc, char **argv)
 {
     QApplication app(argc, argv);
-    if (argc == 3 && (QByteArray(argv[1]) == "--sample" || QByteArray(argv[1]) == "--render-sample")) {
+    if (argc == 3 && (QByteArray(argv[1]) == "--sample" || QByteArray(argv[1]) == "--render-sample" || QByteArray(argv[1]) == "--benchmark-sample")) {
         QFile file(QString::fromLocal8Bit(argv[2])); if (!file.open(QIODevice::ReadOnly)) return 2;
         const auto bytes = file.read(2 * 1024 * 1024 + 1); std::atomic_bool cancelled{false};
         for (auto *object : QPluginLoader::staticInstances()) if (auto *decoder = qobject_cast<VectorTileProvider *>(object)) {
@@ -233,9 +281,29 @@ int main(int argc, char **argv)
             qInfo().noquote() << "Features:" << tile.features.size() << "Cost KiB:" << tile.costKiB << "Layers:" << tile.layers.join(',') << "Error:" << tile.error;
             if (tile.error.isEmpty() && QByteArray(argv[1]) == "--render-sample") {
                 QImage image(1024, 1024, QImage::Format_RGB32);
-                { QPainter painter(&image); painter.setRenderHint(QPainter::Antialiasing); QList<QRectF> labels; int budget = 200000;
-                  paintVectorTile(painter, tile, QRectF(0, 0, 1024, 1024), qobject_cast<MapProvider *>(object)->defaults(), labels, budget); }
+                { QPainter painter(&image); painter.setRenderHint(QPainter::Antialiasing); QList<QRectF> labels;
+                  paintVectorTile(painter, tile, QRectF(0, 0, 1024, 1024), qobject_cast<MapProvider *>(object)->defaults(), labels); }
                 if (!image.save(QStringLiteral("vector-sample.png"))) return 2;
+            }
+            if (tile.error.isEmpty() && QByteArray(argv[1]) == "--benchmark-sample") {
+                const auto source = qobject_cast<MapProvider *>(object)->defaults();
+                QImage canvas(1024, 1024, QImage::Format_RGB32);
+                QImage cached(512, 512, QImage::Format_ARGB32_Premultiplied);
+                { QPainter painter(&cached); painter.scale(2, 2); painter.setRenderHint(QPainter::Antialiasing);
+                  QList<QRectF> labels; paintVectorTile(painter, tile, QRectF(0, 0, 256, 256), source, labels); }
+                for (bool reuse : {false, true}) {
+                    QElapsedTimer timer; timer.start();
+                    for (int frame = 0; frame < 10; ++frame) {
+                        QPainter painter(&canvas); painter.setRenderHint(QPainter::Antialiasing);
+                        QList<QRectF> labels;
+                        for (int y = 0; y < 4; ++y) for (int x = 0; x < 4; ++x) {
+                            const QRectF rect(x * 256 - frame, y * 256, 256, 256);
+                            if (reuse) painter.drawImage(rect, cached);
+                            else paintVectorTile(painter, tile, rect, source, labels);
+                        }
+                    }
+                    qInfo() << (reuse ? "Cached" : "Direct") << "16 tiles, 10 pan frames, milliseconds:" << timer.elapsed();
+                }
             }
             return tile.error.isEmpty() ? 0 : 1;
         }

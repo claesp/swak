@@ -52,7 +52,6 @@ private:
     QCache<QString, Image> images_{256 * 1024};
     QHash<QString, QNetworkReply *> pending_;
     QList<TilePlacement> visible_;
-    QList<TilePlacement> requested_;
     int pressureZoom_ = 19;
     double requestedZoom_ = -1;
     QTimer schedule_;
@@ -61,7 +60,7 @@ private:
     QCache<QString, Failure> failures_{256};
     QString status_;
     bool ready_ = false;
-    bool detailLimited_ = false;
+    bool antialias_ = false;
     bool contentVisible_ = false;
     QThreadPool workers_;
     QHash<QString, std::shared_ptr<std::atomic_bool>> decoding_;

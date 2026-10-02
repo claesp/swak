@@ -21,7 +21,7 @@ bool vectorLayerVisible(const QJsonObject &source, const QString &layer)
     return source.value(QStringLiteral("visibleLayers")).toObject().value(layer).toBool(true);
 }
 void paintVectorTile(QPainter &painter, const VectorTile &tile, const QRectF &rectangle, const QJsonObject &source,
-                     QList<QRectF> &labels, int &featureBudget)
+                     QList<QRectF> &labels, const std::atomic_bool *cancelled)
 {
     painter.save();
     painter.setClipRect(rectangle, Qt::IntersectClip);
@@ -34,11 +34,8 @@ void paintVectorTile(QPainter &painter, const VectorTile &tile, const QRectF &re
     painter.setFont(font);
     const QFontMetricsF metrics(font);
     for (const auto &feature : tile.features) {
+        if (cancelled && cancelled->load(std::memory_order_relaxed)) break;
         if (!vectorLayerVisible(source, feature.layer)) continue;
-        if (featureBudget <= 0) break;
-        const auto work = feature.kind == VectorFeature::Kind::Point ? feature.points.size() : feature.path.elementCount();
-        if (work > featureBudget) { featureBudget = 0; break; }
-        featureBudget -= static_cast<int>(std::max<qsizetype>(1, work));
         const auto geometry = mapping.map(feature.path);
         const auto ink = feature.color;
         if (!feature.labelOnly && feature.kind == VectorFeature::Kind::Point) {

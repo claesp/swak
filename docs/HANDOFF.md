@@ -340,3 +340,21 @@ The tile controller reached 310 of 311 executable lines. The remaining line is a
 All 33 native cases also passed under sanitizers. LeakSanitizer then reported the existing Mesa leak of 240732 bytes in 1073 allocations. That native leak test remains failed in `build/quality/20261002-165711-gui-139525`. Hardware GPUs, native Wayland, minimum Qt compatibility, and multi-hour live-map sessions remain untested.
 
 A 60-second sanitizer workload passed in `build/quality/20261002-165818-soak-139809`. It completed 924 cycles with 8183808 bytes of peak memory growth, an 83-millisecond maximum heartbeat gap, and 0.017 idle CPU seconds. The focused pressure test also passed before the full diagnostics. The release build log is `build/vector-cache-release-final.log`.
+
+# Vector drawing and panning, 2026-10-02
+
+The gray squares came from a shared limit of 200000 vertices per frame. Later tiles received a background but no geometry. Panning also transformed and painted every decoded path on the GUI thread.
+
+The host now prepares complete vector images on its existing two workers. The OpenGL view reuses those images during panning. Each image contains 512 physical pixels for 256 logical pixels. The memory budget includes the additional 1024 KiB per image. Decoded geometry remains available for map information and layer controls. No new dependency or plugin interface version was added.
+
+Source, layer, and antialiasing changes discard prepared images. Cancellation covers painting between features, and obsolete generations cannot enter the cache. Reduced detail now remains stable during panning. A zoom, source, or memory limit change permits full detail again. Labels use a per-tile limit and remain clipped at tile edges. Extreme display scaling and reduced-detail fallback can soften images and enlarge labels.
+
+The new regression uses four tiles with more than 200000 vertices in total. All four retain their geometry. Layer changes replace their prepared images. In the focused debug run, 120 cached pan frames took 64 milliseconds without additional decoding. A local Stockholm sample contains 4142 features. Ten software frames with 16 copies took 11001 milliseconds for complete direct painting and 13 milliseconds for cached composition. These timings exclude downloads and initial preparation. They are not hardware GPU measurements.
+
+Eight sanitizer suites passed in `build/quality/20261002-172852-quick-141261`. Static analysis passed in `build/quality/20261002-173021-analyze-142067`. Coverage passed eight suites and 33 native GUI cases in `build/quality/20261002-172856-coverage-141297`. The vector painter reached all 68 executable lines. The tile controller reached 322 of 326 lines. The image allocation failure path remains untested. Other misses are compiler-attributed closing lines. Existing mouse and gesture coverage gaps remain. Line coverage does not establish full branch coverage.
+
+All 33 native sanitizer cases passed before the existing Mesa leak caused status 23. LeakSanitizer reported 240732 bytes in 1073 allocations from `libGLX_mesa.so.0`. The failed report remains `build/quality/20261002-173131-gui-142618`. The focused native vector test also passed at 200 percent scaling. Its screenshot is under `build/vector-pan-hidpi`.
+
+The release rebuild passed with Qt 6.8.2 and GCC 14.2 on Debian 13. The executable remains `build/release/swak`, version 0.1.0. The build log is `build/vector-pan-release.log`. Hardware GPUs, native Wayland, minimum Qt compatibility, and multi-hour live-map sessions remain untested.
+
+The 60-second sanitizer workload passed in `build/quality/20261002-173244-soak-142884`. It completed 927 cycles with 8134656 bytes of peak memory growth, a 70-millisecond maximum heartbeat gap, and 0.019 idle CPU seconds. This short run does not replace multi-hour release qualification.
