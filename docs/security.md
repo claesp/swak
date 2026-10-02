@@ -68,3 +68,11 @@ Each built-in plugin declares its API, roles, requirements, and permissions in a
 Data Providers adds HTTPS feed input and ZIP decompression. Read [Data providers](data-providers.md) for request isolation, cancellation, XML limits, archive limits, and supported content. Feed descriptions and linked resources never execute or load automatically. Libarchive is the only new non-Qt library.
 
 MVT tiles cross an additional binary-input boundary. The pinned protozero decoder reads binary fields. Application limits cover wire types, lengths, dictionaries, features, commands, vertices, property storage, and coordinate arithmetic. Worker cancellation and source generations prevent stale results. Map information presents plain text without active links. No remote style expression, script, sprite, or font is executed or loaded. Read `docs/dependencies.md` for provenance and advisory review.
+
+# Map information and movement
+
+The Information pane treats remote metadata as plain text. It never loads remote images or executes description markup. Copy actions write only after a user double-click. KML metadata uses limits for names, values, property counts, and total retained bytes. Invalid metadata rejects the new document and leaves the previous feed intact.
+
+Map selection holds owning values instead of borrowed geometry pointers. Feed changes clear data selection. The host destroys pane widgets before their services. Key panning stops on key release, focus loss, window deactivation, and hiding. Each timer tick limits elapsed movement to 100 milliseconds after a stall.
+
+Tile fetching permits zero through two extra rings, with at most 64 extra tiles. Visible downloads take priority. Background tiles cannot force visible vector tiles from memory. Existing request, decoder, TLS, and cache limits still apply. Prefetching does not introduce bulk downloads or a persistent offline archive.

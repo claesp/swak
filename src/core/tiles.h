@@ -2,6 +2,7 @@
 #include "core/maps.h"
 #include "core/projection.h"
 #include "core/vector_tiles.h"
+#include "core/map_selection.h"
 #include <QThreadPool>
 #include <QSet>
 #include <QCache>
@@ -18,6 +19,7 @@ inline constexpr QRgb MapBackgroundRgb = qRgb(48, 61, 43);
 QImage decodeMapTile(const QByteArray &bytes);
 struct TilePlacement { QString key; int z; int x; int y; QRectF rectangle; };
 QList<TilePlacement> visibleTiles(const Viewport &view, int minimumZoom, int maximumZoom);
+QList<TilePlacement> tileFetchArea(const QList<TilePlacement> &visible, int margin);
 class TileRenderer final : public QObject {
     Q_OBJECT
 public:
@@ -28,6 +30,7 @@ public:
     QString status() const;
     void setMemoryLimit(int mebibytes);
     void setDiskLimit(int mebibytes);
+    void setPrefetchMargin(int margin);
     qint64 diskCacheBytes() const { return diskBytes_; }
     // Network tests inspect the request bound and cancellation.
     // cppcheck-suppress unusedFunction
@@ -38,6 +41,7 @@ public:
     void stop();
     QStringList layers() const;
     QList<QJsonObject> featuresAt(QPointF position) const;
+    std::optional<MapItem> itemAt(QPointF position) const;
 signals:
     void changed();
 private:
@@ -54,6 +58,9 @@ private:
     QCache<QString, Image> images_{256 * 1024};
     QHash<QString, QNetworkReply *> pending_;
     QList<TilePlacement> visible_;
+    QList<TilePlacement> needed_;
+    QSet<QString> prefetchSkipped_;
+    int prefetchMargin_ = 1;
     int pressureZoom_ = 19;
     double requestedZoom_ = -1;
     QTimer schedule_;

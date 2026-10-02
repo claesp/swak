@@ -2,7 +2,7 @@
 
 Run `tools/quality.py` when a change affects memory ownership, input handling, callbacks, networking, or repeated work. Run all modes before a release. Run the analysis and coverage modes regularly during development, including after plugin changes.
 
-The runner uses Python 3.9 or later and its standard library. It saves logs and `result.json` under `build/quality/`. A failed test, missing tool, crash, or timeout returns a nonzero status. Each mode tests the current source in a separate development build. Do not run simultaneous modes that use the same build directory.
+The runner uses Python 3.9 or later and its standard library. It saves logs and `result.json` under `build/quality/`. A failed test, missing tool, crash, or timeout returns a nonzero status. Each mode tests the current source in a separate development build. Run modes that execute the application one at a time. Test caches use shared per-user paths, even across different build directories. Parallel runs can fail during cache locking.
 
 Sanitizers are tools that detect faults during program execution. The sanitizer build detects use-after-free, invalid access, some undefined behavior, and leaks. Leak detection stays enabled. The runner does not suppress graphics-driver leaks or accept them as success. The release preset does not enable diagnostic instrumentation. No diagnostic tool or test executable is installed with the application.
 

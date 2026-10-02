@@ -7,6 +7,9 @@
 #include <QtConcurrentRun>
 #include <QPainter>
 #include <QRegularExpression>
+#include <QPainterPathStroker>
+#include <QFontMetricsF>
+#include <QGuiApplication>
 #include <QDateTime>
 #include <QJsonArray>
 #include <QPointer>
@@ -265,6 +268,9 @@ QStringList DataSources::attributions() const
 void DataSources::paint(QPainter &painter, const Viewport &view) const
 {
     auto ids = feeds_.keys(); ids.sort();
+    const double worldSize = view.scale();
+    const QPointF worldOrigin = QPointF(view.size.width() / 2, view.size.height() / 2) - view.center * worldSize;
+    painter.save(); painter.setClipRect(QRectF(worldOrigin, QSizeF(worldSize, worldSize)), Qt::IntersectClip);
     int labels = 0;
     for (const auto &id : ids) {
         const auto feed = feeds_.value(id);
@@ -299,5 +305,71 @@ void DataSources::paint(QPainter &painter, const Viewport &view) const
         }
         painter.restore();
     }
+    painter.restore();
 }
+std::optional<MapItem> DataSources::itemAt(const Viewport &view, QPointF position) const
+{
+    const double scale = view.scale();
+    const QPointF origin = QPointF(view.size.width() / 2, view.size.height() / 2) - view.center * scale;
+    if (!QRectF(origin, QSizeF(scale, scale)).contains(position)) return {};
+    auto ids = feeds_.keys(); ids.sort();
+    const QFontMetricsF metrics(QGuiApplication::font());
+    QMultiHash<const DataShape *, QRectF> labelBounds;
+    const QRectF screen(QPointF{}, view.size);
+    int labels = 0;
+    for (const auto &id : ids) {
+        const auto feed = feeds_.value(id);
+        if (!feed->source.value(QStringLiteral("labels")).toBool()) continue;
+        for (const auto &shape : feed->document.shapes) {
+            if (labels >= 100) break;
+            if (shape.name.isEmpty()) continue;
+            for (int wrap = -1; wrap <= 1 && labels < 100; ++wrap) {
+                const auto point = shape.point * scale + origin + QPointF(wrap * scale, 0);
+                if (!screen.contains(point)) continue;
+                auto bounds = metrics.boundingRect(shape.name); bounds.translate(point + QPointF(8, -8));
+                labelBounds.insert(&shape, bounds); ++labels;
+            }
+        }
+    }
+    for (auto id = ids.crbegin(); id != ids.crend(); ++id) {
+        const auto feed = feeds_.value(*id);
+        const auto &source = feed->source;
+        if (source.value(QStringLiteral("opacity")).toDouble() <= 0) continue;
+        const double radius = source.value(QStringLiteral("pointSize")).toDouble();
+        const double lineWidth = source.value(QStringLiteral("lineWidth")).toDouble();
+        for (auto shape = feed->document.shapes.crbegin(); shape != feed->document.shapes.crend(); ++shape) {
+            for (int wrap = -1; wrap <= 1; ++wrap) {
+                const auto offset = origin + QPointF(wrap * scale, 0);
+                const auto point = shape->point * scale + offset;
+                bool hit = false;
+                if (shape->kind == DataShape::Kind::Point) {
+                    hit = std::hypot(point.x() - position.x(), point.y() - position.y()) <= std::max(8.0, radius + 3);
+                    if (!hit) {
+                        const auto bounds = labelBounds.values(&*shape);
+                        hit = std::any_of(bounds.begin(), bounds.end(), [&](const QRectF &label) { return label.contains(position); });
+                    }
+                } else {
+                    const auto bounds = shape->path.boundingRect();
+                    if (!QRectF(bounds.topLeft() * scale + offset, bounds.size() * scale).adjusted(-8, -8, 8, 8).contains(position)) continue;
+                    QTransform mapping; mapping.translate(offset.x(), offset.y()); mapping.scale(scale, scale);
+                    const auto path = mapping.map(shape->path);
+                    QPainterPathStroker stroke; stroke.setWidth(std::max(10.0, lineWidth + 6));
+                    hit = (shape->kind == DataShape::Kind::Polygon && path.contains(position)) || stroke.createStroke(path).contains(position);
+                }
+                if (!hit) continue;
+                MapItem item;
+                item.kind = shape->kind == DataShape::Kind::Point ? MapItem::Kind::Point : shape->kind == DataShape::Kind::Line ? MapItem::Kind::Line : MapItem::Kind::Polygon;
+                item.type = shape->kind == DataShape::Kind::Point ? tr("Point") : shape->kind == DataShape::Kind::Line ? tr("Route / track") : tr("Polygon");
+                item.label = shape->name.isEmpty() ? item.type : shape->name;
+                item.description = shape->description; item.properties = shape->properties;
+                item.properties.insert(tr("Data provider"), source.value(QStringLiteral("name")));
+                item.point = shape->point; item.path = shape->path; item.color = QColor(source.value(QStringLiteral("color")).toString());
+                item.radius = radius; item.lineWidth = lineWidth;
+                return item;
+            }
+        }
+    }
+    return {};
+}
+
 }

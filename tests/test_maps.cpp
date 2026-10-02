@@ -32,6 +32,38 @@ class MapTest final : public QObject {
         renderer.paint(painter, Viewport{QSizeF(256, 256), QPointF(0.5, 0.5), 0}, 1, false);
     }
 private slots:
+    void nearbyTiles()
+    {
+        const Viewport view{QSizeF(256, 256), QPointF(0.375, 0.375), 2};
+        const auto visible = visibleTiles(view, 0, 19);
+        QCOMPARE(visible.size(), 1);
+        const auto area = tileFetchArea(visible, 1);
+        QCOMPARE(area.size(), 9);
+        QCOMPARE(area.first().key, visible.first().key);
+        QCOMPARE(tileFetchArea(visible, 0).size(), 1);
+        QCOMPARE(tileFetchArea(visible, 2).size(), 16);
+        const auto edge = tileFetchArea(visibleTiles({QSizeF(256, 256), QPointF(0.125, 0.125), 2}, 0, 19), 1);
+        QCOMPARE(edge.size(), 4);
+        const auto large = visibleTiles({QSizeF(4096, 4096), QPointF(0.5, 0.5), 10}, 0, 19);
+        const auto bounded = tileFetchArea(large, 2);
+        QVERIFY(bounded.size() <= large.size() + 64);
+        QSet<QString> keys;
+        for (const auto &tile : bounded) { QVERIFY(!keys.contains(tile.key)); keys.insert(tile.key); }
+        TileServer server; QVERIFY(server.load(QFINDTESTDATA("fixtures"))); QVERIFY(server.listen(QHostAddress::LocalHost));
+        auto *xyz = format(QStringLiteral("org.swak.xyz"));
+        TileRenderer renderer; renderer.setSource(xyz, localSource(xyz, server, true));
+        QImage canvas(256, 256, QImage::Format_RGB32);
+        const auto drawView = [&](const Viewport &position) { QPainter painter(&canvas); renderer.paint(painter, position, 1, false); };
+        drawView(view);
+        QVERIFY(QTest::qWaitFor([&] { return server.requests.size() == 9 && renderer.pendingCount() == 0; }, 5000));
+        QVERIFY(server.requests.first().contains("/2/1/1.png"));
+        renderer.setPrefetchMargin(0);
+        drawView({QSizeF(256, 256), QPointF(0.625, 0.375), 2});
+        QCOMPARE(canvas.pixelColor(128, 128), QColor("#eb426a"));
+        QCOMPARE(server.requests.size(), 9);
+        renderer.stop();
+        QCOMPARE(renderer.pendingCount(), 0);
+    }
     void missingTiles()
     {
         TileRenderer renderer;
@@ -290,7 +322,7 @@ private slots:
         canvas.fill(Qt::black);
         draw(renderer, canvas);
         QCOMPARE(canvas.pixelColor(128, 128), QColor("#eb426a"));
-        QVERIFY(changed.wait(5000));
+        QVERIFY(QTest::qWaitFor([&] { return server.requests.size() == 2; }, 5000));
         QCOMPARE(server.requests.size(), 2);
         QVERIFY(server.requests.last().toLower().contains("if-none-match: \"fixture\""));
     }

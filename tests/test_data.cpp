@@ -81,6 +81,54 @@ private slots:
             QVERIFY(!format()->decode(bad, cancelled).error.isEmpty());
         cancelled = true; QVERIFY(!format()->decode(point, cancelled).error.isEmpty());
     }
+    void metadataAndSelection()
+    {
+        std::atomic_bool cancelled = false;
+        const auto xml = QByteArray(point).replace("<name>Station</name>", "<name>Station</name><description>&lt;b&gt;Read only&lt;/b&gt;</description><ExtendedData><Data name=\"status\"><value>Ready</value></Data></ExtendedData>");
+        const auto parsed = format()->decode(xml, cancelled);
+        QVERIFY2(parsed.error.isEmpty(), qPrintable(parsed.error));
+        QCOMPARE(parsed.shapes.first().description, QStringLiteral("<b>Read only</b>"));
+        QCOMPARE(parsed.shapes.first().properties.value(QStringLiteral("status")).toString(), QStringLiteral("Ready"));
+        QVERIFY(!format()->decode(QByteArray(xml).replace("name=\"status\"", "name=\"" + QByteArray(129, 'a') + "\""), cancelled).error.isEmpty());
+        TileServer server; QVERIFY(server.load(QFINDTESTDATA("fixtures"))); QVERIFY(server.listen(QHostAddress::LocalHost)); server.body = xml;
+        DataSources feeds(QPluginLoader::staticInstances()); QVERIFY(feeds.put(QStringLiteral("test"), source(server)).isEmpty());
+        QVERIFY(QTest::qWaitFor([&] { return feeds.shapeCount(QStringLiteral("test")) == 1; }, 5000));
+        Viewport view{QSizeF(1024, 512), QPointF(0.5, 0.5), 0};
+        const auto hit = feeds.itemAt(view, QPointF(512, 256)); QVERIFY(hit);
+        QCOMPARE(hit->label, QStringLiteral("Station"));
+        QVERIFY(!feeds.itemAt(view, QPointF(256, 256)));
+        QImage canvas(1024, 512, QImage::Format_RGB32); canvas.fill(Qt::black);
+        { QPainter painter(&canvas); feeds.paint(painter, view); }
+        QCOMPARE(canvas.pixelColor(256, 256), QColor(Qt::black));
+        QVERIFY(canvas.pixelColor(512, 256) != QColor(Qt::black));
+        view.zoom = 3; view.center = QPointF(0.55, 0.5);
+        QVERIFY(feeds.itemAt(view, QPointF(512 - 0.05 * view.scale(), 256)));
+        QVERIFY(!feeds.itemAt(view, QPointF(512, 256)));
+        MapSelection selection; selection.select(*hit);
+        canvas.fill(Qt::black);
+        { QPainter painter(&canvas); selection.paint(painter, Viewport{QSizeF(1024, 512), QPointF(0.5, 0.5), 0}); }
+        QCOMPARE(canvas.pixelColor(512 + qRound(hit->radius + 2), 256), QColor(Qt::white));
+        MapItem route; route.kind = MapItem::Kind::Line; route.color = QColor(20, 40, 60);
+        route.path.moveTo(0.4, 0.5); route.path.lineTo(0.6, 0.5); selection.select(route);
+        canvas.fill(Qt::black);
+        { QPainter painter(&canvas); selection.paint(painter, Viewport{QSizeF(1024, 512), QPointF(0.5, 0.5), 0}); }
+        QCOMPARE(canvas.pixelColor(512, 256), QColor(235, 215, 195));
+        selection.clear(); QVERIFY(!selection.item());
+        view = Viewport{QSizeF(1024, 512), QPointF(0.5, 0.5), 0};
+        server.body = QByteArray(point).replace("Point", "LineString").replace("0,0,0", "-20,0 20,0");
+        feeds.refresh(QStringLiteral("test"));
+        QVERIFY(QTest::qWaitFor([&] { const auto item = feeds.itemAt(view, QPointF(512, 256)); return item && item->kind == MapItem::Kind::Line; }, 5000));
+        QVERIFY(!feeds.itemAt(view, QPointF(512, 270)));
+        server.body = QByteArray(point).replace("<Point><coordinates>0,0,0</coordinates></Point>",
+            "<Polygon><outerBoundaryIs><LinearRing><coordinates>-20,-20 20,-20 20,20 -20,20 -20,-20</coordinates></LinearRing></outerBoundaryIs></Polygon>");
+        feeds.refresh(QStringLiteral("test"));
+        QVERIFY(QTest::qWaitFor([&] { const auto item = feeds.itemAt(view, QPointF(512, 256)); return item && item->kind == MapItem::Kind::Polygon; }, 5000));
+        selection.select(*feeds.itemAt(view, QPointF(512, 256)));
+        canvas.fill(Qt::black);
+        { QPainter painter(&canvas); selection.paint(painter, view); }
+        QVERIFY(canvas.pixelColor(512, 256).red() > 0);
+        QVERIFY(!feeds.itemAt(view, QPointF(512, 350)));
+    }
     void geometry()
     {
         const QByteArray body = "<kml xmlns=\"http://www.opengis.net/kml/2.2\"><Document><Placemark><name>Shapes</name><MultiGeometry>"

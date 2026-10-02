@@ -64,3 +64,9 @@ Libarchive is dynamically linked and uses a BSD license. The tested Debian packa
 The October 2 dependency review found open Debian notices for RAR5 reading, TAR sparse headers, and encrypted ZIP writing. These paths are not used by the released application. The ZIP writer appears only in tests with small, unencrypted fixtures. The separate ACL notice concerns a text ACL parser that this reader does not call. This scope review does not establish that the library has no other defects.
 
 Review references: [RAR5 notice](https://security-tracker.debian.org/tracker/CVE-2026-14164), [TAR notice](https://security-tracker.debian.org/tracker/CVE-2026-15028), [ZIP writer notice](https://security-tracker.debian.org/tracker/CVE-2026-16517), and [ACL notice](https://security-tracker.debian.org/tracker/CVE-2026-5745).
+
+# Object information
+
+KML descriptions and scalar properties appear in the Information pane. ExtendedData names become property names. Point coordinates also appear in the table. SWAK treats all imported fields as read-only plain text. It does not execute HTML or follow description links.
+
+Property names have a 128-character limit. Scalar values and descriptions have a 4096-character limit. Each placemark has at most 256 metadata properties. Each decoded document retains at most 8 MiB of estimated metadata. A limit failure rejects the document and preserves the previous feed data.

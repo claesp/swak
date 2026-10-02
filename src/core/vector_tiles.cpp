@@ -84,7 +84,7 @@ QList<QJsonObject> vectorFeaturesAt(const VectorTile &tile, const QRectF &rectan
             if (path.boundingRect().adjusted(-6, -6, 6, 6).contains(position))
                 hit = it->kind == VectorFeature::Kind::Polygon ? path.contains(position) : stroke.createStroke(path).contains(position);
         }
-        if (hit) result.append({{QStringLiteral("layer"), it->layer}, {QStringLiteral("id"), it->id}, {QStringLiteral("properties"), it->properties}});
+        if (hit) result.append({{QStringLiteral("featureIndex"), static_cast<int>(tile.features.size() - 1 - std::distance(tile.features.crbegin(), it))}, {QStringLiteral("layer"), it->layer}, {QStringLiteral("id"), it->id}, {QStringLiteral("properties"), it->properties}});
     }
     return result;
 }

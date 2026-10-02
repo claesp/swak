@@ -28,7 +28,7 @@ The editor generates `a-u-G` events by default. Map markers use blue for `a-f` t
 
 Select a table row or map marker to focus that event. The XML preview then shows that event. Selection changes the preview but keeps the editor fields unchanged.
 
-Drag the map with the left mouse button to move it. Double-click with the left button to center that point without changing zoom. Use the wheel to zoom around the pointer. With map focus, use arrow keys to move, plus or minus to zoom, and Home to reset.
+Drag the map with the left mouse button to move it. Double-click with the left button to center that point without changing zoom. Use the wheel to zoom around the pointer. With map focus, hold W, A, S, or D to move north, west, south, or east. Diagonal movement keeps the same speed. Release the keys to stop. Losing focus also stops movement. Arrow keys move one step. Plus and minus change zoom, and Home resets the view.
 
 The map uses Web Mercator, a rectangular map projection. It clips positions near the poles to approximately 85.05 degrees. The event table retains the original coordinates, including polar positions.
 
@@ -166,3 +166,17 @@ OpenFreeMap is available in Map Providers and the provider dropdown. It supplies
 The map shows the local disk-cache size below attribution. File > Settings > Map contains the Tile disk cache limit. The default is 128 MiB, with a range from 16 through 4096 MiB. The size describes the active HTTPS cache, which is separate from decoded memory. An inactive cache label means that no usable map provider cache is open.
 
 File > Settings contains tables for Map providers and Data providers. The same tables appear in Tools > Map Providers and Tools > Data Providers. A map radio button selects one provider. Data checkboxes enable independent feeds. Row selection controls Edit and Delete without changing activation. Clear selection turns off map providers. Table names follow the operating system sort order.
+
+# Map movement and selection
+
+File > Settings > Map contains the movement keys, speed, wheel controls, and tile margin. Keys must differ and must not use modifiers. Letters, digits, function keys, and arrow keys are supported. The default speed is 300 logical pixels per second. Wheel zoom works only over the map. You can disable it, reverse it, or change its step size.
+
+The lowest zoom fills the map area. Zoom uses whole levels. Panning stops at the world edges. A window resize can raise the lowest zoom. The cropped part of the world remains reachable by panning. If the viewport exceeds the provider limit, SWAK enlarges tiles from the highest available level.
+
+Data geometry follows the current map position and zoom. SWAK clips geometry and selection marks to the world bounds. It requests one extra tile ring by default, after visible tiles. Set the tile margin from zero through two in Settings. Each extra area contains at most 64 tiles. Extra tiles never displace visible vector tiles under memory pressure.
+
+Click a map object to open Information. The pane shows its label, type, description, and properties. The fields are read-only. Double-click a value, title, type, or description to copy its text through the OS clipboard. Descriptions remain plain text, including any HTML markup. Click empty map space to clear the selection and hide the pane.
+
+Selected points have a white outline. Selected routes use the inverse of their drawing color. Selected polygons have a dashed white edge and a faint white fill.
+
+Selection uses a snapshot of the object. A change to the corresponding data source clears the snapshot. Selection does not survive restart. The pane layout and table header do survive restart.

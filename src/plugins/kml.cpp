@@ -52,7 +52,7 @@ QByteArray unpack(const QByteArray &bytes, QString &error, const std::atomic_boo
     if (result != ARCHIVE_EOF || xml.isEmpty()) error = QObject::tr("KMZ has no valid KML document.");
     return xml;
 }
-struct Frame { QString tag; QString text; bool visible = true; };
+struct Frame { QString tag; QString text; bool visible = true; QString property; };
 DataDocument parse(const QByteArray &bytes, const std::atomic_bool &cancelled)
 {
     DataDocument result;
@@ -63,6 +63,9 @@ DataDocument parse(const QByteArray &bytes, const std::atomic_bool &cancelled)
     QList<Frame> stack;
     QList<DataShape> feature;
     QString name;
+    QString description;
+    QJsonObject properties;
+    qsizetype retainedMetadata = 0;
     DataShape shape;
     int geometryDepth = 0;
     bool geometryCoordinates = false;
@@ -97,12 +100,18 @@ DataDocument parse(const QByteArray &bytes, const std::atomic_bool &cancelled)
                     fail(QObject::tr("Use a KML document with a supported namespace.")); break;
                 }
             }
-            stack.append({tag, {}, true});
+            const auto propertyName = reader.attributes().value(QStringLiteral("name")).toString();
+            if (propertyName.size() > 128) { fail(QObject::tr("Data property name is too long.")); break; }
+            stack.append({tag, {}, true, propertyName});
             if (tag == QStringLiteral("NetworkLink")) ++result.ignoredLinks;
             if (tag.endsWith(QStringLiteral("Overlay")) || tag == QStringLiteral("Model") || tag == QStringLiteral("Track")) ++result.ignoredOverlays;
             if (tag == QStringLiteral("Placemark")) {
                 if (featureDepth || ++features > 10000) { fail(QObject::tr("KML placemarks exceed their limit.")); break; }
-                featureDepth = static_cast<int>(stack.size()); feature.clear(); name.clear();
+                featureDepth = static_cast<int>(stack.size()); feature.clear(); name.clear(); description.clear(); properties = {};
+                for (const auto &attribute : reader.attributes()) {
+                    if (properties.size() >= 256 || attribute.name().size() > 128 || attribute.value().size() > 4096) { fail(QObject::tr("KML property exceeds its limit.")); break; }
+                    properties.insert(attribute.name().toString(), attribute.value().toString());
+                }
             }
             if (featureDepth && (tag == QStringLiteral("Point") || tag == QStringLiteral("LineString") || tag == QStringLiteral("Polygon"))) {
                 if (geometryDepth) { fail(QObject::tr("Nested KML geometry is invalid.")); break; }
@@ -112,7 +121,7 @@ DataDocument parse(const QByteArray &bytes, const std::atomic_bool &cancelled)
             }
         } else if (reader.isCharacters() && !stack.isEmpty()) {
             auto &frame = stack.last();
-            if (frame.tag == QStringLiteral("coordinates") || frame.tag == QStringLiteral("name") || frame.tag == QStringLiteral("visibility")) {
+            if (featureDepth || frame.tag == QStringLiteral("visibility")) {
                 const auto limit = frame.tag == QStringLiteral("coordinates") ? DataXmlLimit : 4096;
                 if (frame.text.size() + reader.text().size() > limit) { fail(QObject::tr("KML text exceeds its limit.")); break; }
                 frame.text += reader.text();
@@ -121,6 +130,14 @@ DataDocument parse(const QByteArray &bytes, const std::atomic_bool &cancelled)
             const auto &frame = stack.last();
             if (frame.tag == QStringLiteral("visibility") && frame.text.trimmed() == QStringLiteral("0") && stack.size() > 1) stack[stack.size() - 2].visible = false;
             if (featureDepth && stack.size() == featureDepth + 1 && frame.tag == QStringLiteral("name")) name = frame.text.trimmed().left(128);
+            if (featureDepth && stack.size() == featureDepth + 1 && frame.tag == QStringLiteral("description")) description = frame.text;
+            if (featureDepth && frame.tag != QStringLiteral("coordinates") && !frame.text.trimmed().isEmpty()
+                && frame.tag != QStringLiteral("name") && frame.tag != QStringLiteral("description")) {
+                QString key = frame.property.isEmpty() ? frame.tag : frame.property;
+                if (frame.tag == QStringLiteral("value") && stack.size() > 1 && !stack[stack.size() - 2].property.isEmpty()) key = stack[stack.size() - 2].property;
+                if (properties.size() >= 256 || key.size() > 128) { fail(QObject::tr("KML properties exceed their limit.")); break; }
+                properties.insert(key, frame.text.trimmed());
+            }
             if (geometryDepth && frame.tag == QStringLiteral("coordinates")) {
                 QStringView remaining(frame.text);
                 QPolygonF points;
@@ -138,6 +155,10 @@ DataDocument parse(const QByteArray &bytes, const std::atomic_bool &cancelled)
                     if (parts.size() < 2 || parts.size() > 3 || !lonOk || !latOk || !altOk || !std::isfinite(lon)
                         || !std::isfinite(lat) || !std::isfinite(altitude) || std::abs(lon) > 180 || std::abs(lat) > 90) {
                         fail(QObject::tr("Invalid KML coordinate.")); break;
+                    }
+                    if (shape.kind == DataShape::Kind::Point) {
+                        shape.properties.insert(QStringLiteral("longitude"), lon); shape.properties.insert(QStringLiteral("latitude"), lat);
+                        if (parts.size() == 3) shape.properties.insert(QStringLiteral("altitude"), altitude);
                     }
                     QPointF point = project(lat, lon);
                     if (!points.isEmpty()) point.rx() += std::round(points.last().x() - point.x());
@@ -173,7 +194,15 @@ DataDocument parse(const QByteArray &bytes, const std::atomic_bool &cancelled)
                 bool visible = true;
                 for (const auto &parent : stack) visible = visible && parent.visible;
                 if (result.shapes.size() + feature.size() > 10000) { fail(QObject::tr("KML geometry exceeds its limit.")); break; }
-                if (visible) for (auto &item : feature) { item.name = name; result.shapes.append(std::move(item)); }
+                if (visible) for (auto &item : feature) {
+                    item.name = name; item.description = description;
+                    for (auto value = properties.begin(); value != properties.end(); ++value) item.properties.insert(value.key(), value.value());
+                    retainedMetadata += (name.size() + description.size()) * 2;
+                    for (auto value = item.properties.begin(); value != item.properties.end(); ++value)
+                        retainedMetadata += (value.key().size() + value.value().toString().size()) * 2 + 64;
+                    if (retainedMetadata > 8 * 1024 * 1024) { fail(QObject::tr("KML metadata exceeds its limit.")); break; }
+                    result.shapes.append(std::move(item));
+                }
                 featureDepth = 0;
             }
             stack.removeLast();

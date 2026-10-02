@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "org.swak.information",
+  "name": "Information",
+  "description": "Show read-only properties for the selected map object.",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entryPoint": "InformationPlugin",
+  "linkage": "static",
+  "platforms": ["linux"],
+  "qtMajor": 6,
+  "qtMinimum": "6.4.0",
+  "interfaces": ["pane"],
+  "requires": [],
+  "permissions": ["clipboard-write"],
+  "settingsSchemaVersion": 1
+}

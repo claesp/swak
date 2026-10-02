@@ -1,5 +1,6 @@
 #pragma once
 #include "core/settings.h"
+#include "core/map_selection.h"
 #include "core/projection.h"
 #include <QColor>
 #include <QPainterPath>
@@ -16,6 +17,8 @@ struct DataShape {
     QPainterPath path;
     QPointF point;
     QString name;
+    QString description;
+    QJsonObject properties;
 };
 struct DataDocument {
     QList<DataShape> shapes;
@@ -57,6 +60,7 @@ public:
     int shapeCount(const QString &id) const;
     QStringList attributions() const;
     void paint(QPainter &painter, const Viewport &view) const;
+    std::optional<MapItem> itemAt(const Viewport &view, QPointF position) const;
 signals:
     void changed();
     void contentChanged();

@@ -14,11 +14,13 @@ class Store;
 class ActivityModel;
 class MapSources;
 class DataSources;
+class MapSelection;
 struct PluginServices {
     Store &store;
     ActivityModel &activity;
     MapSources &maps;
     DataSources *data = nullptr;
+    MapSelection *selection = nullptr;
 };
 class Plugin {
 public:

@@ -9,6 +9,8 @@
 #include "vector_fixture.h"
 #include <QContextMenuEvent>
 #include <QPlainTextEdit>
+#include <QClipboard>
+#include "core/map_selection.h"
 #include <QStandardPaths>
 #include <QDesktopServices>
 #include "swak/version.h"
@@ -29,6 +31,7 @@
 #include "core/interfaces.h"
 #include <QApplication>
 #include <QWheelEvent>
+#include <QElapsedTimer>
 #include <QAbstractItemModelTester>
 #include <QDoubleSpinBox>
 #include <QImage>
@@ -38,6 +41,8 @@
 #include <QStyle>
 #include <QStyleFactory>
 #include <QPlainTextEdit>
+#include <QClipboard>
+#include "core/map_selection.h"
 #include <QPushButton>
 #include <QSurfaceFormat>
 #include <QScreen>
@@ -137,7 +142,7 @@ private slots:
         QVERIFY(map && settings && sources);
         const auto zoom = [&] { return settings->savePreferences().value(QStringLiteral("zoom")).toDouble(); };
         const auto initial = map->grabFramebuffer();
-        QCOMPARE(initial.pixelColor(20, initial.height() / 2), QColor(swak::MapBackgroundRgb));
+        QCOMPARE(initial.pixelColor(20, 21), QColor(swak::MapBackgroundRgb));
         const auto id = QStringLiteral("org.swak.xyz");
         auto source = sources->sources().value(id).toObject();
         source.insert(QStringLiteral("endpoint"), QStringLiteral("https://localhost:%1/{z}/{x}/{y}.png").arg(server.serverPort()));
@@ -177,9 +182,9 @@ private slots:
         QVERIFY(sources->put(id, source).isEmpty());
         QCOMPARE(zoom(), 2.0);
         for (int i = 0; i < 5; ++i) QTest::keyClick(map, Qt::Key_Minus);
-        QCOMPARE(zoom(), 0.0);
+        QCOMPARE(zoom(), std::ceil(std::log2(std::max(map->width(), map->height()) / 256.0)));
         QTest::keyClick(map, Qt::Key_Plus);
-        QCOMPARE(zoom(), 1.0);
+        QCOMPARE(zoom(), 2.0);
         QVERIFY(map->grabFramebuffer().save(QStringLiteral("missing-provider-tiles.png")));
         sources->select({});
         QVERIFY(map->grabFramebuffer().save(QStringLiteral("no-provider-background.png")));
@@ -438,10 +443,11 @@ private slots:
             QVERIFY(map->grabFramebuffer().save(QStringLiteral("vector-map-smoke.png")));
             QTimer::singleShot(0, map, [] {
                 auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget()); QVERIFY(menu);
-                auto *action = menu->findChild<QAction *>(QStringLiteral("mapInformation")); QVERIFY(action); QVERIFY(action->isEnabled());
-                action->trigger(); menu->close();
+                auto *action = menu->findChild<QAction *>(QStringLiteral("mapInformation")); QVERIFY(action);
+                const bool enabled = action->isEnabled(); action->trigger(); menu->close(); QVERIFY(enabled);
             });
-            QContextMenuEvent information(QContextMenuEvent::Keyboard, map->rect().center(), map->mapToGlobal(map->rect().center()));
+            const QPoint fixturePoint = map->rect().center() + QPoint(-128, -128);
+            QContextMenuEvent information(QContextMenuEvent::Mouse, fixturePoint, map->mapToGlobal(fixturePoint));
             QApplication::sendEvent(map, &information);
             auto *dialog = map->findChild<QDialog *>(QStringLiteral("mapInformationDialog")); QVERIFY(dialog);
             QVERIFY(QTest::qWaitForWindowExposed(dialog));
@@ -608,6 +614,59 @@ private slots:
         QVERIFY(absent.activeSource().isEmpty());
         missing.findChild<QPushButton *>(QStringLiteral("editMapProvider"))->click();
     }
+    void mapInformationPane()
+    {
+        QTemporaryDir directory;
+        TileServer server; QVERIFY(server.load(QFINDTESTDATA("fixtures"))); QVERIFY(server.listen(QHostAddress::LocalHost));
+        server.body = "<kml xmlns=\"http://www.opengis.net/kml/2.2\"><Placemark><name>Station</name><description>Read only</description><ExtendedData><Data name=\"status\"><value>Ready</value></Data></ExtendedData><Point><coordinates>0,0</coordinates></Point></Placemark></kml>";
+        swak::Window window(directory.filePath(QStringLiteral("info.json")), QPluginLoader::staticInstances()); window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *map = window.findChild<QOpenGLWidget *>(); auto *feeds = window.findChild<swak::DataSources *>();
+        auto *selection = window.findChild<swak::MapSelection *>(); QVERIFY(map && feeds && selection);
+        auto *pane = window.findChild<QWidget *>(QStringLiteral("informationPane")); QVERIFY(pane);
+        auto *dock = window.findChild<QDockWidget *>(QStringLiteral("org.swak.information.pane")); QVERIFY(dock); QVERIFY(!dock->isVisible());
+        auto source = swak::dataDefaults(); source.insert(QStringLiteral("format"), QStringLiteral("org.swak.kml"));
+        source.insert(QStringLiteral("name"), QStringLiteral("Fixture")); source.insert(QStringLiteral("attribution"), QStringLiteral("Fixture"));
+        source.insert(QStringLiteral("endpoint"), QStringLiteral("https://localhost:%1/feed.kml").arg(server.serverPort()));
+        source.insert(QStringLiteral("enabled"), true); source.insert(QStringLiteral("ignoreTls"), true);
+        QVERIFY(feeds->put(QStringLiteral("test"), source).isEmpty());
+        QVERIFY(QTest::qWaitFor([&] { return feeds->shapeCount(QStringLiteral("test")) == 1; }, 5000));
+        QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
+        QVERIFY(selection->item()); QVERIFY(dock->isVisible());
+        auto *title = pane->findChild<QLabel *>(QStringLiteral("informationTitle")); QCOMPARE(title->text(), QStringLiteral("Station"));
+        auto *description = pane->findChild<QPlainTextEdit *>(); QVERIFY(description->isReadOnly()); QCOMPARE(description->toPlainText(), QStringLiteral("Read only"));
+        auto *table = pane->findChild<QTableWidget *>(); QCOMPARE(table->editTriggers(), QAbstractItemView::NoEditTriggers);
+        bool copied = false;
+        for (int row = 0; row < table->rowCount(); ++row) if (table->item(row, 0)->text() == QStringLiteral("status")) {
+            table->scrollToItem(table->item(row, 1));
+            QTest::mouseClick(table->viewport(), Qt::LeftButton, Qt::NoModifier, table->visualItemRect(table->item(row, 1)).center());
+            QTest::mouseDClick(table->viewport(), Qt::LeftButton, Qt::NoModifier, table->visualItemRect(table->item(row, 1)).center());
+            QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("Ready")); copied = true;
+        }
+        QVERIFY(copied);
+        QTest::mouseDClick(title, Qt::LeftButton); QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("Station"));
+        QTest::mouseDClick(description->viewport(), Qt::LeftButton); QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("Read only"));
+        QSignalSpy frames(map, &QOpenGLWidget::frameSwapped); map->update(); QVERIFY(frames.wait(2000));
+        const auto selectedImage = map->grabFramebuffer();
+        const QPoint imageCenter(selectedImage.width() / 2, selectedImage.height() / 2);
+        const int outline = qRound(7 * map->devicePixelRatioF());
+        QVERIFY(selectedImage.pixelColor(imageCenter + QPoint(outline, 0)).lightness() > 220);
+        QVERIFY(window.screen()->grabWindow(window.winId()).save(QStringLiteral("information-pane.png")));
+        QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, QPoint(40, 40));
+        QVERIFY(!selection->item()); QVERIFY(!dock->isVisible());
+        window.findChild<QPushButton *>(QStringLiteral("generateEvent"))->click();
+        QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
+        QVERIFY(selection->item()); QCOMPARE(selection->item()->label, QStringLiteral("Local event"));
+        QVERIFY(selection->item()->properties.contains(QStringLiteral("UID")));
+        window.store().clear(); QVERIFY(!selection->item());
+        auto *preferences = dynamic_cast<swak::PreferenceParticipant *>(map); QVERIFY(preferences);
+        preferences->restorePreferences({{QStringLiteral("zoom"), 0}, {QStringLiteral("centerX"), 0}, {QStringLiteral("centerY"), 1}});
+        const auto values = preferences->savePreferences(); const double scale = 256 * std::exp2(values.value(QStringLiteral("zoom")).toDouble());
+        QVERIFY(scale >= map->width()); QVERIFY(scale >= map->height());
+        QVERIFY(values.value(QStringLiteral("centerX")).toDouble() * scale >= map->width() / 2.0 - 0.01);
+        QVERIFY((1 - values.value(QStringLiteral("centerY")).toDouble()) * scale >= map->height() / 2.0 - 0.01);
+        window.close();
+    }
     void dataProviders()
     {
         QTemporaryDir directory;
@@ -664,6 +723,81 @@ private slots:
         manager->findChild<QTableWidget *>(QStringLiteral("dataProviderList"))->setCurrentCell(0, 1);
         manager->findChild<QPushButton *>(QStringLiteral("removeDataProvider"))->click(); QCOMPARE(feeds->sources().size(), 2);
         manager->close();
+    }
+    void keyboardPanAndWheelSettings()
+    {
+        QTemporaryDir directory;
+        const auto profile = directory.filePath(QStringLiteral("navigation.json"));
+        {
+            swak::Window window(profile, QPluginLoader::staticInstances()); window.show(); window.activateWindow();
+            QVERIFY(QTest::qWaitForWindowExposed(&window));
+            auto *map = window.findChild<QOpenGLWidget *>();
+            auto *settings = dynamic_cast<swak::SettingsParticipant *>(map); QVERIFY(settings);
+            map->setFocus(); QVERIFY(QTest::qWaitFor([&] { return map->hasFocus(); }));
+            QJsonObject values{{QStringLiteral("zoom"), 4}, {QStringLiteral("panSpeed"), 320}};
+            settings->restorePreferences(values);
+            const auto center = [&] { const auto state = settings->savePreferences(); return QPointF(state.value(QStringLiteral("centerX")).toDouble(), state.value(QStringLiteral("centerY")).toDouble()); };
+            const auto zoom = [&] { return settings->savePreferences().value(QStringLiteral("zoom")).toDouble(); };
+            const auto origin = center();
+            QElapsedTimer clock; clock.start();
+            QTest::keyPress(map, Qt::Key_W);
+            QTest::qWait(240);
+            QKeyEvent repeat(QEvent::KeyPress, Qt::Key_W, Qt::NoModifier, QStringLiteral("w"), true);
+            QApplication::sendEvent(map, &repeat);
+            QKeyEvent repeatRelease(QEvent::KeyRelease, Qt::Key_W, Qt::NoModifier, QStringLiteral("w"), true);
+            QApplication::sendEvent(map, &repeatRelease);
+            QTest::qWait(240);
+            QTest::keyRelease(map, Qt::Key_W);
+            const double pixels = (origin.y() - center().y()) * 4096;
+            const double expected = static_cast<double>(clock.elapsed()) * 0.32;
+            QVERIFY(pixels > expected * 0.65 && pixels < expected * 1.2);
+            QCOMPARE(center().x(), origin.x());
+            auto stopped = center(); QTest::qWait(80); QCOMPARE(center(), stopped);
+            for (const auto key : {Qt::Key_A, Qt::Key_S, Qt::Key_D}) {
+                const auto before = center(); QTest::keyPress(map, key);
+                QVERIFY(QTest::qWaitFor([&] { return center() != before; }, 1000));
+                QTest::keyRelease(map, key);
+                if (key == Qt::Key_A) QVERIFY(center().x() < before.x());
+                if (key == Qt::Key_S) QVERIFY(center().y() > before.y());
+                if (key == Qt::Key_D) QVERIFY(center().x() > before.x());
+            }
+            QTest::keyPress(map, Qt::Key_W); QTest::keyPress(map, Qt::Key_S);
+            stopped = center(); QTest::qWait(80); QCOMPARE(center(), stopped);
+            QTest::keyRelease(map, Qt::Key_W); QTest::keyRelease(map, Qt::Key_S);
+            QTest::keyPress(map, Qt::Key_D);
+            auto *editor = window.findChild<QLineEdit *>(); QVERIFY(editor); editor->setFocus();
+            QVERIFY(QTest::qWaitFor([&] { return !map->hasFocus(); }));
+            stopped = center(); QTest::qWait(80); QCOMPARE(center(), stopped);
+            QTest::keyRelease(map, Qt::Key_D);
+            values.insert(QStringLiteral("panNorthKey"), QStringLiteral("I"));
+            values.insert(QStringLiteral("panWestKey"), QStringLiteral("J"));
+            values.insert(QStringLiteral("panSouthKey"), QStringLiteral("K"));
+            values.insert(QStringLiteral("panEastKey"), QStringLiteral("L"));
+            QVERIFY(settings->validateSettings(values).isEmpty());
+            auto invalid = values; invalid.insert(QStringLiteral("panEastKey"), QStringLiteral("I")); QVERIFY(!settings->validateSettings(invalid).isEmpty());
+            invalid = values; invalid.insert(QStringLiteral("panEastKey"), QStringLiteral("Ctrl+L")); QVERIFY(!settings->validateSettings(invalid).isEmpty());
+            values.insert(QStringLiteral("wheelZoom"), false); settings->restorePreferences(values);
+            const auto wheel = [&](QPointF position) {
+                QWheelEvent event(position, map->mapToGlobal(position.toPoint()), QPoint{}, QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+                QApplication::sendEvent(map, &event);
+            };
+            wheel(map->rect().center()); QCOMPARE(zoom(), 4.0);
+            values.insert(QStringLiteral("wheelZoom"), true); values.insert(QStringLiteral("wheelReverse"), true); values.insert(QStringLiteral("wheelSteps"), 2);
+            settings->restorePreferences(values);
+            wheel(QPointF(-10, -10)); QCOMPARE(zoom(), 4.0);
+            wheel(map->rect().center()); QCOMPARE(zoom(), 2.0);
+            map->setFocus(); QVERIFY(QTest::qWaitFor([&] { return map->hasFocus(); }));
+            QTest::keyPress(map, Qt::Key_I); QVERIFY(QTest::qWaitFor([&] { return center().y() < 0.5; })); QTest::keyRelease(map, Qt::Key_I);
+            QTest::keyPress(map, Qt::Key_L); map->hide(); stopped = center(); QTest::qWait(80); QCOMPARE(center(), stopped);
+            map->show(); QTest::keyRelease(map, Qt::Key_L);
+            QVERIFY(window.savePreferences());
+        }
+        swak::Window restored(profile, QPluginLoader::staticInstances());
+        const auto state = dynamic_cast<swak::PreferenceParticipant *>(restored.findChild<QOpenGLWidget *>())->savePreferences();
+        QCOMPARE(state.value(QStringLiteral("panNorthKey")).toString(), QStringLiteral("I"));
+        QCOMPARE(state.value(QStringLiteral("panSpeed")).toDouble(), 320.0);
+        QCOMPARE(state.value(QStringLiteral("wheelSteps")).toInt(), 2);
+        QVERIFY(state.value(QStringLiteral("wheelReverse")).toBool());
     }
     void providerActivationTables()
     {
@@ -901,7 +1035,7 @@ private slots:
             QVERIFY(!action->isChecked());
             dock->setFloating(false);
         }
-        QCOMPARE(activated, 5);
+        QCOMPARE(activated, 6);
         QVERIFY(window.grab().save(QStringLiteral("plugin-labels-smoke.png")));
     }
     void clearEventsMenu()
@@ -1082,7 +1216,7 @@ private slots:
                 if (!dialog) { QFAIL("Settings dialog did not open."); return; }
                 auto *tabs = dialog->findChild<QTabWidget *>();
                 auto *panes = dialog->findChild<QListWidget *>(QStringLiteral("paneSettingsSections"));
-                if (!tabs || tabs->count() != 2 || !panes || panes->count() != 5) {
+                if (!tabs || tabs->count() != 2 || !panes || panes->count() != 6) {
                     dialog->reject(); QFAIL("The pane tab is incomplete."); return;
                 }
                 const QCollator collator;
@@ -1374,7 +1508,7 @@ private slots:
         QCOMPARE(window.findChild<QSpinBox *>(QStringLiteral("lifetime"))->value(), 300);
         QCOMPARE(window.findChild<QSpinBox *>(QStringLiteral("bindPort"))->value(), 6969);
         const auto values = dynamic_cast<swak::PreferenceParticipant *>(window.findChild<QOpenGLWidget *>(QStringLiteral("map")))->savePreferences();
-        QCOMPARE(values.value(QStringLiteral("zoom")).toDouble(), 1.0);
+        QCOMPARE(values.value(QStringLiteral("zoom")).toDouble(), std::ceil(std::log2(std::max(window.findChild<QOpenGLWidget *>()->width(), window.findChild<QOpenGLWidget *>()->height()) / 256.0)));
         QCOMPARE(values.value(QStringLiteral("centerX")).toDouble(), 0.5);
         window.close();
     }
@@ -1450,7 +1584,7 @@ private slots:
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         const auto docks = window.findChildren<QDockWidget *>(QString{}, Qt::FindDirectChildrenOnly);
-        QCOMPARE(docks.size(), 5);
+        QCOMPARE(docks.size(), 6);
         QVERIFY(!window.findChild<QWidget *>(QStringLiteral("toolsDock")));
         auto *viewMenu = window.findChild<QMenu *>(QStringLiteral("viewMenu"));
         auto *fileMenu = window.findChild<QMenu *>(QStringLiteral("fileMenu"));
@@ -1558,7 +1692,7 @@ private slots:
         QTest::keyClick(map, Qt::Key_Home);
         const QImage frame = map->grabFramebuffer();
         QVERIFY(!frame.isNull());
-        QCOMPARE(frame.pixelColor(20, frame.height() / 2), QColor(swak::MapBackgroundRgb));
+        QCOMPARE(frame.pixelColor(20, 21), QColor(swak::MapBackgroundRgb));
         QVERIFY(frame.save(QStringLiteral("map-smoke.png")));
         QSignalSpy frames(map, &QOpenGLWidget::frameSwapped);
         map->update();

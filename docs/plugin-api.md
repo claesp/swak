@@ -1,12 +1,12 @@
 # Plugin API
 
-This review covers all twelve built-in plugins. Every plugin implements `Plugin` and uses the shared contracts in `src/core/`. The common API version is 2. No plugin depends on a concrete application window class.
+This review covers all thirteen built-in plugins. Every plugin implements `Plugin` and uses the shared contracts in `src/core/`. The common API version is 2. No plugin depends on a concrete application window class.
 
 The application links plugins into the executable. Qt embeds each `src/plugins/<plugin>/MANIFEST` file through `Q_PLUGIN_METADATA`. The common metadata identifier is `org.swak.Plugin/2.0`. The application does not load external plugin binaries or search plugin directories.
 
 # Host services
 
-`PluginServices` supplies references to the event store, internal-event model, and map catalog. Its optional `data` pointer supplies the data catalog. The host passes this context to each UI factory and menu or toolbar callback. The context exists only during the call. Plugins can capture its service pointers in callbacks whose QObject context limits their lifetime.
+`PluginServices` supplies references to the event store, internal-event model, and map catalog. Its optional `data` pointer supplies the data catalog. Its optional `selection` pointer supplies the shared map selection. The host passes this context to each UI factory and menu or toolbar callback. The context exists only during the call. Plugins can capture its service pointers in callbacks whose QObject context limits their lifetime.
 
 The host owns the services for each window. Plugins must not save service pointers, menus, or widgets in their static plugin objects. Qt parents own created widgets and actions. The host destroys plugin widgets before the event store. All model and widget operations use the GUI thread.
 
@@ -54,6 +54,7 @@ The host owns pane placement, visibility actions, and layout persistence. Plugin
 | `src/plugins/editor` | CoT Event Generator | Tool |
 | `src/plugins/udp` | UDP receiver | Source |
 | `src/plugins/activity` | Internal events | Pane and menu |
+| `src/plugins/information` | Information | Pane |
 | `src/plugins/mvt` | MVT vector tiles | Map provider and vector tiles |
 | `src/plugins/xyz` | XYZ image tiles | Map provider |
 | `src/plugins/wmts` | WMTS image tiles | Map provider |
@@ -85,7 +86,7 @@ Each MANIFEST contains a JSON object. Its schema version is 1. Qt embeds the obj
 | `permissions` | Declared operating-system access, without duplicate or unknown values. |
 | `settingsSchemaVersion` | Integer 1 for the preferences contract. |
 
-Permission values are `network-udp`, `network-https`, `disk-cache`, `browser-links`, and `user-selected-files`. They document access and do not create a security sandbox. Native plugin code retains application permissions. Static plugins use the same compiler, Qt installation, and build flags as the host.
+Permission values are `network-udp`, `network-https`, `disk-cache`, `browser-links`, `clipboard-write`, and `user-selected-files`. They document access and do not create a security sandbox. Native plugin code retains application permissions. Static plugins use the same compiler, Qt installation, and build flags as the host.
 
 `builtInPlugins()` validates manifests before the host uses their features. It rejects incompatible declarations and duplicate identifiers. It reports failures through the shared logger. Unknown metadata identifiers do not enter the SWAK plugin catalog.
 
@@ -143,3 +144,15 @@ The host prepares vector images on the same bounded workers that decode tiles. T
 Each worker owns its QImage until painting finishes. Only completed images cross to the GUI thread. This follows the [Qt rules for painting in threads](https://doc.qt.io/qt-6/threads-modules.html#painting-in-threads).
 
 The host SettingsPage structure accepts an optional widget factory for catalog pages. MapManager and DataManager share ProviderTable in Settings and their separate windows. Catalog actions apply immediately through the existing MapSources and DataSources methods. The host skips generic snapshot forms for these two catalogs, so Apply cannot restore stale provider values. Plugin interfaces remain unchanged.
+
+# Map selection and pane requests
+
+`MapSelection` stores an optional owning `MapItem` value and emits `changed` when that value changes. The host owns this service per window. `MapItem` contains a label, type, plain-text description, JSON properties, normalized world geometry, and drawing dimensions. Selection uses the GUI thread. Consumers must tolerate a null service pointer.
+
+`DataSources::itemAt` and `TileRenderer::itemAt` return a snapshot for the topmost hit. The map view passes that snapshot to the shared selection. An empty hit clears selection. Data documents retain bounded description and property values in each `DataShape`. Vector selection retains the feature properties and selects the closest point in a multipoint feature.
+
+A pane can derive from `PaneContent` and emit `visibilityRequested(bool)`. The host connects this signal to the dock. A show request raises the pane without taking keyboard focus. A hide request closes the pane view.
+
+The pane can override preferredDockArea() to select its initial dock area. The default is the bottom area. Information uses the right area. Saved layouts take precedence. This optional base class leaves existing PanePlugin factories unchanged.
+
+The Information plugin implements PanePlugin and PreferenceParticipant. Its MANIFEST declares `clipboard-write`, a permission for user-requested copies to the OS clipboard. The common Plugin API remains version 2. All built-in plugins compile against the same extended service structure. No external binary compatibility is promised.

@@ -5,6 +5,7 @@
 #include "core/interfaces.h"
 #include "core/logging.h"
 #include "core/activity.h"
+#include "core/map_selection.h"
 #include "app/settings_dialog.h"
 #include <QAction>
 #include <QToolBar>
@@ -111,7 +112,8 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     auto *mapSources = new MapSources(plugins, this);
     auto *dataSources = new DataSources(plugins, this);
     dataSources->setObjectName(QStringLiteral("dataSources"));
-    PluginServices services{store_, *activity, *mapSources, dataSources};
+    auto *selection = new MapSelection(this);
+    PluginServices services{store_, *activity, *mapSources, dataSources, selection};
     if (view) {
         setCentralWidget(view->create(services, layers, this));
     } else {
@@ -154,6 +156,11 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         connect(dock, &QDockWidget::topLevelChanged, grip, &QWidget::setVisible);
         dock->setWidget(container);
         addDockWidget(area, dock);
+        if (auto *pane = dynamic_cast<PaneContent *>(content))
+            connect(pane, &PaneContent::visibilityRequested, dock, [dock](bool visible) {
+                dock->setVisible(visible);
+                if (visible) dock->raise();
+            });
         return dock;
     };
     QList<QDockWidget *> sideDocks;
@@ -187,10 +194,13 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     }
     for (auto *plugin : plugins) {
         if (auto *pane = qobject_cast<PanePlugin *>(plugin)) {
-            auto *dock = createDock(pane->name(), QString::fromLatin1(plugin->metaObject()->className()) + QStringLiteral("Dock"),
-                pane->create(services, this), Qt::BottomDockWidgetArea);
+            auto *content = pane->create(services, this);
+            const auto *requests = dynamic_cast<PaneContent *>(content);
+            const auto area = requests ? requests->preferredDockArea() : Qt::BottomDockWidgetArea;
+            auto *dock = createDock(pane->name(), QString::fromLatin1(plugin->metaObject()->className()) + QStringLiteral("Dock"), content, area);
             pluginDocks.insert(plugin, dock);
-            if (bottomDock) tabifyDockWidget(bottomDock, dock);
+            if (area == Qt::RightDockWidgetArea) sideDocks.append(dock);
+            else if (area == Qt::BottomDockWidgetArea && bottomDock) tabifyDockWidget(bottomDock, dock);
             dock->hide();
             names.append(pane->name());
         }

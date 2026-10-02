@@ -23,6 +23,12 @@
 #include "core/store.h"
 #include "core/preferences.h"
 #include <QKeyEvent>
+#include <QKeySequence>
+#include <QElapsedTimer>
+#include <QFocusEvent>
+#include <QResizeEvent>
+#include "core/map_selection.h"
+#include <array>
 #include <QMouseEvent>
 #include <QOpenGLFunctions>
 #include <QOpenGLWidget>
@@ -33,17 +39,38 @@
 #include <utility>
 
 namespace swak {
+namespace {
+const std::array<QString, 4> PanPaths{QStringLiteral("panNorthKey"), QStringLiteral("panWestKey"), QStringLiteral("panSouthKey"), QStringLiteral("panEastKey")};
+const std::array<int, 4> DefaultPanKeys{Qt::Key_W, Qt::Key_A, Qt::Key_S, Qt::Key_D};
+int panKey(const QString &text)
+{
+    if (text.isEmpty() || text.size() > 32) return 0;
+    const auto sequence = QKeySequence::fromString(text, QKeySequence::PortableText);
+    if (sequence.count() != 1 || sequence[0].keyboardModifiers() != Qt::NoModifier) return 0;
+    const int key = sequence[0].key();
+    return ((key >= Qt::Key_A && key <= Qt::Key_Z) || (key >= Qt::Key_0 && key <= Qt::Key_9)
+        || (key >= Qt::Key_F1 && key <= Qt::Key_F12) || (key >= Qt::Key_Left && key <= Qt::Key_Down)) ? key : 0;
+}
+}
 class MapWidget final : public QOpenGLWidget, public SettingsParticipant, protected QOpenGLFunctions {
 public:
     MapWidget(Store &store, QList<MapLayer *> layers, QWidget *parent)
         : QOpenGLWidget(parent), store_(store), layers_(std::move(layers))
     {
+        panTimer_.setInterval(16);
+        panTimer_.setTimerType(Qt::PreciseTimer);
+        connect(&panTimer_, &QTimer::timeout, this, [this] {
+            const double seconds = std::min(static_cast<double>(panClock_.restart()) / 1000.0, 0.1);
+            view_.center += panDirection() * (panSpeed_ * seconds / view_.scale());
+            clampCenter();
+            update();
+        });
         connect(&tiles_, &TileRenderer::changed, this, QOverload<>::of(&MapWidget::update));
         setObjectName(QStringLiteral("map"));
         setMinimumSize(320, 240);
         setFocusPolicy(Qt::StrongFocus);
         setAccessibleName(tr("Event map"));
-        setAccessibleDescription(tr("Drag to pan. Double-click to center. Use the wheel or plus and minus keys to zoom. Press Home to reset. Right-click for map layers and information."));
+        setAccessibleDescription(tr("Hold W, A, S, or D to pan. Drag to pan. Double-click to center. Use the wheel or plus and minus keys to zoom. Press Home to reset. Right-click for map layers and information."));
         setMouseTracking(true);
         cacheLabel_ = new QLabel(this);
         cacheLabel_->setObjectName(QStringLiteral("mapCacheSize"));
@@ -66,28 +93,41 @@ public:
                 QDesktopServices::openUrl(url);
         });
         std::sort(layers_.begin(), layers_.end(), [](const auto *a, const auto *b) { return a->order() < b->order(); });
-        connect(&store_, &Store::changed, this, QOverload<>::of(&MapWidget::update));
+        connect(&store_, &Store::changed, this, [this] {
+            if (selection_ && selectedSource_ == QStringLiteral("cot")) selection_->clear();
+            update();
+        });
         connect(&store_, &Store::selectionChanged, this, [this] {
             const auto &events = store_.events();
             const auto event = std::find_if(events.begin(), events.end(), [this](const Event &item) {
                 return item.uid == store_.selected();
             });
-            if (event != events.end()) view_.center = project(event->latitude, event->longitude);
+            if (event != events.end()) { view_.center = project(event->latitude, event->longitude); clampCenter(); }
             update();
         });
+    }
+    void setSelection(MapSelection *selection)
+    {
+        selection_ = selection;
+        if (selection_) connect(selection_, &MapSelection::changed, this, qOverload<>(&QWidget::update));
     }
     void setDataSources(DataSources *sources)
     {
         dataSources_ = sources;
-        if (sources) connect(sources, &DataSources::contentChanged, this, qOverload<>(&QWidget::update));
+        if (sources) connect(sources, &DataSources::contentChanged, this, [this] {
+            if (selection_ && selectedSource_ == QStringLiteral("data")) selection_->clear();
+            update();
+        });
     }
     void setMapSources(MapSources *sources)
     {
         if (sources_) disconnect(sources_, nullptr, this, nullptr);
         sources_ = sources;
         const auto apply = [this] {
+            if (selection_ && selectedSource_ == QStringLiteral("vector")) selection_->clear();
             const auto source = sources_->activeSource();
             normalizeZoom();
+            clampCenter();
             wheelRemainder_ = 0;
             tiles_.setSource(sources_->provider(source), source);
             update();
@@ -102,6 +142,15 @@ public:
         return {numberSetting(QStringLiteral("centerX"), tr("Horizontal center (0–1)"), 0, 1, 6),
                 numberSetting(QStringLiteral("centerY"), tr("Vertical center (0–1)"), 0, 1, 6),
                 numberSetting(QStringLiteral("zoom"), tr("Zoom"), zoomLimits().first, zoomLimits().second),
+                textSetting(QStringLiteral("panNorthKey"), tr("Pan north key"), 32),
+                textSetting(QStringLiteral("panWestKey"), tr("Pan west key"), 32),
+                textSetting(QStringLiteral("panSouthKey"), tr("Pan south key"), 32),
+                textSetting(QStringLiteral("panEastKey"), tr("Pan east key"), 32),
+                numberSetting(QStringLiteral("panSpeed"), tr("Keyboard pan speed (pixels per second)"), 30, 2000),
+                booleanSetting(QStringLiteral("wheelZoom"), tr("Mouse wheel zoom")),
+                booleanSetting(QStringLiteral("wheelReverse"), tr("Reverse mouse wheel zoom")),
+                numberSetting(QStringLiteral("wheelSteps"), tr("Zoom levels per wheel step"), 1, 4),
+                numberSetting(QStringLiteral("prefetchMargin"), tr("Nearby tile rows (0 disables preloading)"), 0, 2),
                 numberSetting(QStringLiteral("tileCacheMiB"), tr("Tile memory cache (MiB)"), 64, 512),
                 numberSetting(QStringLiteral("diskCacheMiB"), tr("Tile disk cache (MiB)"), 16, 4096),
                 numberSetting(QStringLiteral("missingOpacity"), tr("Missing tile marker opacity"), 0, 1, 2),
@@ -110,20 +159,47 @@ public:
                 booleanSetting(QStringLiteral("smooth"), tr("Smooth image scaling")),
                 booleanSetting(QStringLiteral("antialias"), tr("Smooth vector edges"))};
     }
+    QString validateSettings(const QJsonObject &values) const override
+    {
+        QSet<int> keys;
+        for (size_t i = 0; i < PanPaths.size(); ++i) {
+            const int key = panKey(values.value(PanPaths[i]).toString(QKeySequence(DefaultPanKeys[i]).toString(QKeySequence::PortableText)));
+            if (!key || keys.contains(key)) return tr("Use four different keys: letters, digits, arrows, or F1 through F12. Do not use modifiers or key sequences.");
+            keys.insert(key);
+        }
+        return {};
+    }
     QJsonObject savePreferences() const override
     {
-        return {{QStringLiteral("informationGeometry"), QString::fromLatin1((information_ ? information_->saveGeometry() : informationGeometry_).toBase64())}, {QStringLiteral("centerX"), view_.center.x()}, {QStringLiteral("centerY"), view_.center.y()},
+        QJsonObject values{{QStringLiteral("informationGeometry"), QString::fromLatin1((information_ ? information_->saveGeometry() : informationGeometry_).toBase64())}, {QStringLiteral("centerX"), view_.center.x()}, {QStringLiteral("centerY"), view_.center.y()},
                 {QStringLiteral("zoom"), view_.zoom}, {QStringLiteral("tileCacheMiB"), tileCacheMiB_}, {QStringLiteral("diskCacheMiB"), diskCacheMiB_}, {QStringLiteral("opacity"), opacity_},
                 {QStringLiteral("missingOpacity"), missingOpacity_},
-                {QStringLiteral("attributionOpacity"), attributionOpacity_}, {QStringLiteral("smooth"), smooth_}, {QStringLiteral("antialias"), antialias_}};
+                {QStringLiteral("attributionOpacity"), attributionOpacity_}, {QStringLiteral("smooth"), smooth_}, {QStringLiteral("antialias"), antialias_},
+                {QStringLiteral("panSpeed"), panSpeed_}, {QStringLiteral("wheelZoom"), wheelZoom_},
+                {QStringLiteral("wheelReverse"), wheelReverse_}, {QStringLiteral("wheelSteps"), wheelSteps_},
+                {QStringLiteral("prefetchMargin"), prefetchMargin_}};
+        for (size_t i = 0; i < PanPaths.size(); ++i) values.insert(PanPaths[i], QKeySequence(panKeys_[i]).toString(QKeySequence::PortableText));
+        return values;
     }
     void restorePreferences(const QJsonObject &values) override
     {
+        stopPanning();
+        panKeys_ = DefaultPanKeys;
+        if (validateSettings(values).isEmpty())
+            for (size_t i = 0; i < PanPaths.size(); ++i)
+                panKeys_[i] = panKey(preferenceText(values, PanPaths[i], QKeySequence(DefaultPanKeys[i]).toString(QKeySequence::PortableText), 32));
+        panSpeed_ = preferenceNumber(values, QStringLiteral("panSpeed"), 300, 30, 2000);
+        wheelZoom_ = values.value(QStringLiteral("wheelZoom")).toBool(true);
+        wheelReverse_ = values.value(QStringLiteral("wheelReverse")).toBool(false);
+        wheelSteps_ = static_cast<int>(preferenceNumber(values, QStringLiteral("wheelSteps"), 1, 1, 4));
+        prefetchMargin_ = static_cast<int>(preferenceNumber(values, QStringLiteral("prefetchMargin"), 1, 0, 2));
+        tiles_.setPrefetchMargin(prefetchMargin_);
         informationGeometry_ = QByteArray::fromBase64(values.value(QStringLiteral("informationGeometry")).toString().left(8192).toLatin1());
         view_.center = {preferenceNumber(values, QStringLiteral("centerX"), 0.5, 0, 1),
                         preferenceNumber(values, QStringLiteral("centerY"), 0.5, 0, 1)};
         view_.zoom = preferenceNumber(values, QStringLiteral("zoom"), 1, 0, 19);
         normalizeZoom();
+        clampCenter();
         wheelRemainder_ = 0;
         tileCacheMiB_ = static_cast<int>(preferenceNumber(values, QStringLiteral("tileCacheMiB"), 256, 64, 512));
         tiles_.setMemoryLimit(tileCacheMiB_);
@@ -169,7 +245,18 @@ protected:
         menu.exec(mapToGlobal(position));
         event->accept();
     }
-    void hideEvent(QHideEvent *event) override { tiles_.stop(); QOpenGLWidget::hideEvent(event); }
+    bool event(QEvent *event) override
+    {
+        if (event->type() == QEvent::WindowDeactivate) stopPanning();
+        return QOpenGLWidget::event(event);
+    }
+    void focusOutEvent(QFocusEvent *event) override { stopPanning(); QOpenGLWidget::focusOutEvent(event); }
+    void hideEvent(QHideEvent *event) override { stopPanning(); tiles_.stop(); QOpenGLWidget::hideEvent(event); }
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QOpenGLWidget::resizeEvent(event);
+        view_.size = size(); normalizeZoom(); clampCenter(); update();
+    }
     void initializeGL() override { initializeOpenGLFunctions(); }
     void paintGL() override
     {
@@ -187,6 +274,7 @@ protected:
             painter.restore();
         }
         if (!tilesPainted) { tiles_.paint(painter, view_, opacity_, smooth_, missingOpacity_); if (dataSources_) dataSources_->paint(painter, view_); }
+        if (selection_) selection_->paint(painter, view_);
         const auto source = sources_ ? sources_->activeSource() : QJsonObject{};
         painter.setPen(QColor("#c7d7e5"));
         const QPointF coord = view_.coordinate(cursor_);
@@ -312,22 +400,54 @@ protected:
             const double candidate = std::hypot(delta.x(), delta.y());
             if (candidate < distance) { distance = candidate; closest = item.uid; }
         }
+        if (!closest.isEmpty()) {
+            const auto selectedEvent = std::find_if(store_.events().begin(), store_.events().end(), [&](const Event &item) { return item.uid == closest; });
+            if (selectedEvent != store_.events().end() && selection_) {
+                MapItem item; item.label = selectedEvent->callsign.isEmpty() ? selectedEvent->uid : selectedEvent->callsign; item.type = selectedEvent->type;
+                item.point = project(selectedEvent->latitude, selectedEvent->longitude); item.color = Qt::white;
+                item.properties = {{QStringLiteral("UID"), selectedEvent->uid}, {QStringLiteral("How"), selectedEvent->how},
+                    {QStringLiteral("Latitude"), selectedEvent->latitude}, {QStringLiteral("Longitude"), selectedEvent->longitude},
+                    {QStringLiteral("Altitude"), selectedEvent->altitude}, {QStringLiteral("Circular error"), selectedEvent->circularError}, {QStringLiteral("Linear error"), selectedEvent->linearError},
+                    {QStringLiteral("Time"), selectedEvent->time.toString(Qt::ISODateWithMs)}, {QStringLiteral("Start"), selectedEvent->start.toString(Qt::ISODateWithMs)}, {QStringLiteral("Stale"), selectedEvent->stale.toString(Qt::ISODateWithMs)}};
+                selectedSource_ = QStringLiteral("cot"); selection_->select(std::move(item));
+            }
+        } else {
+            auto item = dataSources_ ? dataSources_->itemAt(view_, event->position()) : std::optional<MapItem>{};
+            selectedSource_ = QStringLiteral("data");
+            if (!item) { item = tiles_.itemAt(event->position()); selectedSource_ = QStringLiteral("vector"); }
+            if (selection_) { if (item) selection_->select(std::move(*item)); else selection_->clear(); }
+        }
         store_.select(closest);
         update();
     }
     void wheelEvent(QWheelEvent *event) override
     {
+        if (!wheelZoom_ || !QRectF(rect()).contains(event->position())) { wheelRemainder_ = 0; event->ignore(); return; }
         if (event->phase() == Qt::ScrollBegin) wheelRemainder_ = 0;
         const int delta = event->angleDelta().y() != 0 ? event->angleDelta().y() : event->pixelDelta().y();
         wheelRemainder_ += std::clamp(delta, -1200, 1200);
         const int steps = wheelRemainder_ / 120;
         wheelRemainder_ %= 120;
-        if (steps) zoomAt(event->position(), steps);
+        if (steps) zoomAt(event->position(), steps * wheelSteps_ * (wheelReverse_ ? -1 : 1));
         if (event->phase() == Qt::ScrollEnd) wheelRemainder_ = 0;
         event->accept();
     }
+    void keyReleaseEvent(QKeyEvent *event) override
+    {
+        if (heldPan_.contains(event->key())) {
+            if (!event->isAutoRepeat()) { heldPan_.remove(event->key()); syncPanTimer(); }
+            event->accept();
+            return;
+        }
+        QOpenGLWidget::keyReleaseEvent(event);
+    }
     void keyPressEvent(QKeyEvent *event) override
     {
+        if (event->modifiers() == Qt::NoModifier && std::find(panKeys_.begin(), panKeys_.end(), event->key()) != panKeys_.end()) {
+            if (!event->isAutoRepeat()) { heldPan_.insert(event->key()); syncPanTimer(); }
+            event->accept();
+            return;
+        }
         switch (event->key()) {
         case Qt::Key_Plus: case Qt::Key_Equal: zoomAt(rect().center(), 1); break;
         case Qt::Key_Minus: zoomAt(rect().center(), -1); break;
@@ -342,6 +462,19 @@ protected:
         update();
     }
 private:
+    QPointF panDirection() const
+    {
+        const double x = int(heldPan_.contains(panKeys_[3])) - int(heldPan_.contains(panKeys_[1]));
+        const double y = int(heldPan_.contains(panKeys_[2])) - int(heldPan_.contains(panKeys_[0]));
+        const double length = std::hypot(x, y);
+        return length > 0 ? QPointF(x / length, y / length) : QPointF{};
+    }
+    void syncPanTimer()
+    {
+        if (panDirection().isNull()) { panTimer_.stop(); return; }
+        if (!panTimer_.isActive()) { panClock_.start(); panTimer_.start(); }
+    }
+    void stopPanning() { heldPan_.clear(); panTimer_.stop(); }
     void showInformation(const QList<QJsonObject> &features)
     {
         if (information_) information_->close();
@@ -381,8 +514,10 @@ private:
     std::pair<int, int> zoomLimits() const
     {
         const auto source = sources_ ? sources_->activeSource() : QJsonObject{};
-        return source.isEmpty() ? std::pair{0, 19} : std::pair{source.value(QStringLiteral("minZoom")).toInt(),
-            source.value(QStringLiteral("maxZoom")).toInt()};
+        const int fit = std::clamp(static_cast<int>(std::ceil(std::log2(std::max(width(), height()) / 256.0))), 0, 19);
+        const int minimum = std::max(fit, source.value(QStringLiteral("minZoom")).toInt());
+        const int maximum = std::max(minimum, source.isEmpty() ? 19 : source.value(QStringLiteral("maxZoom")).toInt());
+        return {minimum, maximum};
     }
     void normalizeZoom()
     {
@@ -391,8 +526,10 @@ private:
     }
     void clampCenter()
     {
-        view_.center.setX(std::clamp(view_.center.x(), 0.0, 1.0));
-        view_.center.setY(std::clamp(view_.center.y(), 0.0, 1.0));
+        const double halfWidth = std::min(0.5, width() / (2 * view_.scale()));
+        const double halfHeight = std::min(0.5, height() / (2 * view_.scale()));
+        view_.center.setX(std::clamp(view_.center.x(), halfWidth, 1 - halfWidth));
+        view_.center.setY(std::clamp(view_.center.y(), halfHeight, 1 - halfHeight));
     }
     void zoomAt(QPointF anchor, int delta)
     {
@@ -404,6 +541,17 @@ private:
         clampCenter();
         update();
     }
+    MapSelection *selection_ = nullptr;
+    QString selectedSource_;
+    QTimer panTimer_;
+    QElapsedTimer panClock_;
+    QSet<int> heldPan_;
+    std::array<int, 4> panKeys_ = DefaultPanKeys;
+    double panSpeed_ = 300;
+    bool wheelZoom_ = true;
+    bool wheelReverse_ = false;
+    int wheelSteps_ = 1;
+    int prefetchMargin_ = 1;
     QPointer<QDialog> information_;
     QByteArray informationGeometry_;
     MapSources *sources_ = nullptr;
@@ -439,6 +587,7 @@ public:
         auto *widget = new MapWidget(services.store, layers, parent);
         widget->setMapSources(&services.maps);
         widget->setDataSources(services.data);
+        widget->setSelection(services.selection);
         return widget;
     }
     void populateToolbar(PluginServices &services, QToolBar &toolbar, QMenu *) override

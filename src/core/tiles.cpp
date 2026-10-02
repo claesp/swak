@@ -2,6 +2,8 @@
 #include "core/logging.h"
 #include "swak/version.h"
 #include <QBuffer>
+#include <QJsonArray>
+#include <QLineF>
 #include <QFutureWatcher>
 #include <QtConcurrentRun>
 #include <QDir>
@@ -66,6 +68,38 @@ QList<TilePlacement> visibleTiles(const Viewport &view, int minimumZoom, int max
     }
     return result;
 }
+QList<TilePlacement> tileFetchArea(const QList<TilePlacement> &visible, int margin)
+{
+    auto result = visible;
+    QSet<QString> keys;
+    for (const auto &tile : visible) keys.insert(tile.key);
+    // Visible tiles always precede at most 64 nearby tiles.
+    for (int ring = 1; ring <= std::clamp(margin, 0, 2); ++ring) {
+        for (const auto &tile : visible) {
+            if (tile.z < 0 || tile.z > 19) continue;
+            for (int dy = -ring; dy <= ring; ++dy) for (int dx = -ring; dx <= ring; ++dx) {
+                if (std::max(std::abs(dx), std::abs(dy)) != ring) continue;
+                const int x = tile.x + dx, y = tile.y + dy;
+                if (x < 0 || y < 0 || x >= (1 << tile.z) || y >= (1 << tile.z)) continue;
+                const auto key = QStringLiteral("%1/%2/%3").arg(tile.z).arg(x).arg(y);
+                if (keys.contains(key)) continue;
+                keys.insert(key);
+                result.append({key, tile.z, x, y, tile.rectangle.translated(dx * tile.rectangle.width(), dy * tile.rectangle.height())});
+                if (result.size() >= visible.size() + 64) return result;
+            }
+        }
+    }
+    return result;
+}
+void TileRenderer::setPrefetchMargin(int margin)
+{
+    const int bounded = std::clamp(margin, 0, 2);
+    if (bounded == prefetchMargin_) return;
+    prefetchMargin_ = bounded;
+    prefetchSkipped_.clear();
+    needed_ = tileFetchArea(visible_, prefetchMargin_);
+    if (ready_) schedule_.start(0);
+}
 TileRenderer::TileRenderer(QObject *parent) : QObject(parent)
 {
     workers_.setMaxThreadCount(2);
@@ -98,6 +132,8 @@ void TileRenderer::setMemoryLimit(int mebibytes)
     images_.clear();
     images_.setMaxCost(limit);
     visible_.clear();
+    needed_.clear();
+    prefetchSkipped_.clear();
     deferred_.clear();
     pressureZoom_ = 19;
     emit changed();
@@ -118,6 +154,8 @@ void TileRenderer::stop()
     contentVisible_ = false;
     cancel();
     visible_.clear();
+    needed_.clear();
+    prefetchSkipped_.clear();
     for (const auto &key : images_.keys())
         if (images_.object(key)->transient) images_.remove(key);
 }
@@ -129,6 +167,8 @@ void TileRenderer::setSource(MapProvider *provider, const QJsonObject &source)
     deferred_.clear();
     failures_.clear();
     visible_.clear();
+    needed_.clear();
+    prefetchSkipped_.clear();
     pressureZoom_ = 19;
     network_.clearAccessCache();
     network_.setCache(nullptr);
@@ -178,10 +218,15 @@ void TileRenderer::paint(QPainter &painter, const Viewport &view, double opacity
     const bool moved = next.size() != visible_.size() || !std::equal(next.begin(), next.end(), visible_.begin(),
         [](const TilePlacement &a, const TilePlacement &b) { return a.key == b.key; });
     visible_ = next;
-    if (fetching && moved) { deferred_.clear(); schedule_.start(150); }
+    needed_ = tileFetchArea(visible_, prefetchMargin_);
+    if (fetching && moved) {
+        deferred_.clear();
+        prefetchSkipped_.clear();
+        if (!schedule_.isActive()) schedule_.start(0);
+    }
     for (const auto &key : images_.keys()) {
         const auto *image = images_.object(key);
-        if (image && image->transient && std::none_of(visible_.begin(), visible_.end(), [&](const TilePlacement &tile) { return tile.key == key; }))
+        if (image && image->transient && std::none_of(needed_.begin(), needed_.end(), [&](const TilePlacement &tile) { return tile.key == key; }))
             images_.remove(key);
     }
     painter.save();
@@ -226,19 +271,27 @@ void TileRenderer::pump()
     if (!provider_ || !ready_) return;
     const auto now = QDateTime::currentDateTimeUtc();
     for (auto it = pending_.begin(); it != pending_.end();) {
-        const bool needed = std::any_of(visible_.begin(), visible_.end(), [&](const TilePlacement &tile) { return tile.key == it.key(); });
+        const bool needed = std::any_of(needed_.begin(), needed_.end(), [&](const TilePlacement &tile) { return tile.key == it.key(); });
         if (needed) { ++it; continue; }
         auto *reply = it.value();
         it = pending_.erase(it);
         reply->disconnect(this); reply->abort(); reply->deleteLater();
     }
     for (auto it = decoding_.begin(); it != decoding_.end(); ++it)
-        if (std::none_of(visible_.begin(), visible_.end(), [&](const TilePlacement &tile) { return tile.key == it.key(); }))
+        if (std::none_of(needed_.begin(), needed_.end(), [&](const TilePlacement &tile) { return tile.key == it.key(); }))
             it.value()->store(true, std::memory_order_relaxed);
     if (retryAt_ > now) { schedule_.start(static_cast<int>(std::min<qint64>(now.msecsTo(retryAt_), 3600000))); return; }
     qint64 nextRetry = 3600000;
     bool waiting = false;
-    for (const auto &tile : visible_) {
+    const bool visibleReady = std::all_of(visible_.begin(), visible_.end(), [&](const TilePlacement &tile) {
+        const auto *image = images_.object(tile.key);
+        const auto *failure = failures_.object(tile.key);
+        return (image && (image->transient || image->expires > now)) || (failure && failure->retryAt > now) || deferred_.contains(tile.key);
+    });
+    for (const auto &tile : needed_) {
+        const bool visible = std::any_of(visible_.begin(), visible_.end(), [&](const TilePlacement &item) { return item.key == tile.key; });
+        if (!visible && !visibleReady) break;
+        if (prefetchSkipped_.contains(tile.key)) continue;
         if (const auto *failure = failures_.object(tile.key); failure && failure->retryAt > now) {
             waiting = true;
             nextRetry = std::min(nextRetry, now.msecsTo(failure->retryAt));
@@ -295,7 +348,10 @@ void TileRenderer::pump()
                 if (!expires.isValid()) expires = QDateTime::currentDateTimeUtc().addDays(7);
                 if (vector) decodeVector(key, std::move(*data), reply->url(), expires, transient);
                 else {
-                    images_.insert(key, new Image{image, {}, false, expires, transient}, static_cast<int>(image.sizeInBytes() / 1024));
+                    const int cost = static_cast<int>(image.sizeInBytes() / 1024);
+                    const bool onScreen = std::any_of(visible_.begin(), visible_.end(), [&](const TilePlacement &item) { return item.key == key; });
+                    if (!onScreen && images_.totalCost() + cost > images_.maxCost()) prefetchSkipped_.insert(key);
+                    else images_.insert(key, new Image{image, {}, false, expires, transient}, cost);
                     if (failures_.isEmpty()) status_.clear();
                     emit changed();
                 }
@@ -322,7 +378,7 @@ void TileRenderer::decodeVector(const QString &key, QByteArray bytes, const QUrl
         if (generation == generation_) {
             decoding_.remove(key);
             if (!flag->load(std::memory_order_relaxed)
-                && std::any_of(visible_.begin(), visible_.end(), [&](const TilePlacement &tile) { return tile.key == key; })) {
+                && std::any_of(needed_.begin(), needed_.end(), [&](const TilePlacement &tile) { return tile.key == key; })) {
                 if (!result.error.isEmpty()) {
                     if (disk_) disk_->remove(url);
                     fail(key, result.error, 30, false);
@@ -330,6 +386,12 @@ void TileRenderer::decodeVector(const QString &key, QByteArray bytes, const QUrl
                     failures_.remove(key);
                     const auto *previous = images_.object(key);
                     const int previousCost = previous ? previous->vectors.costKiB : 0;
+                    const bool visible = std::any_of(visible_.begin(), visible_.end(), [&](const TilePlacement &tile) { return tile.key == key; });
+                    if (!visible && images_.totalCost() - previousCost + result.costKiB > images_.maxCost()) {
+                        prefetchSkipped_.insert(key);
+                        schedule_.start(150);
+                        return;
+                    }
                     if (images_.totalCost() - previousCost + result.costKiB > images_.maxCost()) {
                         for (const auto &cached : images_.keys())
                             if (std::none_of(visible_.begin(), visible_.end(), [&](const TilePlacement &tile) { return tile.key == cached; }))
@@ -343,6 +405,8 @@ void TileRenderer::decodeVector(const QString &key, QByteArray bytes, const QUrl
                             cancel();
                             images_.clear();
                             visible_.clear();
+                            needed_.clear();
+                            prefetchSkipped_.clear();
                             deferred_.clear();
                         } else {
                             const bool first = deferred_.isEmpty();
@@ -399,6 +463,45 @@ QList<QJsonObject> TileRenderer::featuresAt(QPointF position) const
     for (const auto &tile : visible_) if (tile.rectangle.contains(position))
         if (const auto *image = images_.object(tile.key); image && image->vector)
             return vectorFeaturesAt(image->vectors, tile.rectangle, position, source_);
+    return {};
+}
+
+std::optional<MapItem> TileRenderer::itemAt(QPointF position) const
+{
+    if (!contentVisible_) return {};
+    for (const auto &tile : visible_) {
+        if (!tile.rectangle.contains(position)) continue;
+        const auto *image = images_.object(tile.key);
+        if (!image || !image->vector) return {};
+        const auto hits = vectorFeaturesAt(image->vectors, tile.rectangle, position, source_);
+        if (hits.isEmpty()) return {};
+        const auto &feature = image->vectors.features.at(hits.first().value(QStringLiteral("featureIndex")).toInt());
+        MapItem item;
+        item.kind = feature.kind == VectorFeature::Kind::Point ? MapItem::Kind::Point : feature.kind == VectorFeature::Kind::Line ? MapItem::Kind::Line : MapItem::Kind::Polygon;
+        item.properties = feature.properties;
+        item.label = item.properties.take(QStringLiteral("name")).toString();
+        item.description = item.properties.take(QStringLiteral("description")).toString();
+        item.type = feature.layer;
+        if (item.label.isEmpty()) item.label = feature.layer;
+        item.properties.insert(QStringLiteral("Feature ID"), feature.id);
+        item.properties.insert(QStringLiteral("Map provider"), source_.value(QStringLiteral("name")));
+        QTransform world; const double count = 1 << tile.z;
+        world.translate(tile.x / count, tile.y / count); world.scale(1 / count, 1 / count);
+        if (!feature.points.isEmpty()) {
+            const auto nearest = std::min_element(feature.points.begin(), feature.points.end(), [&](const auto &a, const auto &b) {
+                const auto screen = [&](QPointF point) { return tile.rectangle.topLeft() + QPointF(point.x() * tile.rectangle.width(), point.y() * tile.rectangle.height()); };
+                return QLineF(screen(a), position).length() < QLineF(screen(b), position).length();
+            });
+            item.point = world.map(*nearest);
+            const auto coordinate = unproject(item.point);
+            item.properties.insert(QStringLiteral("Longitude"), coordinate.x());
+            item.properties.insert(QStringLiteral("Latitude"), coordinate.y());
+        }
+        item.path = world.map(feature.path); item.color = feature.color;
+        item.radius = source_.value(QStringLiteral("pointRadius")).toDouble(3);
+        item.lineWidth = source_.value(QStringLiteral("lineWidth")).toDouble(1.5);
+        return item;
+    }
     return {};
 }
 

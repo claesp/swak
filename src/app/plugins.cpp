@@ -13,3 +13,5 @@ Q_IMPORT_PLUGIN(ActivityPlugin)
 Q_IMPORT_PLUGIN(KmlPlugin)
 
 Q_IMPORT_PLUGIN(MvtProvider)
+
+Q_IMPORT_PLUGIN(InformationPlugin)

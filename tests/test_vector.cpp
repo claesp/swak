@@ -134,7 +134,7 @@ private slots:
         QImage canvas(512, 512, QImage::Format_RGB32);
         const auto draw = [&](TileRenderer &renderer) { QPainter painter(&canvas); renderer.paint(painter, {QSizeF(512, 512), QPointF(0.5, 0.5), 1}, 1, false); };
         {
-            TileRenderer renderer; renderer.setSource(&slow, source); draw(renderer);
+            TileRenderer renderer; renderer.setPrefetchMargin(0); renderer.setSource(&slow, source); draw(renderer);
             QVERIFY(QTest::qWaitFor([&] { return slow.started.load() >= 2; }, 5000));
             { QPainter painter(&canvas); renderer.paint(painter, {QSizeF(512, 512), QPointF(0, 0), 1}, 1, false); }
             QVERIFY(QTest::qWaitFor([&] { return slow.finished.load() >= 1; }, 1000));
@@ -146,7 +146,7 @@ private slots:
         }
         QCOMPARE(slow.started.load(), slow.finished.load());
         slow.throws = true;
-        TileRenderer renderer; renderer.setSource(&slow, source); draw(renderer);
+        TileRenderer renderer; renderer.setPrefetchMargin(0); renderer.setSource(&slow, source); draw(renderer);
         QVERIFY(QTest::qWaitFor([&] { return !renderer.status().isEmpty(); }, 5000));
         QVERIFY(renderer.featuresAt(QPointF(128, 128)).isEmpty());
     }
@@ -182,6 +182,27 @@ private slots:
         renderer.setMemoryLimit(256);
         QVERIFY(QTest::qWaitFor([&] { return renderer.memoryCostKiB() == 164096; }, 5000));
         QVERIFY(renderer.status().isEmpty());
+        renderer.stop();
+    }
+    void nearbyCachePressure()
+    {
+        TileServer server; server.body = vector_fixture::sample();
+        QVERIFY(server.load(QFINDTESTDATA("fixtures"))); QVERIFY(server.listen(QHostAddress::LocalHost));
+        auto source = provider_->defaults();
+        source.insert(QStringLiteral("endpoint"), QStringLiteral("https://localhost:%1/nearby/{z}/{x}/{y}.pbf").arg(server.serverPort()));
+        source.insert(QStringLiteral("ignoreTls"), true);
+        SlowVector large(*provider_); large.inflated = decoder_;
+        TileRenderer renderer; renderer.setMemoryLimit(64); renderer.setSource(&large, source);
+        QImage canvas(256, 256, QImage::Format_RGB32);
+        const auto draw = [&] { QPainter painter(&canvas); renderer.paint(painter, {QSizeF(256, 256), QPointF(0.375, 0.375), 2}, 1, false); };
+        connect(&renderer, &TileRenderer::changed, &renderer, draw);
+        draw();
+        QVERIFY(QTest::qWaitFor([&] { return large.finished.load() == 9; }, 5000));
+        QVERIFY(!QTest::qWaitFor([&] { return large.started.load() > 9; }, 300));
+        QCOMPARE(renderer.memoryCostKiB(), 41024);
+        QVERIFY(!renderer.featuresAt(QPointF(128, 128)).isEmpty());
+        QVERIFY(renderer.status().isEmpty());
+        QVERIFY(std::none_of(server.requests.begin(), server.requests.end(), [](const QByteArray &request) { return request.contains("/nearby/1/"); }));
         renderer.stop();
     }
     void densePanning()

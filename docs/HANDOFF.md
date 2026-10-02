@@ -380,3 +380,37 @@ The release rebuild passed without compiler warnings with Qt 6.8.2 and GCC 14.2 
 All 35 native sanitizer cases passed before LeakSanitizer reported the existing Mesa leak. The report contains 240732 bytes in 1073 allocations from `libGLX_mesa.so.0`. The failed run remains visible in `build/quality/20261002-191843-gui-147418`. No leak suppression or false success was added.
 
 The 60-second sanitizer workload passed in `build/quality/20261002-192001-soak-147570`. It completed 933 cycles with 8437760 bytes of peak memory growth, an 88-millisecond maximum heartbeat gap, and 0.058 idle CPU seconds. This short workload does not replace multi-hour release qualification.
+
+# Map selection, movement, and viewport limits, 2026-10-02
+
+The map now supports continuous W/A/S/D panning at 300 logical pixels per second by default. Settings exposes four unique keys, speed, wheel enablement, wheel direction, and wheel steps. Diagonal movement keeps the same speed. Opposite keys cancel movement. Focus loss, window deactivation, and hiding stop the timer. All controls use saved preferences.
+
+The map fetches one extra tile ring by default. Settings permits zero through two rings. The host limits the extra area to 64 tiles and completes visible requests first. Extra tiles cannot evict visible vector tiles under memory pressure. Tests cover nearby cache reuse, cancellation, and bounded memory pressure.
+
+The lowest whole zoom level fills the viewport. Every movement path clamps the center against world edges. Resize and restored preferences apply the same bounds. The cropped world remains accessible by panning. A viewport larger than the highest provider level enlarges existing tiles instead of requesting unsupported levels.
+
+Data geometry follows the current projection and stays inside the world bounds. This removes repeated objects outside the base map. Hit detection uses the same normalized geometry and respects the displayed label limit. The Information plugin shows a read-only label, type, description, and property table. Double-clicking a value copies through Qt clipboard support. Linux also receives the primary selection when available.
+
+The shared MapSelection service owns the selected snapshot. Data, vector, and CoT map hits use this service. Selected points have white outlines. Routes use inverse colors. Polygons have white dashed edges and faint fill. Empty clicks clear selection and hide Information. Source changes clear related snapshots. Selection is transient, while pane layout and header preferences persist.
+
+PaneContent exposes a visibilityRequested signal and a preferredDockArea method through the shared core API. Information starts in the right dock group. This keeps the map and editor usable in shorter windows. Saved layouts take precedence.
+
+The host handles dock visibility without plugin access to the application window. The new static Information plugin has a MANIFEST with clipboard-write permission. Thirteen built-in plugins now use the shared API. Documentation covers the extended service and pane contracts.
+
+KML parsing retains plain-text descriptions, scalar properties, ExtendedData, and point coordinates. Names have a 128-character limit. Values have a 4096-character limit. Placemark metadata has a 256-property limit, and each document has an estimated 8 MiB metadata limit. Invalid documents preserve the previous feed.
+
+The release rebuild passed without compiler warnings with Qt 6.8.2 and GCC 14.2 on Debian 13. The executable remains `build/release/swak`, version 0.1.0. The build log is `build/information-release.log`. Hardware graphics, native Wayland, Qt 6.4 compatibility, and multi-hour use remain untested.
+
+Coverage passed eight suites and all 37 native cases in `build/quality/20261002-200948-coverage-157893`. DataSources reached 296 of 297 lines. MapSelection painting reached all 24 lines. Information reached all 15 functions and 59 of 61 lines. Map controls reached 486 of 499 lines. Native screenshots show the side pane, read-only fields, and white selection outline.
+
+Remaining coverage gaps include the data allocation failure path and non-left double-click fallbacks. Mouse dragging, some arrow-key branches, and several KML rejection branches remain unexecuted. Line coverage does not establish complete branch or input coverage. No new external dependency was added.
+
+All 37 native sanitizer cases passed in `build/quality/20261002-201109-gui-159163`. LeakSanitizer then reported the existing Mesa leak of 240732 bytes in 1073 allocations. The failed diagnostic remains visible. No suppression or false success was added.
+
+The 60-second sanitizer workload passed in `build/quality/20261002-201132-soak-159477`. It completed 1268 cycles with 8253440 bytes of peak memory growth. The maximum heartbeat gap was 39 milliseconds, and idle CPU time was 0.007 seconds. This short run does not replace multi-hour qualification.
+
+An overlapping coverage and sanitizer run failed during a vector cancellation fixture. Shared Qt cache locks can cause this contention. Diagnostic instructions now require sequential application tests across build presets. The final quick run executes alone.
+
+The final eight sanitizer suites passed in `build/quality/20261002-201316-quick-159611`. Static analysis passed in `build/quality/20261002-201317-analyze-3`. The final release command reported no remaining build work.
+
+Five focused native cases passed at 200 percent scaling in `build/information-hidpi/native.log`. They include zoom limits, the Information pane, and keyboard and wheel controls.
