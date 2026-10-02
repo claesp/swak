@@ -193,3 +193,6 @@ A `MapTool` receives map input events, a viewport, and the map widget. Returning
 The tool registry holds guarded pointers. Pane ownership controls each tool lifetime. The marker tool draws circles through the existing OpenGL painter. Its move preview leaves stored geometry unchanged until the click that commits it. Esc cancels an active tool before it dismisses Information. Hiding the map also cancels pending tool operations.
 
 `UserObjects::undoStack` supplies the application Edit > Undo action. Shared deletion commands retain complete records. Their history is bounded to 100 commands and is not serialized. Deleted records reserve model capacity until restoration or history removal. This reserve keeps a full model from blocking undo. GUI input, drawing, and model updates remain on the interface thread.
+
+
+`MapTool::paintOverlay` draws transient content above the map. The host uses a transparent, mouse-transparent child widget for this content. Emit `overlayChanged` for pointer-only changes. Emit `changed` when stored content or tool mode changes. The host then updates both surfaces. Overlay painting does not request map tile painting. The view refreshes the overlay when its projection changes. Overlay methods stay on the interface thread and must keep work bounded.

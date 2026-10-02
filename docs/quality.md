@@ -88,3 +88,6 @@ The vector suite includes four dense tiles with more than 200000 vertices in tot
 The vector panning fix passed eight sanitizer suites, static analysis, and coverage with 33 native GUI cases. Reports are under `build/quality/20261002-172852-quick-141261`, `20261002-173021-analyze-142067`, and `20261002-172856-coverage-141297`. The image allocation failure path remains untested. The native sanitizer run passed all functional cases but failed on the existing Mesa leak. That report is `build/quality/20261002-173131-gui-142618`. Read [the handoff](HANDOFF.md) for timing evidence and limits.
 
 The soak workload also creates local marker records, deletes them, and cycles through undo and redo. It bounds deletion history during repeated work.
+
+
+The marker regression measures map paint events during 20 pointer moves. It permits at most two map repaints and requires a separate overlay signal. It also measures the black guide alpha value. Coordinate grid tests draw low and high zoom levels near the equator and both poles. These tests do not measure hardware cursor latency or native Wayland presentation.

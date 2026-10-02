@@ -29,7 +29,7 @@ public:
             textSetting(QStringLiteral("color"), tr("Circle color (#RRGGBB)"), 7), numberSetting(QStringLiteral("guideOpacity"), tr("Guide line opacity"), 0, 1, 2)};
     }
     QJsonObject savePreferences() const override {
-        auto state = editorState(); state.insert(QStringLiteral("createKey"), QKeySequence(key_).toString(QKeySequence::PortableText));
+        auto state = editorState(); state.insert(QStringLiteral("guideStyleVersion"), 2); state.insert(QStringLiteral("createKey"), QKeySequence(key_).toString(QKeySequence::PortableText));
         state.insert(QStringLiteral("radius"), radius_); state.insert(QStringLiteral("color"), color_.name()); state.insert(QStringLiteral("guideOpacity"), guideOpacity_); return state;
     }
     QString validateSettings(const QJsonObject &values) const override {
@@ -41,7 +41,8 @@ public:
     void restorePreferences(const QJsonObject &values) override {
         const int key = readKey(values); key_ = key ? key : Qt::Key_M;
         radius_ = preferenceNumber(values, QStringLiteral("radius"), 7, 3, 24);
-        guideOpacity_ = preferenceNumber(values, QStringLiteral("guideOpacity"), 0.6, 0, 1);
+        guideOpacity_ = preferenceNumber(values, QStringLiteral("guideOpacity"), 0.5, 0, 1);
+        if (!values.contains(QStringLiteral("guideStyleVersion")) && guideOpacity_ == 0.6) guideOpacity_ = 0.5;
         const auto color = preferenceText(values, QStringLiteral("color"), QStringLiteral("#ffc857"), 7);
         color_ = QColor::isValidColorName(color) ? QColor(color) : QColor("#ffc857"); restoreEditorState(values); emit configurationChanged();
     }
@@ -59,7 +60,7 @@ private:
     int key_ = Qt::Key_M;
     double radius_ = 7;
     QColor color_{"#ffc857"};
-    double guideOpacity_ = 0.6;
+    double guideOpacity_ = 0.5;
 };
 class MarkerTool final : public MapTool {
 public:
@@ -111,7 +112,7 @@ public:
         }
         if (event.type() == QEvent::MouseMove) {
             pointer_ = static_cast<QMouseEvent &>(event).position();
-            if (mode_ != Mode::Idle) { emit changed(); return true; }
+            if (mode_ != Mode::Idle) { emit overlayChanged(); return true; }
         }
         if (event.type() == QEvent::MouseButtonPress || event.type() == QEvent::MouseButtonDblClick) {
             if (mode_ != Mode::Idle && static_cast<QMouseEvent &>(event).button() == Qt::LeftButton) return true;
@@ -168,9 +169,14 @@ public:
             painter.drawEllipse(screen(location(item), view), editor_.radius(), editor_.radius());
         }
         if (editor_.draft() && !objects_.find(editor_.draft()->id)) painter.drawEllipse(screen(location(*editor_.draft()), view), editor_.radius(), editor_.radius());
+    }
+    void paintOverlay(QPainter &painter, const Viewport &view) const override
+    {
+        painter.setPen(QPen(QColor("#152028"), 2)); painter.setBrush(editor_.color());
         if (mode_ != Mode::Idle) {
             if (mode_ == Mode::Moving) painter.drawEllipse(pointer_, editor_.radius(), editor_.radius());
-            painter.setPen(QPen(QColor(255, 255, 255, qRound(editor_.guideOpacity() * 255)), 1));
+            painter.setRenderHint(QPainter::Antialiasing, false);
+            painter.setPen(QPen(QColor(0, 0, 0, qRound(editor_.guideOpacity() * 255)), 1));
             painter.drawLine(QPointF(0, pointer_.y()), QPointF(view.size.width(), pointer_.y()));
             painter.drawLine(QPointF(pointer_.x(), 0), QPointF(pointer_.x(), view.size.height()));
         }

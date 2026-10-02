@@ -501,3 +501,23 @@ The final 60-second sanitizer workload passed in `build/quality/20261002-223148-
 The focused native marker test passed at 200 percent scaling after the final pointer-position change. Screenshots in `build/markers-highdpi` show the editor, selection, and crosshair. The editor screenshot shows complete labels and controls. The release rebuild passed without compiler warnings. The executable remains `build/release/swak`, version 0.1.0. Its build log is `build/markers-release.log`.
 
 Tests used Qt 6.8.2, GCC 14.2, and software Mesa on Debian 13. Hardware graphics, native Wayland, Qt 6.4 compatibility, and multi-hour use remain untested. This task adds no external dependency.
+
+
+## 2026-10-02: Pointer guides and coordinate grid
+
+Marker guides now use black at 50 percent opacity. Older profiles that retain the former 60 percent default migrate to 50 percent. Other custom opacity values survive. A style version prevents later changes from repeating this migration.
+
+MapTool now separates stored content from transient overlays through paintOverlay and overlayChanged. The map hosts a transparent child widget for tool overlays. Pointer-only motion updates this widget without requesting tile or map-layer painting. The marker preview during movement also uses this surface. Changes to stored content still redraw the map. Pointer coordinates in the status bar continue to update during placement and movement.
+
+The map draws a black coordinate grid at 20 percent opacity. Longitude labels appear at the top and bottom. Latitude labels appear at the left and right. Decimal precision follows rounded intervals from the 1, 2, and 5 sequence. Latitude spacing accounts for Mercator projection, which enlarges areas near the poles. Locale formatting supplies decimal separators. Each axis permits at most 512 lines per frame. File > Settings > General > Map controls visibility, opacity, and spacing.
+
+The marker regression measures 20 pointer moves and permits at most two map paint events. It also requires overlay signals and measures the black guide alpha value. The focused native test passed at 200 percent scaling, including the final status-coordinate update. Screenshots in `build/grid-native` show the grid labels and marker guides. This test does not measure hardware cursor latency.
+
+Eight sanitizer suites passed in `build/quality/20261002-224420-quick-187700`. Coverage passed eight suites and all 39 native cases in `build/quality/20261002-224908-coverage-190159`. Grid coverage reached 54 of 55 lines. The remaining line is the interval fallback. MapTools reached all 22 lines. Marker coverage reached 170 of 173 lines. Existing defensive failures and malformed-key paths remain untested. Line coverage does not establish complete branch or input coverage.
+
+The 60-second sanitizer workload passed in `build/quality/20261002-225039-soak-190722`. It completed 1271 cycles with 11300864 bytes of peak memory growth. The maximum heartbeat gap was 35 milliseconds, and idle CPU time was 0.006 seconds. This short workload does not replace multi-hour qualification.
+
+The release rebuild passed without compiler warnings. The executable remains `build/release/swak`, version 0.1.0. The build log is `build/grid-release.log`. Tests used Qt 6.8.2, GCC 14.2, and software Mesa on Debian 13. Hardware graphics, native Wayland, Qt 6.4 compatibility, and multi-hour use remain untested. This task adds no external dependency.
+
+
+The final native sanitizer run passed all 39 functional cases in `build/quality/20261002-225224-gui-191008`. LeakSanitizer then reported the existing Mesa leak of 240732 bytes in 1073 allocations. The diagnostic remains failed, without suppression. Final static analysis passed in `build/quality/20261002-225226-analyze-2`.

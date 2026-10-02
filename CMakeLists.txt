@@ -35,7 +35,7 @@ if(SWAK_COVERAGE)
     target_link_options(swak_build INTERFACE --coverage)
 endif()
 
-add_library(swak_core STATIC src/core/object_editor.cpp src/core/object_editor.h src/core/user_objects.cpp src/core/user_objects.h src/core/map_tools.cpp src/core/map_tools.h src/core/map_selection.cpp src/core/map_selection.h src/core/vector_tiles.cpp src/core/vector_tiles.h src/core/data.cpp src/core/data.h src/core/event.cpp src/core/event.h src/core/files.cpp src/core/files.h src/core/interfaces.h src/core/single_line_label.h
+add_library(swak_core STATIC src/core/map_grid.cpp src/core/map_grid.h src/core/object_editor.cpp src/core/object_editor.h src/core/user_objects.cpp src/core/user_objects.h src/core/map_tools.cpp src/core/map_tools.h src/core/map_selection.cpp src/core/map_selection.h src/core/vector_tiles.cpp src/core/vector_tiles.h src/core/data.cpp src/core/data.h src/core/event.cpp src/core/event.h src/core/files.cpp src/core/files.h src/core/interfaces.h src/core/single_line_label.h
     src/core/plugin_catalog.cpp src/core/plugin_catalog.h src/core/activity.cpp src/core/activity.h src/core/store.cpp src/core/store.h src/core/projection.cpp src/core/projection.h src/core/preferences.cpp src/core/preferences.h src/core/settings.cpp src/core/settings.h src/core/maps.cpp src/core/maps.h src/core/tiles.cpp src/core/tiles.h src/core/logging.cpp src/core/logging.h)
 target_include_directories(swak_core PUBLIC src)
 target_link_libraries(swak_core PUBLIC swak_build Qt6::Widgets Qt6::Network Qt6::Concurrent)

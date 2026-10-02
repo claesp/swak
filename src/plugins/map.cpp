@@ -1,6 +1,7 @@
 #include "core/interfaces.h"
 #include "core/tiles.h"
 #include "core/map_tools.h"
+#include "core/map_grid.h"
 #include "core/single_line_label.h"
 #include "core/data.h"
 #include <QHideEvent>
@@ -55,6 +56,21 @@ int navigationKey(const QString &text)
         || (key >= Qt::Key_F1 && key <= Qt::Key_F12) || (key >= Qt::Key_Left && key <= Qt::Key_Down) || key == Qt::Key_Home || key == Qt::Key_Plus || key == Qt::Key_Equal || key == Qt::Key_Minus) ? key : 0;
 }
 }
+class ToolOverlay final : public QWidget {
+public:
+    ToolOverlay(MapTools &tools, const Viewport &view, QWidget *parent) : QWidget(parent), tools_(tools), view_(view) {
+        setObjectName(QStringLiteral("mapToolOverlay"));
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setAttribute(Qt::WA_NoSystemBackground);
+        connect(&tools, &MapTools::changed, this, qOverload<>(&ToolOverlay::update));
+        connect(&tools, &MapTools::overlayChanged, this, qOverload<>(&ToolOverlay::update));
+    }
+protected:
+    void paintEvent(QPaintEvent *) override { QPainter painter(this); painter.setRenderHint(QPainter::Antialiasing); tools_.paintOverlay(painter, view_); }
+private:
+    MapTools &tools_;
+    const Viewport &view_;
+};
 class MapWidget final : public QOpenGLWidget, public SettingsParticipant, public StatusProvider, protected QOpenGLFunctions {
 public:
     MapWidget(Store &store, QList<MapLayer *> layers, QWidget *parent)
@@ -133,6 +149,7 @@ public:
     }
     void setMapTools(MapTools *tools) {
         tools_ = tools;
+        if (tools_) { overlay_ = new ToolOverlay(*tools_, view_, this); overlay_->setGeometry(rect()); overlay_->show(); attribution_->raise(); }
         if (tools_) connect(tools_, &MapTools::changed, this, qOverload<>(&MapWidget::update));
     }
     QWidget *createStatusWidget(QWidget *parent) override
@@ -174,6 +191,9 @@ public:
                 numberSetting(QStringLiteral("missingOpacity"), tr("Missing tile marker opacity"), 0, 1, 2),
                 numberSetting(QStringLiteral("opacity"), tr("Provider opacity"), 0, 1, 2),
                 numberSetting(QStringLiteral("attributionOpacity"), tr("Attribution background opacity"), 0, 1, 2),
+                booleanSetting(QStringLiteral("gridVisible"), tr("Coordinate grid")),
+                numberSetting(QStringLiteral("gridOpacity"), tr("Coordinate grid opacity"), 0, 1, 2),
+                numberSetting(QStringLiteral("gridSpacing"), tr("Coordinate grid spacing (pixels)"), 80, 400),
                 booleanSetting(QStringLiteral("smooth"), tr("Smooth image scaling")),
                 booleanSetting(QStringLiteral("antialias"), tr("Smooth vector edges"))};
     }
@@ -190,6 +210,7 @@ public:
                 {QStringLiteral("panSpeed"), panSpeed_}, {QStringLiteral("wheelZoom"), wheelZoom_},
                 {QStringLiteral("wheelReverse"), wheelReverse_}, {QStringLiteral("wheelSteps"), wheelSteps_},
                 {QStringLiteral("prefetchMargin"), prefetchMargin_}};
+        values.insert(QStringLiteral("gridVisible"), gridVisible_); values.insert(QStringLiteral("gridOpacity"), gridOpacity_); values.insert(QStringLiteral("gridSpacing"), gridSpacing_);
         for (size_t i = 0; i < KeyPaths.size(); ++i) values.insert(KeyPaths[i], QKeySequence(keys_[i]).toString(QKeySequence::PortableText));
         return values;
     }
@@ -217,6 +238,9 @@ public:
         missingOpacity_ = preferenceNumber(values, QStringLiteral("missingOpacity"), 0.2, 0, 1);
         opacity_ = preferenceNumber(values, QStringLiteral("opacity"), 1, 0, 1);
         attributionOpacity_ = preferenceNumber(values, QStringLiteral("attributionOpacity"), 0.55, 0, 1);
+        gridVisible_ = values.value(QStringLiteral("gridVisible")).toBool(true);
+        gridOpacity_ = preferenceNumber(values, QStringLiteral("gridOpacity"), 0.2, 0, 1);
+        gridSpacing_ = preferenceNumber(values, QStringLiteral("gridSpacing"), 140, 80, 400);
         smooth_ = values.value(QStringLiteral("smooth")).toBool(true);
         antialias_ = values.value(QStringLiteral("antialias")).toBool(true);
         update();
@@ -265,6 +289,7 @@ protected:
     void resizeEvent(QResizeEvent *event) override
     {
         QOpenGLWidget::resizeEvent(event);
+        if (overlay_) overlay_->setGeometry(rect());
         view_.size = size(); normalizeZoom(); clampCenter(); update();
     }
     void initializeGL() override { initializeOpenGLFunctions(); }
@@ -284,22 +309,13 @@ protected:
             painter.restore();
         }
         if (!tilesPainted) { tiles_.paint(painter, view_, opacity_, smooth_, missingOpacity_); if (dataSources_) dataSources_->paint(painter, view_); }
+        if (gridVisible_) paintMapGrid(painter, view_, gridOpacity_, gridSpacing_);
+        if (overlay_) overlay_->update();
         if (tools_) tools_->paint(painter, view_);
         if (selection_) selection_->paint(painter, view_);
         const auto source = sources_ ? sources_->activeSource() : QJsonObject{};
         painter.setPen(QColor("#c7d7e5"));
-        const QPointF coord = view_.coordinate(cursor_);
-        const bool onWorld = coord.x() >= -180 && coord.x() <= 180 && coord.y() >= -85.051129 && coord.y() <= 85.051129;
-        const QString position = onWorld ? tr("%1°, %2°").arg(coord.y(), 0, 'f', 4).arg(coord.x(), 0, 'f', 4)
-                                         : tr("Pointer outside map");
-        if (statusLabel_) {
-            const auto cacheBytes = tiles_.diskCacheBytes();
-            QString status = cacheBytes < 0 ? tr("Map cache: inactive") : tr("Map cache: %1").arg(QLocale().formattedDataSize(cacheBytes));
-            status += tr(" | Zoom %1 | %2").arg(view_.zoom, 0, 'f', 0).arg(position);
-            if (!tiles_.status().isEmpty()) status += QStringLiteral(" | ") + tiles_.status();
-            if (source.value(QStringLiteral("ignoreTls")).toBool(false)) status += QStringLiteral(" | ") + tr("HTTPS certificate checks disabled");
-            if (statusLabel_->text() != status) statusLabel_->setText(status);
-        }
+        updateStatus();
         QStringList credits;
         if (!source.isEmpty()) credits.append(source.value(QStringLiteral("attribution")).toString());
         if (dataSources_) credits.append(dataSources_->attributions());
@@ -385,7 +401,7 @@ protected:
     void mouseMoveEvent(QMouseEvent *event) override
     {
         cursor_ = event->position();
-        if (tools_ && tools_->handle(*event, view_, *this)) { event->accept(); update(); return; }
+        if (tools_ && tools_->handle(*event, view_, *this)) { updateStatus(); event->accept(); return; }
         if (dragging_) {
             moved_ = moved_ || (cursor_ - press_).manhattanLength() > 4;
             view_.center -= (cursor_ - last_) / view_.scale();
@@ -480,6 +496,22 @@ protected:
         update();
     }
 private:
+    void updateStatus()
+    {
+        const auto source = sources_ ? sources_->activeSource() : QJsonObject{};
+        const QPointF coord = view_.coordinate(cursor_);
+        const bool onWorld = coord.x() >= -180 && coord.x() <= 180 && coord.y() >= -85.051129 && coord.y() <= 85.051129;
+        const QString position = onWorld ? tr("%1°, %2°").arg(coord.y(), 0, 'f', 4).arg(coord.x(), 0, 'f', 4)
+                                         : tr("Pointer outside map");
+        if (statusLabel_) {
+            const auto cacheBytes = tiles_.diskCacheBytes();
+            QString status = cacheBytes < 0 ? tr("Map cache: inactive") : tr("Map cache: %1").arg(QLocale().formattedDataSize(cacheBytes));
+            status += tr(" | Zoom %1 | %2").arg(view_.zoom, 0, 'f', 0).arg(position);
+            if (!tiles_.status().isEmpty()) status += QStringLiteral(" | ") + tiles_.status();
+            if (source.value(QStringLiteral("ignoreTls")).toBool(false)) status += QStringLiteral(" | ") + tr("HTTPS certificate checks disabled");
+            if (statusLabel_->text() != status) statusLabel_->setText(status);
+        }
+    }
     static std::optional<std::array<int, 14>> readKeys(const QJsonObject &values)
     {
         std::array<int, 14> keys{};
@@ -588,6 +620,10 @@ private:
     int prefetchMargin_ = 1;
     QPointer<QDialog> information_;
     QByteArray informationGeometry_;
+    ToolOverlay *overlay_ = nullptr;
+    bool gridVisible_ = true;
+    double gridOpacity_ = 0.2;
+    double gridSpacing_ = 140;
     MapTools *tools_ = nullptr;
     MapSources *sources_ = nullptr;
     TileRenderer tiles_;

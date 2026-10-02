@@ -11,6 +11,8 @@
 #include <QPlainTextEdit>
 #include <QClipboard>
 #include "core/map_selection.h"
+#include "core/map_tools.h"
+#include <QPainter>
 #include <QStandardPaths>
 #include <QDesktopServices>
 #include "swak/version.h"
@@ -47,6 +49,8 @@
 #include <QPlainTextEdit>
 #include <QClipboard>
 #include "core/map_selection.h"
+#include "core/map_tools.h"
+#include <QPainter>
 #include <QPushButton>
 #include <QSurfaceFormat>
 #include <QScreen>
@@ -754,7 +758,29 @@ private slots:
             auto *apply = editor->findChild<QPushButton *>(QStringLiteral("applyObject")); QVERIFY(title && description && table && apply);
             map->setFocus(); QVERIFY(QTest::qWaitFor([&] { return map->hasFocus(); }));
             QTest::keyClick(map, Qt::Key_M); QCOMPARE(map->cursor().shape(), Qt::CrossCursor);
+            auto *tools = window.findChild<swak::MapTools *>(); QVERIFY(tools);
+            QSignalSpy sceneChanges(tools, &swak::MapTools::changed);
+            QSignalSpy overlayChanges(tools, &swak::MapTools::overlayChanged);
             const QPoint point = map->rect().center(); QTest::mouseMove(map, point);
+            QCOMPARE(sceneChanges.count(), 0); QVERIFY(overlayChanges.count() > 0);
+            QImage guides(map->size(), QImage::Format_ARGB32_Premultiplied); guides.fill(Qt::transparent);
+            { QPainter painter(&guides); swak::Viewport view; view.size = map->size(); tools->paintOverlay(painter, view); }
+            const auto guide = guides.pixelColor(point.x(), 30); QCOMPARE(guide.red(), 0); QCOMPARE(guide.alpha(), 128);
+            QVERIFY(map->findChild<QWidget *>(QStringLiteral("mapToolOverlay")));
+            struct PaintCounter final : QObject {
+                int count = 0;
+                bool eventFilter(QObject *, QEvent *event) override { if (event->type() == QEvent::Paint) ++count; return false; }
+            } paints;
+            map->installEventFilter(&paints);
+            QTest::qWait(80); paints.count = 0;
+            for (int i = 1; i <= 20; ++i) { QTest::mouseMove(map, point + QPoint(i, i)); QTest::qWait(2); }
+            QVERIFY2(paints.count <= 2, qPrintable(QStringLiteral("Pointer motion repainted the map %1 times").arg(paints.count)));
+            QSignalSpy guideFrames(map, &QOpenGLWidget::frameSwapped);
+            QTest::mouseMove(map, point);
+            QVERIFY(guideFrames.count() > 0 || guideFrames.wait(2000));
+            map->removeEventFilter(&paints);
+
+
             QVERIFY(QTest::qWaitFor([&] { return map->isValid(); }));
             QVERIFY(window.screen()->grabWindow(window.winId()).save(QStringLiteral("marker-crosshair.png")));
             QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, point);
@@ -1884,9 +1910,15 @@ private slots:
         QTest::keyClick(map, Qt::Key_Plus);
         QTest::keyClick(map, Qt::Key_Right);
         QTest::keyClick(map, Qt::Key_Home);
+        auto *mapConfiguration = dynamic_cast<swak::SettingsParticipant *>(map);
+        QVERIFY(mapConfiguration);
+        const auto gridValues = mapConfiguration->savePreferences();
+        auto withoutGrid = gridValues; withoutGrid.insert(QStringLiteral("gridVisible"), false);
+        mapConfiguration->restorePreferences(withoutGrid);
         const QImage frame = map->grabFramebuffer();
         QVERIFY(!frame.isNull());
         QCOMPARE(frame.pixelColor(20, 21), QColor(swak::MapBackgroundRgb));
+        mapConfiguration->restorePreferences(gridValues);
         QVERIFY(frame.save(QStringLiteral("map-smoke.png")));
         QSignalSpy frames(map, &QOpenGLWidget::frameSwapped);
         map->update();

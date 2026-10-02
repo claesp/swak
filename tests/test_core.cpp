@@ -4,6 +4,8 @@
 #include "core/maps.h"
 #include "core/interfaces.h"
 #include "core/user_objects.h"
+#include "core/map_grid.h"
+#include <QPainter>
 #include "core/projection.h"
 #include "core/store.h"
 #include "core/files.h"
@@ -43,6 +45,27 @@ private:
         return event;
     }
 private slots:
+    void coordinateGrid()
+    {
+        QImage image(900, 600, QImage::Format_ARGB32_Premultiplied);
+        for (double zoom : {2.0, 8.0, 19.0}) for (double latitude : {-80.0, 0.0, 80.0}) {
+            image.fill(Qt::transparent); QPainter painter(&image);
+            Viewport view; view.size = image.size(); view.zoom = zoom; view.center = project(latitude, 18);
+            paintMapGrid(painter, view, 0.2, 140); painter.end();
+            int top = 0, bottom = 0, left = 0, right = 0;
+            for (int y = 0; y < image.height(); ++y) for (int x = 0; x < image.width(); ++x) {
+                const auto pixel = image.pixelColor(x, y); if (!pixel.alpha()) continue;
+                QCOMPARE(pixel.red(), 0); QCOMPARE(pixel.green(), 0); QCOMPARE(pixel.blue(), 0);
+                if (y < 30) ++top;
+                if (y >= image.height()-30) ++bottom;
+                if (x < 90) ++left;
+                if (x >= image.width()-90) ++right;
+            }
+            QVERIFY(top > 60); QVERIFY(bottom > 60); QVERIFY(left > 60); QVERIFY(right > 60);
+        }
+        image.fill(Qt::transparent); QPainter painter(&image); Viewport invalid; invalid.size = image.size(); invalid.zoom = std::numeric_limits<double>::quiet_NaN();
+        paintMapGrid(painter, invalid, 0.2, 140); painter.end(); QCOMPARE(image.pixelColor(450, 300).alpha(), 0);
+    }
     void userObjectsAndUndo()
     {
         UserObjects objects;

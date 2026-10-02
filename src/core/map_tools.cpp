@@ -9,6 +9,7 @@ void MapTools::add(MapTool *tool)
     connect(tool, &QObject::destroyed, this, [this] {
         tools_.removeIf([](const auto &entry) { return entry.isNull(); }); emit changed();
     });
+    connect(tool, &MapTool::overlayChanged, this, &MapTools::overlayChanged);
     emit changed();
 }
 bool MapTools::handle(QEvent &event, const Viewport &view, QWidget &map)
@@ -18,6 +19,10 @@ bool MapTools::handle(QEvent &event, const Viewport &view, QWidget &map)
 void MapTools::paint(QPainter &painter, const Viewport &view) const
 {
     for (const auto &tool : tools_) if (tool) { painter.save(); tool->paint(painter, view); painter.restore(); }
+}
+void MapTools::paintOverlay(QPainter &painter, const Viewport &view) const
+{
+    for (const auto &tool : tools_) if (tool) { painter.save(); tool->paintOverlay(painter, view); painter.restore(); }
 }
 bool MapTools::deleteSelection()
 {

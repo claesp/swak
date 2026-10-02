@@ -201,7 +201,7 @@ The map keeps clickable attribution at its bottom-right edge. Status text uses a
 
 # Local markers
 
-Focus the map and press M to create a marker. The pointer changes to the standard crosshair. Horizontal and vertical guide lines follow the pointer. Click a map position to place a draft circle. The Edit marker pane opens with editable title, description, and properties. An empty title uses New Marker.
+Focus the map and press M to create a marker. The pointer changes to the standard crosshair. Black horizontal and vertical guide lines follow the pointer at 50 percent opacity. Click a map position to place a draft circle. The Edit marker pane opens with editable title, description, and properties. An empty title uses New Marker.
 
 Use Add property and Remove property to change the property table. Property names must be unique. Select Apply to store the marker. The regular Information pane then shows its saved values. Cancel, Esc, or closing the editor discards the draft. Committed markers survive application restarts in the portable preferences file.
 
@@ -210,3 +210,6 @@ Click a saved marker to select it. Right-click it for Edit, Move, or Delete. Edi
 With the map or Information pane focused, Backspace or Delete removes the selected local marker. Imported objects remain read-only. Ctrl+Z and Edit > Undo restore deleted markers, including their position and properties. The history keeps the last 100 deletions during the current session. It does not survive a restart. Creation, editing, and movement do not enter this deletion history.
 
 File > Settings > General > Markers changes circle color, radius, and guide opacity. File > Settings > Keybindings > Markers changes the creation key. It accepts one letter without modifiers. A tool activation key takes priority over a map navigation key with the same value. Choose different keys for these actions. The model allows at most 256 objects and reserves storage for undo. ID, Latitude, and Longitude are reserved property names.
+
+
+The coordinate grid shows longitude along the top and bottom edges, and latitude along the left and right edges. Lines and labels use black at 20 percent opacity. Intervals follow zoom and latitude, with rounded decimal degrees and compass letters. File > Settings > General > Map controls grid visibility, opacity, and spacing in logical pixels.
