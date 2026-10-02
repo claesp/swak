@@ -11,6 +11,8 @@
 #include <QMessageBox>
 #include <QDockWidget>
 #include <QLabel>
+#include <QFrame>
+#include <QLocale>
 #include <QMenuBar>
 #include <QStatusBar>
 #include <QSizeGrip>
@@ -301,26 +303,35 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         dialog->open();
     });
     auto *status = new QLabel(this);
-    statusBar()->addPermanentWidget(status);
-    auto *latest = new QLabel(this);
-    latest->setObjectName(QStringLiteral("latestActivity"));
-    latest->setTextFormat(Qt::PlainText);
-    latest->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    statusBar()->addWidget(latest, 1);
-    auto *statusTimer = new QTimer(latest);
-    statusTimer->setSingleShot(true);
-    statusTimer->setInterval(3000);
-    statusTimer->setTimerType(Qt::PreciseTimer);
-    connect(statusTimer, &QTimer::timeout, latest, &QLabel::clear);
-    connect(activity, &ActivityModel::latest, latest, [latest, statusTimer](const QString &message, bool error) {
-        latest->setText(message);
-        latest->setStyleSheet(error ? QStringLiteral("color: #e53935;") : QString{});
-        statusTimer->start();
-    });
-    const auto updateStatus = [this, status] { status->setText(tr("%1 / %2 events")
-                                                          .arg(store_.rowCount()).arg(MaxEvents)); };
+    status->setObjectName(QStringLiteral("cotEventCount"));
+    statusBar()->addWidget(status);
+    const auto separator = [this] {
+        auto *line = new QFrame(this);
+        line->setObjectName(QStringLiteral("statusSeparator"));
+        line->setFrameShape(QFrame::VLine);
+        line->setFrameShadow(QFrame::Sunken);
+        statusBar()->addWidget(line);
+    };
+    separator();
+    auto *internal = new QLabel(this);
+    internal->setObjectName(QStringLiteral("internalEventCount"));
+    statusBar()->addWidget(internal);
+    const auto updateStatus = [this, status] { status->setText(tr("CoT Events: %1 / %2")
+        .arg(QLocale().toString(store_.rowCount()), QLocale().toString(MaxEvents))); };
     connect(&store_, &Store::changed, this, updateStatus);
     updateStatus();
+    const auto updateInternal = [activity, internal] {
+        internal->setText(tr("Internal events: %1").arg(QLocale().toString(activity->rowCount())));
+    };
+    connect(activity, &QAbstractItemModel::rowsInserted, internal, updateInternal);
+    connect(activity, &QAbstractItemModel::rowsRemoved, internal, updateInternal);
+    connect(activity, &QAbstractItemModel::modelReset, internal, updateInternal);
+    updateInternal();
+    auto *preferenceSeparator = new QFrame(this);
+    preferenceSeparator->setObjectName(QStringLiteral("preferencesSeparator"));
+    preferenceSeparator->setFrameShape(QFrame::VLine);
+    preferenceSeparator->setFrameShadow(QFrame::Sunken);
+    statusBar()->addPermanentWidget(preferenceSeparator);
     preferencesStatus_ = new QLabel(this);
     preferencesStatus_->setObjectName(QStringLiteral("preferencesStatus"));
     preferencesStatus_->setTextFormat(Qt::PlainText);
@@ -336,6 +347,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     });
     logMessage(Severity::Info, Urgency::Routine, QStringLiteral("swak.application"), tr("Workspace ready."));
     preferencesStatus_->setText(preferences_.error());
+    findChild<QFrame *>(QStringLiteral("preferencesSeparator"))->setVisible(!preferences_.error().isEmpty());
     if (!preferences_.error().isEmpty()) {
         lastSaveError_ = preferences_.error();
         logMessage(Severity::Error, Urgency::Attention, QStringLiteral("swak.preferences"), lastSaveError_);
@@ -424,12 +436,13 @@ bool Window::savePreferences()
     application.insert(QStringLiteral("settingsGeometry"), QString::fromLatin1(settingsGeometry_.toBase64()));
     application.insert(QStringLiteral("settingsNavigation"), settingsNavigation_);
     application.insert(QStringLiteral("mapManagerGeometry"), QString::fromLatin1(mapManagerGeometry_.toBase64()));
-    if (auto *dialog = findChild<DataManager *>()) dataManagerGeometry_ = dialog->saveGeometry();
+    if (auto *dialog = findChild<DataManager *>(); dialog && dialog->isWindow()) dataManagerGeometry_ = dialog->saveGeometry();
     application.insert(QStringLiteral("dataManagerGeometry"), QString::fromLatin1(dataManagerGeometry_.toBase64()));
     document.insert(QStringLiteral("application"), application);
     document.insert(QStringLiteral("version"), 1);
     const bool saved = preferences_.save(document);
     preferencesStatus_->setText(preferences_.error());
+    findChild<QFrame *>(QStringLiteral("preferencesSeparator"))->setVisible(!preferences_.error().isEmpty());
     if (!saved) {
         failedSave_.start();
         if (lastSaveError_ != preferences_.error())
@@ -482,7 +495,15 @@ void Window::openSettings()
             saveTimer_.setInterval(values.value(QStringLiteral("saveInterval")).toInt());
         }});
     for (auto *participant : participants()) {
-        if (auto *provider = dynamic_cast<SettingsParticipant *>(participant)) {
+        if (auto *maps = dynamic_cast<MapSources *>(participant)) {
+            pages.append({maps->preferenceId(), maps->settingsTitle(), {}, {}, {}, {}, false,
+                [this, maps](QWidget *parent) { return new MapManager(*maps, parent,
+                    [this] { return savePreferences() ? QString{} : preferences_.error(); }, true); }});
+        } else if (auto *feeds = dynamic_cast<DataSources *>(participant)) {
+            pages.append({feeds->preferenceId(), feeds->settingsTitle(), {}, {}, {}, {}, false,
+                [this, feeds](QWidget *parent) { return new DataManager(*feeds, parent,
+                    [this] { return savePreferences() ? QString{} : preferences_.error(); }, true); }});
+        } else if (auto *provider = dynamic_cast<SettingsParticipant *>(participant)) {
             pages.append({provider->preferenceId(), provider->settingsTitle(), provider->settingsFields(), provider->savePreferences(),
                 [provider](const QJsonObject &values) { return provider->validateSettings(values); },
                 [provider](const QJsonObject &values) { provider->restorePreferences(values); }});

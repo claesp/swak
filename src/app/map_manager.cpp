@@ -1,7 +1,8 @@
 #include "app/map_manager.h"
 #include "core/logging.h"
 #include "app/settings_dialog.h"
-#include <QListWidget>
+#include "app/provider_table.h"
+#include <QTimer>
 #include <QLabel>
 #include <QPushButton>
 #include <QDialogButtonBox>
@@ -10,17 +11,18 @@
 #include <algorithm>
 #include <QUuid>
 namespace swak {
-MapManager::MapManager(MapSources &sources, QWidget *parent, std::function<QString()> save)
+MapManager::MapManager(MapSources &sources, QWidget *parent, std::function<QString()> save, bool embedded)
     : QDialog(parent), sources_(sources), save_(std::move(save))
 {
+    if (embedded) setWindowFlags(Qt::Widget);
     setObjectName(QStringLiteral("mapProvidersDialog"));
     setWindowTitle(tr("Map Providers"));
     resize(650, 460);
     auto *layout = new QVBoxLayout(this);
-    auto *notice = new QLabel(tr("Select a provider to fetch visible map tiles over HTTPS. Providers receive your IP address and viewed area. Attribution stays visible on the map. No bulk downloads."), this);
+    auto *notice = new QLabel(tr("Select a provider to fetch visible map tiles over HTTPS. Providers receive your IP address and viewed area. Attribution stays visible on the map. No bulk downloads. Provider changes apply immediately."), this);
     notice->setWordWrap(true);
     layout->addWidget(notice);
-    list_ = new QListWidget(this);
+    list_ = new ProviderTable(true, this);
     list_->setObjectName(QStringLiteral("mapProviderList"));
     list_->setAccessibleName(tr("Map providers"));
     layout->addWidget(list_);
@@ -31,23 +33,23 @@ MapManager::MapManager(MapSources &sources, QWidget *parent, std::function<QStri
     auto *editButton = new QPushButton(tr("Edit"), this);
     editButton->setObjectName(QStringLiteral("editMapProvider"));
     row->addWidget(editButton);
-    auto *remove = new QPushButton(tr("Remove"), this);
+    auto *remove = new QPushButton(tr("Delete"), this);
     remove->setObjectName(QStringLiteral("removeMapProvider"));
     row->addWidget(remove);
-    auto *activate = new QPushButton(tr("Use provider"), this);
-    activate->setObjectName(QStringLiteral("useMapProvider"));
-    row->addWidget(activate);
     layout->addLayout(row);
     status_ = new QLabel(this);
     status_->setTextFormat(Qt::PlainText);
     status_->setWordWrap(true);
     layout->addWidget(status_);
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
-    auto *clearProvider = buttons->addButton(tr("Clear selection"), QDialogButtonBox::ActionRole);
+    auto *clearProvider = new QPushButton(tr("Clear selection"), this);
     clearProvider->setObjectName(QStringLiteral("clearMapProvider"));
+    row->addWidget(clearProvider);
     connect(clearProvider, &QPushButton::clicked, this, [this] { sources_.select({}); });
-    connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::close);
-    layout->addWidget(buttons);
+    if (!embedded) {
+        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
+        connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::close);
+        layout->addWidget(buttons);
+    }
     connect(&sources_, &MapSources::changed, this, &MapManager::refresh);
     connect(add, &QPushButton::clicked, this, [this] {
         if (sources_.sources().size() >= 32 || sources_.providers().isEmpty()) {
@@ -69,23 +71,13 @@ MapManager::MapManager(MapSources &sources, QWidget *parent, std::function<QStri
         SettingsDialog dialog(pages, [this] { return !applyError_.isEmpty() ? applyError_ : save_ ? save_() : tr("No profile writer is available."); }, this, true, true);
         dialog.setWindowTitle(tr("Add provider"));
         if (dialog.exec() == QDialog::Accepted)
-            for (int i = 0; i < list_->count(); ++i)
-                if (list_->item(i)->data(Qt::UserRole).toString() == id) list_->setCurrentRow(i);
+            for (int i = 0; i < list_->rowCount(); ++i)
+                if (list_->item(i, 1)->data(Qt::UserRole).toString() == id) list_->setCurrentCell(i, 1);
     });
     connect(editButton, &QPushButton::clicked, this, &MapManager::edit);
-    connect(list_, &QListWidget::itemDoubleClicked, this, [this] { edit(); });
+    connect(list_, &QTableWidget::cellDoubleClicked, this, [this](int, int column) { if (column != 0) edit(); });
     connect(remove, &QPushButton::clicked, this, [this] {
-        if (list_->currentItem()) sources_.remove(list_->currentItem()->data(Qt::UserRole).toString());
-    });
-    connect(activate, &QPushButton::clicked, this, [this] {
-        if (!list_->currentItem()) return;
-        const auto id = list_->currentItem()->data(Qt::UserRole).toString();
-        const auto source = sources_.sources().value(id).toObject();
-        const auto *provider = sources_.provider(source);
-        if (!provider) { reportError(tr("This provider plugin is unavailable. Its configuration is preserved.")); return; }
-        const auto error = provider->validate(source);
-        if (!error.isEmpty()) { reportError(error); return; }
-        sources_.select(id);
+        if (!list_->selectedId().isEmpty()) sources_.remove(list_->selectedId());
     });
     refresh();
 }
@@ -96,8 +88,8 @@ void MapManager::reportError(const QString &message)
 }
 void MapManager::refresh()
 {
-    const auto selected = list_->currentItem() ? list_->currentItem()->data(Qt::UserRole).toString() : sources_.activeId();
-    list_->clear();
+    const auto selected = !list_->selectedId().isEmpty() ? list_->selectedId() : sources_.activeId();
+    list_->clearProviders();
     const auto entries = sources_.sources();
     QStringList ids = entries.keys();
     const QCollator collator;
@@ -106,20 +98,32 @@ void MapManager::refresh()
     });
     for (const auto &id : ids) {
         const auto source = entries.value(id).toObject();
-        auto *item = new QListWidgetItem(source.value(QStringLiteral("name")).toString(), list_);
-        item->setData(Qt::UserRole, id);
-        if (!sources_.provider(source)) item->setText(item->text() + tr(" (plugin unavailable)"));
-        if (id == selected) list_->setCurrentItem(item);
+        const auto *provider = sources_.provider(source);
+        const bool available = provider && provider->validate(source).isEmpty();
+        auto *button = list_->append(id, source.value(QStringLiteral("name")).toString(),
+            provider ? provider->mapName() : tr("Plugin unavailable"), source.value(QStringLiteral("endpoint")).toString(),
+            id == sources_.activeId() && sources_.networkEnabled(), available);
+        connect(button, &QAbstractButton::clicked, this, [this, id] {
+            // Refresh can replace the sender, so apply changes after its click returns.
+            QTimer::singleShot(0, this, [this, id] {
+                list_->selectId(id);
+                const auto current = sources_.sources().value(id).toObject();
+                const auto *format = sources_.provider(current);
+                if (!format || !format->validate(current).isEmpty()) { refresh(); return; }
+                sources_.select(id);
+            });
+        });
     }
-    if (!list_->currentItem() && list_->count()) list_->setCurrentRow(0);
+    list_->selectId(selected);
+    if (list_->currentRow() < 0 && list_->rowCount()) list_->setCurrentCell(0, 1);
     const auto source = sources_.activeSource();
     status_->setText(source.isEmpty() ? tr("No map provider selected.") : tr("Active: %1%2").arg(source.value(QStringLiteral("name")).toString(),
         source.value(QStringLiteral("ignoreTls")).toBool() ? tr(" | Certificate checks are disabled.") : QString{}));
 }
 void MapManager::edit()
 {
-    if (!list_->currentItem()) return;
-    const auto id = list_->currentItem()->data(Qt::UserRole).toString();
+    const auto id = list_->selectedId();
+    if (id.isEmpty()) return;
     const auto source = sources_.sources().value(id).toObject();
     auto *provider = sources_.provider(source);
     if (!provider) { reportError(tr("Install the missing provider plugin to edit this entry.")); return; }

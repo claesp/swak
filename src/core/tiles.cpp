@@ -69,6 +69,14 @@ QList<TilePlacement> visibleTiles(const Viewport &view, int minimumZoom, int max
 TileRenderer::TileRenderer(QObject *parent) : QObject(parent)
 {
     workers_.setMaxThreadCount(2);
+    cacheStats_.setInterval(2000);
+    connect(&cacheStats_, &QTimer::timeout, this, [this] {
+        const qint64 bytes = disk_ ? disk_->cacheSize() : -1;
+        if (bytes == diskBytes_) return;
+        diskBytes_ = bytes;
+        emit changed();
+    });
+    cacheStats_.start();
     schedule_.setSingleShot(true);
     connect(&schedule_, &QTimer::timeout, this, &TileRenderer::pump);
 }
@@ -76,6 +84,11 @@ QString TileRenderer::status() const
 {
     if (!deferred_.isEmpty()) return tr("Map memory limit reached. Increase Tile memory cache in Settings.");
     return status_;
+}
+void TileRenderer::setDiskLimit(int mebibytes)
+{
+    diskLimitMiB_ = std::clamp(mebibytes, 16, 4096);
+    if (disk_) disk_->setMaximumCacheSize(qint64(diskLimitMiB_) * 1024 * 1024);
 }
 void TileRenderer::setMemoryLimit(int mebibytes)
 {
@@ -120,6 +133,7 @@ void TileRenderer::setSource(MapProvider *provider, const QJsonObject &source)
     network_.clearAccessCache();
     network_.setCache(nullptr);
     disk_ = nullptr;
+    diskBytes_ = -1;
     lock_.reset();
     ready_ = false;
     provider_ = provider;
@@ -136,7 +150,8 @@ void TileRenderer::setSource(MapProvider *provider, const QJsonObject &source)
     if (!lock_->tryLock(0)) { status_ = tr("Another window uses this map cache. Online maps stopped."); emit changed(); return; }
     disk_ = new TileDiskCache(&network_);
     disk_->setCacheDirectory(root + QStringLiteral("/tiles"));
-    disk_->setMaximumCacheSize(128 * 1024 * 1024);
+    disk_->setMaximumCacheSize(qint64(diskLimitMiB_) * 1024 * 1024);
+    diskBytes_ = disk_->cacheSize();
     network_.setCache(disk_);
     ready_ = true;
     emit changed();

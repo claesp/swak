@@ -27,6 +27,8 @@ public:
     void paint(QPainter &painter, const Viewport &view, double opacity, bool smooth, double missingOpacity = 0.2);
     QString status() const;
     void setMemoryLimit(int mebibytes);
+    void setDiskLimit(int mebibytes);
+    qint64 diskCacheBytes() const { return diskBytes_; }
     // Network tests inspect the request bound and cancellation.
     // cppcheck-suppress unusedFunction
     qsizetype pendingCount() const { return pending_.size(); }
@@ -55,6 +57,9 @@ private:
     int pressureZoom_ = 19;
     double requestedZoom_ = -1;
     QTimer schedule_;
+    QTimer cacheStats_;
+    qint64 diskBytes_ = -1;
+    int diskLimitMiB_ = 128;
     QDateTime retryAt_;
     struct Failure { QDateTime retryAt; int delay; };
     QCache<QString, Failure> failures_{256};

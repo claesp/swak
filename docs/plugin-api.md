@@ -99,7 +99,7 @@ A mutex protects a 256-record inbox. Each category contains at most 128 characte
 
 The model retains 500 events by default. File > Settings > Internal events allows 1 through 10000 events. Lower limits remove the oldest rows immediately. History stays in memory and does not survive process restarts. The limit, pane layout, table widths, order, and sort selection survive restarts.
 
-The status field shows the latest collected event for three seconds. A newer event restarts that timer. Errors and fatal events use red text in the field and table. Clearing the table also discards pending events for that model. It does not change text-output configuration.
+The status bar shows CoT and retained internal-event counts with separators. Incoming events do not open the history pane. Errors and fatal events use red text in the history table. Clearing the table also discards pending events for that model. It does not change text-output configuration.
 
 # Add a plugin
 
@@ -141,3 +141,5 @@ VectorFeature stores a layer name, an exact identifier string, properties, a geo
 The host prepares vector images on the same bounded workers that decode tiles. The OpenGL view composes the cached images. Decoded features remain available for layer controls and map information. Source and antialiasing changes discard prepared images. Cancellation also covers painting between features. The plugin interface versions remain unchanged.
 
 Each worker owns its QImage until painting finishes. Only completed images cross to the GUI thread. This follows the [Qt rules for painting in threads](https://doc.qt.io/qt-6/threads-modules.html#painting-in-threads).
+
+The host SettingsPage structure accepts an optional widget factory for catalog pages. MapManager and DataManager share ProviderTable in Settings and their separate windows. Catalog actions apply immediately through the existing MapSources and DataSources methods. The host skips generic snapshot forms for these two catalogs, so Apply cannot restore stale provider values. Plugin interfaces remain unchanged.

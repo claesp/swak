@@ -22,11 +22,11 @@ Source documentation: [USGS feed instructions](https://earthquake.usgs.gov/earth
 
 Open Tools > Data Providers. Select Add to create a blank feed. Enter its name, direct HTTPS URL, attribution, and refresh interval. Enable the feed when it is ready. Add and Edit use the same form system as Map Providers.
 
-The list checkbox enables or disables each feed. Multiple feeds can draw together. Edit changes the selected entry. Remove deletes its configuration and geometry. Refresh now updates an enabled feed without waiting for its timer.
+The table checkbox enables or disables each feed. Multiple feeds can draw together. Edit changes the selected entry. Delete removes the selected row and its geometry. Selecting a row does not enable it. Refresh now updates an enabled feed without waiting for its timer.
 
 The refresh interval ranges from 60 through 86400 seconds. Each feed has its own timer. Its next interval starts after a download and parse attempt finishes. Manual refresh does not overlap an update already in progress. Disabled feeds do not download.
 
-File > Settings > Data providers exposes all feed parameters. The form includes color, opacity, line width, point radius, polygon fill opacity, and labels. Names sort according to the desktop locale. The application saves feed configuration and manager geometry across restarts. Missing plugins retain their configuration but do not download data.
+File > Settings > Data providers contains the same table as the management window. Add and Edit expose all feed parameters. Provider changes apply immediately. The form includes color, opacity, line width, point radius, polygon fill opacity, and labels. Names sort according to the desktop locale. The application saves feed configuration and manager geometry across restarts. Missing plugins retain their configuration but do not download data.
 
 A failed update retains the previous valid geometry and marks its credit as STALE. The manager shows the failure. A successful empty document clears the old geometry. Disabling, removing, or editing a feed clears its current geometry. Geometry remains in memory and is downloaded again after restart. The map combines data credits with its clickable, right-aligned attribution panel.
 

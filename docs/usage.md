@@ -28,7 +28,7 @@ The editor generates `a-u-G` events by default. Map markers use blue for `a-f` t
 
 Select a table row or map marker to focus that event. The XML preview then shows that event. Selection changes the preview but keeps the editor fields unchanged.
 
-Drag the map with the left mouse button to move it. Use the wheel to zoom around the pointer. With map focus, use arrow keys to move, plus or minus to zoom, and Home to reset.
+Drag the map with the left mouse button to move it. Double-click with the left button to center that point without changing zoom. Use the wheel to zoom around the pointer. With map focus, use arrow keys to move, plus or minus to zoom, and Home to reset.
 
 The map uses Web Mercator, a rectangular map projection. It clips positions near the poles to approximately 85.05 degrees. The event table retains the original coordinates, including polar positions.
 
@@ -94,7 +94,7 @@ If a saved receiver cannot bind its endpoint, the receiver pane reports the erro
 
 # Settings
 
-Open File > Settings to edit application and plugin configuration. Apply saves changes and keeps the dialog open. OK saves changes and closes the dialog. Cancel discards changes since the last Apply. Invalid input prevents all pending changes from applying. A save error stays visible, and changes remain active for the current session.
+Open File > Settings to edit application and plugin configuration. Apply saves changes and keeps the dialog open. OK saves changes and closes the dialog. Cancel discards unapplied form changes. Provider tables apply and save their changes immediately. Invalid input prevents all pending changes from applying. A save error stays visible, and changes remain active for the current session.
 
 The General tab contains application and plugin configuration. The Panes tab contains pane visibility, placement, and dimensions. Pane entries use their names without a prefix. Section lists and dropdown choices follow the system locale for alphabetical ordering.
 
@@ -130,7 +130,7 @@ Open Tools > Map Providers to select or configure an online map. A fresh profile
 
 The map toolbar button selects an online provider or clears the selection. Unavailable providers remain visible but disabled. Map Providers opens the manager from that dropdown.
 
-The bottom status field shows the latest internal event for three seconds. New events restart the timer. Errors use red text. Tools > Plugins > Internal events opens the retained history. Clear removes its rows and pending entries.
+The status bar shows CoT Events and retained Internal events counts, with a separator between them. New events do not open or raise a pane. The status bar does not show transient event messages. Tools > Plugins > Internal events opens the retained history. Clear removes its rows and pending entries.
 
 File > Settings > Internal events controls the history limit from 1 through 10000 events. The default is 500. History stays in memory for the current process. Text logging remains disabled unless you enable it separately. Very large bursts discard older pending records to keep memory bounded.
 
@@ -162,3 +162,7 @@ Tools > Data Providers manages KML and KMZ feeds. Enable a preset or add a direc
 Use Edit to set its refresh interval and appearance. Remove deletes a feed, and Refresh now requests an immediate update. The same parameters appear in File > Settings > Data providers. Read [Data providers](data-providers.md) for public sources, supported geometry, and limits.
 
 OpenFreeMap is available in Map Providers and the provider dropdown. It supplies native vector maps with layers, labels, and points of interest. Right-click the map to change Map layers or inspect Map information. The keyboard Menu key uses the map center. File > Settings > Map providers contains the same layer controls and vector appearance parameters. Read `map-providers.md` for source terms and supported formats.
+
+The map shows the local disk-cache size below attribution. File > Settings > Map contains the Tile disk cache limit. The default is 128 MiB, with a range from 16 through 4096 MiB. The size describes the active HTTPS cache, which is separate from decoded memory. An inactive cache label means that no usable map provider cache is open.
+
+File > Settings contains tables for Map providers and Data providers. The same tables appear in Tools > Map Providers and Tools > Data Providers. A map radio button selects one provider. Data checkboxes enable independent feeds. Row selection controls Edit and Delete without changing activation. Clear selection turns off map providers. Table names follow the operating system sort order.

@@ -223,6 +223,8 @@ private slots:
         canvas.fill(Qt::black);
         {
             TileRenderer renderer;
+            renderer.setDiskLimit(16);
+            QCOMPARE(renderer.diskCacheBytes(), -1);
             renderer.setSource(xyz, localSource(xyz, server, false));
             draw(renderer, canvas);
             QVERIFY(QTest::qWaitFor([&] { return !renderer.status().isEmpty(); }, 5000));
@@ -237,10 +239,13 @@ private slots:
             QCOMPARE(server.requests.size(), 1);
             QVERIFY(server.requests.first().toLower().contains("user-agent: swak/"));
             QVERIFY(!server.requests.first().contains("no-cache"));
+            QVERIFY(QTest::qWaitFor([&] { return renderer.diskCacheBytes() > 0; }, 3000));
         }
         {
             TileRenderer cached;
             cached.setSource(xyz, localSource(xyz, server, true));
+            QVERIFY(cached.diskCacheBytes() > 0);
+            cached.setDiskLimit(32);
             QSignalSpy changed(&cached, &TileRenderer::changed);
             draw(cached, canvas);
             QVERIFY(changed.wait(5000));

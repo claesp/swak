@@ -29,12 +29,12 @@ Capabilities discovery, arbitrary projections, irregular WMTS grids, and offline
 Open Tools > Map Providers. The list contains registered provider presets and saved custom entries. Map tools do not appear in the provider format list. An unavailable format keeps its saved entries visible with a missing-plugin label.
 
 1. Select a source and select Edit to change its configuration.
-2. Select Use provider to enable online requests for that source.
+2. Select the provider radio button to enable online requests for that source.
 3. Select Clear selection to stop requests and show the plain green background.
 
-Select Add to open a blank provider form. Select the format in that form. Enter the source details, then select OK. Cancel discards the form. Remove deletes the selected source configuration. Changes save through the portable preferences file. An absent plugin does not erase its source configuration. Online maps start disabled in a fresh profile.
+Select Add to open a blank provider form. Select the format in that form. Enter the source details, then select OK. Cancel discards the form. Delete removes the selected row. Selecting a row does not activate it. Changes save through the portable preferences file. An absent plugin does not erase its source configuration. Online maps start disabled in a fresh profile.
 
-File > Settings > Map providers contains the same source parameters and the online-map switch. File > Settings > Map contains center, zoom, provider opacity, image filtering, and vector edge smoothing. Source zoom limits, layers, styles, image format, matrix set, and time also affect rendering. Attribution always remains visible while a provider is active. The text aligns to the right over a translucent background. Select the attribution link to open its license URL in the default browser. The map configuration includes attribution background opacity.
+File > Settings > Map providers contains the same table, radio buttons, and Add, Edit, Delete, and Clear selection controls. Provider changes apply immediately. File > Settings > Map contains center, zoom, provider opacity, image filtering, and vector edge smoothing. Source zoom limits, layers, styles, image format, matrix set, and time also affect rendering. Attribution always remains visible while a provider is active. The text aligns to the right over a translucent background. Select the attribution link to open its license URL in the default browser. The map configuration includes attribution background opacity.
 
 # HTTPS and cache
 
@@ -48,9 +48,9 @@ The decoded-tile cache defaults to 256 MiB. File > Settings > Map exposes Tile m
 
 Failed requests pause for at least 30 seconds. Integer Retry-After values extend this delay up to one hour.
 
-The disk cache uses Qt HTTP caching. Entries without an expiry get a seven-day default. Verified and unchecked HTTPS responses use separate caches, each limited to 128 MiB. Non-cacheable images remain in memory only while their tiles stay in the view.
+The disk cache uses Qt HTTP caching. Entries without an expiry get a seven-day default. Verified and unchecked HTTPS responses use separate caches. Each cache defaults to 128 MiB. File > Settings > Map exposes Tile disk cache, from 16 through 4096 MiB. Non-cacheable images remain in memory only while their tiles stay in the view. Cached image and vector responses survive restarts and provider changes. Fresh entries avoid another download, and expired entries require HTTP revalidation.
 
-The cache uses the operating system cache directory, not the portable profile. A process lock prevents concurrent writers. If a cache is unavailable or locked, online rendering stops and reports the problem.
+The cache uses the operating system cache directory, not the portable profile. On Linux, this is normally under `$XDG_CACHE_HOME/SWAK/swak/maps` or `~/.cache/SWAK/swak/maps`. A process lock prevents concurrent writers. If a cache is unavailable or locked, online rendering stops and reports the problem.
 
 Requests reject redirects and do not send or store cookies. Zero opacity stops downloads. A provider can see the requested area and client IP address. Cache files contain unencrypted public imagery and URLs. Do not put credentials or secrets in provider URLs. Security limits remain fixed and do not appear as rendering controls.
 
@@ -83,7 +83,7 @@ Select OpenFreeMap in Tools > Map Providers or the main toolbar. Online access s
 
 Right-click the map, then open Map layers to show or hide individual layers. The keyboard Menu key opens the same controls at the map center. Right-click a feature and select Map information to inspect its layer, identifier, and properties. The information window shows up to twelve matching features. It treats all properties as plain text and does not follow embedded URLs.
 
-File > Settings > Map providers contains layer visibility, labels, label size, preferred language, line width, and point radius. The provider editor exposes the same controls. An empty language code uses local names. A language such as `en` or `sv` selects the corresponding name when available. The context menu lists known layers and additional layers from loaded tiles. Layer choices and the information window geometry survive restarts.
+File > Settings > Map providers > Edit contains layer visibility, labels, label size, preferred language, line width, and point radius. The provider editor exposes the same controls. An empty language code uses local names. A language such as `en` or `sv` selects the corresponding name when available. The context menu lists known layers and additional layers from loaded tiles. Layer choices and the information window geometry survive restarts.
 
 The native renderer uses a fixed color palette. It does not implement MapLibre expressions, sprites, remote fonts, terrain, building extrusion, route calculation, or a POI search service. It uses the system font and simple point markers. Label placement suppresses overlap within each tile and permits up to 200 labels per tile. Labels remain clipped at tile edges. These maps do not reproduce the Liberty, Bright, or other web styles.
 
@@ -102,3 +102,5 @@ This fallback continues only to the provider minimum zoom and does not repeat on
 Workers paint complete tiles into 512-pixel images for 256 logical pixels. The OpenGL map view reuses these images during panning. The parser limits still bound geometry work per tile. There is no shared frame limit that discards later tiles. Higher display scaling and reduced-detail fallback can soften the prepared images. Labels and line widths scale with the tile during fallback. Feature inspection follows visible layer choices. MVT parsing does not fetch linked resources or execute styles. Development tests cover truncated records, malformed commands, oversized numbers, property types, holes, cancellation, replacement, and worker exceptions.
 
 Live research accepted a world tile with 79 features and a Stockholm tile with 4142 features. The Stockholm sample used tile `14/9014/4818` and contained POIs. These counts describe the sampled dataset, not a fixed service guarantee. Automated tests use local synthetic tiles, so they do not depend on public service availability.
+
+The map shows disk usage below the attribution. The value covers the active certificate-policy cache across its providers. The host refreshes this value every two seconds, outside map painting. The memory-cache limit remains separate. With no open provider cache, the label shows inactive. Cache files are expendable, not an offline archive or a portable map package. SWAK does not bulk-download tiles or ignore HTTP cache restrictions.

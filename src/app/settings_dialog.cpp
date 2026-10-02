@@ -83,6 +83,11 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
             lists.at(group)->item(lists.at(group)->count() - 1)->setData(Qt::UserRole, page.id);
         }
         auto *stack = stacks.at(group);
+        if (page.createContent) {
+            stack->addWidget(page.createContent(stack));
+            editors_.append(QList<QWidget *>{});
+            continue;
+        }
         auto *scroll = new QScrollArea(stack);
         scroll->setWidgetResizable(true);
         auto *content = new QWidget(scroll);

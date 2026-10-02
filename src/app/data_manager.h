@@ -2,13 +2,13 @@
 #include "core/data.h"
 #include <QDialog>
 #include <functional>
-class QListWidget;
 class QLabel;
 namespace swak {
+class ProviderTable;
 class DataManager final : public QDialog {
     Q_OBJECT
 public:
-    explicit DataManager(DataSources &sources, QWidget *parent = nullptr, std::function<QString()> save = {});
+    explicit DataManager(DataSources &sources, QWidget *parent = nullptr, std::function<QString()> save = {}, bool embedded = false);
 private:
     void refresh();
     void updateStatus();
@@ -17,7 +17,7 @@ private:
     DataSources &sources_;
     std::function<QString()> save_;
     QString applyError_;
-    QListWidget *list_;
+    ProviderTable *list_;
     QLabel *status_;
 };
 }

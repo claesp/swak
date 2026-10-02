@@ -358,3 +358,25 @@ All 33 native sanitizer cases passed before the existing Mesa leak caused status
 The release rebuild passed with Qt 6.8.2 and GCC 14.2 on Debian 13. The executable remains `build/release/swak`, version 0.1.0. The build log is `build/vector-pan-release.log`. Hardware GPUs, native Wayland, minimum Qt compatibility, and multi-hour live-map sessions remain untested.
 
 The 60-second sanitizer workload passed in `build/quality/20261002-173244-soak-142884`. It completed 927 cycles with 8134656 bytes of peak memory growth, a 70-millisecond maximum heartbeat gap, and 0.019 idle CPU seconds. This short run does not replace multi-hour release qualification.
+
+# Provider tables, status counts, and map controls, 2026-10-02
+
+The map footer now shows only coordinates and zoom. The status bar shows separate CoT Events and retained Internal events counts. Separators divide the fields. A preferences-error separator appears only when an error exists. Internal messages no longer replace status text or raise a pane. History remains available through Tools > Plugins > Internal events.
+
+A left double-click centers the clicked map point without changing zoom. The release event does not select a different CoT event. Existing center preferences retain the new position after restart.
+
+MapManager and DataManager now use the shared ProviderTable. Map rows contain radio buttons, and data rows contain independent checkboxes. Selecting a row does not activate it. Edit and Delete use that row, including when its Format cell holds focus. Missing plugins retain their entries with disabled activation controls. Names use the system collation order.
+
+Both provider sections in File > Settings embed these same managers. Add and Edit keep the shared provider forms. Catalog actions apply and save immediately, as stated in each section. Generic Apply and Cancel do not replace catalog state with an old snapshot. Embedded managers do not replace the saved geometry of separate management windows. SettingsPage has a host-owned widget factory. Plugin interface versions remain unchanged.
+
+The existing local HTTP cache now has a persisted disk limit under File > Settings > Map. The default remains 128 MiB, bounded from 16 through 4096 MiB per HTTPS certificate-policy cache. The label below attribution reports current disk usage for the active cache. A two-second timer reads Qt cache statistics outside map painting. No open provider cache produces an inactive label. Cached raster and vector responses remain separate from decoded memory. Fresh responses survive restart and avoid another download. Expiry, HTTP revalidation, no-store rules, certificate isolation, and process locking remain enforced. This is an expendable cache, not an offline archive or bulk downloader.
+
+Focused native tests passed all seven cases. They cover activation, multiple feeds, row deletion, hidden event history, counts, cache labels, double-click centering, and restored preferences. The new double-click test uses the exact logical center, including half-pixel centers for odd widget dimensions. A data fixture now supplies required attribution. Screenshots are under `build/providers-ui-native`. Four focused cases also passed at 200 percent scaling under `build/providers-ui-hidpi`.
+
+Eight sanitizer suites passed in `build/quality/20261002-191432-quick-145829`. Static analysis passed in `build/quality/20261002-191553-analyze-146471`. Coverage passed eight suites and all 35 native cases in `build/quality/20261002-191434-coverage-145840`. ProviderTable reached all 43 executable lines, and DataManager reached all 88. MapManager reached 114 of 116 lines. The full-catalog Add rejection remains unexecuted. The image allocation failure and some map mouse, arrow-key, and gesture paths remain coverage gaps. Line coverage does not establish complete branch or input coverage.
+
+The release rebuild passed without compiler warnings with Qt 6.8.2 and GCC 14.2 on Debian 13. The executable remains `build/release/swak`, version 0.1.0. The build log is `build/providers-ui-release.log`. Hardware GPUs, native Wayland, minimum Qt compatibility, and multi-hour live-map sessions remain untested.
+
+All 35 native sanitizer cases passed before LeakSanitizer reported the existing Mesa leak. The report contains 240732 bytes in 1073 allocations from `libGLX_mesa.so.0`. The failed run remains visible in `build/quality/20261002-191843-gui-147418`. No leak suppression or false success was added.
+
+The 60-second sanitizer workload passed in `build/quality/20261002-192001-soak-147570`. It completed 933 cycles with 8437760 bytes of peak memory growth, an 88-millisecond maximum heartbeat gap, and 0.058 idle CPU seconds. This short workload does not replace multi-hour release qualification.

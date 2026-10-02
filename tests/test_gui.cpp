@@ -18,6 +18,9 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QListWidget>
+#include <QTableWidget>
+#include <QRadioButton>
+#include <QFrame>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QTabWidget>
@@ -349,22 +352,22 @@ private slots:
             window.show();
             QVERIFY(QTest::qWaitForWindowExposed(&window));
             auto *history = window.findChild<swak::ActivityModel *>();
-            auto *status = window.findChild<QLabel *>(QStringLiteral("latestActivity"));
+            auto *status = window.findChild<QLabel *>(QStringLiteral("internalEventCount"));
             auto *table = window.findChild<QTableView *>(QStringLiteral("activityTable"));
             QVERIFY(history && status && table);
+            QVERIFY(window.findChild<QLabel *>(QStringLiteral("cotEventCount"))->text().startsWith(QStringLiteral("CoT Events:")));
+            QCOMPARE(window.findChildren<QFrame *>(QStringLiteral("statusSeparator")).size(), 1);
+            QVERIFY(!window.findChild<QLabel *>(QStringLiteral("latestActivity")));
             history->clear();
             history->restorePreferences({{QStringLiteral("capacity"), 2}});
             swak::logMessage(swak::Severity::Error, swak::Urgency::Immediate, QStringLiteral("swak.test"), QStringLiteral("Example failure"));
-            QVERIFY(QTest::qWaitFor([&] { return status->text() == QStringLiteral("Example failure"); }));
-            QVERIFY(status->styleSheet().contains(QStringLiteral("#e53935")));
-            QTest::qWait(1100);
+            QVERIFY(QTest::qWaitFor([&] { return history->rowCount() > 0; }));
+            QCOMPARE(status->text(), QStringLiteral("Internal events: %1").arg(history->rowCount()));
+            QVERIFY(!table->isVisible());
             swak::logMessage(swak::Severity::Info, swak::Urgency::Routine, QStringLiteral("swak.test"), QStringLiteral("Recovered"));
-            QVERIFY(QTest::qWaitFor([&] { return status->text() == QStringLiteral("Recovered"); }));
-            QVERIFY(status->styleSheet().isEmpty());
-            QVERIFY(status->findChild<QTimer *>()->remainingTime() > 2800);
-            QCOMPARE(history->rowCount(), 2);
-            QVERIFY(QTest::qWaitFor([&] { return status->text().isEmpty(); }, 4000));
-            QCOMPARE(history->rowCount(), 2);
+            QVERIFY(QTest::qWaitFor([&] { return history->rowCount() == 2; }));
+            QCOMPARE(status->text(), QStringLiteral("Internal events: 2"));
+            QVERIFY(!table->isVisible());
             auto *plugins = window.findChild<QMenu *>(QStringLiteral("pluginsMenu"));
             QMenu *historyMenu = nullptr;
             for (auto *action : plugins->actions()) if (action->text() == QStringLiteral("Internal events")) historyMenu = action->menu();
@@ -376,6 +379,7 @@ private slots:
             QVERIFY(window.screen()->grabWindow(window.winId()).save(QStringLiteral("internal-events-smoke.png")));
             historyMenu->findChild<QAction *>(QStringLiteral("clearActivityAction"))->trigger();
             QCOMPARE(history->rowCount(), 0);
+            QCOMPARE(status->text(), QStringLiteral("Internal events: 0"));
             table->horizontalHeader()->resizeSection(0, 250);
             auto *button = window.findChild<QToolButton *>(QStringLiteral("mapProviderButton"));
             QVERIFY(button);
@@ -501,6 +505,11 @@ private slots:
         }, 5000));
         auto *credit = map->findChild<QLabel *>(QStringLiteral("mapAttribution"));
         QVERIFY(credit);
+        auto *cache = map->findChild<QLabel *>(QStringLiteral("mapCacheSize"));
+        QVERIFY(cache);
+        QVERIFY(QTest::qWaitFor([&] { return !cache->text().contains(QStringLiteral("inactive")) && !cache->text().contains(QStringLiteral("0 bytes")); }));
+        QVERIFY(cache->text().startsWith(QStringLiteral("Map cache:")));
+        QVERIFY(cache->y() > credit->geometry().bottom());
         QCOMPARE(credit->alignment(), Qt::AlignRight);
         QVERIFY(credit->text().contains(QStringLiteral("href=")));
         QVERIFY(!credit->text().contains(QStringLiteral("| https")));
@@ -527,11 +536,11 @@ private slots:
         auto *dialog = window.findChild<swak::MapManager *>();
         QVERIFY(dialog);
         QVERIFY(QTest::qWaitForWindowExposed(dialog));
-        auto *list = dialog->findChild<QListWidget *>(QStringLiteral("mapProviderList"));
-        QCOMPARE(list->count(), 4);
+        auto *list = dialog->findChild<QTableWidget *>(QStringLiteral("mapProviderList"));
+        QCOMPARE(list->rowCount(), 4);
         QVERIFY(dialog->grab().save(QStringLiteral("map-providers-smoke.png")));
-        dialog->findChild<QPushButton *>(QStringLiteral("useMapProvider"))->click();
-        QCOMPARE(sources->activeId(), id);
+        dialog->findChild<QRadioButton *>(QStringLiteral("activeProvider/") + id)->click();
+        QVERIFY(QTest::qWaitFor([&] { return sources->activeId() == id; }));
         QVERIFY(!dialog->findChild<QComboBox *>());
         QTimer::singleShot(0, dialog, [dialog] {
             auto *editor = dialog->findChild<swak::SettingsDialog *>();
@@ -547,7 +556,7 @@ private slots:
             QVERIFY(editor->grab().save(QStringLiteral("add-provider-smoke.png")));
         });
         dialog->findChild<QPushButton *>(QStringLiteral("addMapProvider"))->click();
-        QCOMPARE(list->count(), 4);
+        QCOMPARE(list->rowCount(), 4);
         QTimer::singleShot(0, dialog, [dialog, id, source] {
             auto *editor = dialog->findChild<swak::SettingsDialog *>();
             QVERIFY(editor);
@@ -562,10 +571,10 @@ private slots:
             editor->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
         });
         dialog->findChild<QPushButton *>(QStringLiteral("addMapProvider"))->click();
-        QCOMPARE(list->count(), 5);
+        QCOMPARE(list->rowCount(), 5);
         dialog->findChild<QPushButton *>(QStringLiteral("removeMapProvider"))->click();
-        QCOMPARE(list->count(), 4);
-        for (int i = 0; i < list->count(); ++i) if (list->item(i)->data(Qt::UserRole).toString() == id) list->setCurrentRow(i);
+        QCOMPARE(list->rowCount(), 4);
+        for (int i = 0; i < list->rowCount(); ++i) if (list->item(i, 1)->data(Qt::UserRole).toString() == id) list->setCurrentCell(i, 1);
         QTimer::singleShot(0, dialog, [dialog, id] {
             auto *editor = dialog->findChild<swak::SettingsDialog *>();
             if (!editor) return;
@@ -593,9 +602,9 @@ private slots:
         swak::MapSources absent({});
         absent.restorePreferences(restored.findChild<swak::MapSources *>()->savePreferences());
         swak::MapManager missing(absent);
-        auto *missingList = missing.findChild<QListWidget *>(QStringLiteral("mapProviderList"));
-        QVERIFY(missingList->item(0)->text().contains(QStringLiteral("unavailable")));
-        missing.findChild<QPushButton *>(QStringLiteral("useMapProvider"))->click();
+        auto *missingList = missing.findChild<QTableWidget *>(QStringLiteral("mapProviderList"));
+        QVERIFY(missingList->item(0, 2)->text().contains(QStringLiteral("unavailable")));
+        QVERIFY(!missing.findChild<QRadioButton *>()->isEnabled());
         QVERIFY(absent.activeSource().isEmpty());
         missing.findChild<QPushButton *>(QStringLiteral("editMapProvider"))->click();
     }
@@ -614,8 +623,8 @@ private slots:
             auto *feeds = window.findChild<swak::DataSources *>(); QVERIFY(feeds); QCOMPARE(feeds->sources().size(), 2);
             window.findChild<QAction *>(QStringLiteral("dataProvidersAction"))->trigger();
             auto *manager = window.findChild<swak::DataManager *>(); QVERIFY(manager);
-            auto *list = manager->findChild<QListWidget *>(QStringLiteral("dataProviderList")); QVERIFY(list);
-            QCOMPARE(list->count(), 2);
+            auto *list = manager->findChild<QTableWidget *>(QStringLiteral("dataProviderList")); QVERIFY(list);
+            QCOMPARE(list->rowCount(), 2);
             QTimer::singleShot(0, manager, [manager, &server] {
                 auto *dialog = manager->findChild<swak::SettingsDialog *>(); QVERIFY(dialog);
                 const auto close = qScopeGuard([dialog] { if (dialog->isVisible()) dialog->reject(); });
@@ -629,8 +638,8 @@ private slots:
                 dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
             });
             manager->findChild<QPushButton *>(QStringLiteral("addDataProvider"))->click();
-            QCOMPARE(list->count(), 3); QCOMPARE(list->item(0)->text(), QStringLiteral("A test feed"));
-            const auto id = list->item(0)->data(Qt::UserRole).toString(); list->item(0)->setCheckState(Qt::Checked);
+            QCOMPARE(list->rowCount(), 3); QCOMPARE(list->item(0, 1)->text(), QStringLiteral("A test feed"));
+            const auto id = list->item(0, 1)->data(Qt::UserRole).toString(); manager->findChild<QCheckBox *>(QStringLiteral("activeProvider/") + id)->click();
             QVERIFY(QTest::qWaitFor([&] { return feeds->shapeCount(id) == 3; }, 5000));
             QVERIFY(QTest::qWaitForWindowExposed(manager)); QVERIFY(manager->grab().save(QStringLiteral("data-providers-smoke.png")));
             manager->hide(); auto *map = window.findChild<QOpenGLWidget *>(); QVERIFY(map); QVERIFY(map->isValid());
@@ -652,9 +661,100 @@ private slots:
         QCOMPARE(feeds->sources().size(), 3);
         restored.findChild<QAction *>(QStringLiteral("dataProvidersAction"))->trigger();
         auto *manager = restored.findChild<swak::DataManager *>();
-        manager->findChild<QListWidget *>(QStringLiteral("dataProviderList"))->setCurrentRow(0);
+        manager->findChild<QTableWidget *>(QStringLiteral("dataProviderList"))->setCurrentCell(0, 1);
         manager->findChild<QPushButton *>(QStringLiteral("removeDataProvider"))->click(); QCOMPARE(feeds->sources().size(), 2);
         manager->close();
+    }
+    void providerActivationTables()
+    {
+        swak::MapSources maps(QPluginLoader::staticInstances());
+        swak::MapManager manager(maps);
+        auto *table = manager.findChild<QTableWidget *>(QStringLiteral("mapProviderList")); QVERIFY(table);
+        const auto first = table->item(0, 1)->data(Qt::UserRole).toString();
+        const auto second = table->item(1, 1)->data(Qt::UserRole).toString();
+        manager.findChild<QRadioButton *>(QStringLiteral("activeProvider/") + first)->click();
+        QVERIFY(QTest::qWaitFor([&] { return maps.activeId() == first; }));
+        table->setCurrentCell(1, 2);
+        QCOMPARE(maps.activeId(), first);
+        manager.findChild<QRadioButton *>(QStringLiteral("activeProvider/") + second)->click();
+        QVERIFY(QTest::qWaitFor([&] { return maps.activeId() == second; }));
+        QVERIFY(!manager.findChild<QRadioButton *>(QStringLiteral("activeProvider/") + first)->isChecked());
+        manager.findChild<QPushButton *>(QStringLiteral("clearMapProvider"))->click();
+        QVERIFY(maps.activeSource().isEmpty());
+        for (auto *radio : manager.findChildren<QRadioButton *>()) QVERIFY(!radio->isChecked());
+        TileServer server; QVERIFY(server.load(QFINDTESTDATA("fixtures"))); QVERIFY(server.listen(QHostAddress::LocalHost));
+        server.body = "<kml><Placemark><Point><coordinates>0,0</coordinates></Point></Placemark></kml>";
+        swak::DataSources feeds(QPluginLoader::staticInstances());
+        feeds.restorePreferences({{QStringLiteral("sources"), QJsonObject{}}});
+        for (const auto &id : {QStringLiteral("a"), QStringLiteral("b")}) {
+            auto source = swak::dataDefaults();
+            source.insert(QStringLiteral("format"), feeds.providers().first()->dataId());
+            source.insert(QStringLiteral("name"), id);
+            source.insert(QStringLiteral("attribution"), QStringLiteral("Test data"));
+            source.insert(QStringLiteral("endpoint"), QStringLiteral("https://localhost:%1/%2.kml").arg(server.serverPort()).arg(id));
+            source.insert(QStringLiteral("ignoreTls"), true);
+            QVERIFY(feeds.put(id, source).isEmpty());
+        }
+        swak::DataManager dataManager(feeds, nullptr, [] { return QString{}; });
+        auto *dataTable = dataManager.findChild<QTableWidget *>(QStringLiteral("dataProviderList")); QVERIFY(dataTable);
+        for (const auto &id : {QStringLiteral("a"), QStringLiteral("b")}) {
+            dataManager.findChild<QCheckBox *>(QStringLiteral("activeProvider/") + id)->click();
+            QVERIFY(QTest::qWaitFor([&] { return feeds.sources().value(id).toObject().value(QStringLiteral("enabled")).toBool(); }));
+        }
+        QVERIFY(dataManager.findChild<QCheckBox *>(QStringLiteral("activeProvider/a"))->isChecked());
+        QVERIFY(dataManager.findChild<QCheckBox *>(QStringLiteral("activeProvider/b"))->isChecked());
+        dataManager.findChild<QCheckBox *>(QStringLiteral("activeProvider/a"))->click();
+        QVERIFY(QTest::qWaitFor([&] { return !feeds.sources().value(QStringLiteral("a")).toObject().value(QStringLiteral("enabled")).toBool(); }));
+        QVERIFY(feeds.sources().value(QStringLiteral("b")).toObject().value(QStringLiteral("enabled")).toBool());
+        dataTable->setCurrentCell(0, 2);
+        dataManager.findChild<QPushButton *>(QStringLiteral("removeDataProvider"))->click();
+        QVERIFY(!feeds.sources().contains(QStringLiteral("a")));
+        QVERIFY(feeds.sources().contains(QStringLiteral("b")));
+    }
+    void mapDoubleClickAndProviderSettings()
+    {
+        QTemporaryDir directory;
+        const auto path = directory.filePath(QStringLiteral("map-center.json"));
+        double expectedX = 0;
+        double expectedY = 0;
+        {
+            swak::Window window(path, QPluginLoader::staticInstances()); window.show();
+            QVERIFY(QTest::qWaitForWindowExposed(&window));
+            auto *map = window.findChild<QOpenGLWidget *>(); QVERIFY(map);
+            auto *preferences = dynamic_cast<swak::PreferenceParticipant *>(map); QVERIFY(preferences);
+            preferences->restorePreferences({{QStringLiteral("zoom"), 4}, {QStringLiteral("diskCacheMiB"), 256}});
+            const QPoint target(map->width() / 2 + 64, map->height() / 2 - 32);
+            expectedX = 0.5 + (target.x() - map->width() / 2.0) / 4096;
+            expectedY = 0.5 + (target.y() - map->height() / 2.0) / 4096;
+            QTest::mouseDClick(map, Qt::LeftButton, Qt::NoModifier, target);
+            QTest::mouseRelease(map, Qt::LeftButton, Qt::NoModifier, target);
+            const auto centered = preferences->savePreferences();
+            QCOMPARE(centered.value(QStringLiteral("centerX")).toDouble(), expectedX);
+            QCOMPARE(centered.value(QStringLiteral("centerY")).toDouble(), expectedY);
+            QCOMPARE(centered.value(QStringLiteral("zoom")).toDouble(), 4.0);
+            QCOMPARE(centered.value(QStringLiteral("diskCacheMiB")).toInt(), 256);
+            bool tested = false;
+            QTimer::singleShot(0, &window, [&] {
+                auto *dialog = window.findChild<swak::SettingsDialog *>(); QVERIFY(dialog);
+                const auto close = qScopeGuard([dialog] { dialog->reject(); });
+                QVERIFY(dialog->findChild<QTableWidget *>(QStringLiteral("mapProviderList")));
+                QVERIFY(dialog->findChild<QTableWidget *>(QStringLiteral("dataProviderList")));
+                QVERIFY(!dialog->findChild<QComboBox *>(QStringLiteral("org.swak.maps/active")));
+                auto *sections = dialog->findChild<QListWidget *>(QStringLiteral("settingsSections"));
+                for (int i = 0; i < sections->count(); ++i)
+                    if (sections->item(i)->data(Qt::UserRole).toString() == QStringLiteral("org.swak.maps")) sections->setCurrentRow(i);
+                QVERIFY(QTest::qWaitForWindowExposed(dialog));
+                QVERIFY(dialog->grab().save(QStringLiteral("provider-settings-smoke.png")));
+                tested = true;
+            });
+            window.findChild<QAction *>(QStringLiteral("settingsAction"))->trigger();
+            QVERIFY(tested);
+            QVERIFY(window.savePreferences());
+        }
+        swak::Window restored(path, QPluginLoader::staticInstances());
+        const auto saved = dynamic_cast<swak::PreferenceParticipant *>(restored.findChild<QOpenGLWidget *>())->savePreferences();
+        QCOMPARE(saved.value(QStringLiteral("centerX")).toDouble(), expectedX);
+        QCOMPARE(saved.value(QStringLiteral("diskCacheMiB")).toInt(), 256);
     }
     void pluginToolbar()
     {

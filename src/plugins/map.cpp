@@ -10,6 +10,7 @@
 #include <QPointer>
 #include <QJsonDocument>
 #include <QLabel>
+#include <QLocale>
 #include <QDesktopServices>
 #include <QRegularExpression>
 #include <QUrl>
@@ -42,8 +43,15 @@ public:
         setMinimumSize(320, 240);
         setFocusPolicy(Qt::StrongFocus);
         setAccessibleName(tr("Event map"));
-        setAccessibleDescription(tr("Drag to pan. Use the wheel or plus and minus keys to zoom. Press Home to reset. Right-click for map layers and information."));
+        setAccessibleDescription(tr("Drag to pan. Double-click to center. Use the wheel or plus and minus keys to zoom. Press Home to reset. Right-click for map layers and information."));
         setMouseTracking(true);
+        cacheLabel_ = new QLabel(this);
+        cacheLabel_->setObjectName(QStringLiteral("mapCacheSize"));
+        cacheLabel_->setTextFormat(Qt::PlainText);
+        cacheLabel_->setStyleSheet(QStringLiteral("color: #c7d7e5;"));
+        cacheLabel_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        cacheLabel_->setAttribute(Qt::WA_TransparentForMouseEvents);
+        cacheLabel_->setToolTip(tr("Local tile files for the active HTTPS cache. Cached tiles survive restarts until they expire or the disk limit removes them."));
         attribution_ = new QLabel(this);
         attribution_->setObjectName(QStringLiteral("mapAttribution"));
         attribution_->setAlignment(Qt::AlignRight);
@@ -95,6 +103,7 @@ public:
                 numberSetting(QStringLiteral("centerY"), tr("Vertical center (0–1)"), 0, 1, 6),
                 numberSetting(QStringLiteral("zoom"), tr("Zoom"), zoomLimits().first, zoomLimits().second),
                 numberSetting(QStringLiteral("tileCacheMiB"), tr("Tile memory cache (MiB)"), 64, 512),
+                numberSetting(QStringLiteral("diskCacheMiB"), tr("Tile disk cache (MiB)"), 16, 4096),
                 numberSetting(QStringLiteral("missingOpacity"), tr("Missing tile marker opacity"), 0, 1, 2),
                 numberSetting(QStringLiteral("opacity"), tr("Provider opacity"), 0, 1, 2),
                 numberSetting(QStringLiteral("attributionOpacity"), tr("Attribution background opacity"), 0, 1, 2),
@@ -104,7 +113,7 @@ public:
     QJsonObject savePreferences() const override
     {
         return {{QStringLiteral("informationGeometry"), QString::fromLatin1((information_ ? information_->saveGeometry() : informationGeometry_).toBase64())}, {QStringLiteral("centerX"), view_.center.x()}, {QStringLiteral("centerY"), view_.center.y()},
-                {QStringLiteral("zoom"), view_.zoom}, {QStringLiteral("tileCacheMiB"), tileCacheMiB_}, {QStringLiteral("opacity"), opacity_},
+                {QStringLiteral("zoom"), view_.zoom}, {QStringLiteral("tileCacheMiB"), tileCacheMiB_}, {QStringLiteral("diskCacheMiB"), diskCacheMiB_}, {QStringLiteral("opacity"), opacity_},
                 {QStringLiteral("missingOpacity"), missingOpacity_},
                 {QStringLiteral("attributionOpacity"), attributionOpacity_}, {QStringLiteral("smooth"), smooth_}, {QStringLiteral("antialias"), antialias_}};
     }
@@ -118,6 +127,8 @@ public:
         wheelRemainder_ = 0;
         tileCacheMiB_ = static_cast<int>(preferenceNumber(values, QStringLiteral("tileCacheMiB"), 256, 64, 512));
         tiles_.setMemoryLimit(tileCacheMiB_);
+        diskCacheMiB_ = static_cast<int>(preferenceNumber(values, QStringLiteral("diskCacheMiB"), 128, 16, 4096));
+        tiles_.setDiskLimit(diskCacheMiB_);
         missingOpacity_ = preferenceNumber(values, QStringLiteral("missingOpacity"), 0.2, 0, 1);
         opacity_ = preferenceNumber(values, QStringLiteral("opacity"), 1, 0, 1);
         attributionOpacity_ = preferenceNumber(values, QStringLiteral("attributionOpacity"), 0.55, 0, 1);
@@ -183,7 +194,12 @@ protected:
         const QString position = onWorld ? tr("%1°, %2°").arg(coord.y(), 0, 'f', 4).arg(coord.x(), 0, 'f', 4)
                                          : tr("Pointer outside map");
         painter.drawText(QRect(16, height() - 30, width() - 32, 22), Qt::AlignLeft | Qt::AlignVCenter,
-                         tr("%1  |  Zoom %2  |  %3 events").arg(position).arg(view_.zoom, 0, 'f', 0).arg(store_.rowCount()));
+                         tr("%1  |  Zoom %2").arg(position).arg(view_.zoom, 0, 'f', 0));
+        const auto cacheBytes = tiles_.diskCacheBytes();
+        cacheLabel_->setText(cacheBytes < 0 ? tr("Map cache: inactive")
+            : tr("Map cache: %1").arg(QLocale().formattedDataSize(cacheBytes)));
+        cacheLabel_->adjustSize();
+        cacheLabel_->move(width() - 12 - cacheLabel_->width(), height() - 32 - cacheLabel_->height());
         QStringList credits;
         if (!source.isEmpty()) credits.append(source.value(QStringLiteral("attribution")).toString());
         if (dataSources_) credits.append(dataSources_->attributions());
@@ -243,7 +259,7 @@ protected:
             naturalWidth = std::max(naturalWidth, attribution_->fontMetrics().horizontalAdvance(tiles_.status()));
             const int panelWidth = std::min(width() - 24, naturalWidth + 16);
             const int panelHeight = attribution_->heightForWidth(panelWidth);
-            attribution_->setGeometry(width() - 12 - panelWidth, height() - 34 - panelHeight, panelWidth, panelHeight);
+            attribution_->setGeometry(width() - 12 - panelWidth, cacheLabel_->y() - 2 - panelHeight, panelWidth, panelHeight);
         }
         if (hasFocus()) {
             painter.setPen(QPen(QColor("#5fd6ff"), 2));
@@ -258,6 +274,18 @@ protected:
         last_ = event->position();
         press_ = last_;
         setCursor(Qt::ClosedHandCursor);
+    }
+    void mouseDoubleClickEvent(QMouseEvent *event) override
+    {
+        if (event->button() != Qt::LeftButton) { QOpenGLWidget::mouseDoubleClickEvent(event); return; }
+        view_.center += (event->position() - QPointF(width() / 2.0, height() / 2.0)) / view_.scale();
+        clampCenter();
+        dragging_ = false;
+        moved_ = true;
+        cursor_ = event->position();
+        unsetCursor();
+        event->accept();
+        update();
     }
     void mouseMoveEvent(QMouseEvent *event) override
     {
@@ -381,9 +409,11 @@ private:
     MapSources *sources_ = nullptr;
     TileRenderer tiles_;
     QLabel *attribution_;
+    QLabel *cacheLabel_;
     double attributionOpacity_ = 0.55;
     double opacity_ = 1;
     int tileCacheMiB_ = 256;
+    int diskCacheMiB_ = 128;
     double missingOpacity_ = 0.2;
     int wheelRemainder_ = 0;
     bool smooth_ = true;
