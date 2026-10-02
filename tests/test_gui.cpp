@@ -314,7 +314,8 @@ private slots:
         QMenu *events = nullptr;
         for (auto *action : root->actions()) if (action->menu() && action->text() == QStringLiteral("CoT Events")) events = action->menu();
         QVERIFY(events);
-        QVERIFY(!events->menuAction()->isCheckable());
+        QVERIFY(events->menuAction()->isCheckable());
+        QVERIFY(!events->menuAction()->isChecked());
         events->menuAction()->trigger();
         QVERIFY(!dock->isHidden());
         auto *editor = window.findChild<QDockWidget *>(QStringLiteral("org.swak.editor.pane"));
@@ -641,7 +642,7 @@ private slots:
             if (found == docks.end()) continue;
             ++activated;
             auto *dock = *found;
-            QVERIFY(!action->isCheckable());
+            QVERIFY(action->isCheckable());
             if (action->menu()) for (auto *child : action->menu()->actions()) QVERIFY(child->text() != QStringLiteral("Show pane"));
             dock->hide();
             root->popup(window.mapToGlobal(QPoint(40, 60)));
@@ -649,8 +650,10 @@ private slots:
             QTest::mouseClick(root, Qt::LeftButton, Qt::NoModifier, root->actionGeometry(action).center());
             QVERIFY2(!dock->isHidden(), qPrintable(action->text()));
             QVERIFY(!root->isVisible());
+            QVERIFY(action->isChecked());
             action->trigger();
-            QVERIFY(!dock->isHidden());
+            QVERIFY(dock->isHidden());
+            QVERIFY(!action->isChecked());
             if (action->menu()) {
                 root->popup(window.mapToGlobal(QPoint(40, 60)));
                 root->setActiveAction(action);
@@ -666,6 +669,16 @@ private slots:
             QTest::keyClick(root, Qt::Key_Return);
             QVERIFY(!dock->isHidden());
             QVERIFY(dock->isFloating());
+            QVERIFY(action->isChecked());
+            root->popup(window.mapToGlobal(QPoint(40, 60)));
+            root->setActiveAction(action);
+            QTest::keyClick(root, Qt::Key_Space);
+            QVERIFY(dock->isHidden());
+            QVERIFY(!action->isChecked());
+            action->trigger();
+            QVERIFY(!dock->isHidden());
+            dock->close();
+            QVERIFY(!action->isChecked());
             dock->setFloating(false);
         }
         QCOMPARE(activated, 5);

@@ -52,8 +52,14 @@ void addPaneAction(QMenu &menu, QDockWidget &dock, QAction *action = nullptr)
 {
     if (!action) action = menu.addAction(dock.windowTitle());
     action->setProperty("activatesPane", true);
-    QObject::connect(action, &QAction::triggered, &dock, [&dock] {
-        dock.show();
+    action->setCheckable(true);
+    const auto sync = [action, &dock] { action->setChecked(!dock.isHidden()); };
+    sync();
+    QObject::connect(&dock, &QDockWidget::visibilityChanged, action, sync);
+    QObject::connect(&menu, &QMenu::aboutToShow, action, sync);
+    QObject::connect(action, &QAction::triggered, &dock, [&dock](bool visible) {
+        dock.setVisible(visible);
+        if (!visible) return;
         dock.raise();
         dock.activateWindow();
         auto *focus = dock.focusWidget();

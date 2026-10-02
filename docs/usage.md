@@ -2,7 +2,7 @@
 
 A fresh profile starts with an empty map and no receiver socket. Later launches restore the saved interface and receiver state. CoT Event Generator opens beside the map in the default layout.
 
-Tools > Plugins restores hidden docks, which are movable tool panels. Click a plugin name to open and focus its pane. Hover over its name, or press Right, to open its command submenu. Return or Space also activates the selected pane entry. Close the pane to hide it.
+Tools > Plugins restores hidden docks, which are movable tool panels. Select a plugin checkbox to show or hide its pane. A checked box means that the pane is open. Hover over its name, or press Right, to open its command submenu. Return or Space also toggles the selected pane. Close the pane to hide it.
 
 CoT Events, CoT Event Generator, UDP receiver, and Plugins each have an independent dock. The three tool docks start as tabs beside the map. Drag a dock title or tab to detach that pane.
 

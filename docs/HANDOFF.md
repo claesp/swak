@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation: See “Map labels and plugin activation” below. The release includes these changes.
+Latest implementation: See “Plugin checkboxes restored” below. The release includes these changes.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -264,3 +264,11 @@ Native screenshots show the diagonal text and named toolbar sections. Focused te
 Native Wayland, hardware GPUs, multi-hour sessions, and the minimum Qt version remain untested in this pass. No external dependency was added.
 
 A 60-second sanitizer workload passed in `build/quality/20261002-144811-soak-114835`. It completed 954 cycles with 6791168 bytes of peak memory growth after warmup. The maximum heartbeat gap was 59 milliseconds. Idle CPU use was 0.030 seconds.
+
+# Plugin checkboxes restored
+
+Tools > Plugins again has a checkbox for each pane. Mouse clicks, Return, and Space toggle pane visibility. Pane close buttons update the checkbox. Command submenus remain available without a Show pane entry.
+
+The release rebuild passed. Six sanitizer suites and all 31 native GUI cases passed. Reports are `build/quality/20261002-145255-quick-115651` and `build/quality/20261002-145251-coverage-115590`. Static analysis passed in `build/quality/20261002-145257-analyze-3`. Focused native tests passed at 200 percent scaling.
+
+The native sanitizer test passed all 31 functional cases, then reported the existing Mesa leak of 240732 bytes in 1073 allocations. Its report is `build/quality/20261002-145451-gui-116287`. A 60-second workload passed in `build/quality/20261002-145612-soak-116446`. It completed 941 cycles with 6504448 bytes of peak memory growth, a 63-millisecond maximum heartbeat gap, and 0.009 idle CPU seconds. Previous platform and multi-hour test gaps remain.

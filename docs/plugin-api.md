@@ -38,7 +38,7 @@ The host adds a plain-text label from `ToolbarPlugin::name()` before each toolba
 
 Tools and sources require a codec for their panes. The host leaves those panes unavailable when no codec exists. Codec-free panes, menus, and independent map layers remain available. Pane visibility does not unload plugin code or stop a receiver.
 
-The host owns pane placement, visibility actions, and layout persistence. Plugins with commands receive a submenu under Tools > Plugins. Clicking the plugin name opens and focuses its pane. Return and Space also activate the pane. Hover and Right open the command submenu. Plugins without commands use a direct action. Closing a pane hides it.
+The host owns pane placement, visibility actions, and layout persistence. Plugins with commands receive a submenu under Tools > Plugins. The plugin entry has a checkbox that shows or hides its pane. Return and Space also toggle the pane. Hover and Right open the command submenu. Plugins without commands use a direct checkbox action. Closing a pane hides it.
 
 # Implemented plugins
 
