@@ -1,3 +1,4 @@
+#include "core/logging.h"
 #include "core/interfaces.h"
 #include "core/store.h"
 #include "core/preferences.h"
@@ -79,12 +80,18 @@ public:
             if (!timer_->isActive()) {
                 runningRequested_ = true;
                 button_->setText(tr("Stop receiver"));
-                status_->setText(tr("The saved receiver cannot start. Stop it to cancel the next startup attempt.\n%1")
-                                 .arg(status_->text()));
+                showStatus(tr("The saved receiver cannot start. Stop it to cancel the next startup attempt.\n%1")
+                                 .arg(status_->text()), Severity::Error);
             }
         }
     }
 private:
+    void showStatus(const QString &message, Severity severity = Severity::Info)
+    {
+        status_->setText(message);
+        logMessage(severity, severity >= Severity::Warning ? Urgency::Attention : Urgency::Routine,
+            QStringLiteral("swak.udp"), message);
+    }
     void toggle()
     {
         if (runningRequested_) {
@@ -94,16 +101,16 @@ private:
             address_->setEnabled(true);
             port_->setEnabled(true);
             button_->setText(tr("Start receiver"));
-            status_->setText(tr("Receiver stopped. Accepted: %1. Rejected: %2.").arg(accepted_).arg(rejected_));
+            showStatus(tr("Receiver stopped. Accepted: %1. Rejected: %2.").arg(accepted_).arg(rejected_));
             return;
         }
         QHostAddress address;
         if (!address.setAddress(address_->text()) || address.isMulticast() || address == QHostAddress::Broadcast) {
-            status_->setText(tr("Enter a numeric local address. Multicast and broadcast addresses are not supported."));
+            showStatus(tr("Enter a numeric local address. Multicast and broadcast addresses are not supported."), Severity::Error);
             return;
         }
         if (!socket_->bind(address, static_cast<quint16>(port_->value()), QUdpSocket::DontShareAddress)) {
-            status_->setText(tr("The receiver cannot bind to this address and port: %1").arg(socket_->errorString()));
+            showStatus(tr("The receiver cannot bind to this address and port: %1").arg(socket_->errorString()), Severity::Error);
             return;
         }
         socket_->setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption, 256 * 1024);
@@ -114,7 +121,7 @@ private:
         address_->setEnabled(false);
         port_->setEnabled(false);
         button_->setText(tr("Stop receiver"));
-        status_->setText(tr("Receiver active on %1:%2. No messages yet.").arg(address_->text()).arg(port_->value()));
+        showStatus(tr("Receiver active on %1:%2. No messages yet.").arg(address_->text()).arg(port_->value()));
         timer_->start();
     }
     void drain()
@@ -142,8 +149,8 @@ private:
             if (error.isEmpty()) ++accepted_;
             else { ++rejected_; lastError_ = error; }
         }
-        if (received) status_->setText(tr("Receiver active. Accepted: %1. Rejected: %2.\n%3")
-                                     .arg(accepted_).arg(rejected_).arg(lastError_));
+        if (received) showStatus(tr("Receiver active. Accepted: %1. Rejected: %2.\n%3")
+                                     .arg(accepted_).arg(rejected_).arg(lastError_), lastError_.isEmpty() ? Severity::Info : Severity::Warning);
     }
     Store &store_;
     const Codec &codec_;
@@ -158,14 +165,14 @@ private:
     quint64 rejected_ = 0;
     QString lastError_;
 };
-class UdpPlugin final : public QObject, public SourcePlugin {
+class UdpPlugin final : public QObject, public Plugin, public SourcePlugin {
     Q_OBJECT
-    Q_PLUGIN_METADATA(IID "org.swak.Source/1.0")
-    Q_INTERFACES(swak::SourcePlugin)
+    Q_PLUGIN_METADATA(IID "org.swak.Plugin/2.0" FILE "udp/MANIFEST")
+    Q_INTERFACES(swak::Plugin swak::SourcePlugin)
 public:
     QString name() const override { return tr("UDP receiver"); }
-    QWidget *create(Store &store, const Codec &codec, QWidget *parent) override
-    { return new Receiver(store, codec, parent); }
+    QWidget *create(PluginServices &services, const Codec &codec, QWidget *parent) override
+    { return new Receiver(services.store, codec, parent); }
 };
 }
 #include "udp.moc"

@@ -16,7 +16,7 @@ Use the build environment described in [Build and run](build.md). Run these comm
 
 # Regular runs
 
-The quick mode builds with address and undefined behavior sanitizers. It runs the core, preferences, and short workload suites. Each suite has a 60-second limit. A separate process enforces the limit even when the application event loop stops.
+The quick mode builds with address and undefined behavior sanitizers. It runs the map, core, internal-event, logging, preferences, and short workload suites. Each suite has a 60-second limit. A separate process enforces the limit even when the application event loop stops.
 
 ```sh
 python3 tools/quality.py quick

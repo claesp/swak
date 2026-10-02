@@ -7,6 +7,8 @@ Follow these standing requirements:
 - Use Qt and modern C++ for this native Linux application.
 - Use CMake with the Ninja generator and the repository presets.
 - Keep features behind plugin interfaces where practical.
+- Use the shared core API for every plugin and embed a MANIFEST with its metadata.
+- Update `docs/plugin-api.md` when plugin contracts or roles change.
 - Keep the application small, fast, and secure.
 - Harden all code for long sessions and recoverable failures.
 - Exercise all reachable code paths, including errors, cancellation, and shutdown, with tests.

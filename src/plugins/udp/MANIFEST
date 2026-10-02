@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "org.swak.udp",
+  "name": "UDP receiver",
+  "description": "Receive bounded CoT datagrams from a local UDP socket.",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entryPoint": "UdpPlugin",
+  "linkage": "static",
+  "platforms": [
+    "linux"
+  ],
+  "qtMajor": 6,
+  "qtMinimum": "6.4.0",
+  "interfaces": [
+    "source"
+  ],
+  "requires": [
+    "codec"
+  ],
+  "permissions": [
+    "network-udp"
+  ],
+  "settingsSchemaVersion": 1
+}

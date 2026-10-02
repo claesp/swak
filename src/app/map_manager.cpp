@@ -1,4 +1,5 @@
 #include "app/map_manager.h"
+#include "core/logging.h"
 #include "app/settings_dialog.h"
 #include <QListWidget>
 #include <QLabel>
@@ -49,7 +50,7 @@ MapManager::MapManager(MapSources &sources, QWidget *parent) : QDialog(parent), 
     connect(&sources_, &MapSources::changed, this, &MapManager::refresh);
     connect(add, &QPushButton::clicked, this, [this] {
         if (sources_.sources().size() >= 32 || sources_.providers().isEmpty()) {
-            status_->setText(tr("No provider was added. An available format and fewer than 32 entries are required."));
+            reportError(tr("No provider was added. An available format and fewer than 32 entries are required."));
             return;
         }
         const auto id = QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -79,12 +80,17 @@ MapManager::MapManager(MapSources &sources, QWidget *parent) : QDialog(parent), 
         const auto id = list_->currentItem()->data(Qt::UserRole).toString();
         const auto source = sources_.sources().value(id).toObject();
         const auto *provider = sources_.provider(source);
-        if (!provider) { status_->setText(tr("This provider plugin is unavailable. Its configuration is preserved.")); return; }
+        if (!provider) { reportError(tr("This provider plugin is unavailable. Its configuration is preserved.")); return; }
         const auto error = provider->validate(source);
-        if (!error.isEmpty()) { status_->setText(error); return; }
+        if (!error.isEmpty()) { reportError(error); return; }
         sources_.select(id);
     });
     refresh();
+}
+void MapManager::reportError(const QString &message)
+{
+    status_->setText(message);
+    logMessage(Severity::Error, Urgency::Attention, QStringLiteral("swak.maps"), message);
 }
 void MapManager::refresh()
 {
@@ -114,7 +120,7 @@ void MapManager::edit()
     const auto id = list_->currentItem()->data(Qt::UserRole).toString();
     const auto source = sources_.sources().value(id).toObject();
     auto *provider = sources_.provider(source);
-    if (!provider) { status_->setText(tr("Install the missing provider plugin to edit this entry.")); return; }
+    if (!provider) { reportError(tr("Install the missing provider plugin to edit this entry.")); return; }
     SettingsDialog dialog({{id, source.value(QStringLiteral("name")).toString(), provider->fields(), source,
         [provider](const QJsonObject &values) { return provider->validate(values); },
         [this, id](const QJsonObject &values) { sources_.put(id, values); }}}, [] { return QString{}; }, this, true);

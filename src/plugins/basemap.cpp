@@ -7,10 +7,10 @@
 #include <algorithm>
 
 namespace swak {
-class BasemapPlugin final : public QObject, public MapLayer {
+class BasemapPlugin final : public QObject, public Plugin, public MapLayer {
     Q_OBJECT
-    Q_PLUGIN_METADATA(IID "org.swak.MapLayer/1.0")
-    Q_INTERFACES(swak::MapLayer)
+    Q_PLUGIN_METADATA(IID "org.swak.Plugin/2.0" FILE "basemap/MANIFEST")
+    Q_INTERFACES(swak::Plugin swak::MapLayer)
 public:
     QString name() const override { return tr("Offline reference map"); }
     int order() const override { return 0; }

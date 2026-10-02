@@ -1,0 +1,111 @@
+#include "core/activity.h"
+#include "core/preferences.h"
+#include <QColor>
+#include <QGlobalStatic>
+#include <deque>
+#include <mutex>
+
+namespace swak {
+namespace {
+struct Inbox {
+    std::mutex mutex;
+    std::deque<ActivityEvent> events;
+    quint64 sequence = 0;
+};
+Q_GLOBAL_STATIC(Inbox, inbox)
+QString boundedText(const QString &text, qsizetype limit)
+{
+    QString result;
+    for (const auto ch : text.left(limit))
+        if (ch.isPrint() && ch.category() != QChar::Other_Format) result += ch;
+    return result;
+}
+}
+void publishActivity(Severity severity, Urgency urgency, const QString &category, const QString &message)
+{
+    if (inbox.isDestroyed()) return;
+    const int level = static_cast<int>(severity);
+    const int priority = static_cast<int>(urgency);
+    if (level < 0 || level > 4 || priority < 0 || priority > 2) return;
+    const std::lock_guard lock(inbox->mutex);
+    if (inbox->events.size() == 256) inbox->events.pop_front();
+    inbox->events.push_back({++inbox->sequence, QDateTime::currentDateTimeUtc(), severity, urgency,
+        boundedText(category, 128), boundedText(message, 2048)});
+}
+ActivityModel::ActivityModel(QObject *parent) : QAbstractTableModel(parent)
+{
+    setObjectName(QStringLiteral("activityModel"));
+    timer_.setInterval(100);
+    connect(&timer_, &QTimer::timeout, this, &ActivityModel::collect);
+    timer_.start();
+}
+int ActivityModel::rowCount(const QModelIndex &parent) const { return parent.isValid() ? 0 : static_cast<int>(events_.size()); }
+int ActivityModel::columnCount(const QModelIndex &parent) const { return parent.isValid() ? 0 : 5; }
+QVariant ActivityModel::data(const QModelIndex &index, int role) const
+{
+    if (!index.isValid() || index.row() < 0 || index.row() >= events_.size() || index.column() < 0 || index.column() >= 5) return {};
+    const auto &event = events_.at(index.row());
+    if (role == Qt::ForegroundRole && event.severity >= Severity::Error) return QColor(QStringLiteral("#e53935"));
+    if (role != Qt::DisplayRole && role != Qt::ToolTipRole) return {};
+    switch (index.column()) {
+    case 0: return event.time.toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"));
+    case 1: return QStringList{tr("Debug"), tr("Information"), tr("Warning"), tr("Error"), tr("Fatal")}.at(static_cast<int>(event.severity));
+    case 2: return QStringList{tr("Routine"), tr("Attention"), tr("Immediate")}.at(static_cast<int>(event.urgency));
+    case 3: return event.category;
+    case 4: return event.message;
+    default: return {};
+    }
+}
+QVariant ActivityModel::headerData(int section, Qt::Orientation orientation, int role) const
+{
+    if (orientation != Qt::Horizontal || role != Qt::DisplayRole || section < 0 || section >= 5) return {};
+    return QStringList{tr("Time"), tr("Severity"), tr("Urgency"), tr("Source"), tr("Event")}.at(section);
+}
+QString ActivityModel::preferenceId() const { return QStringLiteral("org.swak.activity"); }
+QString ActivityModel::settingsTitle() const { return tr("Internal events"); }
+QList<SettingField> ActivityModel::settingsFields() const
+{ return {numberSetting(QStringLiteral("capacity"), tr("Events to retain"), 1, 10000)}; }
+QJsonObject ActivityModel::savePreferences() const { return {{QStringLiteral("capacity"), capacity_}}; }
+void ActivityModel::restorePreferences(const QJsonObject &values)
+{
+    capacity_ = preferenceInteger(values, QStringLiteral("capacity"), 500, 1, 10000);
+    if (events_.size() > capacity_) {
+        const int count = static_cast<int>(events_.size()) - capacity_;
+        beginRemoveRows({}, 0, count - 1);
+        events_.remove(0, count);
+        endRemoveRows();
+    }
+}
+void ActivityModel::clear()
+{
+    {
+        const std::lock_guard lock(inbox->mutex);
+        sequence_ = inbox->sequence;
+    }
+    beginResetModel();
+    events_.clear();
+    endResetModel();
+}
+void ActivityModel::collect()
+{
+    QList<ActivityEvent> received;
+    {
+        const std::lock_guard lock(inbox->mutex);
+        if (sequence_ == inbox->sequence) return;
+        for (const auto &event : inbox->events) if (event.sequence > sequence_) received.append(event);
+        sequence_ = inbox->sequence;
+    }
+    if (received.isEmpty()) return;
+    if (received.size() > capacity_) received.remove(0, received.size() - capacity_);
+    const int removeCount = std::max(0, static_cast<int>(events_.size() + received.size()) - capacity_);
+    if (removeCount) {
+        beginRemoveRows({}, 0, removeCount - 1);
+        events_.remove(0, removeCount);
+        endRemoveRows();
+    }
+    beginInsertRows({}, rowCount(), rowCount() + static_cast<int>(received.size()) - 1);
+    events_.append(received);
+    endInsertRows();
+    emit latest(received.last().message, received.last().severity >= Severity::Error);
+}
+}

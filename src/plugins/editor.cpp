@@ -1,3 +1,4 @@
+#include "core/logging.h"
 #include "core/interfaces.h"
 #include <algorithm>
 #include "core/store.h"
@@ -77,7 +78,7 @@ public:
         connect(generate, &QPushButton::clicked, this, [this] { generateEvent(); });
         connect(newIdentity, &QPushButton::clicked, this, [this] {
             uid_->setText(QUuid::createUuid().toString(QUuid::WithoutBraces));
-            status_->setText(tr("A new identity is ready. Generate the event to add it to the map."));
+            showStatus(tr("A new identity is ready. Generate the event to add it to the map."));
         });
         connect(importButton, &QPushButton::clicked, this, [this] { importFile(); });
         connect(export_, &QPushButton::clicked, this, [this] { exportFile(); });
@@ -126,6 +127,12 @@ public:
         exportDirectory_ = preferenceText(values, QStringLiteral("exportDirectory"), {}, 4096);
     }
 private:
+    void showStatus(const QString &message, Severity severity = Severity::Info)
+    {
+        status_->setText(message);
+        logMessage(severity, severity >= Severity::Warning ? Urgency::Attention : Urgency::Routine,
+            QStringLiteral("swak.editor"), message);
+    }
     QLineEdit *textField(const QString &name, const QString &value)
     {
         auto *field = new QLineEdit(value, this);
@@ -163,10 +170,10 @@ private:
         event.start = event.time;
         event.stale = event.time.addSecs(lifetime_->value());
         const auto error = store_.accept(event);
-        if (!error.isEmpty()) { status_->setText(error); return; }
+        if (!error.isEmpty()) { showStatus(error, Severity::Error); return; }
         showEvent(event);
         store_.select(event.uid);
-        status_->setText(tr("The event is on the map. Export the XML to save it."));
+        showStatus(tr("The event is on the map. Export the XML to save it."));
     }
     void importFile()
     {
@@ -174,13 +181,13 @@ private:
         if (path.isEmpty()) return;
         importDirectory_ = QFileInfo(path).absolutePath();
         const auto input = readEventFile(path);
-        if (!input.error.isEmpty()) { status_->setText(input.error); return; }
+        if (!input.error.isEmpty()) { showStatus(input.error, Severity::Error); return; }
         const auto decoded = codec_.decode(input.bytes);
         const auto error = decoded.event ? store_.accept(*decoded.event) : decoded.error;
-        if (!error.isEmpty()) { status_->setText(error); return; }
+        if (!error.isEmpty()) { showStatus(error, Severity::Error); return; }
         showEvent(*decoded.event);
         store_.select(decoded.event->uid);
-        status_->setText(tr("The event was imported. Unknown detail fields are not included in exports."));
+        showStatus(tr("The event was imported. Unknown detail fields are not included in exports."));
     }
     void exportFile()
     {
@@ -190,10 +197,10 @@ private:
         exportDirectory_ = QFileInfo(path).absolutePath();
         QSaveFile file(path);
         if (!file.open(QIODevice::WriteOnly) || file.write(output_) != output_.size() || !file.commit()) {
-            status_->setText(tr("The file cannot be saved: %1").arg(file.errorString()));
+            showStatus(tr("The file cannot be saved: %1").arg(file.errorString()), Severity::Error);
             return;
         }
-        status_->setText(tr("The XML preview was saved."));
+        showStatus(tr("The XML preview was saved."));
     }
     Store &store_;
     const Codec &codec_;
@@ -211,13 +218,13 @@ private:
     QString importDirectory_;
     QString exportDirectory_;
 };
-class EditorPlugin final : public QObject, public ToolPlugin {
+class EditorPlugin final : public QObject, public Plugin, public ToolPlugin {
     Q_OBJECT
-    Q_PLUGIN_METADATA(IID "org.swak.Tool/1.0")
-    Q_INTERFACES(swak::ToolPlugin)
+    Q_PLUGIN_METADATA(IID "org.swak.Plugin/2.0" FILE "editor/MANIFEST")
+    Q_INTERFACES(swak::Plugin swak::ToolPlugin)
 public:
     QString name() const override { return tr("CoT Event Generator"); }
-    QWidget *create(Store &store, const Codec &codec, QWidget *parent) override { return new Editor(store, codec, parent); }
+    QWidget *create(PluginServices &services, const Codec &codec, QWidget *parent) override { return new Editor(services.store, codec, parent); }
 };
 }
 #include "editor.moc"

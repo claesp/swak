@@ -1,4 +1,5 @@
 #include "app/settings_dialog.h"
+#include "core/logging.h"
 #include <QCheckBox>
 #include <QCollator>
 #include <QTabWidget>
@@ -199,7 +200,11 @@ bool SettingsDialog::applyChanges()
         const auto object = updated.toObject();
         if ((selected < 0 || i == selected) && pages_.at(i).validate && (newProvider_ || object != pages_.at(i).values)) {
             const auto error = pages_.at(i).validate(object);
-            if (!error.isEmpty()) { status_->setText(pages_.at(i).title + QStringLiteral(": ") + error); return false; }
+            if (!error.isEmpty()) {
+                status_->setText(pages_.at(i).title + QStringLiteral(": ") + error);
+                logMessage(Severity::Error, Urgency::Attention, QStringLiteral("swak.settings"), status_->text());
+                return false;
+            }
         }
         values.append(object);
     }
@@ -212,6 +217,8 @@ bool SettingsDialog::applyChanges()
     }
     const auto error = save_();
     status_->setText(error.isEmpty() ? tr("Configuration saved.") : tr("Changes apply to this session, but saving failed: %1").arg(error));
+    logMessage(error.isEmpty() ? Severity::Info : Severity::Error, error.isEmpty() ? Urgency::Routine : Urgency::Attention,
+        QStringLiteral("swak.settings"), status_->text());
     return error.isEmpty();
 }
 }

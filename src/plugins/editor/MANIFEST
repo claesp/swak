@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "org.swak.editor",
+  "name": "CoT Event Generator",
+  "description": "Generate, import, and export CoT events.",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entryPoint": "EditorPlugin",
+  "linkage": "static",
+  "platforms": [
+    "linux"
+  ],
+  "qtMajor": 6,
+  "qtMinimum": "6.4.0",
+  "interfaces": [
+    "tool"
+  ],
+  "requires": [
+    "codec"
+  ],
+  "permissions": [
+    "user-selected-files"
+  ],
+  "settingsSchemaVersion": 1
+}

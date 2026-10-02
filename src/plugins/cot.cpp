@@ -6,10 +6,10 @@
 #include <cmath>
 
 namespace swak {
-class CotPlugin final : public QObject, public Codec {
+class CotPlugin final : public QObject, public Plugin, public Codec {
     Q_OBJECT
-    Q_PLUGIN_METADATA(IID "org.swak.Codec/1.0")
-    Q_INTERFACES(swak::Codec)
+    Q_PLUGIN_METADATA(IID "org.swak.Plugin/2.0" FILE "cot/MANIFEST")
+    Q_INTERFACES(swak::Plugin swak::Codec)
 public:
     QString name() const override { return tr("CoT XML 2.0"); }
     DecodeResult decode(const QByteArray &data) const override

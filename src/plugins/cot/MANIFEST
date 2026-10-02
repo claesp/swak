@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "org.swak.cot",
+  "name": "Cursor-on-Target XML",
+  "description": "Decode and encode bounded CoT XML messages.",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entryPoint": "CotPlugin",
+  "linkage": "static",
+  "platforms": [
+    "linux"
+  ],
+  "qtMajor": 6,
+  "qtMinimum": "6.4.0",
+  "interfaces": [
+    "codec"
+  ],
+  "requires": [],
+  "permissions": [],
+  "settingsSchemaVersion": 1
+}

@@ -3,6 +3,7 @@
 #include "swak/version.h"
 #include "core/interfaces.h"
 #include "core/logging.h"
+#include "core/activity.h"
 #include "app/settings_dialog.h"
 #include <QAction>
 #include <QToolBar>
@@ -34,6 +35,7 @@ void mergeValues(QJsonObject &target, const QJsonObject &source)
 Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, QWidget *parent)
     : QMainWindow(parent), plugins_(plugins), preferences_(preferencesPath)
 {
+    auto *activity = new ActivityModel(this);
     configureLogging(preferences_.document().value(QStringLiteral("logging")).toObject());
     setWindowTitle(tr("SWAK | Cursor-on-Target workspace"));
     resize(1280, 800);
@@ -48,8 +50,10 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         if (auto *layer = qobject_cast<MapLayer *>(plugin)) { layers.append(layer); names.append(layer->name()); }
         if (auto *extension = qobject_cast<MapExtension *>(plugin)) names.append(extension->mapName());
     }
+    auto *mapSources = new MapSources(plugins, this);
+    PluginServices services{store_, *activity, *mapSources};
     if (view) {
-        setCentralWidget(view->create(store_, layers, this));
+        setCentralWidget(view->create(services, layers, this));
     } else {
         auto *empty = new QLabel(tr("No map view plugin is available."), this);
         empty->setObjectName(QStringLiteral("missingMap"));
@@ -57,9 +61,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         empty->setWordWrap(true);
         setCentralWidget(empty);
     }
-    auto *mapSources = new MapSources(plugins, this);
     mapSources->setObjectName(QStringLiteral("mapSources"));
-    if (auto *consumer = dynamic_cast<MapConsumer *>(centralWidget())) consumer->setMapSources(mapSources);
     auto *fileMenu = menuBar()->addMenu(tr("&File"));
     fileMenu->setObjectName(QStringLiteral("fileMenu"));
     auto *settings = fileMenu->addAction(tr("&Settings"));
@@ -73,7 +75,8 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     connect(quit, &QAction::triggered, this, &QWidget::close);
     auto *viewMenu = menuBar()->addMenu(tr("&View"));
     viewMenu->setObjectName(QStringLiteral("viewMenu"));
-    const auto createDock = [this, viewMenu](const QString &title, const QString &id,
+    QHash<QObject *, QDockWidget *> pluginDocks;
+    const auto createDock = [this](const QString &title, const QString &id,
                                            QWidget *content, Qt::DockWidgetArea area) {
         auto *dock = new QDockWidget(title, this);
         const auto *participant = dynamic_cast<const PreferenceParticipant *>(content);
@@ -91,18 +94,20 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         connect(dock, &QDockWidget::topLevelChanged, grip, &QWidget::setVisible);
         dock->setWidget(container);
         addDockWidget(area, dock);
-        viewMenu->addAction(dock->toggleViewAction());
         return dock;
     };
     QList<QDockWidget *> sideDocks;
+    QDockWidget *bottomDock = nullptr;
     for (auto *plugin : plugins) {
         if (auto *tool = qobject_cast<ToolPlugin *>(plugin); tool && codec) {
             const bool isLayer = qobject_cast<MapLayer *>(plugin) != nullptr;
             const QString id = isLayer ? QStringLiteral("eventsDock")
                                        : QString::fromLatin1(plugin->metaObject()->className()) + QStringLiteral("Dock");
-            auto *dock = createDock(tool->name(), id, tool->create(store_, *codec, this),
+            auto *dock = createDock(tool->name(), id, tool->create(services, *codec, this),
                                     isLayer ? Qt::BottomDockWidgetArea : Qt::RightDockWidgetArea);
+            pluginDocks.insert(plugin, dock);
             if (isLayer) {
+                bottomDock = dock;
                 resizeDocks({dock}, {170}, Qt::Vertical);
             } else {
                 sideDocks.append(dock);
@@ -112,10 +117,22 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     }
     for (auto *plugin : plugins) {
         if (auto *source = qobject_cast<SourcePlugin *>(plugin); source && codec) {
-            sideDocks.append(createDock(source->name(),
+            auto *dock = createDock(source->name(),
                 QString::fromLatin1(plugin->metaObject()->className()) + QStringLiteral("Dock"),
-                source->create(store_, *codec, this), Qt::RightDockWidgetArea));
+                source->create(services, *codec, this), Qt::RightDockWidgetArea);
+            sideDocks.append(dock);
+            pluginDocks.insert(plugin, dock);
             names.append(source->name());
+        }
+    }
+    for (auto *plugin : plugins) {
+        if (auto *pane = qobject_cast<PanePlugin *>(plugin)) {
+            auto *dock = createDock(pane->name(), QString::fromLatin1(plugin->metaObject()->className()) + QStringLiteral("Dock"),
+                pane->create(services, this), Qt::BottomDockWidgetArea);
+            pluginDocks.insert(plugin, dock);
+            if (bottomDock) tabifyDockWidget(bottomDock, dock);
+            dock->hide();
+            names.append(pane->name());
         }
     }
     auto *pluginPanel = new QWidget(this);
@@ -155,6 +172,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         connect(dialog, &QDialog::finished, this, [this, dialog] { mapManagerGeometry_ = dialog->saveGeometry(); savePreferences(); });
         dialog->show();
     });
+    connect(mapSources, &MapSources::managementRequested, manageMaps, &QAction::trigger);
     auto *pluginsMenu = toolsMenu->addMenu(tr("&Plugins"));
     pluginsMenu->setObjectName(QStringLiteral("pluginsMenu"));
     auto *toolbar = new QToolBar(tr("Main toolbar"), this);
@@ -163,16 +181,37 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     toolbar->setFloatable(false);
     toolbar->setAllowedAreas(Qt::TopToolBarArea);
     addToolBar(Qt::TopToolBarArea, toolbar);
-    viewMenu->addAction(toolbar->toggleViewAction());
+    toolbar->toggleViewAction()->setText(tr("Show main toolbar"));
+    viewMenu->insertAction(resetLayout, toolbar->toggleViewAction());
     for (auto *plugin : plugins) {
         QMenu *menu = nullptr;
         if (auto *provider = qobject_cast<MenuPlugin *>(plugin)) {
             menu = pluginsMenu->addMenu(provider->name());
-            provider->populateMenu(store_, *menu);
+            provider->populateMenu(services, *menu);
         }
-        if (auto *provider = qobject_cast<ToolbarPlugin *>(plugin)) provider->populateToolbar(store_, *toolbar, menu);
+        if (auto *provider = qobject_cast<ToolbarPlugin *>(plugin)) provider->populateToolbar(services, *toolbar, menu);
+        if (auto *dock = pluginDocks.value(plugin)) {
+            if (menu && !menu->isEmpty()) {
+                auto *show = new QAction(tr("Show pane"), menu);
+                show->setCheckable(true);
+                show->setChecked(!dock->isHidden());
+                menu->insertAction(menu->actions().first(), show);
+                connect(show, &QAction::triggered, dock, [dock](bool visible) {
+                    dock->setVisible(visible);
+                    if (visible) dock->raise();
+                });
+                connect(dock->toggleViewAction(), &QAction::toggled, show, &QAction::setChecked);
+                menu->menuAction()->setCheckable(true);
+                menu->menuAction()->setChecked(!dock->isHidden());
+                connect(dock->toggleViewAction(), &QAction::toggled, menu->menuAction(), &QAction::setChecked);
+            } else {
+                if (menu) { delete menu; menu = nullptr; }
+                pluginsMenu->addAction(dock->toggleViewAction());
+            }
+        }
         if (menu && menu->isEmpty()) delete menu;
     }
+    pluginsMenu->addAction(findChild<QDockWidget *>(QStringLiteral("pluginsDock"))->toggleViewAction());
     pluginsMenu->setEnabled(!pluginsMenu->isEmpty());
     defaultLayout_ = saveState(LayoutVersion);
     auto *helpMenu = menuBar()->addMenu(tr("&Help"));
@@ -194,7 +233,22 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         dialog->open();
     });
     auto *status = new QLabel(this);
-    statusBar()->addWidget(status);
+    statusBar()->addPermanentWidget(status);
+    auto *latest = new QLabel(this);
+    latest->setObjectName(QStringLiteral("latestActivity"));
+    latest->setTextFormat(Qt::PlainText);
+    latest->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    statusBar()->addWidget(latest, 1);
+    auto *statusTimer = new QTimer(latest);
+    statusTimer->setSingleShot(true);
+    statusTimer->setInterval(3000);
+    statusTimer->setTimerType(Qt::PreciseTimer);
+    connect(statusTimer, &QTimer::timeout, latest, &QLabel::clear);
+    connect(activity, &ActivityModel::latest, latest, [latest, statusTimer](const QString &message, bool error) {
+        latest->setText(message);
+        latest->setStyleSheet(error ? QStringLiteral("color: #e53935;") : QString{});
+        statusTimer->start();
+    });
     const auto updateStatus = [this, status] { status->setText(tr("%1 / %2 events")
                                                           .arg(store_.rowCount()).arg(MaxEvents)); };
     connect(&store_, &Store::changed, this, updateStatus);
@@ -206,7 +260,13 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     preferencesStatus_->setMaximumWidth(420);
     statusBar()->addPermanentWidget(preferencesStatus_);
     restorePreferences();
-    connect(mapSources, &MapSources::changed, this, [this] { savePreferences(); });
+    connect(mapSources, &MapSources::changed, this, [this, mapSources] {
+        savePreferences();
+        const auto source = mapSources->activeSource();
+        logMessage(Severity::Info, Urgency::Routine, QStringLiteral("swak.maps"), source.isEmpty()
+            ? tr("Offline map selected.") : tr("Map provider: %1").arg(source.value(QStringLiteral("name")).toString()));
+    });
+    logMessage(Severity::Info, Urgency::Routine, QStringLiteral("swak.application"), tr("Workspace ready."));
     preferencesStatus_->setText(preferences_.error());
     preferencesStatus_->setToolTip(preferences_.path());
     const auto application = preferences_.document().value(QStringLiteral("application")).toObject();
@@ -293,7 +353,7 @@ bool Window::savePreferences()
     document.insert(QStringLiteral("version"), 1);
     const bool saved = preferences_.save(document);
     preferencesStatus_->setText(preferences_.error());
-    if (!saved) logMessage(Severity::Warning, Urgency::Attention, QStringLiteral("swak.preferences"), tr("The application cannot save preferences."));
+    if (!saved) logMessage(Severity::Error, Urgency::Attention, QStringLiteral("swak.preferences"), tr("The application cannot save preferences."));
     return saved;
 }
 QList<PreferenceParticipant *> Window::participants() const
@@ -345,7 +405,7 @@ void Window::openSettings()
     }
     for (auto *plugin : plugins_) {
         if (dynamic_cast<SettingsParticipant *>(plugin) || qobject_cast<ToolPlugin *>(plugin) ||
-            qobject_cast<SourcePlugin *>(plugin) || qobject_cast<ViewPlugin *>(plugin)) continue;
+            qobject_cast<SourcePlugin *>(plugin) || qobject_cast<PanePlugin *>(plugin) || qobject_cast<ViewPlugin *>(plugin)) continue;
         QString title;
         if (auto *codec = qobject_cast<Codec *>(plugin)) title = codec->name();
         else if (auto *layer = qobject_cast<MapLayer *>(plugin)) title = layer->name();

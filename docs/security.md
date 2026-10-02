@@ -56,3 +56,9 @@ Messages have bounded length and cannot inject terminal control characters or ex
 Plugin code must use the shared logger and avoid private payloads. Qt diagnostics can include paths or other private context. Fatal diagnostics retain their original termination behavior even when text output is disabled. Development diagnostic tools retain their independent output.
 
 Map input limits, cache isolation, and HTTPS behavior are documented in [Map providers](map-providers.md). Remote tiles remain untrusted after HTTPS checks and after cache retrieval.
+
+# Internal events and plugin manifests
+
+Internal-event history uses bounded memory and plain text. It does not create an event file. Worker threads submit records through a bounded inbox, without queued Qt calls for each message. Excess bursts discard the oldest pending records. Console output still requires explicit configuration.
+
+Each built-in plugin declares its API, roles, requirements, and permissions in an embedded MANIFEST. The host rejects incompatible declarations before it uses the plugin features. These declarations do not restrict native-code permissions. Static linkage and the existing trust boundary remain unchanged. See [Plugin API](plugin-api.md).

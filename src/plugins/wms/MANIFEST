@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "org.swak.wms",
+  "name": "WMS images",
+  "description": "Fetch Web Mercator images through WMS 1.3 requests.",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entryPoint": "WmsProvider",
+  "linkage": "static",
+  "platforms": [
+    "linux"
+  ],
+  "qtMajor": 6,
+  "qtMinimum": "6.4.0",
+  "interfaces": [
+    "map-provider"
+  ],
+  "requires": [],
+  "permissions": [],
+  "settingsSchemaVersion": 1
+}

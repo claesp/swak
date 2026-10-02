@@ -200,3 +200,25 @@ Static analysis passed in `build/quality/20261002-123602-analyze-2`. All five sa
 # Release rebuild requirement added October 2
 
 `AGENTS.md` now requires a release rebuild before completing each task that changes the application. `docs/build.md` records the same requirement. The Ninja release build passed and includes the provider forms and attribution changes from `e2f4129`. The executable is `build/release/swak`. Its version command reports SWAK 0.1.0. This task changes documentation only and uses the functional test results recorded above.
+
+# Toolbar, internal events, and plugin API updated October 2
+
+The map plugin now adds a provider dropdown to the main toolbar. It includes the offline map, locale-sorted sources, and the provider manager. Missing or invalid providers stay disabled. The existing map catalog saves selection across restarts.
+
+The bottom status field shows the latest internal event for three seconds. New events restart its timer. Error and fatal messages use red text. The Internal events plugin provides a sortable history table and a Clear command. Its pane starts hidden beside the CoT Events tab.
+
+Tools > Plugins controls all pane visibility. Plugins with commands include Show pane in their submenu. View contains only Show main toolbar and Reset layout.
+
+File > Settings > Internal events controls the history limit from 1 through 10000 records, with a default of 500. The model and inbox have fixed bounds. History stays in memory, while the limit and table layout persist. Text logging stays disabled by default. Editor operations, receiver activity, configuration failures, map changes, and existing internal diagnostics use the shared logger.
+
+All ten built-in plugins implement the common Plugin API version 2 and embed a MANIFEST. The loader validates identifiers, versions, interfaces, entry points, platform requirements, and permission declarations. Plugins remain statically linked and trusted. UI callbacks receive PluginServices with the store, activity model, and map catalog. The obsolete MapConsumer interface is removed.
+
+No plugin searches the host widget tree for services. Contracts, manifests, ownership, and the plugin inventory are documented in `docs/plugin-api.md`.
+
+The debug and release builds passed with Qt 6.8.2 and GCC 14.2. The release executable is `build/release/swak` and reports version 0.1.0. Tests and diagnostic instrumentation remain disabled in that build. All 25 native GUI cases passed. Focused tests also passed at 200 percent scaling. Native screenshots show the toolbar and internal-event table.
+
+Static analysis passed in `build/quality/20261002-131004-analyze-2`. Final sanitizer suites passed in `build/quality/20261002-131633-quick-96018`. Coverage passed six core suites and the native GUI suite in `build/quality/20261002-131219-coverage-94626`. It exercised 78 of 81 activity-model lines, 69 of 73 catalog lines, and all 33 activity-plugin lines. Remaining gaps include shutdown guards, catalog rejection during static discovery, existing native file dialogs, and map mouse controls. Line coverage does not establish complete input coverage.
+
+The native GUI sanitizer run passed 25 functional cases but failed on the existing Mesa leak of 240732 bytes in 1073 allocations. Its report is `build/quality/20261002-130808-gui-93592`. No application memory fault appeared in that run.
+
+A 60-second sanitizer workload passed in `build/quality/20261002-131330-soak-95009`. It completed 912 cycles, with 6893568 bytes of peak growth after warmup, a 171-millisecond maximum heartbeat gap, and 0.028 idle CPU seconds. The first attempt exposed an incorrect test assumption about mutated expiry times. The test now expires events after the latest accepted expiry time. It does not change application expiry behavior. Two-hour workloads, native Wayland, and hardware GPU sessions remain untested in this pass.

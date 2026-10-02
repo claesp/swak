@@ -1,6 +1,6 @@
 # Use the workspace
 
-A fresh profile starts with an empty map and no receiver socket. Later launches restore the saved interface and receiver state. CoT Event Generator opens beside the map in the default layout. The View menu restores hidden docks, which are movable tool panels.
+A fresh profile starts with an empty map and no receiver socket. Later launches restore the saved interface and receiver state. CoT Event Generator opens beside the map in the default layout. Tools > Plugins restores hidden docks, which are movable tool panels. Plugins with commands place Show pane inside their submenu. Other panes use a direct checkbox.
 
 CoT Events, CoT Event Generator, UDP receiver, and Plugins each have an independent dock. The three tool docks start as tabs beside the map. Drag a dock title or tab to detach that pane.
 
@@ -8,7 +8,7 @@ Each detached pane has a resize handle in its lower-right corner. Close a pane t
 
 Use Tools > Plugins > CoT Events > Clear to remove all current events and clear the selection. Plugins add their commands under Tools > Plugins.
 
-The top toolbar provides plugin icons. Its Clear button performs the same action as the CoT Events menu command. Point to an icon to read its tooltip. Use View > Main toolbar to hide or show the toolbar. The application saves this choice across restarts.
+The top toolbar provides plugin icons. Its Clear button performs the same action as the CoT Events menu command. Point to an icon to read its tooltip. Use View > Show main toolbar to hide or show the toolbar. The application saves this choice across restarts.
 
 Use Help > About to read the application version and general information.
 
@@ -36,7 +36,7 @@ UDP carries separate network messages called datagrams. Each datagram must conta
 
 To receive events, use this sequence:
 
-1. Open the UDP receiver pane from the View menu.
+1. Open the UDP receiver pane from Tools > Plugins.
 2. Enter a numeric local address and port.
 3. Select Start receiver.
 
@@ -68,7 +68,7 @@ Saved preferences include these interface choices:
 
 Live events, the selected event, message counts, and generated XML previews are session data. They are not preferences and do not survive a restart. Editor drafts survive without automatically generating events.
 
-Use View > Reset layout to return panes to their initial arrangement. This command keeps editor values, map position, and receiver configuration. Each pane remains available through its own View menu entry.
+Use View > Reset layout to return panes to their initial arrangement. This command keeps editor values, map position, and receiver configuration. Each pane remains available under Tools > Plugins. View contains only Show main toolbar and Reset layout.
 
 The default file is `preferences.json` in the Qt application configuration directory. On Linux, Qt uses the user configuration location under `XDG_CONFIG_HOME` or `~/.config`. The application identifies itself with organization `SWAK` and name `swak`.
 
@@ -123,3 +123,11 @@ The application logging controls classify this message as Warning severity with 
 # Online maps
 
 Open Tools > Map Providers to select or configure an online map. A fresh profile uses the offline reference map. File > Settings contains source and rendering controls. Read [Map providers](map-providers.md) for sources, formats, attribution, and HTTPS behavior.
+
+# Internal events and map selection
+
+The map toolbar button selects an online provider or the offline map. Unavailable providers remain visible but disabled. Map Providers opens the manager from that dropdown.
+
+The bottom status field shows the latest internal event for three seconds. New events restart the timer. Errors use red text. Tools > Plugins > Internal events > Show pane opens the retained history. Clear removes its rows and pending entries.
+
+File > Settings > Internal events controls the history limit from 1 through 10000 events. The default is 500. History stays in memory for the current process. Text logging remains disabled unless you enable it separately. Very large bursts discard older pending records to keep memory bounded.

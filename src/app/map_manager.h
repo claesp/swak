@@ -9,6 +9,7 @@ class MapManager final : public QDialog {
 public:
     explicit MapManager(MapSources &sources, QWidget *parent = nullptr);
 private:
+    void reportError(const QString &message);
     void refresh();
     void edit();
     MapSources &sources_;

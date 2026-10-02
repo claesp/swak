@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "org.swak.tracks",
+  "name": "CoT Events",
+  "description": "Present event tracks and the event table.",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entryPoint": "TracksPlugin",
+  "linkage": "static",
+  "platforms": [
+    "linux"
+  ],
+  "qtMajor": 6,
+  "qtMinimum": "6.4.0",
+  "interfaces": [
+    "map-layer",
+    "tool",
+    "menu",
+    "toolbar"
+  ],
+  "requires": [
+    "codec"
+  ],
+  "permissions": [],
+  "settingsSchemaVersion": 1
+}

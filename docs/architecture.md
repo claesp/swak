@@ -2,7 +2,7 @@
 
 The host creates the window and connects built-in plugins to the event store. The store enforces event limits and exposes a Qt table model. A model supplies rows to views without copying a widget for each row.
 
-The plugin interfaces live in `src/core/interfaces.h`. Interface identifiers end in `/1.0` to distinguish incompatible revisions. Every plugin in this version uses the same compiler, Qt installation, and build configuration.
+The plugin interfaces live in `src/core/interfaces.h`. The common plugin API is version 2. UI interfaces use `/2.0`, while unchanged data interfaces retain `/1.0`. Read [Plugin API](plugin-api.md) for the reviewed contracts and manifest schema. Every plugin in this version uses the same compiler, Qt installation, and build configuration.
 
 The extension levels are:
 
@@ -11,6 +11,7 @@ The extension levels are:
 - `ViewPlugin` creates a presentation widget and receives the available map layers.
 - `MapLayer` draws one part of the map in a defined order.
 - `ToolPlugin` creates a workspace panel for event interaction.
+- `PanePlugin` creates a pane without a codec.
 - `MenuPlugin` adds commands under Tools > Plugins.
 - `ToolbarPlugin` adds icon actions to the main toolbar.
 
@@ -31,7 +32,7 @@ Plugins use the native Qt plugin mechanism with static linkage. Static linkage p
 To add a built-in feature, use this sequence:
 
 1. Implement a core interface in a `QObject` subclass under `src/plugins`.
-2. Add `Q_OBJECT`, `Q_PLUGIN_METADATA`, and `Q_INTERFACES` declarations.
+2. Add `Q_OBJECT`, `Q_PLUGIN_METADATA`, and `Q_INTERFACES` declarations with a MANIFEST file and the common `Plugin` interface.
 3. Add a target with `swak_plugin` in `CMakeLists.txt`.
 4. Link the target to the application and relevant tests.
 5. Add `Q_IMPORT_PLUGIN` to `src/app/plugins.cpp`.
@@ -39,7 +40,7 @@ To add a built-in feature, use this sequence:
 
 A plugin can implement more than one interface. The tracks plugin demonstrates this arrangement. In this host, a tool that also implements `MapLayer` appears in the bottom dock.
 
-Each tool and source has an independent dock with a View menu action. The host groups the side docks as tabs initially. All docks share a content container and a resize handle that appears when detached.
+Each tool and source has an independent dock with a Tools > Plugins visibility action. The host groups the side docks as tabs initially. All docks share a content container and a resize handle that appears when detached.
 
 Create widgets with the supplied parent. Keep widgets and painter calls on the GUI thread. Keep each map layer free of retained painter or store references beyond the call.
 
@@ -93,7 +94,7 @@ The Settings dialog separates General sections from pane customization. The host
 
 # Plugin menus
 
-`MenuPlugin` is an optional interface with identifier `org.swak.Menu/1.0`. A plugin implements `name()` and `populateMenu(Store &, QMenu &)`. The host creates a submenu under Tools > Plugins and calls the provider once for each window. Plugins do not need a panel or codec to provide commands. The host removes empty submenus and disables Plugins when no commands exist.
+`MenuPlugin` is an optional interface with identifier `org.swak.Menu/2.0`. A plugin implements `name()` and `populateMenu(PluginServices &, QMenu &)`. The host creates a submenu under Tools > Plugins and calls the provider once for each window. Plugins do not need a panel or codec to provide commands. The host removes empty submenus and adds pane visibility actions. The built-in Plugins pane remains available.
 
 Create actions with the supplied menu as their parent. Connect callbacks with a QObject context that owns the state they use. Do not retain window menus or store references in static plugin objects. Keep callbacks bounded and do not let exceptions escape them. Qt removes connections when the action or its context is destroyed.
 
@@ -101,7 +102,7 @@ The CoT Events plugin adds Clear and connects it directly to the window event st
 
 # Toolbar and About
 
-`ToolbarPlugin` is an optional interface with identifier `org.swak.Toolbar/1.0`. The host calls `populateToolbar(Store &, QToolBar &, QMenu *)` once for each window. It supplies the main toolbar and the same plugin menu, or null when the plugin has no menu interface. The host calls the menu provider first. A toolbar provider can reuse its menu actions or create actions owned by the toolbar.
+`ToolbarPlugin` is an optional interface with identifier `org.swak.Toolbar/2.0`. The host calls `populateToolbar(PluginServices &, QToolBar &, QMenu *)` once for each window. It supplies the main toolbar and the same plugin menu, or null when the plugin has no menu interface. The host calls the menu provider first. A toolbar provider can reuse its menu actions or create actions owned by the toolbar.
 
 Use translated action text, a tooltip, and an icon with a fallback. Connect callbacks with a QObject context that owns their state. Do not retain toolbar or menu pointers in static plugin objects. The CoT Events plugin shares its Clear action across both surfaces. Shared actions keep their text, enabled state, and behavior consistent.
 
@@ -113,6 +114,6 @@ Help > About opens one dialog per window and releases it on close. The dialog us
 
 `MapExtension` registers a stable map identifier, a name, and a kind: Provider or Tool. A provider also implements `MapProvider`, which supplies defaults, editable fields, validation, and a tile URL builder. The XYZ, WMTS, and WMS plugins register both interfaces. No map tool exists yet. The offline schematic remains an internal map layer.
 
-`MapSources` owns the per-window catalog and implements `SettingsParticipant`. The host discovers participants among its QObject children as well as plugin roots. `MapConsumer` connects the map widget to the catalog without changing the existing view interface. Only registered providers enter the manager format list. Missing providers retain their saved configuration.
+`MapSources` owns the per-window catalog and implements `SettingsParticipant`. The host discovers participants among its QObject children as well as plugin roots. `PluginServices` supplies the catalog to the view and toolbar callbacks. Only registered providers enter the manager format list. Missing providers retain their saved configuration.
 
 `TileRenderer` handles bounded HTTPS retrieval, caching, and image decoding. It cancels requests when the map hides or changes source. The map widget draws image tiles after the schematic layer and before event layers. A source change clears decoded images and connection state. Read [Map providers](map-providers.md) for format contracts and limits.

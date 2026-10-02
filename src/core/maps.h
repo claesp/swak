@@ -45,16 +45,13 @@ public:
     void select(const QString &id);
     bool networkEnabled() const { return values_.value(QStringLiteral("network")).toBool(false); }
 signals:
+    void managementRequested();
     void changed();
 private:
     QList<MapProvider *> providers_;
     QJsonObject values_;
 };
-class MapConsumer {
-public:
-    virtual ~MapConsumer() = default;
-    virtual void setMapSources(MapSources *sources) = 0;
-};
+
 }
 Q_DECLARE_INTERFACE(swak::MapExtension, "org.swak.MapExtension/1.0")
 Q_DECLARE_INTERFACE(swak::MapProvider, "org.swak.MapProvider/1.0")

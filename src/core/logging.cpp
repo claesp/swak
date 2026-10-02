@@ -1,4 +1,5 @@
 #include "core/logging.h"
+#include "core/activity.h"
 #include "core/files.h"
 #include "core/preferences.h"
 #include <QDateTime>
@@ -103,6 +104,7 @@ void configureLoggingFromFile(const QString &path)
 void logMessage(Severity severity, Urgency urgency, const QString &category, const QString &message) noexcept
 {
     try {
+        if (category.startsWith(QStringLiteral("swak."))) publishActivity(severity, urgency, category, message);
         if (loggingState.isDestroyed()) return;
         auto &log = state();
         if (!log.enabled) return;

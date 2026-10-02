@@ -1,3 +1,7 @@
+#include "core/plugin_catalog.h"
+#include <QJsonArray>
+#include "core/activity.h"
+#include "core/maps.h"
 #include "core/interfaces.h"
 #include "core/projection.h"
 #include "core/store.h"
@@ -38,6 +42,31 @@ private:
         return event;
     }
 private slots:
+    void pluginManifests()
+    {
+        QCOMPARE(builtInPlugins().size(), 10);
+        for (const auto &entry : QPluginLoader::staticPlugins()) {
+            if (entry.metaData().value(QStringLiteral("IID")).toString() != QStringLiteral("org.swak.Plugin/2.0")) continue;
+            const auto manifest = entry.metaData().value(QStringLiteral("MetaData")).toObject();
+            QVERIFY2(validatePluginManifest(manifest, entry.instance()).isEmpty(), qPrintable(validatePluginManifest(manifest, entry.instance())));
+            for (const auto &key : {QStringLiteral("schemaVersion"), QStringLiteral("apiVersion"), QStringLiteral("id"),
+                QStringLiteral("version"), QStringLiteral("name"), QStringLiteral("description"), QStringLiteral("entryPoint"),
+                QStringLiteral("linkage"), QStringLiteral("platforms"), QStringLiteral("qtMajor"), QStringLiteral("qtMinimum"),
+                QStringLiteral("interfaces"), QStringLiteral("requires"), QStringLiteral("permissions"), QStringLiteral("settingsSchemaVersion")}) {
+                auto invalid = manifest;
+                invalid.remove(key);
+                QVERIFY2(!validatePluginManifest(invalid, entry.instance()).isEmpty(), qPrintable(key));
+            }
+            auto future = manifest;
+            future.insert(QStringLiteral("qtMinimum"), QStringLiteral("99.0.0"));
+            QVERIFY(!validatePluginManifest(future, entry.instance()).isEmpty());
+            future = manifest;
+            future.insert(QStringLiteral("permissions"), QJsonArray{QStringLiteral("unknown")});
+            QVERIFY(!validatePluginManifest(future, entry.instance()).isEmpty());
+        }
+        QVERIFY(!validatePluginManifest({}, nullptr).isEmpty());
+    }
+
     void initTestCase()
     {
         int layers = 0;
@@ -209,7 +238,10 @@ private slots:
         QUdpSocket reservation;
         QVERIFY(reservation.bind(QHostAddress::LocalHost, 0));
         const quint16 port = reservation.localPort();
-        auto receiver = std::unique_ptr<QWidget>(source_->create(store, *codec_, nullptr));
+        ActivityModel activity;
+        MapSources maps({});
+        PluginServices services{store, activity, maps};
+        auto receiver = std::unique_ptr<QWidget>(source_->create(services, *codec_, nullptr));
         auto *portField = receiver->findChild<QSpinBox *>(QStringLiteral("bindPort"));
         auto *toggle = receiver->findChild<QPushButton *>(QStringLiteral("receiverToggle"));
         auto *address = receiver->findChild<QLineEdit *>(QStringLiteral("bindAddress"));

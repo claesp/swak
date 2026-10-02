@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "org.swak.map",
+  "name": "OpenGL map",
+  "description": "Present map imagery and event layers with OpenGL.",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entryPoint": "MapPlugin",
+  "linkage": "static",
+  "platforms": [
+    "linux"
+  ],
+  "qtMajor": 6,
+  "qtMinimum": "6.4.0",
+  "interfaces": [
+    "view",
+    "toolbar"
+  ],
+  "requires": [],
+  "permissions": [
+    "network-https",
+    "disk-cache",
+    "browser-links"
+  ],
+  "settingsSchemaVersion": 1
+}

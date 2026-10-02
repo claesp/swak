@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "org.swak.xyz",
+  "name": "XYZ image tiles",
+  "description": "Fetch raster map tiles through HTTPS XYZ URLs.",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entryPoint": "XyzProvider",
+  "linkage": "static",
+  "platforms": [
+    "linux"
+  ],
+  "qtMajor": 6,
+  "qtMinimum": "6.4.0",
+  "interfaces": [
+    "map-provider"
+  ],
+  "requires": [],
+  "permissions": [],
+  "settingsSchemaVersion": 1
+}

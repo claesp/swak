@@ -1,9 +1,10 @@
+#include "core/interfaces.h"
 #include "core/maps.h"
 namespace swak {
-class XyzProvider final : public QObject, public MapProvider {
+class XyzProvider final : public QObject, public Plugin, public MapProvider {
     Q_OBJECT
-    Q_PLUGIN_METADATA(IID "org.swak.MapProvider/1.0")
-    Q_INTERFACES(swak::MapExtension swak::MapProvider)
+    Q_PLUGIN_METADATA(IID "org.swak.Plugin/2.0" FILE "xyz/MANIFEST")
+    Q_INTERFACES(swak::Plugin swak::MapExtension swak::MapProvider)
 public:
     QString mapId() const override { return QStringLiteral("org.swak.xyz"); }
     QString mapName() const override { return tr("XYZ image tiles"); }

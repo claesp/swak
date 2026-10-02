@@ -1,3 +1,4 @@
+#include "core/logging.h"
 #include "core/interfaces.h"
 #include "core/projection.h"
 #include "core/store.h"
@@ -105,20 +106,20 @@ private:
         return ids;
     }
 };
-class TracksPlugin final : public QObject, public MapLayer, public ToolPlugin, public MenuPlugin, public ToolbarPlugin {
+class TracksPlugin final : public QObject, public Plugin, public MapLayer, public ToolPlugin, public MenuPlugin, public ToolbarPlugin {
     Q_OBJECT
-    Q_PLUGIN_METADATA(IID "org.swak.MapLayer/1.0")
-    Q_INTERFACES(swak::MapLayer swak::ToolPlugin swak::MenuPlugin swak::ToolbarPlugin)
+    Q_PLUGIN_METADATA(IID "org.swak.Plugin/2.0" FILE "tracks/MANIFEST")
+    Q_INTERFACES(swak::Plugin swak::MapLayer swak::ToolPlugin swak::MenuPlugin swak::ToolbarPlugin)
 public:
     QString name() const override { return tr("CoT Events"); }
-    void populateMenu(Store &store, QMenu &menu) override
+    void populateMenu(PluginServices &services, QMenu &menu) override
     {
-        menu.addAction(createClearAction(store, menu));
+        menu.addAction(createClearAction(services.store, menu));
     }
-    void populateToolbar(Store &store, QToolBar &toolbar, QMenu *pluginMenu) override
+    void populateToolbar(PluginServices &services, QToolBar &toolbar, QMenu *pluginMenu) override
     {
         auto *clear = pluginMenu ? pluginMenu->findChild<QAction *>(QStringLiteral("clearEventsAction")) : nullptr;
-        if (!clear) clear = createClearAction(store, toolbar);
+        if (!clear) clear = createClearAction(services.store, toolbar);
         toolbar.addAction(clear);
     }
     int order() const override { return 100; }
@@ -142,8 +143,9 @@ public:
             }
         }
     }
-    QWidget *create(Store &store, const Codec &, QWidget *parent) override
+    QWidget *create(PluginServices &services, const Codec &, QWidget *parent) override
     {
+        auto &store = services.store;
         auto *table = new EventTable(parent);
         table->setObjectName(QStringLiteral("eventsTable"));
         table->setAccessibleName(tr("Received and generated events"));
@@ -178,7 +180,10 @@ private:
         clear->setObjectName(QStringLiteral("clearEventsAction"));
         clear->setToolTip(tr("Clear CoT Events"));
         clear->setStatusTip(tr("Remove all current CoT events and clear the selection."));
-        connect(clear, &QAction::triggered, &store, &Store::clear);
+        connect(clear, &QAction::triggered, &store, [&store] {
+            store.clear();
+            logMessage(Severity::Info, Urgency::Routine, QStringLiteral("swak.events"), tr("CoT Events cleared."));
+        });
         return clear;
     }
 };

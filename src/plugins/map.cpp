@@ -5,6 +5,11 @@
 #include <QDesktopServices>
 #include <QRegularExpression>
 #include <QUrl>
+#include <QToolBar>
+#include <QToolButton>
+#include <QMenu>
+#include <QStyle>
+#include <QCollator>
 #include "core/projection.h"
 #include "core/store.h"
 #include "core/preferences.h"
@@ -19,7 +24,7 @@
 #include <utility>
 
 namespace swak {
-class MapWidget final : public QOpenGLWidget, public SettingsParticipant, public MapConsumer, protected QOpenGLFunctions {
+class MapWidget final : public QOpenGLWidget, public SettingsParticipant, protected QOpenGLFunctions {
 public:
     MapWidget(Store &store, QList<MapLayer *> layers, QWidget *parent)
         : QOpenGLWidget(parent), store_(store), layers_(std::move(layers))
@@ -55,7 +60,7 @@ public:
             update();
         });
     }
-    void setMapSources(MapSources *sources) override
+    void setMapSources(MapSources *sources)
     {
         if (sources_) disconnect(sources_, nullptr, this, nullptr);
         sources_ = sources;
@@ -251,14 +256,65 @@ private:
     bool dragging_ = false;
     bool moved_ = false;
 };
-class MapPlugin final : public QObject, public ViewPlugin {
+class MapPlugin final : public QObject, public Plugin, public ViewPlugin, public ToolbarPlugin {
     Q_OBJECT
-    Q_PLUGIN_METADATA(IID "org.swak.View/1.0")
-    Q_INTERFACES(swak::ViewPlugin)
+    Q_PLUGIN_METADATA(IID "org.swak.Plugin/2.0" FILE "map/MANIFEST")
+    Q_INTERFACES(swak::Plugin swak::ViewPlugin swak::ToolbarPlugin)
 public:
     QString name() const override { return tr("OpenGL map"); }
-    QWidget *create(Store &store, const QList<MapLayer *> &layers, QWidget *parent) override
-    { return new MapWidget(store, layers, parent); }
+    QWidget *create(PluginServices &services, const QList<MapLayer *> &layers, QWidget *parent) override
+    {
+        auto *widget = new MapWidget(services.store, layers, parent);
+        widget->setMapSources(&services.maps);
+        return widget;
+    }
+    void populateToolbar(PluginServices &services, QToolBar &toolbar, QMenu *) override
+    {
+        auto *mapSources = &services.maps;
+        auto *mapButton = new QToolButton(&toolbar);
+        mapButton->setObjectName(QStringLiteral("mapProviderButton"));
+        mapButton->setAccessibleName(tr("Select map provider"));
+        mapButton->setPopupMode(QToolButton::InstantPopup);
+        mapButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        mapButton->setIcon(QIcon::fromTheme(QStringLiteral("globe"), toolbar.style()->standardIcon(QStyle::SP_DirIcon)));
+        auto *mapMenu = new QMenu(mapButton);
+        mapMenu->setObjectName(QStringLiteral("mapProviderMenu"));
+        mapButton->setMenu(mapMenu);
+        toolbar.addWidget(mapButton);
+        const auto updateMapButton = [mapButton, mapSources] {
+            const auto source = mapSources->activeSource();
+            mapButton->setText(source.isEmpty() ? tr("Offline map") : source.value(QStringLiteral("name")).toString());
+        };
+        connect(mapSources, &MapSources::changed, mapButton, updateMapButton);
+        connect(mapMenu, &QMenu::aboutToShow, mapMenu, [mapMenu, mapSources] {
+            mapMenu->clear();
+            auto *offline = mapMenu->addAction(tr("Offline map"));
+            offline->setCheckable(true);
+            offline->setChecked(mapSources->activeSource().isEmpty());
+            connect(offline, &QAction::triggered, mapSources, [mapSources] { mapSources->select({}); });
+            const auto sources = mapSources->sources();
+            auto ids = sources.keys();
+            const QCollator collator;
+            std::sort(ids.begin(), ids.end(), [&](const auto &a, const auto &b) {
+                return collator.compare(sources.value(a).toObject().value(QStringLiteral("name")).toString(),
+                    sources.value(b).toObject().value(QStringLiteral("name")).toString()) < 0;
+            });
+            for (const auto &id : ids) {
+                const auto source = sources.value(id).toObject();
+                const auto *provider = mapSources->provider(source);
+                auto *action = mapMenu->addAction(source.value(QStringLiteral("name")).toString());
+                action->setData(id);
+                action->setEnabled(provider && provider->validate(source).isEmpty());
+                action->setCheckable(true);
+                action->setChecked(mapSources->networkEnabled() && mapSources->activeId() == id);
+                connect(action, &QAction::triggered, mapSources, [mapSources, id] { mapSources->select(id); });
+            }
+            mapMenu->addSeparator();
+            const auto *manage = mapMenu->addAction(tr("Map Providers"));
+            connect(manage, &QAction::triggered, mapSources, &MapSources::managementRequested);
+        });
+        updateMapButton();
+    }
 };
 }
 #include "map.moc"

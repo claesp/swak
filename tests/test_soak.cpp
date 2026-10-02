@@ -1,3 +1,5 @@
+#include "core/activity.h"
+#include "core/maps.h"
 #include "core/interfaces.h"
 #include "app/window.h"
 #include "core/preferences.h"
@@ -59,6 +61,9 @@ private slots:
         }
         Store headlessStore;
         Store &store = window ? window->store() : headlessStore;
+        ActivityModel activity;
+        MapSources maps({});
+        PluginServices services{store, activity, maps};
         Event event;
         event.type = QStringLiteral("a-f-G");
         event.how = QStringLiteral("h-e");
@@ -72,7 +77,7 @@ private slots:
         event.uid = QStringLiteral("over-capacity");
         QVERIFY(!store.accept(event).isEmpty());
         store.clear();
-        auto receiver = std::unique_ptr<QWidget>(source->create(store, *codec, nullptr));
+        auto receiver = std::unique_ptr<QWidget>(source->create(services, *codec, nullptr));
         auto *port = receiver->findChild<QSpinBox *>(QStringLiteral("bindPort"));
         auto *toggle = receiver->findChild<QPushButton *>(QStringLiteral("receiverToggle"));
         QVERIFY(port && toggle);
@@ -113,7 +118,7 @@ private slots:
                 QCOMPARE(sender.writeDatagram(i % 2 ? mutation : xml, QHostAddress::LocalHost, targetPort), xml.size());
             }
             for (auto *tool : tools) {
-                const auto widget = std::unique_ptr<QWidget>(tool->create(store, *codec, nullptr));
+                const auto widget = std::unique_ptr<QWidget>(tool->create(services, *codec, nullptr));
                 auto *participant = dynamic_cast<PreferenceParticipant *>(widget.get());
                 QVERIFY(participant);
                 participant->restorePreferences(participant->savePreferences());
@@ -122,7 +127,10 @@ private slots:
             QTest::qWait(40);
             QVERIFY2(store.rowCount() > 0, "The receiver made no progress.");
             store.select(event.uid);
-            store.expire(event.stale.addSecs(1));
+            // Valid mutations can extend the expiry time.
+            auto latestStale = event.stale;
+            for (const auto &received : store.events()) latestStale = qMax(latestStale, received.stale);
+            store.expire(latestStale.addSecs(1));
             QCOMPARE(store.rowCount(), 0);
             ++cycles;
             const qint64 resident = residentBytes();

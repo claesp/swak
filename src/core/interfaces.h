@@ -11,6 +11,18 @@ class QMenu;
 class QToolBar;
 namespace swak {
 class Store;
+class ActivityModel;
+class MapSources;
+struct PluginServices {
+    Store &store;
+    ActivityModel &activity;
+    MapSources &maps;
+};
+class Plugin {
+public:
+    virtual ~Plugin() = default;
+    virtual int apiVersion() const { return 2; }
+};
 struct Viewport;
 
 class Codec {
@@ -31,36 +43,45 @@ class ViewPlugin {
 public:
     virtual ~ViewPlugin() = default;
     virtual QString name() const = 0;
-    virtual QWidget *create(Store &store, const QList<MapLayer *> &layers, QWidget *parent) = 0;
+    virtual QWidget *create(PluginServices &services, const QList<MapLayer *> &layers, QWidget *parent) = 0;
 };
 class ToolPlugin {
 public:
     virtual ~ToolPlugin() = default;
     virtual QString name() const = 0;
-    virtual QWidget *create(Store &store, const Codec &codec, QWidget *parent) = 0;
+    virtual QWidget *create(PluginServices &services, const Codec &codec, QWidget *parent) = 0;
+};
+class PanePlugin {
+public:
+    virtual ~PanePlugin() = default;
+    virtual QString name() const = 0;
+    virtual QWidget *create(PluginServices &services, QWidget *parent) = 0;
 };
 class MenuPlugin {
 public:
     virtual ~MenuPlugin() = default;
     virtual QString name() const = 0;
-    virtual void populateMenu(Store &store, QMenu &menu) = 0;
+    virtual void populateMenu(PluginServices &services, QMenu &menu) = 0;
 };
 class ToolbarPlugin {
 public:
     virtual ~ToolbarPlugin() = default;
-    virtual void populateToolbar(Store &store, QToolBar &toolbar, QMenu *pluginMenu) = 0;
+    virtual void populateToolbar(PluginServices &services, QToolBar &toolbar, QMenu *pluginMenu) = 0;
 };
 class SourcePlugin {
 public:
     virtual ~SourcePlugin() = default;
     virtual QString name() const = 0;
-    virtual QWidget *create(Store &store, const Codec &codec, QWidget *parent) = 0;
+    virtual QWidget *create(PluginServices &services, const Codec &codec, QWidget *parent) = 0;
 };
 }
 Q_DECLARE_INTERFACE(swak::Codec, "org.swak.Codec/1.0")
 Q_DECLARE_INTERFACE(swak::MapLayer, "org.swak.MapLayer/1.0")
-Q_DECLARE_INTERFACE(swak::ViewPlugin, "org.swak.View/1.0")
-Q_DECLARE_INTERFACE(swak::ToolPlugin, "org.swak.Tool/1.0")
-Q_DECLARE_INTERFACE(swak::SourcePlugin, "org.swak.Source/1.0")
-Q_DECLARE_INTERFACE(swak::MenuPlugin, "org.swak.Menu/1.0")
-Q_DECLARE_INTERFACE(swak::ToolbarPlugin, "org.swak.Toolbar/1.0")
+Q_DECLARE_INTERFACE(swak::ViewPlugin, "org.swak.View/2.0")
+Q_DECLARE_INTERFACE(swak::ToolPlugin, "org.swak.Tool/2.0")
+Q_DECLARE_INTERFACE(swak::SourcePlugin, "org.swak.Source/2.0")
+Q_DECLARE_INTERFACE(swak::MenuPlugin, "org.swak.Menu/2.0")
+Q_DECLARE_INTERFACE(swak::ToolbarPlugin, "org.swak.Toolbar/2.0")
+
+Q_DECLARE_INTERFACE(swak::PanePlugin, "org.swak.Pane/2.0")
+Q_DECLARE_INTERFACE(swak::Plugin, "org.swak.Plugin/2.0")

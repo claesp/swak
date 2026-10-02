@@ -1,3 +1,5 @@
+#include "core/activity.h"
+#include "core/maps.h"
 #include "app/window.h"
 #include "app/map_manager.h"
 #include "core/maps.h"
@@ -75,7 +77,7 @@ public:
     bool empty = false;
     int calls = 0;
     QString name() const override { return QStringLiteral("Example menu"); }
-    void populateMenu(swak::Store &, QMenu &menu) override
+    void populateMenu(swak::PluginServices &, QMenu &menu) override
     {
         if (empty) return;
         auto *action = menu.addAction(QStringLiteral("Example action"));
@@ -88,7 +90,7 @@ class ExampleToolbar final : public QObject, public swak::ToolbarPlugin {
     Q_INTERFACES(swak::ToolbarPlugin)
 public:
     int calls = 0;
-    void populateToolbar(swak::Store &, QToolBar &toolbar, QMenu *menu) override
+    void populateToolbar(swak::PluginServices &, QToolBar &toolbar, QMenu *menu) override
     {
         Q_ASSERT(!menu);
         auto *action = toolbar.addAction(toolbar.style()->standardIcon(QStyle::SP_DialogApplyButton), QStringLiteral("Example"));
@@ -108,6 +110,74 @@ public:
 class GuiTest final : public QObject {
     Q_OBJECT
 private slots:
+    void internalEventsAndMapToolbar()
+    {
+        QTemporaryDir directory;
+        const auto path = directory.filePath(QStringLiteral("activity.json"));
+        {
+            swak::Window window(path, QPluginLoader::staticInstances());
+            window.show();
+            QVERIFY(QTest::qWaitForWindowExposed(&window));
+            auto *history = window.findChild<swak::ActivityModel *>();
+            auto *status = window.findChild<QLabel *>(QStringLiteral("latestActivity"));
+            auto *table = window.findChild<QTableView *>(QStringLiteral("activityTable"));
+            QVERIFY(history && status && table);
+            history->clear();
+            history->restorePreferences({{QStringLiteral("capacity"), 2}});
+            swak::logMessage(swak::Severity::Error, swak::Urgency::Immediate, QStringLiteral("swak.test"), QStringLiteral("Example failure"));
+            QVERIFY(QTest::qWaitFor([&] { return status->text() == QStringLiteral("Example failure"); }));
+            QVERIFY(status->styleSheet().contains(QStringLiteral("#e53935")));
+            QTest::qWait(1100);
+            swak::logMessage(swak::Severity::Info, swak::Urgency::Routine, QStringLiteral("swak.test"), QStringLiteral("Recovered"));
+            QVERIFY(QTest::qWaitFor([&] { return status->text() == QStringLiteral("Recovered"); }));
+            QVERIFY(status->styleSheet().isEmpty());
+            QVERIFY(status->findChild<QTimer *>()->remainingTime() > 2800);
+            QCOMPARE(history->rowCount(), 2);
+            QVERIFY(QTest::qWaitFor([&] { return status->text().isEmpty(); }, 4000));
+            QCOMPARE(history->rowCount(), 2);
+            auto *plugins = window.findChild<QMenu *>(QStringLiteral("pluginsMenu"));
+            QMenu *historyMenu = nullptr;
+            for (auto *action : plugins->actions()) if (action->text() == QStringLiteral("Internal events")) historyMenu = action->menu();
+            QVERIFY(historyMenu);
+            historyMenu->actions().first()->trigger();
+            QVERIFY(table->isVisible());
+            QVERIFY(QTest::qWaitForWindowExposed(&window));
+            QTest::qWait(50);
+            QVERIFY(window.screen()->grabWindow(window.winId()).save(QStringLiteral("internal-events-smoke.png")));
+            historyMenu->findChild<QAction *>(QStringLiteral("clearActivityAction"))->trigger();
+            QCOMPARE(history->rowCount(), 0);
+            table->horizontalHeader()->resizeSection(0, 250);
+            auto *button = window.findChild<QToolButton *>(QStringLiteral("mapProviderButton"));
+            QVERIFY(button);
+            auto *maps = window.findChild<swak::MapSources *>();
+            auto *menu = button->menu();
+            QMetaObject::invokeMethod(menu, "aboutToShow");
+            QCOMPARE(menu->actions().size(), 6);
+            QCOMPARE(menu->actions().first()->text(), QStringLiteral("Offline map"));
+            QVERIFY(menu->actions().first()->isChecked());
+            menu->actions().at(1)->trigger();
+            QVERIFY(!maps->activeSource().isEmpty());
+            QCOMPARE(button->text(), maps->activeSource().value(QStringLiteral("name")).toString());
+            menu->actions().first()->trigger();
+            QVERIFY(maps->activeSource().isEmpty());
+            menu->actions().last()->trigger();
+            QVERIFY(window.findChild<swak::MapManager *>());
+            window.findChild<swak::MapManager *>()->close();
+            auto values = maps->savePreferences();
+            auto sources = values.value(QStringLiteral("sources")).toObject();
+            sources.insert(QStringLiteral("absent"), QJsonObject{{QStringLiteral("name"), QStringLiteral("Absent provider")}, {QStringLiteral("format"), QStringLiteral("absent")}});
+            values.insert(QStringLiteral("sources"), sources);
+            maps->restorePreferences(values);
+            QMetaObject::invokeMethod(menu, "aboutToShow");
+            QVERIFY(!menu->actions().at(1)->isEnabled());
+            QVERIFY(window.savePreferences());
+            QVERIFY(window.grab().save(QStringLiteral("activity-toolbar-smoke.png")));
+        }
+        swak::Window restored(path, QPluginLoader::staticInstances());
+        QCOMPARE(restored.findChild<swak::ActivityModel *>()->savePreferences().value(QStringLiteral("capacity")).toInt(), 2);
+        QCOMPARE(restored.findChild<QTableView *>(QStringLiteral("activityTable"))->horizontalHeader()->sectionSize(0), 250);
+    }
+
     void mapProvidersAndGpu()
     {
         QTemporaryDir directory;
@@ -303,7 +373,7 @@ private slots:
             QVERIFY(tools && plugins);
             QVERIFY(window.menuBar()->actions().contains(tools->menuAction()));
             QVERIFY(tools->actions().contains(plugins->menuAction()));
-            QCOMPARE(plugins->actions().size(), 1);
+            QCOMPARE(plugins->actions().size(), 2);
             auto *menu = plugins->actions().first()->menu();
             QVERIFY(menu);
             QCOMPARE(menu->title(), QStringLiteral("Example menu"));
@@ -315,10 +385,10 @@ private slots:
         plugin.empty = true;
         swak::Window empty(directory.filePath(QStringLiteral("empty.json")), {&plugin});
         auto *emptyMenu = empty.findChild<QMenu *>(QStringLiteral("pluginsMenu"));
-        QVERIFY(emptyMenu->isEmpty());
-        QVERIFY(!emptyMenu->isEnabled());
+        QCOMPARE(emptyMenu->actions().size(), 1);
+        QVERIFY(emptyMenu->isEnabled());
         swak::Window absent(directory.filePath(QStringLiteral("absent.json")), {});
-        QVERIFY(absent.findChild<QMenu *>(QStringLiteral("pluginsMenu"))->isEmpty());
+        QCOMPARE(absent.findChild<QMenu *>(QStringLiteral("pluginsMenu"))->actions().size(), 1);
         QVERIFY(!absent.findChild<QAction *>(QStringLiteral("clearEventsAction")));
     }
     void clearEventsMenu()
@@ -354,9 +424,10 @@ private slots:
         QCOMPARE(window.store().rowCount(), 0);
         bool standalone = false;
         for (auto *plugin : QPluginLoader::staticInstances()) {
-            if (auto *provider = qobject_cast<swak::ToolbarPlugin *>(plugin)) {
+            if (auto *provider = qobject_cast<swak::ToolbarPlugin *>(plugin); provider && qobject_cast<swak::ToolPlugin *>(plugin)) {
                 QToolBar independent;
-                provider->populateToolbar(window.store(), independent, nullptr);
+                swak::PluginServices services{window.store(), *window.findChild<swak::ActivityModel *>(), *window.findChild<swak::MapSources *>()};
+                provider->populateToolbar(services, independent, nullptr);
                 QCOMPARE(independent.actions().size(), 1);
                 generate->click();
                 QCOMPARE(window.store().rowCount(), 1);
@@ -498,7 +569,7 @@ private slots:
                 if (!dialog) { QFAIL("Settings dialog did not open."); return; }
                 auto *tabs = dialog->findChild<QTabWidget *>();
                 auto *panes = dialog->findChild<QListWidget *>(QStringLiteral("paneSettingsSections"));
-                if (!tabs || tabs->count() != 2 || !panes || panes->count() != 4) {
+                if (!tabs || tabs->count() != 2 || !panes || panes->count() != 5) {
                     dialog->reject(); QFAIL("The pane tab is incomplete."); return;
                 }
                 const QCollator collator;
@@ -866,13 +937,13 @@ private slots:
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         const auto docks = window.findChildren<QDockWidget *>(QString{}, Qt::FindDirectChildrenOnly);
-        QCOMPARE(docks.size(), 4);
+        QCOMPARE(docks.size(), 5);
         QVERIFY(!window.findChild<QWidget *>(QStringLiteral("toolsDock")));
         auto *viewMenu = window.findChild<QMenu *>(QStringLiteral("viewMenu"));
         auto *fileMenu = window.findChild<QMenu *>(QStringLiteral("fileMenu"));
         auto *quit = window.findChild<QAction *>(QStringLiteral("quitAction"));
         QVERIFY(viewMenu && fileMenu && quit);
-        QCOMPARE(viewMenu->actions().size(), 6);
+        QCOMPARE(viewMenu->actions().size(), 2);
         QVERIFY(viewMenu->actions().contains(window.findChild<QToolBar *>(QStringLiteral("mainToolbar"))->toggleViewAction()));
         QVERIFY(fileMenu->actions().contains(quit));
         QCOMPARE(window.menuBar()->actions().first(), fileMenu->menuAction());
@@ -881,7 +952,8 @@ private slots:
             if (menu != fileMenu) QVERIFY(!menu->actions().contains(quit));
         }
         for (auto *dock : docks) {
-            QVERIFY(viewMenu->actions().contains(dock->toggleViewAction()));
+            QVERIFY(!viewMenu->actions().contains(dock->toggleViewAction()));
+            dock->show();
             auto *grip = dock->findChild<QSizeGrip *>();
             QVERIFY(grip);
             QVERIFY(grip->isHidden());

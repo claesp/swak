@@ -1,3 +1,4 @@
+#include "core/plugin_catalog.h"
 #include "app/window.h"
 #include "swak/version.h"
 #include "core/logging.h"
@@ -45,7 +46,7 @@ int main(int argc, char **argv)
         if (!probe.create() || !probe.makeCurrent(&surface))
             throw std::runtime_error("OpenGL 3.3 is unavailable. Install a compatible graphics driver and use a desktop session.");
         probe.doneCurrent();
-        swak::Window window(preferencesPath, QPluginLoader::staticInstances());
+        swak::Window window(preferencesPath, swak::builtInPlugins());
         window.show();
         return app.exec();
     } catch (const std::exception &error) {
