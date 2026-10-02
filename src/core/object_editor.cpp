@@ -30,6 +30,7 @@ ObjectEditor::ObjectEditor(UserObjects &objects, QWidget *parent) : PaneContent(
     auto *layout = new QVBoxLayout(this);
     layout->addWidget(new QLabel(tr("Title"), this));
     title_ = new QLineEdit(this); title_->setObjectName(QStringLiteral("objectTitle")); title_->setAccessibleName(tr("Title"));
+    connect(title_, &QLineEdit::returnPressed, this, &ObjectEditor::apply);
     title_->setMaxLength(128); title_->setPlaceholderText(tr("New Marker")); layout->addWidget(title_);
     auto font = title_->font(); font.setPointSizeF(font.pointSizeF() > 0 ? font.pointSizeF() * 1.5 : 16); title_->setFont(font);
     layout->addWidget(new QLabel(tr("Description"), this));

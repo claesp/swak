@@ -1,2 +1,4 @@
 #pragma once
-#define SWAK_VERSION "@PROJECT_VERSION@"
+#define SWAK_VERSION "@SWAK_VERSION@"
+#define SWAK_REVISION "@SWAK_REVISION@"
+#define SWAK_GIT_TAG "@SWAK_GIT_TAG@"

@@ -149,6 +149,12 @@ private slots:
         auto *sources = window.findChild<swak::MapSources *>();
         QVERIFY(map && settings && sources);
         const auto zoom = [&] { return settings->savePreferences().value(QStringLiteral("zoom")).toDouble(); };
+        auto gridValues = settings->savePreferences(); QCOMPARE(gridValues.value(QStringLiteral("gridOpacity")).toDouble(), 0.5);
+        gridValues.remove(QStringLiteral("gridStyleVersion")); gridValues.insert(QStringLiteral("gridOpacity"), 0.2);
+        settings->restorePreferences(gridValues); QCOMPARE(settings->savePreferences().value(QStringLiteral("gridOpacity")).toDouble(), 0.5);
+        gridValues.insert(QStringLiteral("gridStyleVersion"), 2); settings->restorePreferences(gridValues);
+        QCOMPARE(settings->savePreferences().value(QStringLiteral("gridOpacity")).toDouble(), 0.2);
+        gridValues.insert(QStringLiteral("gridOpacity"), 0.5); settings->restorePreferences(gridValues);
         const auto initial = map->grabFramebuffer();
         QCOMPARE(initial.pixelColor(20, 21), QColor(swak::MapBackgroundRgb));
         const auto id = QStringLiteral("org.swak.xyz");
@@ -369,7 +375,7 @@ private slots:
             auto *table = window.findChild<QTableView *>(QStringLiteral("activityTable"));
             QVERIFY(history && status && table);
             QVERIFY(window.findChild<QLabel *>(QStringLiteral("cotEventCount"))->text().startsWith(QStringLiteral("CoT Events:")));
-            QCOMPARE(window.findChildren<QFrame *>(QStringLiteral("statusSeparator")).size(), 2);
+            QCOMPARE(window.findChildren<QFrame *>(QStringLiteral("statusSeparator")).size(), 3);
             QVERIFY(!window.findChild<QLabel *>(QStringLiteral("latestActivity")));
             history->clear();
             history->restorePreferences({{QStringLiteral("capacity"), 2}});
@@ -757,7 +763,14 @@ private slots:
             auto *table = editor->findChild<QTableWidget *>(QStringLiteral("objectProperties"));
             auto *apply = editor->findChild<QPushButton *>(QStringLiteral("applyObject")); QVERIFY(title && description && table && apply);
             map->setFocus(); QVERIFY(QTest::qWaitFor([&] { return map->hasFocus(); }));
-            QTest::keyClick(map, Qt::Key_M); QCOMPARE(map->cursor().shape(), Qt::CrossCursor);
+            auto *modeTools = window.findChild<swak::MapTools *>(); QVERIFY(modeTools); QVERIFY(!modeTools->coordinateGridActive());
+            auto *modeStatus = window.findChild<QLabel *>(QStringLiteral("mapToolStatus")); QVERIFY(modeStatus); QVERIFY(modeStatus->text().isEmpty());
+            QTest::keyClick(map, Qt::Key_M); QCOMPARE(map->cursor().shape(), Qt::CrossCursor); QCOMPARE(modeStatus->text(), QStringLiteral("M"));
+            QKeyEvent repeat(QEvent::KeyPress, Qt::Key_M, Qt::NoModifier, QStringLiteral("m"), true);
+            QApplication::sendEvent(map, &repeat); QCOMPARE(modeStatus->text(), QStringLiteral("M"));
+            QTest::keyClick(map, Qt::Key_M); QVERIFY(modeStatus->text().isEmpty()); QVERIFY(map->cursor().shape() != Qt::CrossCursor);
+            QVERIFY(!modeTools->coordinateGridActive());
+            QTest::keyClick(map, Qt::Key_M); QCOMPARE(modeStatus->text(), QStringLiteral("M")); QVERIFY(modeTools->coordinateGridActive());
             auto *tools = window.findChild<swak::MapTools *>(); QVERIFY(tools);
             QSignalSpy sceneChanges(tools, &swak::MapTools::changed);
             QSignalSpy overlayChanges(tools, &swak::MapTools::overlayChanged);
@@ -784,14 +797,15 @@ private slots:
             QVERIFY(QTest::qWaitFor([&] { return map->isValid(); }));
             QVERIFY(window.screen()->grabWindow(window.winId()).save(QStringLiteral("marker-crosshair.png")));
             QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, point);
+            QVERIFY(modeStatus->text().isEmpty()); QVERIFY(!modeTools->coordinateGridActive());
             QVERIFY(pane->isVisible()); QVERIFY(editor->draft()); QVERIFY(objects->items().isEmpty());
             QCOMPARE(title->placeholderText(), QStringLiteral("New Marker"));
             QVERIFY(editor->grab().save(QStringLiteral("marker-editor.png")));
             title->setText(QStringLiteral("Observation post")); description->setPlainText(QStringLiteral("Local marker description"));
             table->setRowCount(2);
             for (int row = 0; row < 2; ++row) { table->setItem(row, 0, new QTableWidgetItem(QStringLiteral("Unit"))); table->setItem(row, 1, new QTableWidgetItem(QStringLiteral("Alpha"))); }
-            apply->click(); QVERIFY(objects->items().isEmpty()); QVERIFY(editor->draft());
-            table->removeRow(1); apply->click(); QCOMPARE(objects->items().size(), 1); QVERIFY(!editor->draft());
+            QTest::keyClick(title, Qt::Key_Return); QVERIFY(objects->items().isEmpty()); QVERIFY(editor->draft());
+            table->removeRow(1); QTest::keyClick(title, Qt::Key_Return); QCOMPARE(objects->items().size(), 1); QVERIFY(!editor->draft());
             id = objects->items().firstKey(); QCOMPARE(objects->find(id)->title, QStringLiteral("Observation post"));
             QVERIFY(selection->item()); QCOMPARE(selection->item()->id, id); QVERIFY(regular->isVisible()); QVERIFY(!pane->isVisible());
             QCOMPARE(selection->item()->properties.value(QStringLiteral("Unit")).toString(), QStringLiteral("Alpha"));
@@ -816,6 +830,10 @@ private slots:
             context(QStringLiteral("moveMarker")); QCOMPARE(map->cursor().shape(), Qt::CrossCursor);
             QTest::mouseMove(map, position() + QPoint(70, 40)); QCOMPARE(objects->find(id)->geometry, original);
             QTest::keyClick(map, Qt::Key_Escape); QCOMPARE(objects->find(id)->geometry, original); QVERIFY(map->cursor().shape() != Qt::CrossCursor);
+            QVERIFY(modeStatus->text().isEmpty());
+            context(QStringLiteral("moveMarker")); QCOMPARE(modeStatus->text(), QStringLiteral("M"));
+            QTest::mouseMove(map, position() + QPoint(40, 30)); QTest::keyClick(map, Qt::Key_M);
+            QCOMPARE(objects->find(id)->geometry, original); QVERIFY(modeStatus->text().isEmpty());
             context(QStringLiteral("moveMarker")); const auto destination = position() + QPoint(70, 40);
             QTest::mouseMove(map, destination); QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, destination); QVERIFY(objects->find(id)->geometry != original);
             auto *undo = window.findChild<QAction *>(QStringLiteral("undoAction")); QVERIFY(undo); QVERIFY(!undo->isEnabled());
@@ -829,7 +847,7 @@ private slots:
             map->setFocus(); QTest::keyClick(map, Qt::Key_M); QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
             QVERIFY(editor->draft()); QTest::keyClick(title, Qt::Key_Escape); QVERIFY(!editor->draft()); QCOMPARE(objects->items().size(), 1);
             map->setFocus(); QTest::keyClick(map, Qt::Key_M); QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
-            apply->click(); QCOMPARE(objects->items().size(), 2); QCOMPARE(selection->item()->label, QStringLiteral("New Marker"));
+            QTest::keyClick(title, Qt::Key_Return); QCOMPARE(objects->items().size(), 2); QCOMPARE(selection->item()->label, QStringLiteral("New Marker"));
             const auto temporaryId = selection->item()->id; objects->remove(temporaryId);
             QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, position()); QVERIFY(selection->item()); QCOMPARE(selection->item()->id, id);
             regular->setFloating(true); regular->show(); regular->activateWindow(); QVERIFY(QTest::qWaitForWindowExposed(regular));
@@ -1156,6 +1174,8 @@ private slots:
             QPointer<QMessageBox> dialog = window.findChild<QMessageBox *>(QStringLiteral("aboutDialog"));
             QVERIFY(dialog);
             QVERIFY(dialog->text().contains(QStringLiteral("Version ") + QStringLiteral(SWAK_VERSION)));
+            QVERIFY(dialog->informativeText().contains(QStringLiteral(SWAK_REVISION)));
+            QVERIFY(QStringLiteral(SWAK_VERSION).contains(QStringLiteral("+g")) || QStringLiteral(SWAK_VERSION).endsWith(QStringLiteral("+unknown")));
             QCOMPARE(dialog->textFormat(), Qt::PlainText);
             about->trigger();
             QCOMPARE(window.findChildren<QMessageBox *>().size(), 1);

@@ -317,6 +317,8 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         auto *dialog = new QMessageBox(QMessageBox::Information, tr("About SWAK"),
             tr("SWAK\nVersion %1\n\nA native Cursor-on-Target workspace.\nReceive, generate, and present CoT events with built-in plugins.")
                 .arg(QStringLiteral(SWAK_VERSION)), QMessageBox::Close, this);
+        dialog->setInformativeText(tr("Git SHA: %1").arg(QStringLiteral(SWAK_REVISION))
+            + (QStringLiteral(SWAK_GIT_TAG).isEmpty() ? QString{} : tr("\nGit tag: %1").arg(QStringLiteral(SWAK_GIT_TAG))));
         dialog->setObjectName(QStringLiteral("aboutDialog"));
         dialog->setTextFormat(Qt::PlainText);
         dialog->setAttribute(Qt::WA_DeleteOnClose);
@@ -347,6 +349,17 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     connect(activity, &QAbstractItemModel::rowsRemoved, internal, updateInternal);
     connect(activity, &QAbstractItemModel::modelReset, internal, updateInternal);
     updateInternal();
+    separator();
+    auto *toolStatus = new QLabel(statusBar());
+    toolStatus->setObjectName(QStringLiteral("mapToolStatus"));
+    toolStatus->setTextFormat(Qt::PlainText);
+    toolStatus->setAccessibleName(tr("Active map tools"));
+    toolStatus->setToolTip(tr("Active map tools"));
+    toolStatus->setMinimumWidth(toolStatus->fontMetrics().horizontalAdvance(QStringLiteral("M")) + 8);
+    statusBar()->addWidget(toolStatus);
+    const auto updateToolStatus = [mapTools, toolStatus] { toolStatus->setText(mapTools->statusText()); };
+    connect(mapTools, &MapTools::changed, toolStatus, updateToolStatus);
+    updateToolStatus();
     if (auto *provider = dynamic_cast<StatusProvider *>(centralWidget())) {
         if (auto *widget = provider->createStatusWidget(statusBar())) {
             separator();

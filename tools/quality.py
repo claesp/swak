@@ -118,6 +118,7 @@ def main():
     status = {'mode': args.mode, 'seconds': env['SWAK_SOAK_SECONDS'], 'status': 'failed'}
     try:
         run([sys.executable, '-B', ROOT / 'tests/test_quality_runner.py'], report / 'runner-tests.log', 15, env)
+        run([sys.executable, '-B', ROOT / 'tests/test_version.py'], report / 'version-tests.log', 30, env)
         command = ['cmake', '--preset', preset]
         if args.qt_prefix:
             command += [f'-DCMAKE_PREFIX_PATH={args.qt_prefix}']

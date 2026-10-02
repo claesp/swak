@@ -212,4 +212,12 @@ With the map or Information pane focused, Backspace or Delete removes the select
 File > Settings > General > Markers changes circle color, radius, and guide opacity. File > Settings > Keybindings > Markers changes the creation key. It accepts one letter without modifiers. A tool activation key takes priority over a map navigation key with the same value. Choose different keys for these actions. The model allows at most 256 objects and reserves storage for undo. ID, Latitude, and Longitude are reserved property names.
 
 
-The coordinate grid shows longitude along the top and bottom edges, and latitude along the left and right edges. Lines and labels use black at 20 percent opacity. Intervals follow zoom and latitude, with rounded decimal degrees and compass letters. File > Settings > General > Map controls grid visibility, opacity, and spacing in logical pixels.
+During marker placement or movement, the coordinate grid shows longitude along the top and bottom edges, and latitude along the left and right edges. Lines and labels use black at 50 percent opacity. Intervals follow zoom and latitude, with rounded decimal degrees and compass letters. File > Settings > General > Map controls grid visibility, opacity, and spacing in logical pixels.
+
+
+Press the marker activation key again to leave placement mode. The default key is M. The same key cancels movement and restores the original position. The status bar shows M during placement or movement and clears it when that mode ends. Press Enter in the Title field to apply marker details. Enter uses the same validation as Apply.
+
+Help > About shows the application version and full Git SHA. The SHA identifies the source commit. The version includes a short SHA and adds `-dirty` when tracked files contain uncommitted changes. About also shows an exact Git tag when one exists. Builds without Git metadata show `+unknown`. These values identify the build but do not query a server for newer releases.
+
+
+The coordinate grid hides when marker mode ends. The grid stays below data-feed and local markers. File > Settings > General > Map can also disable the grid during marker mode.

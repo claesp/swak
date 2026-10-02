@@ -12,6 +12,8 @@ public:
     virtual bool handle(QEvent &event, const Viewport &view, QWidget &map) = 0;
     virtual void paint(QPainter &painter, const Viewport &view) const = 0;
     virtual void paintOverlay(QPainter &, const Viewport &) const {}
+    virtual QString statusText() const { return {}; }
+    virtual bool coordinateGridActive() const { return false; }
     virtual bool cancel() = 0;
     virtual bool deleteSelection() { return false; }
 signals:
@@ -26,6 +28,8 @@ public:
     bool handle(QEvent &event, const Viewport &view, QWidget &map);
     void paint(QPainter &painter, const Viewport &view) const;
     void paintOverlay(QPainter &painter, const Viewport &view) const;
+    QString statusText() const;
+    bool coordinateGridActive() const;
     bool cancel();
     bool deleteSelection();
 signals:

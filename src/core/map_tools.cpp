@@ -28,6 +28,18 @@ bool MapTools::deleteSelection()
 {
     return std::any_of(tools_.cbegin(), tools_.cend(), [](const auto &tool) { return tool && tool->deleteSelection(); });
 }
+bool MapTools::coordinateGridActive() const
+{
+    return std::any_of(tools_.cbegin(), tools_.cend(), [](const auto &tool) { return tool && tool->coordinateGridActive(); });
+}
+QString MapTools::statusText() const
+{
+    QStringList labels;
+    for (const auto &tool : tools_) if (tool) {
+        const auto text = tool->statusText(); if (!text.isEmpty()) labels.append(text);
+    }
+    return labels.join(QStringLiteral(" "));
+}
 bool MapTools::cancel()
 {
     bool cancelled = false;

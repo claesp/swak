@@ -521,3 +521,26 @@ The release rebuild passed without compiler warnings. The executable remains `bu
 
 
 The final native sanitizer run passed all 39 functional cases in `build/quality/20261002-225224-gui-191008`. LeakSanitizer then reported the existing Mesa leak of 240732 bytes in 1073 allocations. The diagnostic remains failed, without suppression. Final static analysis passed in `build/quality/20261002-225226-analyze-2`.
+
+
+## 2026-10-02: Build identity and marker mode
+
+Application versions now include the first 12 Git SHA characters, such as `0.1.0+g123456789abc`. Help > About also shows the full SHA and an exact tag when available. Tag labels permit letters, digits, dots, underscores, plus signs, and hyphens. Other characters become underscores. Builds add `-dirty` for uncommitted tracked changes. Missing Git metadata produces `+unknown`. The application does not query a server for newer versions.
+
+Ninja refreshes the generated version header on every build. CMake writes the header only when its contents change. Builds after commits and tag changes therefore refresh their identity without manual configuration. The final release must be rebuilt after the task commit. `tests/test_version.py` tests clean and dirty repositories, commit changes, exact tags, unchanged output timestamps, and missing metadata. Each diagnostic mode runs this test in a temporary repository.
+
+The marker activation key now toggles an active tool off. The default key remains M. Auto-repeat does not toggle the mode. During movement, toggling off restores the original position. The status bar reserves an area for active map tools. The marker plugin supplies M during placement and movement, then clears it when the mode ends. The shared MapTool API supplies statusText and coordinateGridActive. The host does not inspect marker plugin state directly.
+
+The coordinate grid now appears only during marker placement or movement. Its default opacity is 50 percent. Profiles with the old 20 percent default migrate once. Other custom opacity values survive. A saved style version permits later user changes back to 20 percent. Grid visibility remains configurable. The grid draws below data-feed and local markers so it does not darken their symbols.
+
+Enter in the Title field now runs the same Apply method as the button. Invalid properties keep the editor open and preserve the draft. Valid details save and show regular Information. Empty titles still use New Marker.
+
+Eight sanitizer suites passed in `build/quality/20261002-230352-quick-192583`. Final static analysis passed in `build/quality/20261002-230809-analyze-194847`. All 39 native sanitizer cases passed in `build/quality/20261002-230823-gui-195024`. LeakSanitizer then reported the existing Mesa leak of 240732 bytes in 1073 allocations. The diagnostic remains failed, without suppression. Native screenshots show the M indicator, coordinate labels, and full source revision in About.
+
+
+Coverage passed eight suites and all 39 native cases in `build/quality/20261002-230931-coverage-195389`. MapTools reached all 31 lines. ObjectEditor reached 65 of 73 lines, and the marker plugin reached 174 of 177 lines. Remaining gaps include description truncation, editor fallback paths, and defensive marker failures. Line coverage does not establish complete branch or input coverage.
+
+Focused native tests for markers, About, and grid opacity migration passed at 200 percent scaling. Screenshots are in `build/version-mode-native`. The release build log is `build/version-mode-release.log`. Tests use Qt 6.8.2, GCC 14.2, and software Mesa on Debian 13. Hardware graphics, native Wayland, Qt 6.4 compatibility, and multi-hour use remain untested. This task adds no external dependency.
+
+
+The 60-second sanitizer workload passed in `build/quality/20261002-231127-soak-196231`. It completed 1259 cycles with 11198464 bytes of peak memory growth. The maximum heartbeat gap was 47 milliseconds, and idle CPU time was 0.003 seconds. This short workload does not replace multi-hour qualification.

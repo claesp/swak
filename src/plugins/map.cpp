@@ -191,7 +191,7 @@ public:
                 numberSetting(QStringLiteral("missingOpacity"), tr("Missing tile marker opacity"), 0, 1, 2),
                 numberSetting(QStringLiteral("opacity"), tr("Provider opacity"), 0, 1, 2),
                 numberSetting(QStringLiteral("attributionOpacity"), tr("Attribution background opacity"), 0, 1, 2),
-                booleanSetting(QStringLiteral("gridVisible"), tr("Coordinate grid")),
+                booleanSetting(QStringLiteral("gridVisible"), tr("Coordinate grid in marker mode")),
                 numberSetting(QStringLiteral("gridOpacity"), tr("Coordinate grid opacity"), 0, 1, 2),
                 numberSetting(QStringLiteral("gridSpacing"), tr("Coordinate grid spacing (pixels)"), 80, 400),
                 booleanSetting(QStringLiteral("smooth"), tr("Smooth image scaling")),
@@ -210,7 +210,7 @@ public:
                 {QStringLiteral("panSpeed"), panSpeed_}, {QStringLiteral("wheelZoom"), wheelZoom_},
                 {QStringLiteral("wheelReverse"), wheelReverse_}, {QStringLiteral("wheelSteps"), wheelSteps_},
                 {QStringLiteral("prefetchMargin"), prefetchMargin_}};
-        values.insert(QStringLiteral("gridVisible"), gridVisible_); values.insert(QStringLiteral("gridOpacity"), gridOpacity_); values.insert(QStringLiteral("gridSpacing"), gridSpacing_);
+        values.insert(QStringLiteral("gridStyleVersion"), 2); values.insert(QStringLiteral("gridVisible"), gridVisible_); values.insert(QStringLiteral("gridOpacity"), gridOpacity_); values.insert(QStringLiteral("gridSpacing"), gridSpacing_);
         for (size_t i = 0; i < KeyPaths.size(); ++i) values.insert(KeyPaths[i], QKeySequence(keys_[i]).toString(QKeySequence::PortableText));
         return values;
     }
@@ -239,7 +239,8 @@ public:
         opacity_ = preferenceNumber(values, QStringLiteral("opacity"), 1, 0, 1);
         attributionOpacity_ = preferenceNumber(values, QStringLiteral("attributionOpacity"), 0.55, 0, 1);
         gridVisible_ = values.value(QStringLiteral("gridVisible")).toBool(true);
-        gridOpacity_ = preferenceNumber(values, QStringLiteral("gridOpacity"), 0.2, 0, 1);
+        gridOpacity_ = preferenceNumber(values, QStringLiteral("gridOpacity"), 0.5, 0, 1);
+        if (!values.contains(QStringLiteral("gridStyleVersion")) && gridOpacity_ == 0.2) gridOpacity_ = 0.5;
         gridSpacing_ = preferenceNumber(values, QStringLiteral("gridSpacing"), 140, 80, 400);
         smooth_ = values.value(QStringLiteral("smooth")).toBool(true);
         antialias_ = values.value(QStringLiteral("antialias")).toBool(true);
@@ -301,15 +302,19 @@ protected:
         view_.size = size();
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, antialias_);
+        const auto paintBase = [&] {
+            tiles_.paint(painter, view_, opacity_, smooth_, missingOpacity_);
+            if (gridVisible_ && tools_ && tools_->coordinateGridActive()) paintMapGrid(painter, view_, gridOpacity_, gridSpacing_);
+            if (dataSources_) dataSources_->paint(painter, view_);
+        };
         bool tilesPainted = false;
         for (const auto *layer : layers_) {
-            if (!tilesPainted && layer->order() > 0) { tiles_.paint(painter, view_, opacity_, smooth_, missingOpacity_); tilesPainted = true; if (dataSources_) dataSources_->paint(painter, view_); }
+            if (!tilesPainted && layer->order() > 0) { paintBase(); tilesPainted = true; }
             painter.save();
             layer->paint(painter, view_, store_);
             painter.restore();
         }
-        if (!tilesPainted) { tiles_.paint(painter, view_, opacity_, smooth_, missingOpacity_); if (dataSources_) dataSources_->paint(painter, view_); }
-        if (gridVisible_) paintMapGrid(painter, view_, gridOpacity_, gridSpacing_);
+        if (!tilesPainted) paintBase();
         if (overlay_) overlay_->update();
         if (tools_) tools_->paint(painter, view_);
         if (selection_) selection_->paint(painter, view_);
@@ -622,7 +627,7 @@ private:
     QByteArray informationGeometry_;
     ToolOverlay *overlay_ = nullptr;
     bool gridVisible_ = true;
-    double gridOpacity_ = 0.2;
+    double gridOpacity_ = 0.5;
     double gridSpacing_ = 140;
     MapTools *tools_ = nullptr;
     MapSources *sources_ = nullptr;

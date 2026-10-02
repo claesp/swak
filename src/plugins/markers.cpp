@@ -84,6 +84,8 @@ public:
         });
         connect(&editor_, &ObjectEditor::cancelled, this, [this] { emit changed(); });
     }
+    bool coordinateGridActive() const override { return mode_ != Mode::Idle; }
+    QString statusText() const override { return mode_ == Mode::Idle ? QString{} : QStringLiteral("M"); }
     bool cancel() override
     {
         const bool active = mode_ != Mode::Idle;
@@ -102,7 +104,9 @@ public:
             if (key.modifiers() != Qt::NoModifier) return false;
             if (key.key() == Qt::Key_Escape) return cancel();
             if (key.key() == editor_.createKey()) {
-                if (!key.isAutoRepeat()) { cancel(); mode_ = Mode::Placing; selection_.clear(); store_.select({}); pointer_ = map.mapFromGlobal(QCursor::pos()); map.setCursor(Qt::CrossCursor); emit changed(); }
+                if (!key.isAutoRepeat()) {
+                    if (mode_ != Mode::Idle) { cancel(); return true; }
+                    cancel(); mode_ = Mode::Placing; selection_.clear(); store_.select({}); pointer_ = map.mapFromGlobal(QCursor::pos()); map.setCursor(Qt::CrossCursor); emit changed(); }
                 return true;
             }
             if (mode_ == Mode::Idle && (key.key() == Qt::Key_Delete || key.key() == Qt::Key_Backspace)

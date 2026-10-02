@@ -196,3 +196,9 @@ The tool registry holds guarded pointers. Pane ownership controls each tool life
 
 
 `MapTool::paintOverlay` draws transient content above the map. The host uses a transparent, mouse-transparent child widget for this content. Emit `overlayChanged` for pointer-only changes. Emit `changed` when stored content or tool mode changes. The host then updates both surfaces. Overlay painting does not request map tile painting. The view refreshes the overlay when its projection changes. Overlay methods stay on the interface thread and must keep work bounded.
+
+
+`MapTool::statusText` returns a short active-mode indicator or empty text. `MapTools::statusText` combines these indicators. The host reserves a separate status area and refreshes it on `MapTools::changed`. Plugins emit `changed` when a mode starts or ends. The marker tool returns M during placement and movement. Pointer-only updates do not refresh this area.
+
+
+`MapTool::coordinateGridActive` requests the coordinate grid during an active tool mode. `MapTools` combines these requests. The view draws the grid only when a tool requests it and the user enables it. Mode changes emit `changed`, so grid visibility follows activation and cancellation.

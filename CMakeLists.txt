@@ -19,7 +19,13 @@ endif()
 
 add_library(swak_build INTERFACE)
 target_compile_features(swak_build INTERFACE cxx_std_20)
-configure_file(src/core/version.h.in generated/swak/version.h @ONLY)
+set(version_command "${CMAKE_COMMAND}" "-DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
+    "-DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/generated/swak/version.h" "-DBASE_VERSION=${PROJECT_VERSION}"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/version.cmake")
+execute_process(COMMAND ${version_command} COMMAND_ERROR_IS_FATAL ANY)
+add_custom_target(swak_version COMMAND ${version_command}
+    BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/generated/swak/version.h" VERBATIM)
+add_dependencies(swak_build swak_version)
 target_include_directories(swak_build INTERFACE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_compile_options(swak_build INTERFACE
     $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic;-Wconversion;-Wshadow;-fstack-protector-strong>)

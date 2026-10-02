@@ -68,3 +68,12 @@ The ordinary CTest suite uses the offscreen platform and does not test rendering
 Optimized GCC and Clang builds set `_FORTIFY_SOURCE=2` unless the toolchain supplies its own value. This enables supported library bounds diagnostics. Existing stack protection and linker protection remain enabled. Tests and sanitizers remain excluded from the release preset.
 
 The MVT provider uses pinned protozero headers included in the source tree. Builds do not fetch them. Read `docs/dependencies.md` for provenance, licenses, and the security review.
+
+
+# Source revision
+
+Each build refreshes `generated/swak/version.h` through `cmake/version.cmake`. The version includes the first 12 Git SHA characters. The full SHA and an exact tag appear in Help > About. The build adds `-dirty` when tracked files differ from the commit. It does not include untracked files in this test.
+
+Ninja runs the metadata task on every build. CMake changes the header only when its contents change. This updates the version after a commit or tag change without requiring manual configuration. Git is a build-time tool only. A source archive without Git metadata uses `+unknown`.
+
+After committing release sources, rebuild the release preset. Run `build/release/swak --version` to read its source identity. Development diagnostics test metadata generation in a temporary Git repository.
