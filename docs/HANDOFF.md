@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 3, 2026: Read “Polygon selection outline” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 3, 2026: Read “High-zoom OpenGL strokes” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -765,3 +765,22 @@ Selected polygons now use their configured line width for the white outline. The
 Eight sanitizer suites passed in `build/quality/20261003-223556-quick-26949`. Source analysis passed in `build/quality/20261003-223600-analyze-27046`. All 54 native cases passed in `build/quality/20261003-223708-gui-27445`. The existing Mesa leak still makes the GUI sanitizer diagnostic fail. Coverage passed eight suites and 54 native cases in `build/quality/20261003-223747-coverage-27618`. The native OpenGL frame shows the thinner white outline. The final release build log is `build/outline-release-final.log`.
 
 The 60-second workload passed in `build/quality/20261003-223923-soak-28209`. It completed 1169 cycles with 13463552 bytes of peak memory growth. The maximum heartbeat gap was 37 milliseconds, and idle CPU time was 0.003 seconds. Two-hour qualification and hardware graphics remain untested.
+
+
+## 2026-10-03: High-zoom OpenGL strokes
+
+The earlier outline-width change did not fix the reported rendering fault. A native OpenGL regression reproduced it at zoom levels 12 and 19. The old renderer covered every pixel of a 320 by 240 view with the selection stroke. Low-zoom screenshots did not expose this fault.
+
+The shared selection renderer applied the large world-to-screen scale to QPainter while it used cosmetic pens. It now transforms the path into screen coordinates before Qt draws the stroke. Pen widths use logical screen pixels and follow display scaling. Offscreen wrapped paths skip conversion. The correction covers local polygons, imported polygons, and selected vector lines and areas, including OpenFreeMap geometry.
+
+The KML/KMZ feed renderer used the same drawing pattern. It now uses screen-coordinate paths too. Point selections and vector tile preparation already used screen coordinates. No plugin contract, saved format, dependency, or network behavior changed.
+
+New native tests cover solid polygons, dashed polygons, selected lines, and KML lines and polygons at zoom levels 2, 12, and 19. They compare total stroke coverage against an independent screen-coordinate raster reference. The tests allow small antialiasing differences between raster and OpenGL backends. Focused runs passed at normal and 200 percent scaling. Hardware graphics and native Wayland remain untested.
+
+Eight sanitizer suites passed in `build/quality/20261003-225501-quick-30339`. Source analysis passed in `build/quality/20261003-225506-analyze-30450`. All 69 native cases passed in `build/quality/20261003-225828-gui-30875`. LeakSanitizer still reports the existing Mesa leak of 240732 bytes in 1073 allocations. The GUI sanitizer diagnostic remains failed without suppression.
+
+Coverage passed eight suites and 69 native cases in `build/quality/20261003-225912-coverage-31078`. Selection drawing reached all 27 lines. Data sources reached 297 of 298 lines. The remaining line reports skipped network links and unsupported overlays after a download. Branch coverage remains incomplete, including allocation failures and defensive paths. These results do not establish complete input coverage.
+
+The 60-second workload passed in `build/quality/20261003-230048-soak-31725`. It completed 1195 cycles with 14532608 bytes of peak memory growth. The maximum heartbeat gap was 36 milliseconds, and idle CPU time was 0.003 seconds. Two-hour qualification remains untested.
+
+The release build succeeded in `build/selection-release.log`. The final build with committed version metadata uses `build/selection-release-final.log`.

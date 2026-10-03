@@ -146,3 +146,5 @@ MapSources keeps session credentials outside its profile document. Providers def
 Pane plugins can supply a primary action in place of their menu toggle. Map tools request activation through MapTools, and the map view supplies its widget. The Marker command uses this shared path without host code that identifies the marker plugin.
 
 The Polygons plugin creates a separate tool and reuses ObjectEditor for metadata and colors. Shared polygon helpers handle bounded geometry, interior labels, area estimates, and locale formatting. UserObjects validates polygon records before storage. MapTools prioritizes active gestures and separates one-step dismissal from full cancellation.
+
+Selection and feed renderers transform world paths into screen coordinates before Qt draws their strokes. They do not apply the map zoom to the painter. This avoids oversized OpenGL strokes at high zoom and keeps widths consistent with display scaling.

@@ -278,7 +278,7 @@ void DataSources::paint(QPainter &painter, const Viewport &view) const
         const auto &source = feed->source;
         QColor color(source.value(QStringLiteral("color")).toString());
         painter.save(); painter.setOpacity(source.value(QStringLiteral("opacity")).toDouble());
-        QPen pen(color, source.value(QStringLiteral("lineWidth")).toDouble()); pen.setCosmetic(true); painter.setPen(pen);
+        QPen pen(color, source.value(QStringLiteral("lineWidth")).toDouble()); painter.setPen(pen);
         const QPointF origin(view.size.width() / 2, view.size.height() / 2);
         const double scale = view.scale();
         const QRectF screen(QPointF(0, 0), view.size);
@@ -293,10 +293,11 @@ void DataSources::paint(QPainter &painter, const Viewport &view) const
                 } else {
                     const auto bounds = shape.path.boundingRect();
                     if (!screen.intersects(QRectF(bounds.topLeft() * scale + offset, bounds.size() * scale).adjusted(-10, -10, 10, 10))) continue;
-                    painter.save(); painter.translate(offset); painter.scale(scale, scale);
+                    painter.save();
+                    QTransform mapping; mapping.translate(offset.x(), offset.y()); mapping.scale(scale, scale);
                     auto fill = color; fill.setAlphaF(static_cast<float>(source.value(QStringLiteral("fillOpacity")).toDouble()));
                     painter.setBrush(shape.kind == DataShape::Kind::Polygon ? QBrush(fill) : Qt::NoBrush);
-                    painter.drawPath(shape.path); painter.restore();
+                    painter.drawPath(mapping.map(shape.path)); painter.restore();
                 }
                 if (source.value(QStringLiteral("labels")).toBool() && labels < 100 && screen.contains(point) && !shape.name.isEmpty()) {
                     painter.drawText(point + QPointF(8, -8), shape.name); ++labels;

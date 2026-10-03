@@ -93,3 +93,5 @@ The soak workload also creates local marker records, deletes them, and cycles th
 The marker regression measures map paint events during 20 pointer moves. It permits at most two map repaints and requires a separate overlay signal. It also measures the black guide alpha value. Coordinate grid tests draw low and high zoom levels near the equator and both poles. These tests do not measure hardware cursor latency or native Wayland presentation.
 
 The workload also creates polygon records, calculates their area, deletes them, and cycles through undo and redo. Polygon tests cover geometry limits, crossing edges, invalid edits, locale units, menu activation, and restart. Native tests compare preview opacity and inspect the OpenGL frame.
+
+Selection rendering tests compare OpenGL stroke coverage with a screen-coordinate reference at zoom levels 2, 12, and 19. They cover solid polygons, dashed polygons, lines, and downloaded KML geometry. Summed pixel intensity allows small raster and OpenGL antialiasing differences. These tests also run at 200 percent display scaling during focused regression runs.

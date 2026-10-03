@@ -25,12 +25,13 @@ void MapSelection::paint(QPainter &painter, const Viewport &view) const
         } else {
             const QColor inverse(255 - selected.color.red(), 255 - selected.color.green(), 255 - selected.color.blue());
             QPen pen(selected.kind == MapItem::Kind::Line ? inverse : QColor(Qt::white), selected.kind == MapItem::Kind::Polygon ? selected.lineWidth : selected.lineWidth + 2);
-            pen.setCosmetic(true);
             if (selected.kind == MapItem::Kind::Polygon) pen.setStyle(selected.outlineStyle);
             painter.setPen(pen);
             painter.setBrush(selected.kind == MapItem::Kind::Polygon ? QBrush(QColor(255, 255, 255, 35)) : Qt::NoBrush);
-            painter.save(); painter.translate(offset); painter.scale(scale, scale);
-            painter.drawPath(selected.path); painter.restore();
+            // Stroke in screen coordinates. Large painter scales distort cosmetic pens in OpenGL.
+            QTransform transform; transform.translate(offset.x(), offset.y()); transform.scale(scale, scale);
+            const auto bounds = transform.mapRect(selected.path.boundingRect()).adjusted(-pen.widthF(), -pen.widthF(), pen.widthF(), pen.widthF());
+            if (QRectF(QPointF{}, view.size).intersects(bounds)) painter.drawPath(transform.map(selected.path));
         }
     }
     painter.restore();

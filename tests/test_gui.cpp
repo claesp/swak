@@ -80,6 +80,19 @@
 #include <QUdpSocket>
 #include <QLabel>
 
+class SelectionCanvas final : public QOpenGLWidget {
+public:
+    swak::Viewport view;
+    swak::MapSelection selection;
+    swak::DataSources *data = nullptr;
+protected:
+    void paintGL() override {
+        QPainter painter(this); painter.fillRect(rect(), Qt::black);
+        painter.setRenderHint(QPainter::Antialiasing);
+        if (data) data->paint(painter, view); else selection.paint(painter, view);
+    }
+};
+
 class BrowserCapture final : public QObject {
     Q_OBJECT
 public:
@@ -1385,6 +1398,68 @@ private slots:
         QCOMPARE(state.value(QStringLiteral("wheelSteps")).toInt(), 2);
         QVERIFY(state.value(QStringLiteral("wheelReverse")).toBool());
     }
+    void selectionStrokeAtZoom_data()
+    {
+        QTest::addColumn<int>("zoom"); QTest::addColumn<int>("kind"); QTest::addColumn<bool>("feed");
+        for (int zoom : {2, 12, 19}) for (int kind : {0, 1, 2}) for (bool feed : {false, true}) {
+            if (feed && kind == 2) continue;
+            QTest::newRow(qPrintable(QStringLiteral("zoom-%1-kind-%2-feed-%3").arg(zoom).arg(kind).arg(feed))) << zoom << kind << feed;
+        }
+    }
+    void selectionStrokeAtZoom()
+    {
+        QFETCH(int, zoom); QFETCH(int, kind); QFETCH(bool, feed);
+        TileServer server; swak::DataSources sources(QPluginLoader::staticInstances());
+        SelectionCanvas canvas; canvas.resize(320, 240);
+        canvas.view = {QSizeF(320, 240), QPointF(0.63, 0.37), static_cast<double>(zoom)};
+        QPainterPath path;
+        if (kind == 0) { path.moveTo(50, 70); path.lineTo(270, 170); }
+        else path.addRect(QRectF(50, 50, 220, 140));
+        QTransform world; world.translate(canvas.view.center.x(), canvas.view.center.y());
+        world.scale(1 / canvas.view.scale(), 1 / canvas.view.scale()); world.translate(-160, -120);
+        swak::MapItem item; item.kind = kind == 0 ? swak::MapItem::Kind::Line : swak::MapItem::Kind::Polygon;
+        item.color = Qt::black; item.lineWidth = 2; item.path = world.map(path); item.outlineStyle = kind == 2 ? Qt::DashLine : Qt::SolidLine;
+        if (feed) {
+            QVERIFY(server.load(QFINDTESTDATA("fixtures"))); QVERIFY(server.listen(QHostAddress::LocalHost));
+            QStringList coordinates;
+            for (int i = 0; i < item.path.elementCount(); ++i) {
+                const auto point = item.path.elementAt(i); const auto coordinate = swak::unproject({point.x, point.y});
+                coordinates.append(QStringLiteral("%1,%2").arg(QString::number(coordinate.x(), 'g', 17), QString::number(coordinate.y(), 'g', 17)));
+            }
+            const auto geometry = kind == 0 ? QStringLiteral("<LineString><coordinates>%1</coordinates></LineString>")
+                : QStringLiteral("<Polygon><outerBoundaryIs><LinearRing><coordinates>%1</coordinates></LinearRing></outerBoundaryIs></Polygon>");
+            server.body = (QStringLiteral("<kml xmlns=\"http://www.opengis.net/kml/2.2\"><Placemark>") + geometry.arg(coordinates.join(' ')) + QStringLiteral("</Placemark></kml>")).toUtf8();
+            auto source = swak::dataDefaults(); source.insert(QStringLiteral("format"), QStringLiteral("org.swak.kml"));
+            source.insert(QStringLiteral("name"), QStringLiteral("Stroke test")); source.insert(QStringLiteral("attribution"), QStringLiteral("Test fixture"));
+            source.insert(QStringLiteral("endpoint"), QStringLiteral("https://127.0.0.1:%1/stroke.kml").arg(server.serverPort()));
+            source.insert(QStringLiteral("enabled"), true); source.insert(QStringLiteral("ignoreTls"), true);
+            source.insert(QStringLiteral("color"), QStringLiteral("#ffffff")); source.insert(QStringLiteral("opacity"), 1);
+            source.insert(QStringLiteral("fillOpacity"), 35.0 / 255); source.insert(QStringLiteral("lineWidth"), 2); source.insert(QStringLiteral("labels"), false);
+            QVERIFY(sources.put(QStringLiteral("stroke"), source).isEmpty());
+            QVERIFY2(QTest::qWaitFor([&] { return sources.shapeCount(QStringLiteral("stroke")) == 1; }, 5000), qPrintable(sources.status(QStringLiteral("stroke")))); canvas.data = &sources;
+        }
+        canvas.selection.select(item); canvas.show(); QVERIFY(QTest::qWaitForWindowExposed(&canvas));
+        QVERIFY(QTest::qWaitFor([&] { return canvas.isValid(); }));
+        const auto actual = canvas.grabFramebuffer();
+        QImage expected(actual.size(), QImage::Format_ARGB32_Premultiplied); expected.setDevicePixelRatio(canvas.devicePixelRatioF()); expected.fill(Qt::black);
+        {
+            QPainter painter(&expected); painter.setRenderHint(QPainter::Antialiasing);
+            QPen pen(Qt::white, kind == 0 && !feed ? 4 : 2); pen.setStyle(item.outlineStyle);
+            painter.setPen(pen); painter.setBrush(kind == 0 ? Qt::NoBrush : QBrush(QColor(255, 255, 255, 35))); painter.drawPath(path);
+        }
+        // Sum coverage so different edge antialiasing does not change the width measurement.
+        const auto inkCoverage = [](const QImage &image) {
+            qint64 sum = 0;
+            for (int y = 0; y < image.height(); ++y) for (int x = 0; x < image.width(); ++x)
+                sum += image.pixelColor(x, y).red();
+            return sum;
+        };
+        const auto actualCount = inkCoverage(actual), expectedCount = inkCoverage(expected);
+        QVERIFY2(std::abs(actualCount - expectedCount) < expectedCount / 8,
+            qPrintable(QStringLiteral("Rendered intensity is %1; expected about %2.").arg(actualCount).arg(expectedCount)));
+        QVERIFY(actual.save(QStringLiteral("selection-%1-%2-%3.png").arg(zoom).arg(kind).arg(feed)));
+    }
+
     void polygonInputLimits()
     {
         QTemporaryDir directory;
