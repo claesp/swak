@@ -37,19 +37,19 @@ public:
 protected:
     void mouseReleaseEvent(QMouseEvent *event) override
     {
-        if (event->button() == Qt::LeftButton && activatePane(actionAt(event->position().toPoint()))) return;
+        if (event->button() == Qt::LeftButton && activatePluginAction(actionAt(event->position().toPoint()))) return;
         QMenu::mouseReleaseEvent(event);
     }
     void keyPressEvent(QKeyEvent *event) override
     {
         if ((event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter || event->key() == Qt::Key_Space)
-            && activatePane(activeAction())) return;
+            && activatePluginAction(activeAction())) return;
         QMenu::keyPressEvent(event);
     }
 private:
-    bool activatePane(QAction *action)
+    bool activatePluginAction(QAction *action)
     {
-        if (!action || !action->isEnabled() || !action->property("activatesPane").toBool()) return false;
+        if (!action || !action->isEnabled() || !action->property("activatesPluginAction").toBool()) return false;
         if (action->menu()) action->menu()->close();
         for (auto *menu = static_cast<QMenu *>(this); menu; menu = qobject_cast<QMenu *>(menu->parentWidget())) menu->close();
         action->trigger();
@@ -59,7 +59,7 @@ private:
 void addPaneAction(QMenu &menu, QDockWidget &dock, QAction *action = nullptr)
 {
     if (!action) action = menu.addAction(dock.windowTitle());
-    action->setProperty("activatesPane", true);
+    action->setProperty("activatesPluginAction", true);
     action->setCheckable(true);
     const auto sync = [action, &dock] { action->setChecked(!dock.isHidden()); };
     sync();
@@ -311,7 +311,12 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
             provider->populateToolbar(services, *toolbar, menu);
         }
         if (auto *dock = pluginDocks.value(plugin)) {
-            if (menu && !menu->isEmpty()) {
+            auto *pane = qobject_cast<PanePlugin *>(plugin);
+            auto *primary = pane ? pane->primaryAction(dock->widget()) : nullptr;
+            if (primary) {
+                primary->setProperty("activatesPluginAction", true);
+                pluginsMenu->addAction(primary);
+            } else if (menu && !menu->isEmpty()) {
                 addPaneAction(*pluginsMenu, *dock, menu->menuAction());
             } else {
                 if (menu) { delete menu; menu = nullptr; }

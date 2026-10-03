@@ -70,7 +70,7 @@ Saved preferences include these interface choices:
 
 Live events, the selected event, message counts, and generated XML previews are session data. They are not preferences and do not survive a restart. Editor drafts survive without automatically generating events.
 
-Use View > Reset layout to return panes to their initial arrangement. This command keeps editor values, map position, and receiver configuration. Each pane remains available under Tools > Plugins. View contains only Show main toolbar and Reset layout.
+Use View > Reset layout to return panes to their initial arrangement. This command keeps editor values, map position, and receiver configuration. Tools > Plugins contains pane toggles and the Marker placement command. View contains only Show main toolbar and Reset layout.
 
 The default file is `preferences.json` in the Qt application configuration directory. On Linux, Qt uses the user configuration location under `XDG_CONFIG_HOME` or `~/.config`. The application identifies itself with organization `SWAK` and name `swak`.
 
@@ -249,3 +249,5 @@ Tools > Marker Collections manages Core, MILSTD2525, and imported symbol collect
 # Authenticated maps
 
 In Map Providers, select a row and click Edit to choose its authentication method. Apply the provider configuration, then click Credentials to enter a session password or token. The dialog masks the value and never writes it into the profile. Read [Map providers](map-providers.md#credentials) for restart use through environment variables and the Thunderforest templates.
+
+Tools > Plugins > Marker activates marker placement. Click the map to open the marker editor. Press Escape to cancel placement. The configured marker key still toggles marker mode.

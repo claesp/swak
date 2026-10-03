@@ -8,6 +8,7 @@
 class QWidget;
 class QPainter;
 class QMenu;
+class QAction;
 class QToolBar;
 namespace swak {
 class Store;
@@ -71,6 +72,7 @@ public:
     virtual ~PanePlugin() = default;
     virtual QString name() const = 0;
     virtual QWidget *create(PluginServices &services, QWidget *parent) = 0;
+    virtual QAction *primaryAction(QWidget *) { return nullptr; }
 };
 class MenuPlugin {
 public:

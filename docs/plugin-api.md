@@ -250,3 +250,9 @@ Common map fields add `authMode`, `authUser`, `authParameter`, and `authEnvironm
 `authorizeMapRequest` applies a secret only to HTTPS requests for the configured host and port. It rejects certificate bypass and invalid authentication fields. It sets request attributes that prevent disk storage and automatic authentication reuse. The renderer also removes its disk cache for authenticated sources and blocks redirects. Plugins must not add a second credential path or log authorized URLs.
 
 The generic form selects a choice field's first declared value when a saved value is absent. Locale sorting changes the visible order only. This keeps legacy providers unauthenticated when their editor opens.
+
+# Primary pane commands
+
+PanePlugin can return a pane-owned QAction from `primaryAction(QWidget *)`. The argument is the dock content container, which contains the plugin widget. The host uses that action instead of the pane toggle in Tools > Plugins. The default remains the existing pane toggle.
+
+MapTool can emit `activationRequested`, which MapTools forwards to the map view. The view cancels the current tool, calls `activate(QWidget &)`, and focuses the map. The default activation method does nothing. Markers uses this path for the Marker menu action and shares its placement setup with the keyboard action. The editor pane still opens after placement or an explicit edit.

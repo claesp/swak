@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 3, 2026: Read “Authenticated map sources” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 3, 2026: Read “Marker menu activation” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -712,3 +712,22 @@ Credential and provider GUI tests also passed at 200 percent scaling. Screenshot
 The final sanitizer run also passed all eight suites in `build/quality/20261003-201131-quick-10344`. It adds malformed authentication field inputs and assertions for all five new presets.
 
 The final coverage run passed eight suites and all 51 native cases in `build/quality/20261003-201245-coverage-10682`. The authentication helper reached all 67 lines and all eight functions. Defensive branches and real provider behavior still require further testing.
+
+
+## 2026-10-03: Marker menu activation
+
+Tools > Plugins now contains Marker instead of the Edit marker pane toggle. The command activates placement and focuses the map. A map click opens the existing editor. The editor title remains Edit marker. The configured marker key still toggles mode, and Escape cancels placement.
+
+PanePlugin now has an optional primaryAction method. The host uses its pane-owned action instead of the pane toggle. MapTool and MapTools expose a shared activation request, and the map supplies its widget. Menu and keyboard activation use the same marker setup code. Other plugin pane toggles retain their behavior. Read [Plugin API](plugin-api.md) for the added contract.
+
+Focused native tests passed for menu activation, cancellation, placement, saving, repeated activation, and the six remaining pane toggles. Source analysis passed in `build/quality/20261003-202203-analyze-2`. The initial release build succeeded in `build/marker-menu-release.log`. The final metadata build uses `build/marker-menu-release-final.log`.
+
+Eight sanitizer suites passed in `build/quality/20261003-202258-quick-12877`. All 52 native sanitizer cases passed in `build/quality/20261003-202443-gui-13827`, including the actual Marker menu click. LeakSanitizer then reported the existing Mesa leak of 240732 bytes in 1073 allocations. The GUI diagnostic remains failed without suppression.
+
+Coverage passed eight suites and all 52 native cases in `build/quality/20261003-202600-coverage-14044`. MapTools reached all 32 lines and all 14 functions. Markers reached 209 of 212 lines and all 47 functions. The new primary action and activation paths ran. Existing defensive marker and configuration paths retain gaps. Line coverage does not establish complete branch coverage.
+
+The 60-second sanitizer workload passed in `build/quality/20261003-202751-soak-15036`. It completed 1200 cycles with 12247040 bytes of peak memory growth. The maximum heartbeat gap was 66 milliseconds, and idle CPU time was 0.004 seconds. This short workload does not replace two-hour qualification. Tests use Qt 6.8.2 and software Mesa. Hardware graphics, native Wayland, and Qt 6.4 remain untested. No new dependency was added.
+
+The Marker command uses the same menu dispatch as pane commands. This closes the menu before activation and handles clicks at 200 percent scaling. Focused marker and pane tests passed at that scale. An earlier test exposed a dropped click through the default submenu handler. The final test also asserts that the action fires once.
+
+The final native sanitizer run passed all 52 functional cases in `build/quality/20261003-203754-gui-16622`. LeakSanitizer still reports the existing Mesa leak of 240732 bytes in 1073 allocations. The GUI diagnostic remains failed without suppression.

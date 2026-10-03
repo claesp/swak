@@ -1384,6 +1384,35 @@ private slots:
         QCOMPARE(state.value(QStringLiteral("wheelSteps")).toInt(), 2);
         QVERIFY(state.value(QStringLiteral("wheelReverse")).toBool());
     }
+    void markerMenuActivation()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("marker-menu.json")), QPluginLoader::staticInstances());
+        window.show(); window.activateWindow(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *map = window.findChild<QOpenGLWidget *>(); QVERIFY(map);
+        auto *menu = window.findChild<QMenu *>(QStringLiteral("pluginsMenu")); QVERIFY(menu);
+        auto *action = window.findChild<QAction *>(QStringLiteral("markerModeAction")); QVERIFY(action);
+        QVERIFY(menu->actions().contains(action)); QCOMPARE(action->text(), QStringLiteral("Marker"));
+        for (auto *entry : menu->actions()) QVERIFY(entry->text() != QStringLiteral("Edit marker"));
+        auto *tools = window.findChild<swak::MapTools *>(); QVERIFY(tools);
+        auto *editor = window.findChild<swak::ObjectEditor *>(); QVERIFY(editor);
+        auto *objects = window.findChild<swak::UserObjects *>(); QVERIFY(objects);
+        QVERIFY(!editor->isVisible());
+        menu->popup(window.mapToGlobal(QPoint(400, 300))); QVERIFY(QTest::qWaitForWindowExposed(menu));
+        QSignalSpy triggered(action, &QAction::triggered);
+        QTest::mouseClick(menu, Qt::LeftButton, Qt::NoModifier, menu->actionGeometry(action).center());
+        QCOMPARE(triggered.count(), 1);
+        QVERIFY(!menu->isVisible());
+        QCOMPARE(tools->statusText(), QStringLiteral("M")); QCOMPARE(map->cursor().shape(), Qt::CrossCursor);
+        QVERIFY(!editor->isVisible());
+        QTest::keyClick(map, Qt::Key_Escape); QVERIFY(tools->statusText().isEmpty());
+        action->trigger(); QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
+        QVERIFY(editor->isVisible()); QVERIFY(tools->statusText().isEmpty());
+        editor->findChild<QLineEdit *>(QStringLiteral("objectTitle"))->setText(QStringLiteral("Menu marker"));
+        editor->findChild<QPushButton *>(QStringLiteral("applyObject"))->click(); QCOMPARE(objects->items().size(), 1);
+        action->trigger(); QCOMPARE(tools->statusText(), QStringLiteral("M"));
+        QTest::keyClick(map, Qt::Key_M); QVERIFY(tools->statusText().isEmpty());
+    }
     void mapCredentialDialog()
     {
         swak::MapSources maps(QPluginLoader::staticInstances());
@@ -1664,7 +1693,7 @@ private slots:
             QVERIFY(!action->isChecked());
             dock->setFloating(false);
         }
-        QCOMPARE(activated, 7);
+        QCOMPARE(activated, 6);
         QVERIFY(window.grab().save(QStringLiteral("plugin-labels-smoke.png")));
     }
     void clearEventsMenu()

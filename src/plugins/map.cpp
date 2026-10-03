@@ -151,6 +151,9 @@ public:
     }
     void setMapTools(MapTools *tools) {
         tools_ = tools;
+        if (tools_) connect(tools_, &MapTools::activationRequested, this, [this](MapTool *tool) {
+            tools_->cancel(); tool->activate(*this); setFocus(Qt::OtherFocusReason);
+        });
         if (tools_) { overlay_ = new ToolOverlay(*tools_, view_, this); overlay_->setGeometry(rect()); overlay_->show(); attribution_->raise(); }
         if (tools_) connect(tools_, &MapTools::changed, this, qOverload<>(&MapWidget::update));
     }

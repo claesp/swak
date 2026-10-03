@@ -5,6 +5,7 @@ namespace swak {
 void MapTools::add(MapTool *tool)
 {
     if (!tool || tools_.contains(tool)) return;
+    connect(tool, &MapTool::activationRequested, this, [this, tool] { emit activationRequested(tool); });
     tools_.append(tool); connect(tool, &MapTool::changed, this, &MapTools::changed);
     connect(tool, &QObject::destroyed, this, [this] {
         tools_.removeIf([](const auto &entry) { return entry.isNull(); }); emit changed();

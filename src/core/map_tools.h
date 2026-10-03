@@ -14,9 +14,11 @@ public:
     virtual void paintOverlay(QPainter &, const Viewport &, QPointF) const {}
     virtual QString statusText() const { return {}; }
     virtual bool coordinateGridActive() const { return false; }
+    virtual void activate(QWidget &) {}
     virtual bool cancel() = 0;
     virtual bool deleteSelection() { return false; }
 signals:
+    void activationRequested();
     void changed();
     void overlayChanged();
 };
@@ -33,6 +35,7 @@ public:
     bool cancel();
     bool deleteSelection();
 signals:
+    void activationRequested(swak::MapTool *tool);
     void changed();
     void overlayChanged();
 private:

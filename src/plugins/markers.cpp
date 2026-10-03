@@ -97,6 +97,11 @@ public:
         });
         connect(&editor_, &ObjectEditor::cancelled, this, [this] { emit changed(); });
     }
+    void activate(QWidget &map) override
+    {
+        cancel(); map_ = &map; mode_ = Mode::Placing; selection_.clear(); store_.select({});
+        pointer_ = map.mapFromGlobal(QCursor::pos()); map.setCursor(Qt::CrossCursor); emit changed();
+    }
     bool coordinateGridActive() const override { return mode_ != Mode::Idle; }
     QString statusText() const override { return mode_ == Mode::Idle ? QString{} : QStringLiteral("M"); }
     bool cancel() override
@@ -119,7 +124,7 @@ public:
             if (key.key() == editor_.createKey()) {
                 if (!key.isAutoRepeat()) {
                     if (mode_ != Mode::Idle) { cancel(); return true; }
-                    cancel(); mode_ = Mode::Placing; selection_.clear(); store_.select({}); pointer_ = map.mapFromGlobal(QCursor::pos()); map.setCursor(Qt::CrossCursor); emit changed(); }
+                    activate(map); }
                 return true;
             }
             if (mode_ == Mode::Idle && (key.key() == Qt::Key_Delete || key.key() == Qt::Key_Backspace)
@@ -257,13 +262,17 @@ class MarkerPlugin final : public QObject, public Plugin, public PanePlugin, pub
 public:
     QJsonObject markerCollection() const override { return coreMarkerCollection(); }
     QString name() const override { return tr("Edit marker"); }
+    QAction *primaryAction(QWidget *pane) override { return pane->findChild<QAction *>(QStringLiteral("markerModeAction")); }
     QString mapId() const override { return QStringLiteral("org.swak.markers"); }
     QString mapName() const override { return tr("Markers"); }
     Kind mapKind() const override { return Kind::Tool; }
     QWidget *create(PluginServices &services, QWidget *parent) override {
         if (!services.objects || !services.selection || !services.mapTools || !services.collections) return new QWidget(parent);
         auto *editor = new MarkerEditor(*services.objects, *services.collections, parent);
-        services.mapTools->add(new MarkerTool(services, *editor));
+        auto *tool = new MarkerTool(services, *editor);
+        services.mapTools->add(tool);
+        auto *action = new QAction(tr("Marker"), editor); action->setObjectName(QStringLiteral("markerModeAction"));
+        connect(action, &QAction::triggered, tool, [tool] { emit tool->activationRequested(); });
         QTimer::singleShot(0, editor, [editor] { emit editor->visibilityRequested(false); });
         return editor;
     }
