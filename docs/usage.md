@@ -221,3 +221,6 @@ Help > About shows the application version and full Git SHA. The SHA identifies 
 
 
 The coordinate grid hides when marker mode ends. The grid stays below data-feed and local markers. File > Settings > General > Map can also disable the grid during marker mode.
+
+
+After Apply or Enter saves a marker, keyboard focus returns to the map. Press M to create the next marker without closing Information or clicking the map first. This also applies when the editor or Information pane is detached.

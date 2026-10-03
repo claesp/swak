@@ -77,7 +77,14 @@ public:
         connect(&objects_, &UserObjects::restored, this, [this](const QString &id) {
             const auto item = objects_.find(id); if (item && item->type == QStringLiteral("circle")) { cancel(); select(id); }
         });
-        connect(&editor_, &ObjectEditor::applied, this, [this](const QString &id) { select(id); emit changed(); });
+        connect(&editor_, &ObjectEditor::applied, this, [this](const QString &id) {
+            select(id);
+            if (map_ && map_->isVisible()) {
+                map_->window()->activateWindow();
+                map_->setFocus(Qt::OtherFocusReason);
+            }
+            emit changed();
+        });
         connect(&editor_, &ObjectEditor::configurationChanged, this, [this] {
             if (selection_.item() && selection_.item()->owner == owner()) select(selection_.item()->id);
             emit changed();

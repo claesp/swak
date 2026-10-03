@@ -747,6 +747,50 @@ private slots:
         manager->findChild<QPushButton *>(QStringLiteral("removeDataProvider"))->click(); QCOMPARE(feeds->sources().size(), 2);
         manager->close();
     }
+    void markerFocusAfterApply_data()
+    {
+        QTest::addColumn<bool>("floatingEditor");
+        QTest::addColumn<bool>("floatingInformation");
+        for (bool editor : {false, true}) for (bool information : {false, true})
+            QTest::newRow(qPrintable(QStringLiteral("editor-%1-information-%2").arg(editor).arg(information))) << editor << information;
+    }
+    void markerFocusAfterApply()
+    {
+        QFETCH(bool, floatingEditor); QFETCH(bool, floatingInformation);
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("focus.json")), QPluginLoader::staticInstances());
+        window.show(); window.activateWindow(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *map = window.findChild<QOpenGLWidget *>();
+        auto *editor = window.findChild<swak::ObjectEditor *>();
+        auto *objects = window.findChild<swak::UserObjects *>();
+        auto *editorDock = window.findChild<QDockWidget *>(QStringLiteral("org.swak.markers.pane"));
+        auto *infoDock = window.findChild<QDockWidget *>(QStringLiteral("org.swak.information.pane"));
+        QVERIFY(map && editor && objects && editorDock && infoDock);
+        auto *title = editor->findChild<QLineEdit *>(QStringLiteral("objectTitle"));
+        auto *apply = editor->findChild<QPushButton *>(QStringLiteral("applyObject"));
+        auto *status = window.findChild<QLabel *>(QStringLiteral("mapToolStatus"));
+        QVERIFY(title && apply && status);
+        editorDock->setFloating(floatingEditor); infoDock->setFloating(floatingInformation);
+        editorDock->hide(); infoDock->hide(); window.activateWindow(); map->setFocus();
+        QVERIFY(QTest::qWaitFor([&] { return map->hasFocus(); }));
+        for (int cycle = 0; cycle < 6; ++cycle) {
+            QTest::keyClick(QApplication::focusWidget(), Qt::Key_M);
+            QCOMPARE(status->text(), QStringLiteral("M"));
+            QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
+            QVERIFY(editor->draft());
+            editor->window()->activateWindow(); QTest::mouseClick(title, Qt::LeftButton);
+            QVERIFY(QTest::qWaitFor([&] { return title->hasFocus(); }));
+            QTest::keyClicks(QApplication::focusWidget(), QStringLiteral("Marker M"));
+            QVERIFY(status->text().isEmpty());
+            if (cycle % 2 == 0) QTest::keyClick(QApplication::focusWidget(), Qt::Key_Return);
+            else QTest::mouseClick(apply, Qt::LeftButton);
+            QCOMPARE(objects->items().size(), cycle + 1); QVERIFY(!editor->draft());
+            QVERIFY(infoDock->isVisible());
+            QVERIFY2(QTest::qWaitFor([&] { return map->hasFocus(); }), "Saving must return keyboard focus to the map without another user action");
+        }
+        QTest::keyClick(QApplication::focusWidget(), Qt::Key_M); QCOMPARE(status->text(), QStringLiteral("M"));
+        QTest::keyClick(QApplication::focusWidget(), Qt::Key_Escape); QVERIFY(status->text().isEmpty());
+    }
     void editableMarkers()
     {
         QTemporaryDir directory; const auto profile = directory.filePath(QStringLiteral("markers.json")); QString id;

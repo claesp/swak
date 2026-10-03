@@ -544,3 +544,23 @@ Focused native tests for markers, About, and grid opacity migration passed at 20
 
 
 The 60-second sanitizer workload passed in `build/quality/20261002-231127-soak-196231`. It completed 1259 cycles with 11198464 bytes of peak memory growth. The maximum heartbeat gap was 47 milliseconds, and idle CPU time was 0.003 seconds. This short workload does not replace multi-hour qualification.
+
+
+## 2026-10-03: Marker activation after Apply
+
+The new focus regression reproduced the reported failure before the fix. Apply hid Edit marker and opened Information without returning keyboard focus to the map. Qt selected another focus target from the pane layout. M only activates the marker tool when the map receives the key. Earlier tests sent keys directly to the map and therefore missed this failure.
+
+After a successful Apply, the marker plugin selects the saved object, activates the map window, and returns focus to the visible map. It uses the existing guarded map pointer. No global shortcut or delayed focus callback was added. Failed validation still leaves the editor active. Enter and the Apply button share the same completion path.
+
+The regression sends keys to QApplication::focusWidget. It repeats creation six times for each combination of docked and detached editor and Information panes. Each layout alternates Enter and Apply. The test also types M in the title without activating marker mode. All four layouts passed after the fix. The existing marker workflow test also passed.
+
+
+Eight sanitizer suites passed in `build/quality/20261003-075939-quick-199146`. Static analysis passed in `build/quality/20261003-075856-analyze-198992`. All 43 native sanitizer cases passed in `build/quality/20261003-080115-gui-199663`. LeakSanitizer then reported the existing Mesa leak of 240732 bytes in 1073 allocations. The diagnostic remains failed, without suppression.
+
+
+Coverage passed eight suites and all 43 native cases in `build/quality/20261003-080151-coverage-199956`. Marker coverage reached 180 of 183 lines and exercised the new focus-return path. Remaining gaps include existing defensive marker failures. The null or hidden map guard also retains untested branches. Line coverage does not establish complete branch or input coverage.
+
+All four focus cases also passed at 200 percent scaling. The release build log is `build/marker-focus-release.log`. Tests use Qt 6.8.2, GCC 14.2, and software Mesa on Debian 13. Hardware graphics, native Wayland, Qt 6.4 compatibility, and multi-hour use remain untested. This task adds no external dependency.
+
+
+The 60-second sanitizer workload passed in `build/quality/20261003-080333-soak-200644`. It completed 1265 cycles with 11272192 bytes of peak memory growth. The maximum heartbeat gap was 38 milliseconds, and idle CPU time was 0.008 seconds. This short workload does not replace multi-hour qualification.
