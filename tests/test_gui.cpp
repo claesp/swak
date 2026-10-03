@@ -406,7 +406,7 @@ private slots:
             auto *maps = window.findChild<swak::MapSources *>();
             auto *menu = button->menu();
             QMetaObject::invokeMethod(menu, "aboutToShow");
-            QCOMPARE(menu->actions().size(), 7);
+            QCOMPARE(menu->actions().size(), maps->sources().size() + 3);
             QCOMPARE(menu->actions().first()->text(), QStringLiteral("No map provider"));
             QVERIFY(menu->actions().first()->isChecked());
             menu->actions().at(1)->trigger();
@@ -580,7 +580,7 @@ private slots:
         QVERIFY(dialog);
         QVERIFY(QTest::qWaitForWindowExposed(dialog));
         auto *list = dialog->findChild<QTableWidget *>(QStringLiteral("mapProviderList"));
-        QCOMPARE(list->rowCount(), 4);
+        QCOMPARE(list->rowCount(), 5);
         QVERIFY(dialog->grab().save(QStringLiteral("map-providers-smoke.png")));
         dialog->findChild<QRadioButton *>(QStringLiteral("activeProvider/") + id)->click();
         QVERIFY(QTest::qWaitFor([&] { return sources->activeId() == id; }));
@@ -599,7 +599,7 @@ private slots:
             QVERIFY(editor->grab().save(QStringLiteral("add-provider-smoke.png")));
         });
         dialog->findChild<QPushButton *>(QStringLiteral("addMapProvider"))->click();
-        QCOMPARE(list->rowCount(), 4);
+        QCOMPARE(list->rowCount(), 5);
         QTimer::singleShot(0, dialog, [dialog, id, source] {
             auto *editor = dialog->findChild<swak::SettingsDialog *>();
             QVERIFY(editor);
@@ -614,9 +614,9 @@ private slots:
             editor->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
         });
         dialog->findChild<QPushButton *>(QStringLiteral("addMapProvider"))->click();
-        QCOMPARE(list->rowCount(), 5);
+        QCOMPARE(list->rowCount(), 6);
         dialog->findChild<QPushButton *>(QStringLiteral("removeMapProvider"))->click();
-        QCOMPARE(list->rowCount(), 4);
+        QCOMPARE(list->rowCount(), 5);
         for (int i = 0; i < list->rowCount(); ++i) if (list->item(i, 1)->data(Qt::UserRole).toString() == id) list->setCurrentCell(i, 1);
         QTimer::singleShot(0, dialog, [dialog, id] {
             auto *editor = dialog->findChild<swak::SettingsDialog *>();
@@ -827,6 +827,43 @@ private slots:
         QSignalSpy frames(map, &QOpenGLWidget::frameSwapped); map->update(); QVERIFY(frames.wait(2000));
         QVERIFY(window.screen()->grabWindow(window.winId()).save(QStringLiteral("map-overlays.png")));
     }
+    void militaryMarkerWorkflow()
+    {
+        QTemporaryDir directory; const auto profile = directory.filePath(QStringLiteral("symbols.json")); QString id;
+        {
+            swak::Window window(profile, QPluginLoader::staticInstances()); window.show(); window.activateWindow();
+            QVERIFY(QTest::qWaitForWindowExposed(&window));
+            auto *map = window.findChild<QOpenGLWidget *>(); auto *editor = window.findChild<swak::ObjectEditor *>();
+            auto *objects = window.findChild<swak::UserObjects *>(); auto *selection = window.findChild<swak::MapSelection *>();
+            map->setFocus(); QTest::keyClick(map, Qt::Key_M); QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
+            auto *type = editor->findChild<QComboBox *>(QStringLiteral("objectType"));
+            const auto code = QStringLiteral("a-h-G-U-C-I"); type->setCurrentIndex(type->findData(code));
+            QVERIFY(editor->grab().save(QStringLiteral("military-marker-editor.png")));
+            auto *apply = editor->findChild<QPushButton *>(QStringLiteral("applyObject")); apply->click();
+            id = objects->items().firstKey(); QCOMPARE(objects->find(id)->symbol, code);
+            QCOMPARE(objects->find(id)->color, QStringLiteral("#ff8080")); QCOMPARE(selection->item()->symbol, code);
+            QVERIFY(selection->item()->type.contains(QStringLiteral("infantry")));
+            objects->remove(id); objects->undoStack().undo(); QCOMPARE(objects->find(id)->symbol, code);
+            editor->edit(*objects->find(id)); QCOMPARE(type->currentData().toString(), code);
+            type->setCurrentIndex(0); editor->cancel(); QCOMPARE(objects->find(id)->symbol, code);
+            QVERIFY(window.savePreferences());
+        }
+        swak::Window restored(profile, QPluginLoader::staticInstances());
+        QCOMPARE(restored.findChild<swak::UserObjects *>()->find(id)->symbol, QStringLiteral("a-h-G-U-C-I"));
+        restored.show(); QVERIFY(QTest::qWaitForWindowExposed(&restored));
+        auto *map = restored.findChild<QOpenGLWidget *>();
+        auto *settings = dynamic_cast<swak::SettingsParticipant *>(map); QVERIFY(settings);
+        const auto values = settings->savePreferences();
+        const auto position = swak::unproject(QPointF(values.value(QStringLiteral("centerX")).toDouble(), values.value(QStringLiteral("centerY")).toDouble()));
+        swak::Event event; event.uid = QStringLiteral("received-symbol"); event.type = QStringLiteral("a-n-G-U-C-A"); event.how = QStringLiteral("h-e");
+        event.time = QDateTime::currentDateTimeUtc(); event.start = event.time; event.stale = event.time.addSecs(60);
+        event.latitude = position.y(); event.longitude = position.x();
+        QVERIFY(restored.store().accept(event).isEmpty());
+        restored.findChild<swak::UserObjects *>()->remove(id);
+        QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
+        auto *selection = restored.findChild<swak::MapSelection *>(); QVERIFY(selection->item());
+        QCOMPARE(selection->item()->symbol, event.type);
+    }
     void markerAppearance()
     {
         QTemporaryDir directory; const auto profile = directory.filePath(QStringLiteral("colors.json")); QString id;
@@ -837,7 +874,7 @@ private slots:
             auto *objects = window.findChild<swak::UserObjects *>(); auto *selection = window.findChild<swak::MapSelection *>();
             map->setFocus(); QTest::keyClick(map, Qt::Key_M); QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
             auto *type = editor->findChild<QComboBox *>(QStringLiteral("objectType")); QVERIFY(type);
-            QCOMPARE(type->count(), 1); QCOMPARE(type->currentText(), QStringLiteral("Marker"));
+            QCOMPARE(type->count(), 17); QCOMPARE(type->currentText(), QStringLiteral("Marker"));
             auto *orange = editor->findChild<QToolButton *>(QStringLiteral("objectColor1")); QVERIFY(orange && orange->isChecked());
             for (int i = 0; i < 8; ++i) QVERIFY(editor->findChild<QToolButton *>(QStringLiteral("objectColor%1").arg(i)));
             auto *blue = editor->findChild<QToolButton *>(QStringLiteral("objectColor5")); blue->click(); QVERIFY(blue->isChecked()); QVERIFY(!orange->isChecked());

@@ -108,3 +108,11 @@ Workers paint complete tiles into 512-pixel images for 256 logical pixels. The O
 Live research accepted a world tile with 79 features and a Stockholm tile with 4142 features. The Stockholm sample used tile `14/9014/4818` and contained POIs. These counts describe the sampled dataset, not a fixed service guarantee. Automated tests use local synthetic tiles, so they do not depend on public service availability.
 
 The map shows disk usage below the attribution. The value covers the active certificate-policy cache across its providers. The host refreshes this value every two seconds, outside map painting. The memory-cache limit remains separate. With no open provider cache, the label shows inactive. Cache files are expendable, not an offline archive or a portable map package. SWAK does not bulk-download tiles or ignore HTTP cache restrictions.
+
+# Additional image addressing
+
+The XYZ image plugin also accepts TMS and quadkey addresses. All three use the existing bounded image decoder, cache, HTTPS client, and GPU map renderer. They require Web Mercator tiles. Read [the ATAK reference review](atak-reference-review.md) for source information and scope.
+
+For a south-origin TMS source, enable Invert tile rows (TMS) in the provider editor. The row becomes `2^z - 1 - y`. For a quadkey source, use `{q}` instead of the three coordinate placeholders. Mixed or unknown placeholders are rejected. SWAK accepts integer tile zoom levels from zero through 19. Each source can set a smaller range.
+
+The USGS Topo preset uses `https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}`. This swaps row and column positions without inverting rows. The preset uses zoom levels zero through 16 and links the published service credits. It remains inactive until the user selects it and enables online maps. A deleted preset stays deleted after restart.

@@ -2,6 +2,7 @@
 #include "core/tiles.h"
 #include "core/map_tools.h"
 #include "core/map_grid.h"
+#include "core/marker_symbols.h"
 #include "core/single_line_label.h"
 #include "core/data.h"
 #include <QHideEvent>
@@ -464,6 +465,7 @@ protected:
             if (selectedEvent != store_.events().end() && selection_) {
                 MapItem item; item.label = selectedEvent->callsign.isEmpty() ? selectedEvent->uid : selectedEvent->callsign; item.type = selectedEvent->type;
                 item.point = project(selectedEvent->latitude, selectedEvent->longitude); item.color = Qt::white;
+                item.symbol = markerSymbolForCot(selectedEvent->type);
                 item.properties = {{QStringLiteral("UID"), selectedEvent->uid}, {QStringLiteral("How"), selectedEvent->how},
                     {QStringLiteral("Latitude"), selectedEvent->latitude}, {QStringLiteral("Longitude"), selectedEvent->longitude},
                     {QStringLiteral("Altitude"), selectedEvent->altitude}, {QStringLiteral("Circular error"), selectedEvent->circularError}, {QStringLiteral("Linear error"), selectedEvent->linearError},

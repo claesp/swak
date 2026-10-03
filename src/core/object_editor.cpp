@@ -1,4 +1,5 @@
 #include "core/object_editor.h"
+#include "core/marker_symbols.h"
 #include "core/single_line_label.h"
 #include <QLineEdit>
 #include <QPlainTextEdit>
@@ -40,6 +41,17 @@ ObjectEditor::ObjectEditor(UserObjects &objects, QWidget *parent) : PaneContent(
     layout->addWidget(new QLabel(tr("Type"), this));
     type_ = new QComboBox(this); type_->setObjectName(QStringLiteral("objectType")); type_->setAccessibleName(tr("Type"));
     type_->addItem(tr("Marker"), QStringLiteral("circle")); layout->addWidget(type_);
+    connect(type_, &QComboBox::currentIndexChanged, this, [this] {
+        const auto code = type_->currentData().toString();
+        const auto &symbols = markerSymbols();
+        const auto symbol = std::find_if(symbols.cbegin(), symbols.cend(), [&code](const auto &entry) { return entry.code == code; });
+        if (symbol != symbols.cend()) {
+            color_ = symbol->color.name();
+            colors_->setExclusive(false);
+            for (auto *button : colors_->buttons()) button->setChecked(button->property("markerColor").toString() == color_);
+            colors_->setExclusive(true);
+        }
+    });
     layout->addWidget(new QLabel(tr("Color"), this));
     colors_ = new QButtonGroup(this); colors_->setExclusive(true);
     auto *colorRow = new QHBoxLayout; colorRow->setSpacing(4);
@@ -95,7 +107,20 @@ void ObjectEditor::restoreEditorState(const QJsonObject &values)
 void ObjectEditor::edit(const UserObject &item)
 {
     draft_ = item;
-    type_->clear(); type_->addItem(item.type == QStringLiteral("circle") ? tr("Marker") : item.type, item.type);
+    const QSignalBlocker blockType(type_);
+    type_->clear();
+    if (item.type == QStringLiteral("circle")) {
+        type_->addItem(tr("Marker"), QString{});
+        auto symbols = markerSymbols(); const QCollator order;
+        std::sort(symbols.begin(), symbols.end(), [&order](const auto &a, const auto &b) { return order.compare(a.name, b.name) < 0; });
+        for (const auto &symbol : symbols) {
+            QPixmap icon(20, 20); icon.fill(Qt::transparent);
+            { QPainter painter(&icon); painter.setRenderHint(QPainter::Antialiasing); paintMarkerSymbol(painter, symbol.code, QPointF(10, 10), 7, symbol.color); }
+            type_->addItem(QIcon(icon), symbol.name, symbol.code);
+        }
+        if (!validMarkerSymbol(item.symbol)) type_->addItem(tr("Unsupported symbol (%1)").arg(item.symbol), item.symbol);
+        type_->setCurrentIndex(std::max(0, type_->findData(item.symbol)));
+    } else type_->addItem(item.type, item.type);
     color_ = item.color;
     colors_->setExclusive(false);
     for (auto *button : colors_->buttons()) button->setChecked(button->property("markerColor").toString().compare(color_, Qt::CaseInsensitive) == 0);
@@ -125,7 +150,8 @@ void ObjectEditor::apply()
 {
     if (!draft_) return;
     auto item = *draft_; item.title = title_->text().trimmed(); if (item.title.isEmpty()) item.title = tr("New Marker");
-    item.type = type_->currentData().toString(); item.color = color_;
+    if (item.type == QStringLiteral("circle")) item.symbol = type_->currentData().toString();
+    item.color = color_;
     item.description = description_->toPlainText(); item.properties = {};
     for (int row = 0; row < properties_->rowCount(); ++row) {
         const auto *name = properties_->item(row, 0); const auto *value = properties_->item(row, 1);

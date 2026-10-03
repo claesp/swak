@@ -1,3 +1,4 @@
+#include "core/marker_symbols.h"
 #include "core/interfaces.h"
 #include "core/maps.h"
 #include "core/map_tools.h"
@@ -25,7 +26,7 @@ public:
     QString preferenceId() const override { return QStringLiteral("org.swak.markers"); }
     QString settingsTitle() const override { return tr("Markers"); }
     QList<SettingField> settingsFields() const override {
-        return {keySetting(QStringLiteral("createKey"), tr("Create marker")), numberSetting(QStringLiteral("radius"), tr("Circle radius (pixels)"), 3, 24),
+        return {keySetting(QStringLiteral("createKey"), tr("Create marker")), numberSetting(QStringLiteral("radius"), tr("Marker radius (pixels)"), 3, 24),
             textSetting(QStringLiteral("color"), tr("Default marker color (#RRGGBB)"), 7), numberSetting(QStringLiteral("guideOpacity"), tr("Guide line opacity"), 0, 1, 2)};
     }
     QJsonObject savePreferences() const override {
@@ -178,15 +179,15 @@ public:
         for (const auto &item : objects_.items()) {
             if (item.type != QStringLiteral("circle") || (mode_ == Mode::Moving && item.id == moving_.id)) continue;
             painter.setBrush(QColor(item.color));
-            painter.drawEllipse(screen(location(item), view), editor_.radius(), editor_.radius());
+            paintMarkerSymbol(painter, item.symbol, screen(location(item), view), editor_.radius(), QColor(item.color));
         }
-        if (editor_.draft() && !objects_.find(editor_.draft()->id)) { painter.setBrush(QColor(editor_.draft()->color)); painter.drawEllipse(screen(location(*editor_.draft()), view), editor_.radius(), editor_.radius()); }
+        if (editor_.draft() && !objects_.find(editor_.draft()->id)) { painter.setBrush(QColor(editor_.draft()->color)); paintMarkerSymbol(painter, editor_.draft()->symbol, screen(location(*editor_.draft()), view), editor_.radius(), QColor(editor_.draft()->color)); }
     }
     void paintOverlay(QPainter &painter, const Viewport &view, QPointF pointer) const override
     {
         painter.setPen(QPen(QColor("#152028"), 2)); painter.setBrush(editor_.color());
         if (mode_ != Mode::Idle) {
-            if (mode_ == Mode::Moving) { painter.setBrush(QColor(moving_.color)); painter.drawEllipse(pointer, editor_.radius(), editor_.radius()); }
+            if (mode_ == Mode::Moving) { painter.setBrush(QColor(moving_.color)); paintMarkerSymbol(painter, moving_.symbol, pointer, editor_.radius(), QColor(moving_.color)); }
             painter.setRenderHint(QPainter::Antialiasing, false);
             painter.setPen(QPen(QColor(0, 0, 0, qRound(editor_.guideOpacity() * 255)), 1));
             painter.drawLine(QPointF(0, pointer.y()), QPointF(view.size.width(), pointer.y()));
@@ -210,8 +211,10 @@ private:
     }
     void select(const QString &id) {
         const auto record = objects_.find(id); if (!record || record->type != QStringLiteral("circle")) return;
-        MapItem item; item.owner = owner(); item.id = id; item.label = record->title; item.type = tr("Marker"); item.description = record->description;
-        item.point = location(*record); item.radius = editor_.radius(); item.color = QColor(record->color); item.properties = record->properties;
+        MapItem item; item.owner = owner(); item.id = id; item.label = record->title; item.type = tr("Marker");
+        for (const auto &symbol : markerSymbols()) if (symbol.code == record->symbol) item.type = symbol.name;
+        item.description = record->description;
+        item.point = location(*record); item.radius = editor_.radius(); item.symbol = record->symbol; item.color = QColor(record->color); item.properties = record->properties;
         const auto coordinate = unproject(item.point);
         item.properties.insert(QStringLiteral("ID"), id); item.properties.insert(QStringLiteral("Latitude"), coordinate.y()); item.properties.insert(QStringLiteral("Longitude"), coordinate.x());
         store_.select({}); selection_.select(std::move(item));

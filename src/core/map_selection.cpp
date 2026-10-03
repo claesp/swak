@@ -1,5 +1,6 @@
 #include "core/map_selection.h"
 #include <QPainter>
+#include "core/marker_symbols.h"
 namespace swak {
 void MapSelection::paint(QPainter &painter, const Viewport &view) const
 {
@@ -15,7 +16,7 @@ void MapSelection::paint(QPainter &painter, const Viewport &view) const
         if (selected.kind == MapItem::Kind::Point) {
             painter.setBrush(Qt::NoBrush);
             painter.setPen(QPen(Qt::white, 3));
-            painter.drawEllipse(selected.point * scale + offset, selected.radius + 2, selected.radius + 2);
+            painter.drawPath(markerFrame(selected.symbol, selected.point * scale + offset, selected.radius + 2));
         } else {
             const QColor inverse(255 - selected.color.red(), 255 - selected.color.green(), 255 - selected.color.blue());
             QPen pen(selected.kind == MapItem::Kind::Line ? inverse : QColor(Qt::white), selected.lineWidth + 2);

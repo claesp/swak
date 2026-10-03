@@ -216,4 +216,14 @@ The host places all attached panes above the map in `MapPanels`. Panes cover map
 
 `window.overlayLayout` stores pane relationships. `window.layout` stores the outer window toolbar state. The host reads older dock layouts when `overlayLayout` is absent. Individual pane records and unknown plugin sections remain available as before.
 
-The shared object editor shows Type after Title. Circle records show Marker as their type. The editor offers eight color buttons and preserves other valid stored colors. Apply saves the selected color with the object. Deletion undo and movement retain that color.
+The shared object editor shows Type after Title. Circle records offer Marker and the supported ground-unit symbols. The editor offers eight color buttons and preserves other valid stored colors. Apply saves the selected color with the object. Deletion undo and movement retain that color.
+
+# Source presets and shared symbols
+
+`MapProvider::additionalSources` optionally returns a JSON object of stable preset identifiers and source records. The default implementation returns an empty object. The host sets each record's `format` to the provider identifier and validates the source. Presets use the same settings, management, networking, and rendering interfaces as user sources. The shared interface remains `/1.0` within the existing same-build static plugin contract.
+
+Preset identifiers use the same bounded syntax as user source identifiers. Plugins must keep identifiers stable and distinct from provider identifiers. `MapSources` adds missing presets to old profiles without replacing existing records. Its `knownPresets` array prevents a deleted preset from returning. The host retains records when a provider disappears and limits the catalog to 32 sources. The remembered preset list stops growing at 256 entries.
+
+`UserObject::symbol` stores an optional identifier of at most 64 letters, digits, periods, or hyphens. An empty identifier means the existing circle. Unsupported identifiers remain in preferences and render as circles. Symbol choice does not change the underlying geometry type. The editor stores the symbol and color together on Apply. Undo, movement, cancellation, and restart retain the complete record.
+
+`markerSymbols`, `markerSymbolForCot`, `markerFrame`, and `paintMarkerSymbol` form the shared vector-symbol API in `core/marker_symbols.h`. The marker tool and CoT Events plugin use these functions. `MapItem::symbol` carries the frame choice to the selection renderer. No plugin owns a separate icon catalog. The current subset and provenance appear in [the reference review](atak-reference-review.md).

@@ -23,6 +23,7 @@ struct MapItem {
     QColor color;
     double radius = 6;
     double lineWidth = 2;
+    QString symbol = {};
 };
 class MapSelection final : public QObject {
     Q_OBJECT

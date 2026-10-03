@@ -1,3 +1,4 @@
+#include "core/marker_symbols.h"
 #include "core/logging.h"
 #include "core/interfaces.h"
 #include "core/projection.h"
@@ -133,10 +134,13 @@ public:
             const QPointF point = view.screen(event.latitude, event.longitude);
             if (!visible.adjusted(-12, -12, 12, 12).contains(point)) continue;
             const bool selected = event.uid == store.selected();
-            painter.setPen(QPen(selected ? QColor("#ffffff") : QColor("#13202a"), selected ? 3 : 2));
-            painter.setBrush(event.type.startsWith(QLatin1String("a-f")) ? QColor("#54c8ff") :
-                             event.type.startsWith(QLatin1String("a-h")) ? QColor("#ff7a7a") : QColor("#f6d477"));
-            painter.drawEllipse(point, selected ? 8 : 6, selected ? 8 : 6);
+            const auto symbol = markerSymbolForCot(event.type);
+            QColor color = event.type.startsWith(QLatin1String("a-f-")) ? QColor("#54c8ff") :
+                event.type.startsWith(QLatin1String("a-h-")) ? QColor("#ff7a7a") : QColor("#f6d477");
+            const auto &symbols = markerSymbols();
+            const auto found = std::find_if(symbols.cbegin(), symbols.cend(), [&symbol](const auto &entry) { return entry.code == symbol; });
+            if (found != symbols.cend()) color = found->color;
+            paintMarkerSymbol(painter, symbol, point, selected ? 8 : 6, color, selected);
             if (selected || labels++ < 100) {
                 painter.setPen(QColor("#ffffff"));
                 painter.drawText(point + QPointF(12, -8), (event.callsign.isEmpty() ? event.uid : event.callsign).left(32));

@@ -93,3 +93,5 @@ The editor changes a copy until Apply succeeds. Move previews do not alter saved
 
 
 Marker records accept colors only in `#RRGGBB` format. The existing record and model budgets include this field. Color selection does not load files, styles, or remote resources. Overlay panels add no worker, network request, or dependency.
+
+The image provider accepts only known coordinate placeholders and a boolean row-inversion value. Tile coordinates remain bounded before shifts or quadkey generation. New presets do not enable downloads. Military symbols use built-in vector paths and bounded identifiers, without external fonts, images, or symbol scripts. Unknown saved identifiers remain intact and render as circles.

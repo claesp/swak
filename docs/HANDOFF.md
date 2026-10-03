@@ -614,3 +614,23 @@ Coverage passed eight suites and all 47 native cases in `build/quality/20261003-
 The 60-second sanitizer workload passed in `build/quality/20261003-130939-soak-225684`. It completed 1263 cycles with 11227136 bytes of peak memory growth. The maximum heartbeat gap was 36 milliseconds, and idle CPU time was 0.008 seconds. This short workload does not replace two-hour qualification.
 
 Provider-status and workspace tests passed at 200 percent scaling. Screenshots are in `build/overlays-native`. Tests use Qt 6.8.2, GCC 14.2, and software Mesa on Debian 13. Hardware graphics, native Wayland, and Qt 6.4 remain untested. The release build log is `build/status-sections-release.log`.
+
+## 2026-10-03: ATAK format references and vector symbols
+
+The latest task reviews ATAK-CIV for factual references without copying source files or artwork. The inspected commit is `9f6893dd657feacc35ec5de03dad721c2e44170e`. A temporary clone remains outside this repository. Read [the reference review](atak-reference-review.md) for source paths, public specifications, and scope.
+
+The image provider now supports TMS row inversion and quadkey addressing through the existing image pipeline. An optional shared `MapProvider::additionalSources` method supplies additional presets. Stable remembered identifiers prevent deleted presets from returning after restart. Missing plugins retain their source records. The separately researched USGS Topo preset uses its public HTTPS tile service and starts inactive. A live request returned a 256-pixel JPEG tile.
+
+A shared vector catalog provides sixteen original ground-unit symbols based on MIL-STD-2525C conventions. Four identities combine with generic unit, infantry, armor, and medical roles. Local markers and received CoT events use the same vector paths. Unsupported CoT types remain circles. This is a limited subset, not a compliance claim. No new dependency, font, or imported artwork was added.
+
+Local records store a bounded symbol identifier beside the existing color. Unknown saved identifiers remain intact. Apply, cancellation, deletion undo, movement, selection, and restart use the existing object services. Marker sizes remain unchanged. CoT selection now uses the symbol frame instead of adding a circular outline.
+
+The first full GUI run exposed an outdated toolbar count after the additional preset. The test now derives the count from registered sources. Source analysis requested standard search algorithms in three loops. Those loops now use `std::find_if`. Focused symbol and toolbar tests passed at 200 percent scaling.
+
+The 60-second sanitizer workload passed in `build/quality/20261003-133859-soak-231845`. It completed 1255 cycles with 11411456 bytes of peak memory growth. The maximum heartbeat gap was 36 milliseconds, and idle CPU time was 0.003 seconds. This short workload does not replace two-hour qualification.
+
+Eight sanitizer suites passed in `build/quality/20261003-134128-quick-232481`. All 48 native sanitizer cases passed in `build/quality/20261003-134225-gui-233188`. LeakSanitizer reported the existing Mesa leak of 240732 bytes in 1073 allocations. The GUI diagnostic remains failed without suppression. Source analysis passed in `build/quality/20261003-134355-analyze-234572`.
+
+Coverage passed eight suites and all 48 native cases in `build/quality/20261003-134245-coverage-233346`. The shared symbols reached 54 of 54 lines, and CoT Events reached 146 of 146 lines. The image provider reached 42 of 43 lines. Its early return for invalid common fields remains unexecuted in that provider. Existing property-editor callbacks, generic map settings fields, and defensive marker failures also retain gaps. Line coverage does not establish complete branch or input coverage.
+
+Tests use Qt 6.8.2, GCC 14.2, and software Mesa on Debian 13. Hardware graphics, native Wayland, Qt 6.4 compatibility, and two-hour qualification remain untested. Screenshots are under `build/atak-native` and the coverage report directory. The release build log is `build/atak-release.log`. The final release metadata refresh uses `build/atak-release-final.log`.

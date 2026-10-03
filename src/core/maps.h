@@ -16,6 +16,7 @@ class MapProvider : public MapExtension {
 public:
     Kind mapKind() const override { return Kind::Provider; }
     virtual QJsonObject defaults() const = 0;
+    virtual QJsonObject additionalSources() const { return {}; }
     virtual QList<SettingField> fields() const = 0;
     virtual QString validate(const QJsonObject &source) const = 0;
     virtual QUrl tileUrl(const QJsonObject &source, int zoom, int x, int y) const = 0;
@@ -48,6 +49,7 @@ signals:
     void managementRequested();
     void changed();
 private:
+    void addNewPresets();
     QList<MapProvider *> providers_;
     QJsonObject values_;
 };

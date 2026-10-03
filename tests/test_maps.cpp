@@ -32,6 +32,37 @@ class MapTest final : public QObject {
         renderer.paint(painter, Viewport{QSizeF(256, 256), QPointF(0.5, 0.5), 0}, 1, false);
     }
 private slots:
+    void templateAddressingAndPresets()
+    {
+        auto *xyz = format(QStringLiteral("org.swak.xyz")); QVERIFY(xyz);
+        auto source = xyz->defaults(); source.insert(QStringLiteral("invertY"), true);
+        QCOMPARE(xyz->tileUrl(source, 2, 1, 3).path(), QStringLiteral("/2/1/0.png"));
+        source.insert(QStringLiteral("invertY"), QStringLiteral("true"));
+        QVERIFY(!xyz->validate(source).isEmpty());
+        source.insert(QStringLiteral("invertY"), false);
+        source.insert(QStringLiteral("endpoint"), QStringLiteral("https://example.test/{q}.png"));
+        QVERIFY(xyz->validate(source).isEmpty());
+        QCOMPARE(xyz->tileUrl(source, 3, 3, 5).path(), QStringLiteral("/213.png"));
+        QCOMPARE(xyz->tileUrl(source, 0, 0, 0).path(), QStringLiteral("/.png"));
+        QCOMPARE(xyz->tileUrl(source, 19, 524287, 524287).path(), QStringLiteral("/") + QString(19, '3') + QStringLiteral(".png"));
+        QVERIFY(xyz->tileUrl(source, 20, 0, 0).isEmpty());
+        source.insert(QStringLiteral("endpoint"), QStringLiteral("https://example.test/{q}/{x}.png"));
+        QVERIFY(!xyz->validate(source).isEmpty());
+        source.insert(QStringLiteral("endpoint"), QStringLiteral("https://example.test/{$q}.png"));
+        QVERIFY(!xyz->validate(source).isEmpty());
+        MapSources sources(QPluginLoader::staticInstances());
+        const auto id = QStringLiteral("org.swak.xyz.usgs-topo");
+        QVERIFY(sources.sources().contains(id)); QVERIFY(!sources.networkEnabled());
+        auto preset = sources.sources().value(id).toObject();
+        QCOMPARE(xyz->tileUrl(preset, 3, 2, 4).path(), QStringLiteral("/arcgis/rest/services/USGSTopo/MapServer/tile/3/4/2"));
+        sources.remove(id); const auto saved = sources.savePreferences();
+        MapSources restored(QPluginLoader::staticInstances()); restored.restorePreferences(saved);
+        QVERIFY(!restored.sources().contains(id));
+        auto old = saved; old.remove(QStringLiteral("knownPresets")); restored.restorePreferences(old);
+        QVERIFY(restored.sources().contains(id));
+        MapSources absent({}); absent.restorePreferences(restored.savePreferences());
+        QVERIFY(absent.sources().contains(id)); QVERIFY(absent.activeSource().isEmpty());
+    }
     void nearbyTiles()
     {
         const Viewport view{QSizeF(256, 256), QPointF(0.375, 0.375), 2};

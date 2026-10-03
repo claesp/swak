@@ -1,3 +1,4 @@
+#include "core/marker_symbols.h"
 #include "core/plugin_catalog.h"
 #include <QJsonArray>
 #include "core/activity.h"
@@ -45,6 +46,61 @@ private:
         return event;
     }
 private slots:
+    void vectorMarkerSymbols()
+    {
+        QCOMPARE(markerSymbols().size(), 16);
+        QImage sheet(320, 100, QImage::Format_ARGB32_Premultiplied); sheet.fill(Qt::transparent);
+        QPainter painter(&sheet); painter.setRenderHint(QPainter::Antialiasing);
+        int column = 0;
+        for (const auto &symbol : markerSymbols()) {
+            QVERIFY(validMarkerSymbol(symbol.code)); QCOMPARE(markerSymbolForCot(symbol.code), symbol.code);
+            const auto path = markerFrame(symbol.code, QPointF{}, 7);
+            QVERIFY(path.boundingRect().width() <= 14.01); QVERIFY(path.boundingRect().height() <= 14.01);
+            QVERIFY(path.contains(QPointF{}));
+            paintMarkerSymbol(painter, symbol.code, QPointF(10 + 20 * column++, 20), 7, symbol.color);
+            UserObject item{QStringLiteral("test"), QStringLiteral("circle"), QStringLiteral("Example"), {}, {},
+                {{QStringLiteral("x"), 0.5}, {QStringLiteral("y"), 0.5}}};
+            item.symbol = symbol.code;
+            QVERIFY(UserObjects::validate(item).isEmpty());
+            QCOMPARE(UserObject::fromJson(item.json()).symbol, symbol.code);
+            UserObjects objects; QVERIFY(objects.put(item).isEmpty()); objects.remove(item.id); objects.undoStack().undo();
+            QCOMPARE(objects.find(item.id)->symbol, symbol.code);
+        }
+        QVERIFY(markerSymbolForCot(QStringLiteral("a-f-A")).isEmpty());
+        QVERIFY(markerSymbolForCot(QStringLiteral("a-f-G-U-C-I-custom")).isEmpty());
+        QCOMPARE(markerFrame(QStringLiteral("future"), {}, 7), markerFrame({}, {}, 7));
+        paintMarkerSymbol(painter, QStringLiteral("future"), QPointF(10, 50), 7, Qt::yellow, true);
+        painter.end(); QVERIFY(sheet.save(QStringLiteral("marker-symbols.png")));
+        UserObject item{QStringLiteral("future"), QStringLiteral("circle"), QStringLiteral("Future"), {}, {},
+            {{QStringLiteral("x"), 0.5}, {QStringLiteral("y"), 0.5}}};
+        item.symbol = QStringLiteral("future"); QVERIFY(UserObjects::validate(item).isEmpty());
+        item.symbol = QString(65, 'a'); QVERIFY(!UserObjects::validate(item).isEmpty());
+        auto malformed = item.json(); malformed.insert(QStringLiteral("symbol"), 42);
+        QVERIFY(!UserObjects::validate(UserObject::fromJson(malformed)).isEmpty());
+    }
+
+    void cotGroundUnitSymbols()
+    {
+        MapLayer *tracks = nullptr;
+        for (auto *plugin : QPluginLoader::staticInstances()) {
+            auto *layer = qobject_cast<MapLayer *>(plugin);
+            if (layer && layer->order() == 100) tracks = layer;
+        }
+        QVERIFY(tracks);
+        for (const auto &symbol : markerSymbols()) {
+            Store store; auto event = sample(); event.type = symbol.code;
+            event.latitude = 0; event.longitude = 0; QVERIFY(store.accept(event).isEmpty());
+            for (const bool selected : {false, true}) {
+                if (selected) store.select(event.uid);
+                QImage actual(64, 64, QImage::Format_ARGB32_Premultiplied); actual.fill(Qt::transparent);
+                { QPainter painter(&actual); tracks->paint(painter, {QSizeF(64, 64), QPointF(0.5, 0.5), 3}, store); }
+                QImage expected(64, 64, QImage::Format_ARGB32_Premultiplied); expected.fill(Qt::transparent);
+                { QPainter painter(&expected); paintMarkerSymbol(painter, symbol.code, QPointF(32, 32), selected ? 8 : 6, symbol.color, selected); }
+                QCOMPARE(actual.copy(22, 22, 20, 20), expected.copy(22, 22, 20, 20));
+            }
+        }
+    }
+
     void markerColorStorage()
     {
         UserObject item{QStringLiteral("color"), QStringLiteral("circle"), QStringLiteral("Marker"), {}, {},

@@ -233,3 +233,9 @@ After Apply or Enter saves a marker, keyboard focus returns to the map. Press M 
 Attached panes cover the map instead of reducing its size. Opening Information keeps the map center and scale unchanged. Pane tabs, resizing, close buttons, and detachment still work. File > Settings > Panes controls the overlay edge and dimensions. Saved layouts from earlier versions become overlay layouts.
 
 The marker editor shows Title, Type, Color, Description, and properties in that order. Type currently contains Marker only. Select one of the eight color buttons before Apply. Orange is the default color. File > Settings > Markers changes the default for new markers. Existing markers retain their own colors.
+
+# Ground-unit symbols
+
+The marker editor Type field offers the circle and sixteen military ground-unit symbols. Select a type before Apply. Each military type starts with its identity color. The color buttons can override that color. The normal Information panel shows the saved symbol name.
+
+Received CoT events use the same vector symbols for supported exact ground-unit types. Other types remain circles. Read [the symbol scope](atak-reference-review.md) before using these symbols for operational interpretation. The implementation is a limited subset of MIL-STD-2525C.

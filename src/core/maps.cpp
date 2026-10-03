@@ -57,6 +57,30 @@ MapSources::MapSources(const QList<QObject *> &plugins, QObject *parent) : QObje
     }
     QJsonArray known; for (const auto *format : providers_) known.append(format->mapId());
     values_ = {{QStringLiteral("knownProviders"), known}, {QStringLiteral("network"), false}, {QStringLiteral("active"), QString{}}, {QStringLiteral("sources"), entries}};
+    addNewPresets();
+}
+void MapSources::addNewPresets()
+{
+    static const QRegularExpression idPattern(QStringLiteral("\\A[a-zA-Z0-9.-]{1,100}\\z"));
+    auto entries = sources();
+    auto known = values_.value(QStringLiteral("knownPresets")).toArray();
+    for (const auto *format : providers_) {
+        const auto presets = format->additionalSources();
+        for (auto it = presets.begin(); it != presets.end(); ++it) {
+            if (!idPattern.match(it.key()).hasMatch() || !it.value().isObject()) continue;
+            if (known.contains(it.key()) || known.size() >= 256) continue;
+            if (!entries.contains(it.key())) {
+                if (entries.size() >= 32) continue;
+                auto source = it.value().toObject();
+                source.insert(QStringLiteral("format"), format->mapId());
+                if (!format->validate(source).isEmpty()) continue;
+                entries.insert(it.key(), source);
+            }
+            known.append(it.key());
+        }
+    }
+    values_.insert(QStringLiteral("knownPresets"), known);
+    values_.insert(QStringLiteral("sources"), entries);
 }
 MapProvider *MapSources::provider(const QJsonObject &source) const
 {
@@ -126,6 +150,7 @@ void MapSources::restorePreferences(const QJsonObject &values)
     }
     values_.insert(QStringLiteral("sources"), restored);
     values_.insert(QStringLiteral("knownProviders"), known);
+    addNewPresets();
     for (const auto &entry : sources()) {
         const auto source = entry.toObject();
         if (const auto *format = provider(source); format && !format->validate(source).isEmpty())
