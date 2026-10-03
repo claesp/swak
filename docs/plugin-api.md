@@ -240,3 +240,13 @@ The Markers plugin supplies Core through this interface. The separate MILSTD2525
 `UserObject::collection` stores the collection identifier beside `symbol`. Empty legacy references resolve to Core for an empty symbol and MILSTD2525 otherwise. Explicit unknown references remain intact. `MapItem::markerOutline` carries normalized geometry for the selected local symbol. The selection renderer scales that geometry at the current marker radius. Missing symbols use a circle without changing the saved record.
 
 `ObjectEditor` receives the collection service and stores its last collection and type choices in its existing preferences. The collection manager uses the same provider-table control as map and data management. Settings embeds that manager without pane controls. No new external dependency or dynamic-code loader is added.
+
+# Map authentication
+
+Common map fields add `authMode`, `authUser`, `authParameter`, and `authEnvironment`. An absent mode means `none`. Modes `basic`, `bearer`, `header`, and `query` use the same shared request path for every map format. Providers return URLs without secrets. They continue to call `validateMapSource` for common input rules.
+
+`MapSources::setCredential` accepts a bounded session secret for an existing authenticated source. An empty value removes it. `credential` resolves the session value before the restricted environment reference. Secrets never enter `savePreferences`. The map host passes the result to `TileRenderer::setSource` as a separate argument.
+
+`authorizeMapRequest` applies a secret only to HTTPS requests for the configured host and port. It rejects certificate bypass and invalid authentication fields. It sets request attributes that prevent disk storage and automatic authentication reuse. The renderer also removes its disk cache for authenticated sources and blocks redirects. Plugins must not add a second credential path or log authorized URLs.
+
+The generic form selects a choice field's first declared value when a saved value is absent. Locale sorting changes the visible order only. This keeps legacy providers unauthenticated when their editor opens.

@@ -584,7 +584,8 @@ private slots:
         QVERIFY(dialog);
         QVERIFY(QTest::qWaitForWindowExposed(dialog));
         auto *list = dialog->findChild<QTableWidget *>(QStringLiteral("mapProviderList"));
-        QCOMPARE(list->rowCount(), 5);
+        const auto originalCount = sources->sources().size();
+        QCOMPARE(list->rowCount(), originalCount);
         QVERIFY(dialog->grab().save(QStringLiteral("map-providers-smoke.png")));
         dialog->findChild<QRadioButton *>(QStringLiteral("activeProvider/") + id)->click();
         QVERIFY(QTest::qWaitFor([&] { return sources->activeId() == id; }));
@@ -603,7 +604,7 @@ private slots:
             QVERIFY(editor->grab().save(QStringLiteral("add-provider-smoke.png")));
         });
         dialog->findChild<QPushButton *>(QStringLiteral("addMapProvider"))->click();
-        QCOMPARE(list->rowCount(), 5);
+        QCOMPARE(list->rowCount(), originalCount);
         QTimer::singleShot(0, dialog, [dialog, id, source] {
             auto *editor = dialog->findChild<swak::SettingsDialog *>();
             QVERIFY(editor);
@@ -618,9 +619,9 @@ private slots:
             editor->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
         });
         dialog->findChild<QPushButton *>(QStringLiteral("addMapProvider"))->click();
-        QCOMPARE(list->rowCount(), 6);
+        QCOMPARE(list->rowCount(), originalCount + 1);
         dialog->findChild<QPushButton *>(QStringLiteral("removeMapProvider"))->click();
-        QCOMPARE(list->rowCount(), 5);
+        QCOMPARE(list->rowCount(), originalCount);
         for (int i = 0; i < list->rowCount(); ++i) if (list->item(i, 1)->data(Qt::UserRole).toString() == id) list->setCurrentCell(i, 1);
         QTimer::singleShot(0, dialog, [dialog, id] {
             auto *editor = dialog->findChild<swak::SettingsDialog *>();
@@ -1382,6 +1383,48 @@ private slots:
         QCOMPARE(state.value(QStringLiteral("panSpeed")).toDouble(), 320.0);
         QCOMPARE(state.value(QStringLiteral("wheelSteps")).toInt(), 2);
         QVERIFY(state.value(QStringLiteral("wheelReverse")).toBool());
+    }
+    void mapCredentialDialog()
+    {
+        swak::MapSources maps(QPluginLoader::staticInstances());
+        const auto id = QStringLiteral("org.swak.xyz");
+        auto source = maps.sources().value(id).toObject(); source.insert(QStringLiteral("authMode"), QStringLiteral("bearer"));
+        QVERIFY(maps.put(id, source).isEmpty());
+        swak::MapManager manager(maps, nullptr, [] { return QString{}; }); manager.show(); QVERIFY(QTest::qWaitForWindowExposed(&manager));
+        auto *table = manager.findChild<QTableWidget *>(QStringLiteral("mapProviderList"));
+        for (int row = 0; row < table->rowCount(); ++row) if (table->item(row, 1)->data(Qt::UserRole).toString() == id) table->setCurrentCell(row, 1);
+        const auto enter = [&](const QString &text, bool accept) {
+            bool seen = false;
+            QTimer::singleShot(0, &manager, [&] {
+                auto *dialog = manager.findChild<QDialog *>(QStringLiteral("mapCredentialsDialog")); QVERIFY(dialog); seen = true;
+                const auto close = qScopeGuard([dialog] { if (dialog->isVisible()) dialog->reject(); });
+                auto *secret = dialog->findChild<QLineEdit *>(QStringLiteral("mapSecret")); QVERIFY(secret); QVERIFY(secret->text().isEmpty());
+                QCOMPARE(secret->echoMode(), QLineEdit::Password); secret->setText(text);
+                QVERIFY(dialog->grab().save(QStringLiteral("map-credentials.png")));
+                if (accept) dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click(); else dialog->reject();
+            });
+            manager.findChild<QPushButton *>(QStringLiteral("mapCredentials"))->click(); QVERIFY(seen);
+        };
+        enter(QStringLiteral("test-token"), true); QCOMPARE(maps.credential(id), QByteArray("test-token"));
+        QVERIFY(!QJsonDocument(maps.savePreferences()).toJson().contains("test-token"));
+        enter(QStringLiteral("cancelled-token"), false); QCOMPARE(maps.credential(id), QByteArray("test-token"));
+        enter({}, true); QVERIFY(maps.credential(id).isEmpty());
+        QTimer::singleShot(0, &manager, [&] {
+            auto *dialog = manager.findChild<swak::SettingsDialog *>(); QVERIFY(dialog);
+            const auto close = qScopeGuard([dialog] { dialog->reject(); });
+            auto *mode = dialog->findChild<QComboBox *>(id + QStringLiteral("/authMode")); QVERIFY(mode);
+            QCOMPARE(mode->currentData().toString(), QStringLiteral("bearer"));
+            QVERIFY(dialog->grab().save(QStringLiteral("map-auth-settings.png")));
+        });
+        manager.findChild<QPushButton *>(QStringLiteral("editMapProvider"))->click();
+        source.remove(QStringLiteral("authMode")); QVERIFY(maps.put(id, source).isEmpty());
+        QTimer::singleShot(0, &manager, [&] {
+            auto *dialog = manager.findChild<swak::SettingsDialog *>(); QVERIFY(dialog);
+            const auto close = qScopeGuard([dialog] { dialog->reject(); });
+            QCOMPARE(dialog->findChild<QComboBox *>(id + QStringLiteral("/authMode"))->currentData().toString(), QStringLiteral("none"));
+        });
+        manager.findChild<QPushButton *>(QStringLiteral("editMapProvider"))->click();
+        manager.findChild<QPushButton *>(QStringLiteral("mapCredentials"))->click(); QVERIFY(maps.credential(id).isEmpty());
     }
     void providerActivationTables()
     {

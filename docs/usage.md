@@ -245,3 +245,7 @@ Received CoT events use the same vector symbols for supported exact ground-unit 
 # Marker collections
 
 Tools > Marker Collections manages Core, MILSTD2525, and imported symbol collections. File > Settings > Marker collections provides the same table. After placing a marker, choose Collection before Type. Add copies a collection, Edit changes its metadata, and Delete removes a user collection. Import and Export exchange bounded ZIP or TAR archives. Read [Marker collections](marker-collections.md) for formats, limits, and behavior when a collection disappears.
+
+# Authenticated maps
+
+In Map Providers, select a row and click Edit to choose its authentication method. Apply the provider configuration, then click Credentials to enter a session password or token. The dialog masks the value and never writes it into the profile. Read [Map providers](map-providers.md#credentials) for restart use through environment variables and the Thunderforest templates.

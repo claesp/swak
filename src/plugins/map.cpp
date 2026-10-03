@@ -143,7 +143,7 @@ public:
             normalizeZoom();
             clampCenter();
             wheelRemainder_ = 0;
-            tiles_.setSource(sources_->provider(source), source);
+            tiles_.setSource(sources_->provider(source), source, sources_->credential(sources_->activeId()));
             update();
         };
         connect(sources_, &MapSources::changed, this, apply);

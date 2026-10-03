@@ -2,6 +2,7 @@
 #include "core/settings.h"
 #include <QObject>
 #include <QUrl>
+#include <QNetworkRequest>
 
 namespace swak {
 class MapExtension {
@@ -24,6 +25,9 @@ public:
 QList<SettingField> commonMapFields();
 QString validateMapSource(const QJsonObject &source);
 QJsonObject mapDefaults(const QString &name, const QString &endpoint, const QString &attribution, int maximumZoom);
+QString validateMapAuthentication(const QJsonObject &source);
+QString authorizeMapRequest(QNetworkRequest &request, const QJsonObject &source, const QByteArray &secret);
+bool authenticatedMap(const QJsonObject &source);
 bool validTile(int zoom, int x, int y);
 
 class MapSources final : public QObject, public SettingsParticipant {
@@ -43,6 +47,8 @@ public:
     QString activeId() const { return values_.value(QStringLiteral("active")).toString(); }
     QString put(const QString &id, const QJsonObject &source);
     void remove(const QString &id);
+    QString setCredential(const QString &id, const QByteArray &secret);
+    QByteArray credential(const QString &id) const;
     void select(const QString &id);
     bool networkEnabled() const { return values_.value(QStringLiteral("network")).toBool(false); }
 signals:
@@ -52,6 +58,7 @@ private:
     void addNewPresets();
     QList<MapProvider *> providers_;
     QJsonObject values_;
+    QHash<QString, QByteArray> credentials_;
 };
 
 }

@@ -101,3 +101,11 @@ The image provider accepts only known coordinate placeholders and a boolean row-
 Collection archives use the existing libarchive library with ZIP, TAR, and gzip support. The importer reads a regular file of at most one MiB. It accepts one regular `collection.json` entry with at most 256 KiB of expanded data. It rejects links, encryption, extra entries, and other paths. It never extracts archive members to disk or enables external decompression programs.
 
 Vector definitions accept bounded move, line, and cubic commands. They reject nonfinite coordinates, invalid colors, duplicate identifiers, and excessive geometry. The renderer does not load external images, fonts, scripts, or URLs. Imported tooltip text is escaped before Qt renders it. Catalog storage and decoded paths have fixed input limits. Libarchive and Qt still share the application process and remain part of its native-library trust boundary.
+
+# Map credentials
+
+Map authentication adds a boundary between the profile, session memory, and HTTPS requests. Profiles contain authentication metadata and an optional restricted environment-variable name. Passwords and tokens remain outside saved preferences. No credential library or new external dependency is added.
+
+The shared request helper limits secrets, rejects controls, and checks the destination host and port. Authentication requires certificate validation even when a source offers a certificate exception. Redirects stay disabled. Authenticated requests cannot use the shared disk cache. Source and credential changes cancel old work and clear decoded images. HTTP 401 and 403 responses use the provider-wide retry delay.
+
+Environment references use the `SWAK_MAP_` prefix. Only put dedicated map secrets in that namespace. A profile can direct its named secret to its configured server, so use trusted profiles. Query credentials reach the provider URL and can appear in its server logs. SWAK uses generic tile errors without those URLs. Process memory and launch environments remain sensitive. Read [Map providers](map-providers.md) for storage limits and supported authentication methods.

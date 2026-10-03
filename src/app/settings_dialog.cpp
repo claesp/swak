@@ -158,7 +158,7 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
                 });
                 for (const int i : order) {
                     choices->addItem(field.choices.at(i), field.choiceValues.at(i).toVariant());
-                    if (field.choiceValues.at(i) == value) choices->setCurrentIndex(choices->count() - 1);
+                    if (field.choiceValues.at(i) == (value.isUndefined() ? field.choiceValues.first() : value)) choices->setCurrentIndex(choices->count() - 1);
                 }
                 editor = choices;
                 break;

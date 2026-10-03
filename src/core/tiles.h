@@ -25,7 +25,7 @@ class TileRenderer final : public QObject {
 public:
     explicit TileRenderer(QObject *parent = nullptr);
     ~TileRenderer() override;
-    void setSource(MapProvider *provider, const QJsonObject &source);
+    void setSource(MapProvider *provider, const QJsonObject &source, const QByteArray &credential = {});
     void paint(QPainter &painter, const Viewport &view, double opacity, bool smooth, double missingOpacity = 0.2);
     QString status() const;
     struct Coverage { int total = 0; int rendered = 0; };
@@ -58,6 +58,7 @@ private:
     std::unique_ptr<QLockFile> lock_;
     MapProvider *provider_ = nullptr;
     QJsonObject source_;
+    QByteArray credential_;
     QCache<QString, Image> images_{256 * 1024};
     QHash<QString, QNetworkReply *> pending_;
     QList<TilePlacement> visible_;

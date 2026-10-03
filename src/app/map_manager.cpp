@@ -11,6 +11,7 @@
 #include <QCollator>
 #include <algorithm>
 #include <QUuid>
+#include <QLineEdit>
 namespace swak {
 MapManager::MapManager(MapSources &sources, QWidget *parent, std::function<QString()> save, bool embedded)
     : QDialog(parent), sources_(sources), save_(std::move(save))
@@ -37,6 +38,27 @@ MapManager::MapManager(MapSources &sources, QWidget *parent, std::function<QStri
     auto *remove = new QPushButton(tr("Delete"), this);
     remove->setObjectName(QStringLiteral("removeMapProvider"));
     row->addWidget(remove);
+    auto *credentials = new QPushButton(tr("Credentials"), this);
+    credentials->setObjectName(QStringLiteral("mapCredentials")); row->addWidget(credentials);
+    connect(credentials, &QPushButton::clicked, this, [this] {
+        const auto id = list_->selectedId(); const auto source = sources_.sources().value(id).toObject();
+        if (id.isEmpty() || !authenticatedMap(source)) { reportError(tr("Select an authentication method in Edit first.")); return; }
+        QDialog dialog(this); dialog.setObjectName(QStringLiteral("mapCredentialsDialog")); dialog.setWindowTitle(tr("Map credentials"));
+        auto *credentialLayout = new QVBoxLayout(&dialog);
+        auto *credentialNotice = new QLabel(tr("Enter the password or token for this session. An empty value clears the session secret. A configured environment variable then applies."), &dialog);
+        credentialNotice->setWordWrap(true); credentialLayout->addWidget(credentialNotice);
+        auto *secret = new QLineEdit(&dialog); secret->setEchoMode(QLineEdit::Password); secret->setMaxLength(4096);
+        secret->setObjectName(QStringLiteral("mapSecret")); secret->setAccessibleName(tr("Password or token")); credentialLayout->addWidget(secret);
+        auto *error = new SingleLineLabel(&dialog); credentialLayout->addWidget(error);
+        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog); credentialLayout->addWidget(buttons);
+        connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+        connect(buttons, &QDialogButtonBox::accepted, &dialog, [&] {
+            const auto problem = sources_.setCredential(id, secret->text().toUtf8());
+            if (!problem.isEmpty()) { error->setText(problem); return; }
+            secret->clear(); dialog.accept();
+        });
+        dialog.exec();
+    });
     layout->addLayout(row);
     status_ = new SingleLineLabel(this);
     status_->setTextFormat(Qt::PlainText);

@@ -28,3 +28,17 @@ All paths use original C++ geometry. SWAK neither traces nor loads reference art
 The identity field accepts `f`, `h`, `n`, or `u`. Unsupported types and subtypes retain a circle. Saved unknown symbol identifiers remain intact for later versions. Local symbols use the existing seven-pixel radius. Received events retain their six-pixel radius and eight-pixel selected radius. Qt paints these paths at the display scale.
 
 This subset does not implement the full standard, modifiers, equipment, air symbols, or all identity states. It does not claim MIL-STD-2525 compliance. Local color overrides can depart from standard identity colors. The user can keep the existing orange circle when military symbols are unsuitable.
+
+# Credential and source follow-up
+
+The October 3 follow-up uses the same ATAK commit. `MapSources.java` sends bearer tokens to a configured catalog and its referenced files. `AtakAuthenticationHandlerHTTP.java` supports HTTP Basic credentials and handles authentication failures. The reviewed MOBAC code accepts caller-supplied source URLs. The reviewed source and asset paths did not reveal an additional public catalog URL. No source files or artwork enter SWAK.
+
+SWAK now sends Basic credentials, bearer tokens, and API keys through its common map client. This supports existing XYZ, TMS, quadkey, WMTS, WMS, and MVT sources. It does not implement ATAK catalog downloads, OAuth login or token renewal, client certificates, or Digest authentication. Users supply valid credentials for their own services.
+
+Separate research identified three additional [USGS base services](https://www.usgs.gov/faqs/what-are-base-map-services-or-urls-used-national-map). [Imagery Only](https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer?f=pjson) provides aerial imagery. [Imagery Topo](https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryTopo/MapServer?f=pjson) adds topographic information. [Shaded Relief](https://basemap.nationalmap.gov/arcgis/rest/services/USGSShadedReliefOnly/MapServer?f=pjson) provides terrain shading. All three describe 256-pixel Web Mercator tiles with level, row, and column addressing.
+
+Live public requests returned JPEG for Imagery Only and Imagery Topo, and PNG for Shaded Relief. Imagery Topo returned 404 at level zero and JPEG at levels one and two. Its preset starts at level one. Imagery presets stop at level eight, and Shaded Relief stops at level seven. These conservative limits do not establish complete coverage. The original USGS Topo default remains eight. Regional detail and licensing limits appear in the linked service metadata.
+
+[Thunderforest](https://www.thunderforest.com/docs/map-tiles-api/) supplies standard Web Mercator image tiles with an [API key query parameter](https://www.thunderforest.com/docs/apikeys/). SWAK adds inactive Outdoors and OpenCycleMap templates. The account requires registration, and its free plan has limits. The [service terms](https://www.thunderforest.com/terms/) require links to Thunderforest and OpenStreetMap attribution. Both links appear in each template. No account or key is supplied with SWAK. Live authenticated requests remain untested without a user account.
+
+NASA GIBS also offers public [WMTS endpoints](https://nasa-gibs.github.io/gibs-api-docs/access-basics/), including Web Mercator. Daily imagery needs a date and compatible matrix-set selection. Existing NASA templates remain unchanged. This follow-up does not add dated imagery that can become stale without a date control.

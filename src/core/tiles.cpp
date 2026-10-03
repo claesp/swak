@@ -97,7 +97,7 @@ void TileRenderer::setPrefetchMargin(int margin)
     if (bounded == prefetchMargin_) return;
     prefetchMargin_ = bounded;
     prefetchSkipped_.clear();
-    needed_ = tileFetchArea(visible_, prefetchMargin_);
+    needed_ = tileFetchArea(visible_, authenticatedMap(source_) ? 0 : prefetchMargin_);
     if (ready_) schedule_.start(0);
 }
 TileRenderer::TileRenderer(QObject *parent) : QObject(parent)
@@ -196,9 +196,9 @@ void TileRenderer::stop()
     for (const auto &key : images_.keys())
         if (images_.object(key)->transient) images_.remove(key);
 }
-void TileRenderer::setSource(MapProvider *provider, const QJsonObject &source)
+void TileRenderer::setSource(MapProvider *provider, const QJsonObject &source, const QByteArray &credential)
 {
-    if (provider_ == provider && source_ == source && (ready_ || !provider)) return;
+    if (provider_ == provider && source_ == source && credential_ == credential && (ready_ || !provider)) return;
     cancel();
     images_.clear();
     compact_ = false;
@@ -215,9 +215,15 @@ void TileRenderer::setSource(MapProvider *provider, const QJsonObject &source)
     ready_ = false;
     provider_ = provider;
     source_ = source;
+    credential_ = credential;
     status_.clear();
     retryAt_ = {};
     if (!provider_ || !provider_->validate(source_).isEmpty()) { provider_ = nullptr; emit changed(); return; }
+    if (authenticatedMap(source_)) {
+        QNetworkRequest probe(QUrl(source_.value(QStringLiteral("endpoint")).toString()));
+        status_ = authorizeMapRequest(probe, source_, credential_);
+        ready_ = status_.isEmpty(); emit changed(); return;
+    }
     const auto root = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/maps/") +
         (source_.value(QStringLiteral("ignoreTls")).toBool(false) ? QStringLiteral("unchecked") : QStringLiteral("verified"));
     if (!QDir().mkpath(root)) { status_ = tr("Map cache cannot be created. Online maps stopped."); emit changed(); return; }
@@ -256,7 +262,7 @@ void TileRenderer::paint(QPainter &painter, const Viewport &view, double opacity
         [](const TilePlacement &a, const TilePlacement &b) { return a.key == b.key; });
     visible_ = next;
     viewSize_ = view.size;
-    needed_ = tileFetchArea(visible_, prefetchMargin_);
+    needed_ = tileFetchArea(visible_, authenticatedMap(source_) ? 0 : prefetchMargin_);
     if (fetching && moved) {
         prefetchSkipped_.clear();
         schedule_.start(0);
@@ -348,6 +354,8 @@ void TileRenderer::pump()
         request.setAttribute(QNetworkRequest::CacheLoadControlAttribute, QNetworkRequest::PreferCache);
         request.setAttribute(QNetworkRequest::CookieLoadControlAttribute, QNetworkRequest::Manual);
         request.setAttribute(QNetworkRequest::CookieSaveControlAttribute, QNetworkRequest::Manual);
+        const auto authenticationError = authorizeMapRequest(request, source_, credential_);
+        if (!authenticationError.isEmpty()) { ready_ = false; status_ = authenticationError; emit changed(); return; }
         const qsizetype limit = dynamic_cast<VectorTileProvider *>(provider_) ? VectorDownloadLimit : MaxTileBytes;
         auto *reply = network_.get(request);
         reply->setReadBufferSize(limit + 1);
@@ -374,7 +382,7 @@ void TileRenderer::pump()
             if (!responseOk || (!vector && image.isNull())) {
                 if (disk_) disk_->remove(reply->url());
                 fail(key, tr("Map tile failed. Check the provider, HTTPS certificate, and service limits."),
-                    reply->rawHeader("Retry-After").toInt(), status == 429 || status == 503
+                    reply->rawHeader("Retry-After").toInt(), status == 401 || status == 403 || status == 429 || status == 503
                         || reply->error() == QNetworkReply::SslHandshakeFailedError);
             } else {
                 failures_.remove(key);

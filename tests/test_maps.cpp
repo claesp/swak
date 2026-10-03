@@ -10,6 +10,8 @@
 #include <QTest>
 #include <QUrlQuery>
 #include <limits>
+#include <QSslConfiguration>
+#include <QJsonDocument>
 using namespace swak;
 class MapTest final : public QObject {
     Q_OBJECT
@@ -32,6 +34,77 @@ class MapTest final : public QObject {
         renderer.paint(painter, Viewport{QSizeF(256, 256), QPointF(0.5, 0.5), 0}, 1, false);
     }
 private slots:
+    void mapCredentials()
+    {
+        auto *xyz = format(QStringLiteral("org.swak.xyz")); QVERIFY(xyz);
+        auto source = xyz->defaults();
+        source.insert(QStringLiteral("authMode"), QStringLiteral("basic"));
+        source.insert(QStringLiteral("authUser"), QStringLiteral("test-user"));
+        QNetworkRequest request(xyz->tileUrl(source, 0, 0, 0));
+        QVERIFY(authorizeMapRequest(request, source, "password").isEmpty());
+        QCOMPARE(request.rawHeader("Authorization"), QByteArray("Basic dGVzdC11c2VyOnBhc3N3b3Jk"));
+        QCOMPARE(request.attribute(QNetworkRequest::CacheSaveControlAttribute).toBool(), false);
+        source.insert(QStringLiteral("authMode"), QStringLiteral("bearer"));
+        QVERIFY(authorizeMapRequest(request, source, "token").isEmpty()); QCOMPARE(request.rawHeader("Authorization"), QByteArray("Bearer token"));
+        source.insert(QStringLiteral("authMode"), QStringLiteral("header")); source.insert(QStringLiteral("authParameter"), QStringLiteral("X-API-Key"));
+        QVERIFY(authorizeMapRequest(request, source, "key").isEmpty()); QCOMPARE(request.rawHeader("X-API-Key"), QByteArray("key"));
+        source.insert(QStringLiteral("authParameter"), QStringLiteral("Cookie")); QVERIFY(!validateMapAuthentication(source).isEmpty());
+        source.insert(QStringLiteral("authMode"), QStringLiteral("query")); source.insert(QStringLiteral("authParameter"), QStringLiteral("apikey"));
+        QVERIFY(authorizeMapRequest(request, source, "a&b=+%# /?").isEmpty());
+        QCOMPARE(QUrlQuery(request.url()).queryItemValue(QStringLiteral("apikey"), QUrl::FullyDecoded), QStringLiteral("a&b=+%# /?"));
+        QCOMPARE(QUrlQuery(request.url()).queryItems().size(), 1);
+        QVERIFY(!authorizeMapRequest(request, source, "bad\r\nHeader: value").isEmpty());
+        QVERIFY(!authorizeMapRequest(request, source, QByteArray(4097, 'x')).isEmpty());
+        request.setUrl(QUrl(QStringLiteral("https://other.test/"))); QVERIFY(!authorizeMapRequest(request, source, "token").isEmpty());
+        request.setUrl(QUrl(QStringLiteral("http://tile.openstreetmap.org/"))); QVERIFY(!authorizeMapRequest(request, source, "token").isEmpty());
+        source.insert(QStringLiteral("ignoreTls"), true); QVERIFY(!xyz->validate(source).isEmpty()); source.insert(QStringLiteral("ignoreTls"), false);
+        source.insert(QStringLiteral("authEnvironment"), QStringLiteral("HOME")); QVERIFY(!xyz->validate(source).isEmpty());
+        source.insert(QStringLiteral("authEnvironment"), QStringLiteral("SWAK_MAP_TEST_SECRET"));
+        qputenv("SWAK_MAP_TEST_SECRET", "environment-key");
+        source.insert(QStringLiteral("format"), xyz->mapId());
+        MapSources sources(QPluginLoader::staticInstances()); QVERIFY(sources.put(QStringLiteral("auth-test"), source).isEmpty());
+        QCOMPARE(sources.credential(QStringLiteral("auth-test")), QByteArray("environment-key"));
+        QVERIFY(sources.setCredential(QStringLiteral("auth-test"), "session-key").isEmpty());
+        QCOMPARE(sources.credential(QStringLiteral("auth-test")), QByteArray("session-key"));
+        const auto saved = sources.savePreferences(); const auto json = QJsonDocument(saved).toJson();
+        QVERIFY(!json.contains("session-key")); QVERIFY(!json.contains("environment-key"));
+        MapSources restored(QPluginLoader::staticInstances()); restored.restorePreferences(saved);
+        QCOMPARE(restored.credential(QStringLiteral("auth-test")), QByteArray("environment-key"));
+        qunsetenv("SWAK_MAP_TEST_SECRET"); QVERIFY(restored.credential(QStringLiteral("auth-test")).isEmpty());
+        source.insert(QStringLiteral("endpoint"), QStringLiteral("https://example.test/{z}/{x}/{y}.png"));
+        QVERIFY(sources.put(QStringLiteral("auth-test"), source).isEmpty()); QVERIFY(sources.credential(QStringLiteral("auth-test")).isEmpty());
+        QVERIFY(sources.setCredential(QStringLiteral("auth-test"), "new").isEmpty()); sources.remove(QStringLiteral("auth-test")); QVERIFY(sources.credential(QStringLiteral("auth-test")).isEmpty());
+        for (const auto &bad : {QJsonValue(QStringLiteral("user\nInjected")), QJsonValue(QString(257, 'x')), QJsonValue(42)}) {
+            auto invalid = source; invalid.insert(QStringLiteral("authUser"), bad); QVERIFY(!xyz->validate(invalid).isEmpty());
+        }
+        source.insert(QStringLiteral("authMode"), true); QVERIFY(!xyz->validate(source).isEmpty());
+        source.insert(QStringLiteral("authMode"), QStringLiteral("unsupported")); QVERIFY(!xyz->validate(source).isEmpty());
+        source.insert(QStringLiteral("authMode"), QStringLiteral("basic")); source.insert(QStringLiteral("authUser"), QStringLiteral("a:b")); QVERIFY(!xyz->validate(source).isEmpty());
+    }
+    void authenticatedTiles()
+    {
+        TileServer server; QVERIFY(server.load(QFINDTESTDATA("fixtures"))); QVERIFY(server.listen(QHostAddress::LocalHost));
+        const auto previous = QSslConfiguration::defaultConfiguration(); auto trusted = previous;
+        auto authorities = trusted.caCertificates(); authorities.append(server.certificate); trusted.setCaCertificates(authorities); QSslConfiguration::setDefaultConfiguration(trusted);
+        struct RestoreTls { QSslConfiguration value; ~RestoreTls() { QSslConfiguration::setDefaultConfiguration(value); } } restore{previous};
+        auto *xyz = format(QStringLiteral("org.swak.xyz")); auto source = localSource(xyz, server, false);
+        source.insert(QStringLiteral("authMode"), QStringLiteral("bearer"));
+        TileRenderer renderer; QImage canvas(256, 256, QImage::Format_ARGB32);
+        renderer.setSource(xyz, source); draw(renderer, canvas); QCOMPARE(renderer.pendingCount(), 0); QVERIFY(!renderer.status().isEmpty());
+        renderer.setSource(xyz, source, "first-token"); draw(renderer, canvas);
+        QVERIFY(QTest::qWaitFor([&] { return renderer.coverage().rendered == 1; }, 5000));
+        QCOMPARE(renderer.diskCacheBytes(), qint64(-1)); QVERIFY(server.requests.first().toLower().contains("authorization: bearer first-token"));
+        renderer.setSource(xyz, source, "second-token"); draw(renderer, canvas);
+        QVERIFY(QTest::qWaitFor([&] { return renderer.coverage().rendered == 1; }, 5000));
+        QVERIFY(server.requests.last().toLower().contains("authorization: bearer second-token")); QCOMPARE(server.requests.size(), 2);
+        server.headers = "HTTP/1.1 302 Found\r\nLocation: https://example.test/redirect\r\n";
+        renderer.setSource(xyz, source, "third-token"); draw(renderer, canvas);
+        QVERIFY(QTest::qWaitFor([&] { return !renderer.status().isEmpty(); }, 5000)); QCOMPARE(renderer.coverage().rendered, 0);
+        server.headers = "HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=map\r\n";
+        renderer.setSource(xyz, source, "fourth-token"); draw(renderer, canvas);
+        QVERIFY(QTest::qWaitFor([&] { return !renderer.status().isEmpty(); }, 5000)); QVERIFY(!renderer.status().contains(QStringLiteral("fourth-token")));
+        renderer.setSource(nullptr, {}); QCOMPARE(renderer.pendingCount(), 0);
+    }
     void templateAddressingAndPresets()
     {
         auto *xyz = format(QStringLiteral("org.swak.xyz")); QVERIFY(xyz);
@@ -53,6 +126,13 @@ private slots:
         MapSources sources(QPluginLoader::staticInstances());
         const auto id = QStringLiteral("org.swak.xyz.usgs-topo");
         QVERIFY(sources.sources().contains(id)); QVERIFY(!sources.networkEnabled());
+        for (const auto &presetId : {QStringLiteral("usgs-imagery"), QStringLiteral("usgs-imagery-topo"), QStringLiteral("usgs-relief"), QStringLiteral("thunderforest-outdoors"), QStringLiteral("thunderforest-cycle")}) {
+            const auto item = sources.sources().value(QStringLiteral("org.swak.xyz.") + presetId).toObject();
+            QVERIFY(!item.isEmpty()); QVERIFY(xyz->validate(item).isEmpty());
+            QVERIFY(xyz->tileUrl(item, item.value(QStringLiteral("minZoom")).toInt(), 0, 0).isValid());
+        }
+        QCOMPARE(sources.sources().value(QStringLiteral("org.swak.xyz.usgs-imagery-topo")).toObject().value(QStringLiteral("minZoom")).toInt(), 1);
+
         auto preset = sources.sources().value(id).toObject();
         QCOMPARE(preset.value(QStringLiteral("maxZoom")).toInt(), 8);
         QCOMPARE(xyz->tileUrl(preset, 3, 2, 4).path(), QStringLiteral("/arcgis/rest/services/USGSTopo/MapServer/tile/3/4/2"));

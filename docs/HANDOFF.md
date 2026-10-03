@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 3, 2026: Read “Marker collections” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 3, 2026: Read “Authenticated map sources” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -685,3 +685,30 @@ The release build succeeded with Qt 6.8.2 and GCC 14.2. Its log is `build/collec
 The 60-second sanitizer workload passed in `build/quality/20261003-160617-soak-251322`. It completed 1187 cycles with 12238848 bytes of peak memory growth. The maximum heartbeat gap was 39 milliseconds, and idle CPU time was 0.003 seconds. Each cycle creates and removes a collection. This short workload does not replace two-hour qualification.
 
 Four focused collection and marker cases passed at 200 percent scaling. Native screenshots show the collection manager and marker editor without clipped controls. Screenshots are under `build/atak-native`.
+
+
+## 2026-10-03: Authenticated map sources
+
+The shared map API now supports HTTP Basic, bearer tokens, and API keys in X- headers or query parameters. Every existing map format uses the same request helper. Map Providers exposes authentication metadata through Edit and a separate masked Credentials dialog. Session secrets never enter the profile. Optional SWAK_MAP_ environment references support restart use without plaintext secrets in preferences.
+
+Authenticated requests require valid certificates and the configured server and port. Redirects remain blocked. Authenticated tiles bypass the disk cache and fetch visible tiles only. Source and secret changes cancel old requests and clear decoded images. HTTP 401 and 403 responses use the provider-wide retry delay. No password vault, OAuth login, token renewal, or client certificate support is implemented.
+
+The further ATAK review found bearer authentication for its configured catalog and HTTP Basic for imagery. It did not reveal an additional reusable public catalog in the reviewed paths. No ATAK code or assets enter this repository. The updated [reference review](atak-reference-review.md) records sources and service limits.
+
+Five inactive presets add USGS Imagery, USGS Imagery Topo, USGS Shaded Relief, Thunderforest Outdoors, and Thunderforest OpenCycleMap. Three public USGS services returned image tiles during live checks. Imagery Topo returned 404 at level zero and images at levels one and two. Its minimum is one. The imagery maximum is eight, and shaded relief stops at seven. Thunderforest needs a user API key. Its templates retain both required attribution links and the SWAK_MAP_THUNDERFOREST_KEY reference.
+
+The common Settings form now selects the first declared choice for an absent field, before locale sorting. This prevents legacy map records from opening with an authentication method selected by alphabetical order. Existing authentication metadata stays portable when plugins are absent. Ordinary provider fields remain visible in profiles, so they must not contain secrets.
+
+Eight sanitizer suites passed in `build/quality/20261003-200513-quick-7275`. All 51 native sanitizer cases passed in `build/quality/20261003-200659-gui-8606`. LeakSanitizer then reported the existing Mesa leak of 240732 bytes in 1073 allocations. The GUI diagnostic remains failed without suppression. Static analysis passed in `build/quality/20261003-200514-analyze-2`.
+
+The local HTTPS tests trust a test-only certificate and restore the original trust configuration afterward. Tests cover missing secrets, all authentication encodings, query escaping, header injection, credential replacement, origin changes, environment references, profile exclusion, redirects, and 401 responses. Native tests cover masked input, cancellation, clearing, legacy defaults, and provider rendering. The release build succeeded in `build/auth-release.log`. The final metadata build uses `build/auth-release-final.log`.
+
+Coverage passed eight suites and all 51 native cases in `build/quality/20261003-200746-coverage-8791`. The authentication helper reached 66 of 67 lines. Its missing malformed-field rejection prompted additional tests. MapManager reached 135 of 137 lines. Remaining gaps include the existing table double-click shortcut and some defensive callback branches. Line coverage does not establish complete branch or input coverage.
+
+The 60-second sanitizer workload passed in `build/quality/20261003-200941-soak-10095`. It completed 1207 cycles with 12210176 bytes of peak memory growth. The maximum heartbeat gap was 36 milliseconds, and idle CPU time was 0.007 seconds. This short run does not replace two-hour qualification.
+
+Credential and provider GUI tests also passed at 200 percent scaling. Screenshots are under `build/atak-native`. Tests use Qt 6.8.2, GCC 14.2, and software Mesa. Hardware graphics, native Wayland, Qt 6.4, production credentials, token expiration against a real provider, and two-hour qualification remain untested. No external dependency was added.
+
+The final sanitizer run also passed all eight suites in `build/quality/20261003-201131-quick-10344`. It adds malformed authentication field inputs and assertions for all five new presets.
+
+The final coverage run passed eight suites and all 51 native cases in `build/quality/20261003-201245-coverage-10682`. The authentication helper reached all 67 lines and all eight functions. Defensive branches and real provider behavior still require further testing.

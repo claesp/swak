@@ -116,3 +116,17 @@ The XYZ image plugin also accepts TMS and quadkey addresses. All three use the e
 For a south-origin TMS source, enable Invert tile rows (TMS) in the provider editor. The row becomes `2^z - 1 - y`. For a quadkey source, use `{q}` instead of the three coordinate placeholders. Mixed or unknown placeholders are rejected. SWAK accepts integer tile zoom levels from zero through 19. Each source can set a smaller range.
 
 The USGS Topo preset uses `https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}`. This swaps row and column positions without inverting rows. The preset uses zoom levels zero through 8 and links the published service credits. It remains inactive until the user selects it and enables online maps. A deleted preset stays deleted after restart.
+
+# Credentials
+
+Edit a provider to select Authentication. The common controls support None, Basic username and password, Bearer token, API key header, and API key query. Basic uses the Authentication username field. API keys use the named parameter. Custom headers must start with `X-`, such as `X-API-Key`.
+
+Select the provider row, then click Credentials. Enter its password or token in the masked field. The value stays in memory for this session. Cancel preserves the previous value. An empty accepted value clears the session secret. This then permits a configured environment variable to supply the secret.
+
+For restart use, set Secret environment variable to a name such as `SWAK_MAP_PRIVATE_TOKEN`. Supply that variable through your trusted launch environment. Names must start with `SWAK_MAP_` and contain uppercase letters, digits, or underscores. The profile saves the variable name, not its value. Do not enter secrets in the HTTPS URL or other ordinary fields. These fields appear in profiles and tooltips.
+
+The application does not store passwords on disk or provide a password vault. Environment values remain available to the process and its launch environment. Session values remain in process memory. Qt containers do not guarantee secure erasure of all copies. Credentials permit printable ASCII values up to 4096 bytes. Non-ASCII Basic passwords require server-specific encoding support that this version does not provide.
+
+Authenticated requests require valid HTTPS certificates and the configured server and port. Redirects cannot forward credentials. Authentication failures use the shared retry delay. Tile errors exclude the request URL and secret. Authenticated tiles bypass the disk cache and fetch only visible tiles. Secret changes cancel requests and clear decoded images. Endpoint and authentication changes clear the session secret.
+
+The Thunderforest templates use API key query authentication with parameter `apikey`. Set the session credential or supply `SWAK_MAP_THUNDERFOREST_KEY` before launch. Read the service terms and account limits before selecting the source. No template activates itself. Credentials do not grant access beyond the service account permissions.

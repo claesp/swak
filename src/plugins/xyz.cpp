@@ -13,9 +13,28 @@ public:
         QStringLiteral("© OpenStreetMap contributors | https://www.openstreetmap.org/copyright"), 19); source.insert(QStringLiteral("invertY"), false); return source; }
     QJsonObject additionalSources() const override
     {
-        return {{QStringLiteral("org.swak.xyz.usgs-topo"), mapDefaults(tr("USGS Topo"),
-            QStringLiteral("https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}"),
-            QStringLiteral("USGS The National Map and contributors | https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer"), 8)}};
+        QJsonObject result;
+        const auto add = [&result](const QString &id, const QString &name, const QString &service, int zoom) {
+            const auto root = QStringLiteral("https://basemap.nationalmap.gov/arcgis/rest/services/") + service + QStringLiteral("/MapServer");
+            result.insert(id, mapDefaults(name, root + QStringLiteral("/tile/{z}/{y}/{x}"),
+                QStringLiteral("USGS The National Map and contributors | ") + root, zoom));
+        };
+        add(QStringLiteral("org.swak.xyz.usgs-topo"), tr("USGS Topo"), QStringLiteral("USGSTopo"), 8);
+        add(QStringLiteral("org.swak.xyz.usgs-imagery"), tr("USGS Imagery"), QStringLiteral("USGSImageryOnly"), 8);
+        add(QStringLiteral("org.swak.xyz.usgs-imagery-topo"), tr("USGS Imagery Topo"), QStringLiteral("USGSImageryTopo"), 8);
+        add(QStringLiteral("org.swak.xyz.usgs-relief"), tr("USGS Shaded Relief"), QStringLiteral("USGSShadedReliefOnly"), 7);
+        auto imageryTopo = result.value(QStringLiteral("org.swak.xyz.usgs-imagery-topo")).toObject();
+        imageryTopo.insert(QStringLiteral("minZoom"), 1);
+        result.insert(QStringLiteral("org.swak.xyz.usgs-imagery-topo"), imageryTopo);
+        for (const auto &style : {QStringLiteral("outdoors"), QStringLiteral("cycle")}) {
+            auto source = mapDefaults(style == QStringLiteral("outdoors") ? tr("Thunderforest Outdoors (API key)") : tr("Thunderforest OpenCycleMap (API key)"),
+                QStringLiteral("https://api.thunderforest.com/%1/{z}/{x}/{y}.png").arg(style),
+                QStringLiteral("Maps © Thunderforest, Data © OpenStreetMap contributors | https://www.thunderforest.com/ | https://www.openstreetmap.org/copyright"), 19);
+            source.insert(QStringLiteral("authMode"), QStringLiteral("query")); source.insert(QStringLiteral("authParameter"), QStringLiteral("apikey"));
+            source.insert(QStringLiteral("authEnvironment"), QStringLiteral("SWAK_MAP_THUNDERFOREST_KEY"));
+            result.insert(QStringLiteral("org.swak.xyz.thunderforest-") + style, source);
+        }
+        return result;
     }
     QList<SettingField> fields() const override {
         auto fields = commonMapFields();

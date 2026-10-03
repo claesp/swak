@@ -12,6 +12,12 @@ QList<SettingField> commonMapFields()
         textSetting(QStringLiteral("attribution"), QObject::tr("Attribution and license URL"), 300),
         numberSetting(QStringLiteral("minZoom"), QObject::tr("Minimum tile zoom"), 0, 19),
         numberSetting(QStringLiteral("maxZoom"), QObject::tr("Maximum tile zoom"), 0, 19),
+        choiceSetting(QStringLiteral("authMode"), QObject::tr("Authentication"),
+            {QObject::tr("None"), QObject::tr("Basic username and password"), QObject::tr("Bearer token"), QObject::tr("API key header"), QObject::tr("API key query")},
+            {QStringLiteral("none"), QStringLiteral("basic"), QStringLiteral("bearer"), QStringLiteral("header"), QStringLiteral("query")}),
+        textSetting(QStringLiteral("authUser"), QObject::tr("Authentication username"), 256),
+        textSetting(QStringLiteral("authParameter"), QObject::tr("API key parameter or X- header"), 64),
+        textSetting(QStringLiteral("authEnvironment"), QObject::tr("Secret environment variable (SWAK_MAP_...)"), 128),
         booleanSetting(QStringLiteral("ignoreTls"), QObject::tr("Ignore invalid HTTPS certificates (unsafe)"))};
 }
 QJsonObject mapDefaults(const QString &name, const QString &endpoint, const QString &attribution, int maximumZoom)
@@ -37,7 +43,7 @@ QString validateMapSource(const QJsonObject &source)
     }
     if (source.value(QStringLiteral("minZoom")).toInt() > source.value(QStringLiteral("maxZoom")).toInt())
         return QObject::tr("Minimum zoom must not exceed maximum zoom.");
-    return {};
+    return validateMapAuthentication(source);
 }
 bool validTile(int zoom, int x, int y)
 {
@@ -136,6 +142,13 @@ void MapSources::restorePreferences(const QJsonObject &values)
     for (auto it = entries.begin(); it != entries.end(); ++it) it.value() = QJsonObject{};
     structural.insert(QStringLiteral("sources"), entries);
     if (!validateSettings(structural).isEmpty()) return;
+    const auto oldSources = sources();
+    for (const auto &id : credentials_.keys()) {
+        const auto before = oldSources.value(id).toObject();
+        const auto after = values.value(QStringLiteral("sources")).toObject().value(id).toObject();
+        for (const auto *key : {"endpoint", "authMode", "authUser", "authParameter", "authEnvironment", "ignoreTls"})
+            if (before.value(QLatin1String(key)) != after.value(QLatin1String(key))) { credentials_.remove(id); break; }
+    }
     values_ = values;
     auto known = values.value(QStringLiteral("knownProviders")).toArray();
     if (!values.contains(QStringLiteral("knownProviders")))
@@ -175,6 +188,7 @@ QString MapSources::put(const QString &id, const QJsonObject &source)
 }
 void MapSources::remove(const QString &id)
 {
+    credentials_.remove(id);
     auto entries = sources();
     entries.remove(id);
     values_.insert(QStringLiteral("sources"), entries);
