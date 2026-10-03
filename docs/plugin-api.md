@@ -195,7 +195,13 @@ The tool registry holds guarded pointers. Pane ownership controls each tool life
 `UserObjects::undoStack` supplies the application Edit > Undo action. Shared deletion commands retain complete records. Their history is bounded to 100 commands and is not serialized. Deleted records reserve model capacity until restoration or history removal. This reserve keeps a full model from blocking undo. GUI input, drawing, and model updates remain on the interface thread.
 
 
-`MapTool::paintOverlay` draws transient content above the map. The host uses a transparent, mouse-transparent child widget for this content. Emit `overlayChanged` for pointer-only changes. Emit `changed` when stored content or tool mode changes. The host then updates both surfaces. Overlay painting does not request map tile painting. The view refreshes the overlay when its projection changes. Overlay methods stay on the interface thread and must keep work bounded.
+`MapTool::paintOverlay` draws transient content above the map. Its pointer argument contains the cursor position sampled at paint time, in logical map coordinates. Tools must use that argument for pointer-following previews. The host uses a transparent, mouse-transparent child widget for this content.
+
+Emit `overlayChanged` for pointer-only changes. The host requests an immediate overlay repaint. Qt can defer presentation to the next composed frame. Do not emit that signal from a paint method.
+
+Emit `changed` when stored content or tool mode changes. The host then updates both surfaces.
+
+Overlay painting does not request map tile painting. The view refreshes the overlay when its projection changes. Overlay methods stay on the interface thread and must keep work bounded.
 
 
 `MapTool::statusText` returns a short active-mode indicator or empty text. `MapTools::statusText` combines these indicators. The host reserves a separate status area and refreshes it on `MapTools::changed`. Plugins emit `changed` when a mode starts or ends. The marker tool returns M during placement and movement. Pointer-only updates do not refresh this area.

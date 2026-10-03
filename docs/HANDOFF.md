@@ -580,3 +580,22 @@ The overlay host reached 45 of 45 source lines. UserObjects reached 87 of 87 lin
 Layout migration, overlay geometry, marker appearance, and all four focus cases passed at 200 percent scaling. Screenshots are in `build/overlays-native`. Tests use Qt 6.8.2, GCC 14.2, and software Mesa on Debian 13. Hardware graphics, native Wayland, Qt 6.4 compatibility, and two-hour qualification remain untested. This task adds no external dependency.
 
 The 60-second sanitizer workload passed in `build/quality/20261003-111945-soak-213547`. It completed 905 cycles with 7811072 bytes of peak memory growth. The maximum heartbeat gap was 61 milliseconds, and idle CPU time was 0.025 seconds. This short workload does not replace two-hour qualification. The release build log is `build/overlays-release.log`.
+
+
+## 2026-10-03: Marker pointer latency
+
+The latency regression reproduced a deferred guide repaint before the fix. The guides also used coordinates from the last mouse event. The OS cursor can move beyond those coordinates before Qt paints the overlay.
+
+Pointer-only changes now request an immediate overlay repaint. Qt can defer painting during OpenGL composition, as the 200 percent scale test demonstrated. The host passes the current cursor position to the shared paintOverlay API. Marker guides and movement previews use that position.
+
+Placement still uses the click event coordinates. Full map painting stays outside the pointer-only path. Display composition can still add latency after application painting.
+
+The regression sends an older mouse position while the cursor occupies a newer position. It requires prompt painting, guide pixels at the current cursor, no full map repaint, and no idle repaint loop.
+
+Eight sanitizer suites passed in `build/quality/20261003-113641-quick-215167`. All 47 native sanitizer cases passed in `build/quality/20261003-114309-gui-216990`. LeakSanitizer reported the existing Mesa leak of 240732 bytes in 1073 allocations. The diagnostic remains failed without suppression.
+
+Coverage passed eight suites and all 47 native cases in `build/quality/20261003-113809-coverage-215824`. MapTools reached all 31 lines. The map plugin reached 546 of 553 lines, and Markers reached 181 of 184 lines. Remaining gaps include existing drag-navigation branches and defensive marker failures. The new overlay painting path ran. Line coverage does not establish complete branch or input coverage.
+
+Source analysis passed in `build/quality/20261003-114030-analyze-216612`. The 60-second sanitizer workload passed in `build/quality/20261003-113926-soak-216458`. It completed 1271 cycles with 11337728 bytes of peak memory growth. The maximum heartbeat gap was 35 milliseconds, and idle CPU time was 0.008 seconds. This short workload does not replace two-hour qualification.
+
+The latency, marker workflow, and four focus cases also passed at 200 percent scaling. Tests use Qt 6.8.2, GCC 14.2, and software Mesa on Debian 13. Actual display latency, hardware graphics, native Wayland, and Qt 6.4 remain untested. This change adds no dependency. The release build log is `build/pointer-release.log`.

@@ -63,10 +63,10 @@ public:
         setAttribute(Qt::WA_TransparentForMouseEvents);
         setAttribute(Qt::WA_NoSystemBackground);
         connect(&tools, &MapTools::changed, this, qOverload<>(&ToolOverlay::update));
-        connect(&tools, &MapTools::overlayChanged, this, qOverload<>(&ToolOverlay::update));
+        connect(&tools, &MapTools::overlayChanged, this, qOverload<>(&ToolOverlay::repaint));
     }
 protected:
-    void paintEvent(QPaintEvent *) override { QPainter painter(this); painter.setRenderHint(QPainter::Antialiasing); tools_.paintOverlay(painter, view_); }
+    void paintEvent(QPaintEvent *) override { QPainter painter(this); painter.setRenderHint(QPainter::Antialiasing); tools_.paintOverlay(painter, view_, mapFromGlobal(QCursor::pos())); }
 private:
     MapTools &tools_;
     const Viewport &view_;

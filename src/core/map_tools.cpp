@@ -20,9 +20,9 @@ void MapTools::paint(QPainter &painter, const Viewport &view) const
 {
     for (const auto &tool : tools_) if (tool) { painter.save(); tool->paint(painter, view); painter.restore(); }
 }
-void MapTools::paintOverlay(QPainter &painter, const Viewport &view) const
+void MapTools::paintOverlay(QPainter &painter, const Viewport &view, QPointF pointer) const
 {
-    for (const auto &tool : tools_) if (tool) { painter.save(); tool->paintOverlay(painter, view); painter.restore(); }
+    for (const auto &tool : tools_) if (tool) { painter.save(); tool->paintOverlay(painter, view, pointer); painter.restore(); }
 }
 bool MapTools::deleteSelection()
 {

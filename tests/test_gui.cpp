@@ -883,6 +883,39 @@ private slots:
         QTest::keyClick(QApplication::focusWidget(), Qt::Key_M); QCOMPARE(status->text(), QStringLiteral("M"));
         QTest::keyClick(QApplication::focusWidget(), Qt::Key_Escape); QVERIFY(status->text().isEmpty());
     }
+    void markerPointerLatency()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("pointer.json")), QPluginLoader::staticInstances());
+        window.show(); window.activateWindow();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        for (auto *pane : window.findChildren<QDockWidget *>()) pane->hide();
+        auto *map = window.findChild<QOpenGLWidget *>(); QVERIFY(map);
+        auto *overlay = map->findChild<QWidget *>(QStringLiteral("mapToolOverlay")); QVERIFY(overlay);
+        map->setFocus(); QTest::keyClick(map, Qt::Key_M);
+        const QPoint current(210, 180);
+        QCursor::setPos(map->mapToGlobal(current));
+        QVERIFY(QTest::qWaitFor([&] { return map->mapFromGlobal(QCursor::pos()) == current; }));
+        QTest::qWait(80);
+        struct PaintCounter final : QObject {
+            int count = 0;
+            bool eventFilter(QObject *, QEvent *event) override { if (event->type() == QEvent::Paint) ++count; return false; }
+        } overlayPaints, mapPaints;
+        overlay->installEventFilter(&overlayPaints); map->installEventFilter(&mapPaints);
+        const QPoint stale(150, 120);
+        QMouseEvent motion(QEvent::MouseMove, stale, map->mapToGlobal(stale), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(map, &motion);
+        QVERIFY2(QTest::qWaitFor([&] { return overlayPaints.count > 0; }, 200), "Guide painting did not complete promptly");
+        QCOMPARE(mapPaints.count, 0);
+        const auto frame = overlay->grab().toImage();
+        const qreal scale = overlay->devicePixelRatioF();
+        const auto at = [&](int x, int y) { return frame.pixelColor(qRound(x * scale), qRound(y * scale)); };
+        QVERIFY(at(current.x(), 40) != at(current.x() + 10, 40));
+        QCOMPARE(at(stale.x(), 40), at(stale.x() + 10, 40));
+        QTest::keyClick(map, Qt::Key_Escape);
+        QTest::qWait(80); overlayPaints.count = 0;
+        QTest::qWait(80); QCOMPARE(overlayPaints.count, 0);
+    }
     void editableMarkers()
     {
         QTemporaryDir directory; const auto profile = directory.filePath(QStringLiteral("markers.json")); QString id;
@@ -913,7 +946,7 @@ private slots:
             const QPoint point = map->rect().center(); QTest::mouseMove(map, point);
             QCOMPARE(sceneChanges.count(), 0); QVERIFY(overlayChanges.count() > 0);
             QImage guides(map->size(), QImage::Format_ARGB32_Premultiplied); guides.fill(Qt::transparent);
-            { QPainter painter(&guides); swak::Viewport view; view.size = map->size(); tools->paintOverlay(painter, view); }
+            { QPainter painter(&guides); swak::Viewport view; view.size = map->size(); tools->paintOverlay(painter, view, point); }
             const auto guide = guides.pixelColor(point.x(), 30); QCOMPARE(guide.red(), 0); QCOMPARE(guide.alpha(), 128);
             QVERIFY(map->findChild<QWidget *>(QStringLiteral("mapToolOverlay")));
             struct PaintCounter final : QObject {

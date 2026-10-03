@@ -182,15 +182,15 @@ public:
         }
         if (editor_.draft() && !objects_.find(editor_.draft()->id)) { painter.setBrush(QColor(editor_.draft()->color)); painter.drawEllipse(screen(location(*editor_.draft()), view), editor_.radius(), editor_.radius()); }
     }
-    void paintOverlay(QPainter &painter, const Viewport &view) const override
+    void paintOverlay(QPainter &painter, const Viewport &view, QPointF pointer) const override
     {
         painter.setPen(QPen(QColor("#152028"), 2)); painter.setBrush(editor_.color());
         if (mode_ != Mode::Idle) {
-            if (mode_ == Mode::Moving) { painter.setBrush(QColor(moving_.color)); painter.drawEllipse(pointer_, editor_.radius(), editor_.radius()); }
+            if (mode_ == Mode::Moving) { painter.setBrush(QColor(moving_.color)); painter.drawEllipse(pointer, editor_.radius(), editor_.radius()); }
             painter.setRenderHint(QPainter::Antialiasing, false);
             painter.setPen(QPen(QColor(0, 0, 0, qRound(editor_.guideOpacity() * 255)), 1));
-            painter.drawLine(QPointF(0, pointer_.y()), QPointF(view.size.width(), pointer_.y()));
-            painter.drawLine(QPointF(pointer_.x(), 0), QPointF(pointer_.x(), view.size.height()));
+            painter.drawLine(QPointF(0, pointer.y()), QPointF(view.size.width(), pointer.y()));
+            painter.drawLine(QPointF(pointer.x(), 0), QPointF(pointer.x(), view.size.height()));
         }
     }
     bool deleteSelection() override {
