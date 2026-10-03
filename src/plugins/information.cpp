@@ -115,7 +115,7 @@ protected:
         auto *key = static_cast<QKeyEvent *>(event);
         if (inPane && key->modifiers() == Qt::NoModifier && (key->key() == Qt::Key_Delete || key->key() == Qt::Key_Backspace)
             && tools_ && tools_->deleteSelection()) { key->accept(); return true; }
-        if (key->key() == Qt::Key_Escape && key->modifiers() == Qt::NoModifier && tools_ && tools_->cancel()) { key->accept(); return true; }
+        if (key->key() == Qt::Key_Escape && key->modifiers() == Qt::NoModifier && tools_ && tools_->dismiss()) { key->accept(); return true; }
         if (key->key() != dismissKey_ || key->modifiers() != Qt::NoModifier) return false;
         if ((!selection_ || !selection_->item()) && store_.selected().isEmpty() && !isVisible()) return false;
         if (selection_) selection_->clear();

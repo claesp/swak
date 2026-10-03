@@ -15,7 +15,9 @@ public:
     virtual QString statusText() const { return {}; }
     virtual bool coordinateGridActive() const { return false; }
     virtual void activate(QWidget &) {}
+    virtual bool interactionActive() const { return false; }
     virtual bool cancel() = 0;
+    virtual bool dismiss() { return cancel(); }
     virtual bool deleteSelection() { return false; }
 signals:
     void activationRequested();
@@ -33,6 +35,7 @@ public:
     QString statusText() const;
     bool coordinateGridActive() const;
     bool cancel();
+    bool dismiss();
     bool deleteSelection();
 signals:
     void activationRequested(swak::MapTool *tool);

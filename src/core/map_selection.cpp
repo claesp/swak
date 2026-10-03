@@ -26,7 +26,7 @@ void MapSelection::paint(QPainter &painter, const Viewport &view) const
             const QColor inverse(255 - selected.color.red(), 255 - selected.color.green(), 255 - selected.color.blue());
             QPen pen(selected.kind == MapItem::Kind::Line ? inverse : QColor(Qt::white), selected.lineWidth + 2);
             pen.setCosmetic(true);
-            if (selected.kind == MapItem::Kind::Polygon) pen.setStyle(Qt::DashLine);
+            if (selected.kind == MapItem::Kind::Polygon) pen.setStyle(selected.outlineStyle);
             painter.setPen(pen);
             painter.setBrush(selected.kind == MapItem::Kind::Polygon ? QBrush(QColor(255, 255, 255, 35)) : Qt::NoBrush);
             painter.save(); painter.translate(offset); painter.scale(scale, scale);

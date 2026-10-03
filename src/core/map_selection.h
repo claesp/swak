@@ -25,6 +25,7 @@ struct MapItem {
     double lineWidth = 2;
     QString symbol = {};
     QPainterPath markerOutline;
+    Qt::PenStyle outlineStyle = Qt::DashLine;
 };
 class MapSelection final : public QObject {
     Q_OBJECT

@@ -3,6 +3,7 @@
 #include "core/activity.h"
 #include "core/maps.h"
 #include "core/user_objects.h"
+#include "core/polygon.h"
 #include "core/marker_collections.h"
 #include "core/data.h"
 #include "core/interfaces.h"
@@ -156,6 +157,11 @@ private slots:
             QVERIFY(localObjects.put(marker).isEmpty()); localObjects.remove(marker.id);
             localObjects.undoStack().undo(); QVERIFY(localObjects.find(marker.id));
             localObjects.undoStack().redo(); QVERIFY(!localObjects.find(marker.id));
+            UserObject polygon; polygon.id = QStringLiteral("polygon-%1").arg(cycles % 128); polygon.type = QStringLiteral("polygon"); polygon.title = QStringLiteral("Soak area");
+            const QPolygonF corners{{0.4, 0.4}, {0.6, 0.4}, {0.6, 0.6}, {0.4, 0.6}};
+            polygon.geometry = polygonGeometry(corners); QVERIFY(localObjects.put(polygon).isEmpty());
+            QVERIFY(polygonArea(corners) > 0); localObjects.remove(polygon.id);
+            localObjects.undoStack().undo(); QVERIFY(localObjects.find(polygon.id)); localObjects.undoStack().redo();
             QVERIFY(localObjects.undoStack().count() <= 100);
             QVERIFY(collections.put(markerCollection).isEmpty());
             QVERIFY(collections.symbol(QStringLiteral("soak.collection"), {}));

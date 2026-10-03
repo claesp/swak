@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "org.swak.polygons",
+  "name": "Polygons",
+  "description": "Create and edit local polygon areas.",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entryPoint": "PolygonPlugin",
+  "linkage": "static",
+  "platforms": ["linux"],
+  "qtMajor": 6,
+  "qtMinimum": "6.4.0",
+  "interfaces": ["pane", "map-tool"],
+  "requires": [],
+  "permissions": [],
+  "settingsSchemaVersion": 1
+}

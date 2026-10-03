@@ -40,6 +40,7 @@
 #include "app/marker_manager.h"
 #include "core/user_objects.h"
 #include "core/object_editor.h"
+#include "core/polygon.h"
 #include <QApplication>
 #include <QWheelEvent>
 #include <QElapsedTimer>
@@ -911,7 +912,7 @@ private slots:
             QVERIFY(collections->exportArchive(collectionId, directory.filePath(QStringLiteral("custom.zip"))).isEmpty());
             QVERIFY(manager->grab().save(QStringLiteral("marker-collections.png")));
             manager->close();
-            auto *map = window.findChild<QOpenGLWidget *>(); auto *editor = window.findChild<swak::ObjectEditor *>();
+            auto *map = window.findChild<QOpenGLWidget *>(); auto *editor = window.findChild<swak::ObjectEditor *>(QStringLiteral("objectEditor"));
             auto *objects = window.findChild<swak::UserObjects *>(); auto *selection = window.findChild<swak::MapSelection *>();
             map->setFocus(); QTest::keyClick(map, Qt::Key_M); QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
             auto *collection = editor->findChild<QComboBox *>(QStringLiteral("objectCollection")); auto *type = editor->findChild<QComboBox *>(QStringLiteral("objectType"));
@@ -936,7 +937,7 @@ private slots:
         swak::Window restored(profile, QPluginLoader::staticInstances()); restored.show(); QVERIFY(QTest::qWaitForWindowExposed(&restored));
         auto *collections = restored.findChild<swak::MarkerCollections *>(); QVERIFY(collections->collections().contains(collectionId));
         auto *objects = restored.findChild<swak::UserObjects *>(); QCOMPARE(objects->find(markerId)->collection, collectionId);
-        auto *editor = restored.findChild<swak::ObjectEditor *>(); QCOMPARE(editor->newCollection(), collectionId); QCOMPARE(editor->newSymbol(), QStringLiteral("a-h-G-U-C-I"));
+        auto *editor = restored.findChild<swak::ObjectEditor *>(QStringLiteral("objectEditor")); QCOMPARE(editor->newCollection(), collectionId); QCOMPARE(editor->newSymbol(), QStringLiteral("a-h-G-U-C-I"));
         for (const auto &id : collections->collections().keys()) QVERIFY(collections->setEnabled(id, false).isEmpty());
         QVERIFY(editor->newCollection().isEmpty());
         auto *map = restored.findChild<QOpenGLWidget *>(); map->setFocus(); QTest::keyClick(map, Qt::Key_M); QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
@@ -949,7 +950,7 @@ private slots:
         {
             swak::Window window(profile, QPluginLoader::staticInstances()); window.show(); window.activateWindow();
             QVERIFY(QTest::qWaitForWindowExposed(&window));
-            auto *map = window.findChild<QOpenGLWidget *>(); auto *editor = window.findChild<swak::ObjectEditor *>();
+            auto *map = window.findChild<QOpenGLWidget *>(); auto *editor = window.findChild<swak::ObjectEditor *>(QStringLiteral("objectEditor"));
             auto *objects = window.findChild<swak::UserObjects *>(); auto *selection = window.findChild<swak::MapSelection *>();
             map->setFocus(); QTest::keyClick(map, Qt::Key_M); QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
             auto *type = editor->findChild<QComboBox *>(QStringLiteral("objectType"));
@@ -998,7 +999,7 @@ private slots:
         {
             swak::Window window(profile, QPluginLoader::staticInstances()); window.show(); window.activateWindow();
             QVERIFY(QTest::qWaitForWindowExposed(&window));
-            auto *map = window.findChild<QOpenGLWidget *>(); auto *editor = window.findChild<swak::ObjectEditor *>();
+            auto *map = window.findChild<QOpenGLWidget *>(); auto *editor = window.findChild<swak::ObjectEditor *>(QStringLiteral("objectEditor"));
             auto *objects = window.findChild<swak::UserObjects *>(); auto *selection = window.findChild<swak::MapSelection *>();
             map->setFocus(); QTest::keyClick(map, Qt::Key_M); QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
             auto *type = editor->findChild<QComboBox *>(QStringLiteral("objectType")); QVERIFY(type);
@@ -1035,7 +1036,7 @@ private slots:
         swak::Window window(directory.filePath(QStringLiteral("focus.json")), QPluginLoader::staticInstances());
         window.show(); window.activateWindow(); QVERIFY(QTest::qWaitForWindowExposed(&window));
         auto *map = window.findChild<QOpenGLWidget *>();
-        auto *editor = window.findChild<swak::ObjectEditor *>();
+        auto *editor = window.findChild<swak::ObjectEditor *>(QStringLiteral("objectEditor"));
         auto *objects = window.findChild<swak::UserObjects *>();
         auto *editorDock = window.findChild<QDockWidget *>(QStringLiteral("org.swak.markers.pane"));
         auto *infoDock = window.findChild<QDockWidget *>(QStringLiteral("org.swak.information.pane"));
@@ -1105,7 +1106,7 @@ private slots:
             swak::Window window(profile, QPluginLoader::staticInstances()); window.show(); window.activateWindow();
             QVERIFY(QTest::qWaitForWindowExposed(&window));
             auto *map = window.findChild<QOpenGLWidget *>(); auto *objects = window.findChild<swak::UserObjects *>(); QVERIFY(map && objects);
-            auto *editor = window.findChild<swak::ObjectEditor *>(); QVERIFY(editor);
+            auto *editor = window.findChild<swak::ObjectEditor *>(QStringLiteral("objectEditor")); QVERIFY(editor);
             auto *selection = window.findChild<swak::MapSelection *>();
             auto *pane = window.findChild<QDockWidget *>(QStringLiteral("org.swak.markers.pane")); QVERIFY(pane);
             auto *regular = window.findChild<QDockWidget *>(QStringLiteral("org.swak.information.pane")); QVERIFY(regular);
@@ -1223,7 +1224,7 @@ private slots:
         swak::Window restored(profile, QPluginLoader::staticInstances()); auto *objects = restored.findChild<swak::UserObjects *>();
         QCOMPARE(objects->items().size(), 1); QCOMPARE(objects->find(id)->title, QStringLiteral("Updated marker"));
         QCOMPARE(objects->find(id)->description, QStringLiteral("Local marker description")); QVERIFY(!objects->undoStack().canUndo());
-        const auto configuration = dynamic_cast<swak::SettingsParticipant *>(restored.findChild<swak::ObjectEditor *>())->savePreferences();
+        const auto configuration = dynamic_cast<swak::SettingsParticipant *>(restored.findChild<swak::ObjectEditor *>(QStringLiteral("objectEditor")))->savePreferences();
         QCOMPARE(configuration.value(QStringLiteral("createKey")).toString(), QStringLiteral("N")); QCOMPARE(configuration.value(QStringLiteral("radius")).toInt(), 9);
     }
     void keybindingsAndDismissal()
@@ -1384,6 +1385,143 @@ private slots:
         QCOMPARE(state.value(QStringLiteral("wheelSteps")).toInt(), 2);
         QVERIFY(state.value(QStringLiteral("wheelReverse")).toBool());
     }
+    void polygonInputLimits()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("polygon-limits.json")), QPluginLoader::staticInstances());
+        window.show(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *map = window.findChild<QOpenGLWidget *>(); QVERIFY(map);
+        auto *editor = window.findChild<swak::ObjectEditor *>(QStringLiteral("polygonEditor")); QVERIFY(editor);
+        auto *settings = dynamic_cast<swak::SettingsParticipant *>(editor); QVERIFY(settings);
+        auto configuration = settings->savePreferences(); configuration.insert(QStringLiteral("createKey"), QStringLiteral("Ctrl+P"));
+        QVERIFY(!settings->validateSettings(configuration).isEmpty());
+        configuration.insert(QStringLiteral("createKey"), QStringLiteral("O")); QVERIFY(settings->validateSettings(configuration).isEmpty()); settings->restorePreferences(configuration);
+        auto *tools = window.findChild<swak::MapTools *>(); QVERIFY(tools);
+        auto *tool = editor->findChild<swak::MapTool *>(); QVERIFY(tool);
+        const swak::Viewport view{QSizeF(800, 600), {0.5, 0.5}, 2};
+        const auto click = [&](QPointF point) {
+            QMouseEvent event(QEvent::MouseButtonRelease, point, point, Qt::LeftButton, Qt::NoButton, Qt::NoModifier); tool->handle(event, view, *map);
+        };
+        QTest::keyClick(map, Qt::Key_O); QCOMPARE(tools->statusText(), QStringLiteral("P"));
+        click({400, 200}); click({400, 200}); QVERIFY(!editor->draft());
+        tools->cancel();
+        for (int repeat = 0; repeat < 4; ++repeat) {
+            tool->activate(*map);
+            for (int i = 0; i < swak::MaxPolygonVertices; ++i) {
+                const double angle = i * 6.283185307179586 / swak::MaxPolygonVertices;
+                click({400 + 200 * std::cos(angle), 300 + 200 * std::sin(angle)});
+            }
+            click({400, 300});
+            QKeyEvent complete(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier); QVERIFY(tool->handle(complete, view, *map));
+            QVERIFY(editor->draft()); QCOMPARE(swak::polygonVertices(editor->draft()->geometry).size(), swak::MaxPolygonVertices);
+            QImage overlay(800, 600, QImage::Format_ARGB32_Premultiplied); overlay.fill(Qt::transparent);
+            { QPainter painter(&overlay); tool->paintOverlay(painter, view, {500, 500}); }
+            QCOMPARE(overlay.pixelColor(600, 300).alpha(), 0);
+            editor->cancel();
+        }
+        tool->activate(*map); click({100, 100}); click({300, 300}); click({100, 300}); click({300, 100});
+        QKeyEvent complete(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier); QVERIFY(tool->handle(complete, view, *map));
+        QVERIFY(!editor->draft()); QCOMPARE(tools->statusText(), QStringLiteral("P"));
+        tools->cancel(); QVERIFY(!tools->coordinateGridActive());
+        QVERIFY(window.findChild<swak::UserObjects *>()->items().isEmpty());
+    }
+
+    void polygonWorkflow()
+    {
+        QTemporaryDir directory; const auto profile = directory.filePath(QStringLiteral("polygons.json"));
+        QString id;
+        {
+            swak::Window window(profile, QPluginLoader::staticInstances());
+            window.show(); window.activateWindow(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+            auto *map = window.findChild<QOpenGLWidget *>(); QVERIFY(map);
+            auto *editor = window.findChild<swak::ObjectEditor *>(QStringLiteral("polygonEditor")); QVERIFY(editor);
+            auto *tools = window.findChild<swak::MapTools *>(); QVERIFY(tools);
+            auto *objects = window.findChild<swak::UserObjects *>(); QVERIFY(objects);
+            auto *selection = window.findChild<swak::MapSelection *>(); QVERIFY(selection);
+            auto *action = window.findChild<QAction *>(QStringLiteral("polygonModeAction")); QVERIFY(action);
+            const QPoint a(100, 140), b(300, 140), c(300, 300), d(100, 300), middle(200, 220);
+            const auto click = [&](QPoint point) { QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, point); };
+            const auto motion = [&](QPoint point) {
+                QMouseEvent event(QEvent::MouseMove, QPointF(point), QPointF(map->mapToGlobal(point)), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+                QApplication::sendEvent(map, &event);
+            };
+            QTest::keyClick(map, Qt::Key_P); QCOMPARE(tools->statusText(), QStringLiteral("P")); QCOMPARE(map->cursor().shape(), Qt::CrossCursor);
+            QTest::keyClick(map, Qt::Key_M); QCOMPARE(tools->statusText(), QStringLiteral("M"));
+            QTest::keyClick(map, Qt::Key_P); QCOMPARE(tools->statusText(), QStringLiteral("P"));
+            click(a); QCOMPARE(map->cursor().shape(), Qt::CrossCursor); click(b); motion(c);
+            QImage overlay(map->size(), QImage::Format_ARGB32_Premultiplied); overlay.fill(Qt::transparent);
+            const auto savedView = dynamic_cast<swak::PreferenceParticipant *>(map)->savePreferences();
+            swak::Viewport view{map->size(), {savedView.value(QStringLiteral("centerX")).toDouble(), savedView.value(QStringLiteral("centerY")).toDouble()}, savedView.value(QStringLiteral("zoom")).toDouble()};
+            { QPainter painter(&overlay); tools->paintOverlay(painter, view, c); }
+            const auto shade = overlay.pixelColor(250, 180); QCOMPARE(shade.alpha(), 77); QVERIFY(shade.blue() > shade.red());
+            QCOMPARE(overlay.pixelColor(20, c.y()).alpha(), 128);
+            QVERIFY(overlay.save(QStringLiteral("polygon-preview.png")));
+            click(c); click(d); click(a); QVERIFY(editor->draft()); QVERIFY(editor->isVisible()); QVERIFY(tools->statusText().isEmpty());
+            QCOMPARE(swak::polygonVertices(editor->draft()->geometry).size(), 4);
+            QVERIFY(!editor->findChild<QComboBox *>(QStringLiteral("objectCollection"))->isVisible());
+            QCOMPARE(editor->findChild<QComboBox *>(QStringLiteral("objectType"))->currentText(), QStringLiteral("Polygon"));
+            auto *title = editor->findChild<QLineEdit *>(QStringLiteral("objectTitle")); title->setText(QStringLiteral("Test area"));
+            editor->findChild<QPlainTextEdit *>(QStringLiteral("objectDescription"))->setPlainText(QStringLiteral("Area description"));
+            editor->findChild<QToolButton *>(QStringLiteral("objectColor3"))->click();
+            editor->findChild<QPushButton *>(QStringLiteral("addObjectProperty"))->click();
+            auto *properties = editor->findChild<QTableWidget *>(QStringLiteral("objectProperties"));
+            auto *propertyName = properties->findChild<QLineEdit *>(); QVERIFY(propertyName);
+            propertyName->setText(QStringLiteral("Owner")); QTest::keyClick(propertyName, Qt::Key_Return);
+            QVERIFY(QTest::qWaitFor([&] { return properties->item(0, 0)->text() == QStringLiteral("Owner"); }, 1000)); properties->item(0, 1)->setText(QStringLiteral("Local"));
+            QVERIFY(editor->grab().save(QStringLiteral("polygon-editor.png")));
+            QTest::keyClick(title, Qt::Key_Return); QCOMPARE(objects->items().size(), 1); QVERIFY(!editor->draft());
+            id = objects->items().firstKey(); QCOMPARE(objects->find(id)->color, QStringLiteral("#43a047"));
+            QCOMPARE(objects->find(id)->properties.value(QStringLiteral("Owner")).toString(), QStringLiteral("Local"));
+            click(middle); QVERIFY(selection->item()); QCOMPARE(selection->item()->id, id); QCOMPARE(selection->item()->outlineStyle, Qt::SolidLine);
+            QVERIFY(!selection->item()->properties.value(QStringLiteral("Area")).toString().isEmpty());
+            QVERIFY(QTest::qWaitFor([&] { return map->isValid(); }));
+            const auto frame = map->grabFramebuffer();
+            const double ratio = map->devicePixelRatioF();
+            QVERIFY(frame.pixelColor(qRound(150 * ratio), qRound(180 * ratio)) != frame.pixelColor(qRound(450 * ratio), qRound(180 * ratio)));
+            QVERIFY(frame.save(QStringLiteral("polygon-frame.png")));
+            QVERIFY(map->grab().save(QStringLiteral("polygon-selected.png")));
+            const auto context = [&](QPoint point, const QString &name, bool enabled = true) {
+                bool seen = false;
+                QTimer::singleShot(0, map, [&] {
+                    auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget()); QVERIFY(menu);
+                    auto *entry = menu->findChild<QAction *>(name); QVERIFY(entry); seen = true; QCOMPARE(entry->isEnabled(), enabled);
+                    if (enabled) entry->trigger();
+                    menu->close();
+                });
+                QContextMenuEvent event(QContextMenuEvent::Mouse, point, map->mapToGlobal(point)); QApplication::sendEvent(map, &event); QVERIFY(seen);
+            };
+            context(middle, QStringLiteral("editPolygon")); QVERIFY(editor->draft());
+            const auto original = editor->draft()->geometry;
+            context(a, QStringLiteral("movePolygonVertex")); QCOMPARE(tools->statusText(), QStringLiteral("P")); motion(b); click(b);
+            QCOMPARE(editor->draft()->geometry, original); QCOMPARE(tools->statusText(), QStringLiteral("P"));
+            QTest::keyClick(map, Qt::Key_Escape); QVERIFY(editor->draft()); QVERIFY(tools->statusText().isEmpty());
+            context(a, QStringLiteral("movePolygonVertex")); click(QPoint(80, 120)); QVERIFY(editor->draft()->geometry != original);
+            QCOMPARE(objects->find(id)->geometry, original);
+            QTest::keyClick(editor, Qt::Key_Escape); QVERIFY(!editor->draft()); QCOMPARE(objects->find(id)->geometry, original);
+            context(middle, QStringLiteral("editPolygon")); context(a, QStringLiteral("deletePolygonVertex"));
+            QCOMPARE(swak::polygonVertices(editor->draft()->geometry).size(), 3);
+            context(b, QStringLiteral("deletePolygonVertex"), false);
+            editor->findChild<QPushButton *>(QStringLiteral("applyObject"))->click(); QCOMPARE(swak::polygonVertices(objects->find(id)->geometry).size(), 3);
+            QTest::keyClick(map, Qt::Key_Delete); QVERIFY(objects->items().isEmpty());
+            objects->undoStack().undo(); QCOMPARE(objects->items().size(), 1); QVERIFY(selection->item());
+            context(QPoint(250, 250), QStringLiteral("deletePolygon")); QVERIFY(objects->items().isEmpty());
+            objects->undoStack().undo(); QCOMPARE(objects->items().size(), 1);
+            action->trigger(); click(a); click(b); motion(c); QTest::keyClick(map, Qt::Key_Return);
+            QVERIFY(editor->draft()); QCOMPARE(swak::polygonVertices(editor->draft()->geometry).size(), 3);
+            QTest::keyClick(editor, Qt::Key_Escape); QCOMPARE(objects->items().size(), 1);
+            action->trigger(); click(a); click(b); motion(QPoint(200, 140)); QTest::keyClick(map, Qt::Key_Return);
+            QVERIFY(!editor->draft()); QCOMPARE(tools->statusText(), QStringLiteral("P"));
+            QTest::keyClick(map, Qt::Key_P); QVERIFY(tools->statusText().isEmpty());
+            action->trigger(); click(a); QTest::keyClick(map, Qt::Key_Return); QVERIFY(!editor->draft());
+            QTest::keyClick(map, Qt::Key_Escape); QVERIFY(tools->statusText().isEmpty());
+            click(QPoint(500, 100)); QVERIFY(!selection->item());
+            window.close();
+        }
+        swak::Window restored(profile, QPluginLoader::staticInstances());
+        const auto *objects = restored.findChild<swak::UserObjects *>(); QVERIFY(objects->find(id));
+        QCOMPARE(objects->find(id)->title, QStringLiteral("Test area")); QCOMPARE(swak::polygonVertices(objects->find(id)->geometry).size(), 3);
+    }
+
     void markerMenuActivation()
     {
         QTemporaryDir directory;
@@ -1395,7 +1533,7 @@ private slots:
         QVERIFY(menu->actions().contains(action)); QCOMPARE(action->text(), QStringLiteral("Marker"));
         for (auto *entry : menu->actions()) QVERIFY(entry->text() != QStringLiteral("Edit marker"));
         auto *tools = window.findChild<swak::MapTools *>(); QVERIFY(tools);
-        auto *editor = window.findChild<swak::ObjectEditor *>(); QVERIFY(editor);
+        auto *editor = window.findChild<swak::ObjectEditor *>(QStringLiteral("objectEditor")); QVERIFY(editor);
         auto *objects = window.findChild<swak::UserObjects *>(); QVERIFY(objects);
         QVERIFY(!editor->isVisible());
         menu->popup(window.mapToGlobal(QPoint(400, 300))); QVERIFY(QTest::qWaitForWindowExposed(menu));
@@ -1874,7 +2012,7 @@ private slots:
                 if (!dialog) { QFAIL("Settings dialog did not open."); return; }
                 auto *tabs = dialog->findChild<QTabWidget *>();
                 auto *panes = dialog->findChild<QListWidget *>(QStringLiteral("paneSettingsSections"));
-                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 7) {
+                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 8) {
                     dialog->reject(); QFAIL("The pane tab is incomplete."); return;
                 }
                 for (auto *label : dialog->findChildren<QLabel *>()) {
@@ -2248,7 +2386,7 @@ private slots:
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         const auto docks = window.findChildren<QDockWidget *>();
-        QCOMPARE(docks.size(), 7);
+        QCOMPARE(docks.size(), 8);
         QVERIFY(!window.findChild<QWidget *>(QStringLiteral("toolsDock")));
         auto *viewMenu = window.findChild<QMenu *>(QStringLiteral("viewMenu"));
         auto *fileMenu = window.findChild<QMenu *>(QStringLiteral("fileMenu"));

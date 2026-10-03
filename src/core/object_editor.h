@@ -17,6 +17,8 @@ public:
     QString newCollection() const;
     QString newSymbol() const;
     void edit(const UserObject &item);
+    bool setGeometry(const QJsonObject &geometry);
+    void reportError(const QString &message);
     QJsonObject editorState() const;
     void restoreEditorState(const QJsonObject &values);
     bool cancel();
@@ -39,6 +41,7 @@ private:
     QLineEdit *title_;
     QComboBox *type_;
     QComboBox *collection_;
+    QLabel *collectionLabel_;
     MarkerCollections &collections_;
     QString lastCollection_;
     QString lastSymbol_;

@@ -1,6 +1,6 @@
 # Plugin API
 
-This review covers all fourteen built-in plugins. Every plugin implements `Plugin` and uses the shared contracts in `src/core/`. The common API version is 2. No plugin depends on a concrete application window class.
+This review covers all sixteen built-in plugins. Every plugin implements `Plugin` and uses the shared contracts in `src/core/`. The common API version is 2. No plugin depends on a concrete application window class.
 
 The application links plugins into the executable. Qt embeds each `src/plugins/<plugin>/MANIFEST` file through `Q_PLUGIN_METADATA`. The common metadata identifier is `org.swak.Plugin/2.0`. The application does not load external plugin binaries or search plugin directories.
 
@@ -40,7 +40,7 @@ The host adds a plain-text label from `ToolbarPlugin::name()` before each toolba
 
 Tools and sources require a codec for their panes. The host leaves those panes unavailable when no codec exists. Codec-free panes, menus, and independent map layers remain available. Pane visibility does not unload plugin code or stop a receiver.
 
-The host owns pane placement, visibility actions, and layout persistence. Plugins with commands receive a submenu under Tools > Plugins. The plugin entry has a checkbox that shows or hides its pane. Return and Space also toggle the pane. Hover and Right open the command submenu. Plugins without commands use a direct checkbox action. Closing a pane hides it.
+The host owns pane placement, visibility actions, and layout persistence. Plugins with commands receive a submenu under Tools > Plugins. The plugin entry has a checkbox that shows or hides its pane. Return and Space also toggle the pane. Hover and Right open the command submenu. Plugins without commands use a direct checkbox action unless they supply a primaryAction. Marker and Polygon use direct creation commands. Closing a pane hides it.
 
 # Implemented plugins
 
@@ -56,6 +56,7 @@ The host owns pane placement, visibility actions, and layout persistence. Plugin
 | `src/plugins/activity` | Events | Pane and menu |
 | `src/plugins/information` | Information | Pane |
 | `src/plugins/markers` | Markers | Pane, map tool, and Core collection |
+| `src/plugins/polygons` | Polygons | Pane and map tool |
 | `src/plugins/milstd2525` | MILSTD2525 | Marker collection |
 | `src/plugins/mvt` | MVT vector tiles | Map provider and vector tiles |
 | `src/plugins/xyz` | XYZ image tiles | Map provider |
@@ -256,3 +257,17 @@ The generic form selects a choice field's first declared value when a saved valu
 PanePlugin can return a pane-owned QAction from `primaryAction(QWidget *)`. The argument is the dock content container, which contains the plugin widget. The host uses that action instead of the pane toggle in Tools > Plugins. The default remains the existing pane toggle.
 
 MapTool can emit `activationRequested`, which MapTools forwards to the map view. The view cancels the current tool, calls `activate(QWidget &)`, and focuses the map. The default activation method does nothing. Markers uses this path for the Marker menu action and shares its placement setup with the keyboard action. The editor pane still opens after placement or an explicit edit.
+
+# Polygon tools
+
+The Polygons plugin implements Plugin, PanePlugin, and MapExtension. Its embedded MANIFEST declares the pane and map-tool roles. The primary pane command activates polygon creation through the same API as Marker.
+
+MapTool::interactionActive gives an active gesture or editor first access to map events. MapTools then tries inactive tools for unhandled events. Keyboard activation uses activationRequested, so the host cancels previous tool state before it activates another tool.
+
+MapTool::dismiss cancels one interaction step. Its default calls cancel. The Information plugin uses MapTools::dismiss for Escape. Polygon vertex moves override this method to discard the preview while retaining the editor draft. MapTools::cancel still clears all tool state on activation changes and shutdown.
+
+ObjectEditor supports circle and polygon metadata. Polygon editing hides marker collections and uses the Polygon type. setGeometry validates a replacement draft geometry without changing its metadata controls or saved record. reportError shows a recoverable edit error. configurationChanged also reports draft color and geometry changes.
+
+Polygon objects use type polygon and geometry.vertices, an array of normalized [x, y] pairs. The closing corner is implicit. The shared model accepts 3 to 64 distinct corners and rejects crossing edges, overlapping edges, and zero area. The existing object and profile budgets still apply. Unknown plugin records remain in the shared store.
+
+MapItem::outlineStyle controls the selected polygon outline. Imported areas retain dashed outlines by default. Local polygons request a solid white outline. No new external dependency is required.

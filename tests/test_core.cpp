@@ -9,6 +9,7 @@
 #include "core/maps.h"
 #include "core/interfaces.h"
 #include "core/user_objects.h"
+#include "core/polygon.h"
 #include "core/map_grid.h"
 #include <QPainter>
 #include "core/projection.h"
@@ -238,6 +239,45 @@ private slots:
         image.fill(Qt::transparent); QPainter painter(&image); Viewport invalid; invalid.size = image.size(); invalid.zoom = std::numeric_limits<double>::quiet_NaN();
         paintMapGrid(painter, invalid, 0.2, 140); painter.end(); QCOMPARE(image.pixelColor(450, 300).alpha(), 0);
     }
+    void polygons()
+    {
+        const QPolygonF square{project(0, 0), project(0, 1), project(1, 1), project(1, 0)};
+        QVERIFY(validatePolygon(square).isEmpty());
+        QCOMPARE(polygonVertices(polygonGeometry(square)), square);
+        const double expected = 12363718145.18;
+        QVERIFY(std::abs(polygonArea(square) / expected - 1) < 0.00001);
+        auto reverse = square; std::reverse(reverse.begin(), reverse.end());
+        QVERIFY(std::abs(polygonArea(reverse) - polygonArea(square)) < 0.1);
+        QVERIFY(square.containsPoint(polygonLabelPoint(square), Qt::OddEvenFill));
+        const QPolygonF concave{{0.1, 0.1}, {0.9, 0.1}, {0.9, 0.9}, {0.7, 0.9}, {0.7, 0.3}, {0.3, 0.3}, {0.3, 0.9}, {0.1, 0.9}};
+        QVERIFY(validatePolygon(concave).isEmpty()); QVERIFY(concave.containsPoint(polygonLabelPoint(concave), Qt::OddEvenFill));
+        QVERIFY(!validatePolygon({}).isEmpty()); QCOMPARE(polygonArea({}), 0); QCOMPARE(polygonLabelPoint({}), QPointF{});
+        QVERIFY(!validatePolygon(QPolygonF{{0, 0}, {1e-13, 0}, {0, 1e-13}}).isEmpty());
+        QVERIFY(!validatePolygon(QPolygonF{{0, 0}, {1, 1}, {0, 1}, {1, 0}}).isEmpty());
+        QVERIFY(!validatePolygon(QPolygonF{{0, 0}, {0.5, 0}, {1, 0}}).isEmpty());
+        auto bad = square; bad.append(square.first()); QVERIFY(!validatePolygon(bad).isEmpty());
+        bad = square; bad[0] = {-1, 0}; QVERIFY(!validatePolygon(bad).isEmpty());
+        bad[0] = {std::numeric_limits<double>::infinity(), 0}; QVERIFY(!validatePolygon(bad).isEmpty());
+        bad = QPolygonF{{0, 0}, {1, 0}, {0.5, 0}, {0.5, 1}}; QVERIFY(!validatePolygon(bad).isEmpty());
+        QPolygonF limit;
+        for (int i = 0; i < MaxPolygonVertices; ++i) { const double angle = i * 6.283185307179586 / MaxPolygonVertices; limit.append({0.5 + 0.1 * std::cos(angle), 0.5 + 0.1 * std::sin(angle)}); }
+        QVERIFY(validatePolygon(limit).isEmpty());
+        limit.append({0.5, 0.5}); QVERIFY(!validatePolygon(limit).isEmpty()); QVERIFY(polygonVertices(polygonGeometry(limit)).isEmpty());
+        QVERIFY(polygonVertices({{QStringLiteral("vertices"), QJsonArray{QJsonArray{QStringLiteral("bad"), 0}}}}).isEmpty());
+        QCOMPARE(formatArea(999, QLocale(QLocale::Swedish, QLocale::Sweden)), QString::fromUtf8("999,00 m²"));
+        QCOMPARE(formatArea(1000, QLocale(QLocale::Swedish, QLocale::Sweden)), QString::fromUtf8("0,0010 km²"));
+        QVERIFY(formatArea(10, QLocale(QLocale::English, QLocale::UnitedStates)).endsWith(QStringLiteral("ft²")));
+        QVERIFY(formatArea(10000, QLocale(QLocale::English, QLocale::UnitedStates)).endsWith(QStringLiteral("acres")));
+        QVERIFY(formatArea(10000000, QLocale(QLocale::English, QLocale::UnitedStates)).endsWith(QStringLiteral("mi²")));
+        QVERIFY(formatArea(-1).isEmpty()); QVERIFY(formatArea(std::numeric_limits<double>::infinity()).isEmpty());
+        UserObjects objects; UserObject item; item.id = QStringLiteral("area"); item.type = QStringLiteral("polygon"); item.title = QStringLiteral("Area"); item.geometry = polygonGeometry(square);
+        QVERIFY(objects.put(item).isEmpty()); const auto saved = objects.savePreferences();
+        objects.remove(item.id); objects.undoStack().undo(); QCOMPARE(objects.find(item.id)->geometry, item.geometry);
+        UserObjects restored; restored.restorePreferences(saved); QCOMPARE(restored.find(item.id)->json(), item.json());
+        item.properties.insert(QStringLiteral("Area"), QStringLiteral("fake")); QVERIFY(!objects.put(item).isEmpty());
+        item.properties = {}; item.geometry = polygonGeometry(bad); QVERIFY(!objects.put(item).isEmpty());
+    }
+
     void userObjectsAndUndo()
     {
         UserObjects objects;
@@ -267,7 +307,7 @@ private slots:
 
     void pluginManifests()
     {
-        QCOMPARE(builtInPlugins().size(), 15);
+        QCOMPARE(builtInPlugins().size(), 16);
         for (const auto &entry : QPluginLoader::staticPlugins()) {
             if (entry.metaData().value(QStringLiteral("IID")).toString() != QStringLiteral("org.swak.Plugin/2.0")) continue;
             const auto manifest = entry.metaData().value(QStringLiteral("MetaData")).toObject();

@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 3, 2026: Read “Marker menu activation” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 3, 2026: Read “Polygon creation and editing” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -731,3 +731,28 @@ The 60-second sanitizer workload passed in `build/quality/20261003-202751-soak-1
 The Marker command uses the same menu dispatch as pane commands. This closes the menu before activation and handles clicks at 200 percent scaling. Focused marker and pane tests passed at that scale. An earlier test exposed a dropped click through the default submenu handler. The final test also asserts that the action fires once.
 
 The final native sanitizer run passed all 52 functional cases in `build/quality/20261003-203754-gui-16622`. LeakSanitizer still reports the existing Mesa leak of 240732 bytes in 1073 allocations. The GUI diagnostic remains failed without suppression.
+
+
+## 2026-10-03: Polygon creation and editing
+
+The Polygons plugin adds P and Tools > Plugins > Polygon. Creation uses the shared activation path, crosshair, black guides, and coordinate grid. Clicks add small blue corners and edges. The preview fills the closed area through the pointer with 30 percent blue. Clicking the first corner completes a valid outline. Enter closes three or more placed corners. With two placed corners, Enter uses the pointer as a third corner.
+
+ObjectEditor supplies Title, Polygon type, the shared color palette, Description, and properties. Apply commits the draft. Title Enter also applies. Completed shapes hide their corner dots. Saved shapes show a centered title and open Information on an interior click. Selection adds a solid white outline. Concave shapes use an interior label position when their centroid lies outside the area.
+
+Edit shows corner dots. A corner context menu offers Move and Delete. Invalid moves retain the previous draft geometry. Invalid deletions are disabled. Escape cancels a move before it cancels the draft. Delete and Backspace remove selected polygons, and the shared undo action restores them. P toggles creation, while M and P switch tools through the shared registry.
+
+Shared validation accepts 3 to 64 distinct corners within the displayed world. It rejects crossing edges, overlapping edges, zero area, and malformed coordinates. Existing object-count, record, profile, and undo budgets remain in force. The Area property is reserved. Polygon records survive restart and do not require the plugin for storage preservation.
+
+Area uses bounded spherical integration along the displayed Mercator edges. It is an estimate rather than an ellipsoidal survey result. Locale controls number formatting and metric or imperial units. The user guide documents thresholds, controls, and the single-world geometry limit. No external dependency was added.
+
+MapTool adds interactionActive for event priority and dismiss for one-step cancellation. ObjectEditor adds validated draft geometry replacement and error reporting. MapItem adds a polygon outline style. The API and architecture guides describe these changes. Every plugin still uses the shared API and an embedded MANIFEST.
+
+The final quick sanitizer run passed all eight suites in `build/quality/20261003-222408-quick-24299`. Source analysis passed in `build/quality/20261003-222440-analyze-24726`. All 54 native sanitizer cases passed in `build/quality/20261003-222647-gui-25170`. LeakSanitizer still reports the existing Mesa leak of 240732 bytes in 1073 allocations. The GUI diagnostic remains failed without suppression.
+
+Focused polygon and marker tests passed at 200 percent scaling. Native screenshots cover the editor, preview, and actual OpenGL frame. The frame shows the title, fill, and selection outline. Tests also cover vertex edits, blocked changes, context deletion, undo, properties, shortcut changes, 64-corner limits, repeated cancellation, and restart.
+
+The initial release build succeeded in `build/polygon-release.log`. The final metadata build uses `build/polygon-release-final.log`. Tests use Qt 6.8.2, GCC 14.2, and software Mesa. Hardware graphics, native Wayland, Qt 6.4, allocation failures, and two-hour qualification remain untested. Existing property-editor callbacks and defensive branches retain coverage gaps. Line coverage does not establish complete branch or input coverage.
+
+The 60-second sanitizer workload passed in `build/quality/20261003-222737-soak-25381`. It completed 1188 cycles with 13459456 bytes of peak memory growth. The maximum heartbeat gap was 41 milliseconds, and idle CPU time was 0.005 seconds. Each cycle includes polygon storage, area calculation, deletion, and undo. This short workload does not replace two-hour qualification.
+
+Final coverage passed all eight suites and 54 native cases in `build/quality/20261003-222934-coverage-25615`. Polygon helpers reached all 84 lines and eight functions. The polygon plugin reached 215 of 217 lines and all 51 functions. Its two unexecuted lines are closing braces. MapTools reached all 40 lines and 16 functions. ObjectEditor reached 205 of 210 lines. Its remaining gaps cover collection changes during a draft and description truncation. Defensive branches and nearly coincident floating-point geometry need further input testing.

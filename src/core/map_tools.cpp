@@ -15,7 +15,12 @@ void MapTools::add(MapTool *tool)
 }
 bool MapTools::handle(QEvent &event, const Viewport &view, QWidget &map)
 {
-    return std::any_of(tools_.cbegin(), tools_.cend(), [&](const auto &tool) { return tool && tool->handle(event, view, map); });
+    const auto snapshot = tools_;
+    for (bool active : {true, false})
+        if (std::any_of(snapshot.cbegin(), snapshot.cend(), [&](const auto &tool) {
+            return tool && tool->interactionActive() == active && tool->handle(event, view, map);
+        })) return true;
+    return false;
 }
 void MapTools::paint(QPainter &painter, const Viewport &view) const
 {
@@ -40,6 +45,10 @@ QString MapTools::statusText() const
         const auto text = tool->statusText(); if (!text.isEmpty()) labels.append(text);
     }
     return labels.join(QStringLiteral(" "));
+}
+bool MapTools::dismiss()
+{
+    return std::any_of(tools_.cbegin(), tools_.cend(), [](const auto &tool) { return tool && tool->dismiss(); });
 }
 bool MapTools::cancel()
 {

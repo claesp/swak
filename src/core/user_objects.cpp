@@ -1,4 +1,5 @@
 #include "core/user_objects.h"
+#include "core/polygon.h"
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QRegularExpression>
@@ -87,6 +88,10 @@ QString UserObjects::validate(const UserObject &item)
             if (!value.isDouble() || !std::isfinite(value.toDouble()) || value.toDouble() < 0 || value.toDouble() > 1) return tr("The marker position is outside the map.");
         }
     }
+    if (item.type == QStringLiteral("polygon")) {
+        if (item.properties.contains(QStringLiteral("Area"))) return tr("Area is a reserved polygon property.");
+        return validatePolygon(polygonVertices(item.geometry));
+    }
     return {};
 }
 std::optional<UserObject> UserObjects::find(const QString &id) const
@@ -102,7 +107,7 @@ QString UserObjects::put(const UserObject &item)
     const auto total = std::accumulate(items_.cbegin(), items_.cend(), bytes(item) + reservedBytes_,
         [&item](qsizetype sum, const UserObject &existing) { return sum + (existing.id == item.id ? 0 : bytes(existing)); });
     if (total > MaxBytes || (!items_.contains(item.id) && items_.size() + reservedCount_ >= MaxObjects))
-        return tr("Marker storage is full. Restart after deleting unused markers to release undo history.");
+        return tr("Object storage is full. Restart after deleting unused objects to release undo history.");
     items_.insert(item.id, item); emit changed(); return {};
 }
 void UserObjects::remove(const QString &id)

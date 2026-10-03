@@ -19,3 +19,5 @@ Q_IMPORT_PLUGIN(InformationPlugin)
 Q_IMPORT_PLUGIN(MarkerPlugin)
 
 Q_IMPORT_PLUGIN(MilitaryMarkers)
+
+Q_IMPORT_PLUGIN(PolygonPlugin)

@@ -102,6 +102,7 @@ public:
         cancel(); map_ = &map; mode_ = Mode::Placing; selection_.clear(); store_.select({});
         pointer_ = map.mapFromGlobal(QCursor::pos()); map.setCursor(Qt::CrossCursor); emit changed();
     }
+    bool interactionActive() const override { return mode_ != Mode::Idle; }
     bool coordinateGridActive() const override { return mode_ != Mode::Idle; }
     QString statusText() const override { return mode_ == Mode::Idle ? QString{} : QStringLiteral("M"); }
     bool cancel() override
@@ -124,7 +125,7 @@ public:
             if (key.key() == editor_.createKey()) {
                 if (!key.isAutoRepeat()) {
                     if (mode_ != Mode::Idle) { cancel(); return true; }
-                    activate(map); }
+                    emit activationRequested(); }
                 return true;
             }
             if (mode_ == Mode::Idle && (key.key() == Qt::Key_Delete || key.key() == Qt::Key_Backspace)

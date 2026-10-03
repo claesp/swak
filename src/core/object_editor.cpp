@@ -48,7 +48,7 @@ ObjectEditor::ObjectEditor(UserObjects &objects, MarkerCollections &collections,
     connect(title_, &QLineEdit::returnPressed, this, &ObjectEditor::apply);
     title_->setMaxLength(128); title_->setPlaceholderText(tr("New Marker")); layout->addWidget(title_);
     auto font = title_->font(); font.setPointSizeF(font.pointSizeF() > 0 ? font.pointSizeF() * 1.5 : 16); title_->setFont(font);
-    layout->addWidget(new QLabel(tr("Collection"), this));
+    collectionLabel_ = new QLabel(tr("Collection"), this); layout->addWidget(collectionLabel_);
     collection_ = new QComboBox(this); collection_->setObjectName(QStringLiteral("objectCollection")); collection_->setAccessibleName(tr("Collection")); layout->addWidget(collection_);
     layout->addWidget(new QLabel(tr("Type"), this));
     type_ = new QComboBox(this); type_->setObjectName(QStringLiteral("objectType")); type_->setAccessibleName(tr("Type"));
@@ -75,7 +75,7 @@ ObjectEditor::ObjectEditor(UserObjects &objects, MarkerCollections &collections,
         emit configurationChanged();
     });
     connect(&collections_, &MarkerCollections::changed, this, [this] {
-        if (!draft_) return;
+        if (!draft_ || draft_->type != QStringLiteral("circle")) return;
         const auto collection = collection_->currentData().toString(); const auto symbol = type_->currentData().toString();
         refreshCollections(collection); refreshTypes(symbol); refreshColors();
     });
@@ -121,8 +121,12 @@ void ObjectEditor::edit(const UserObject &item)
 {
     draft_ = item;
     color_ = item.color;
-    refreshCollections(effectiveMarkerCollection(item.collection, item.symbol));
-    refreshTypes(item.symbol); refreshColors();
+    const bool marker = item.type == QStringLiteral("circle");
+    collection_->setVisible(marker); collectionLabel_->setVisible(marker);
+    title_->setPlaceholderText(marker ? tr("New Marker") : tr("New Polygon"));
+    if (marker) { refreshCollections(effectiveMarkerCollection(item.collection, item.symbol)); refreshTypes(item.symbol); }
+    else { const QSignalBlocker block(type_); type_->clear(); type_->addItem(tr("Polygon"), QStringLiteral("polygon")); }
+    refreshColors();
     title_->setText(objects_.find(item.id) ? item.title : QString{});
     description_->setPlainText(item.description); properties_->setRowCount(0); status_->clear();
     auto keys = item.properties.keys(); const QCollator collator;
@@ -216,9 +220,18 @@ void ObjectEditor::refreshColors()
         button->setIcon(QIcon(icon)); button->setIconSize(QSize(18, 18)); button->setFixedSize(28, 28);
         colors_->addButton(button); colorLayout_->addWidget(button, static_cast<int>(i / 12), static_cast<int>(i % 12));
         button->setChecked(values.at(i).compare(color_, Qt::CaseInsensitive) == 0);
-        connect(button, &QToolButton::clicked, this, [this, button] { color_ = button->property("markerColor").toString(); });
+        connect(button, &QToolButton::clicked, this, [this, button] { color_ = button->property("markerColor").toString(); if (draft_) draft_->color = color_; emit configurationChanged(); });
     }
 }
+bool ObjectEditor::setGeometry(const QJsonObject &geometry)
+{
+    if (!draft_) return false;
+    auto candidate = *draft_; candidate.geometry = geometry;
+    const auto error = UserObjects::validate(candidate);
+    if (!error.isEmpty()) { reportError(error); return false; }
+    draft_->geometry = geometry; status_->clear(); emit configurationChanged(); return true;
+}
+void ObjectEditor::reportError(const QString &message) { status_->setText(message); }
 bool ObjectEditor::cancel()
 {
     if (!draft_) return false;
@@ -233,7 +246,7 @@ void ObjectEditor::keyPressEvent(QKeyEvent *event)
 void ObjectEditor::apply()
 {
     if (!draft_) return;
-    auto item = *draft_; item.title = title_->text().trimmed(); if (item.title.isEmpty()) item.title = tr("New Marker");
+    auto item = *draft_; item.title = title_->text().trimmed(); if (item.title.isEmpty()) item.title = item.type == QStringLiteral("polygon") ? tr("New Polygon") : tr("New Marker");
     if (item.type == QStringLiteral("circle")) {
         item.symbol = type_->currentData().toString(); item.collection = collection_->currentData().toString();
     }

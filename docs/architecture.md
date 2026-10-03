@@ -144,3 +144,5 @@ Marker collection plugins provide portable vector catalogs through `MarkerCollec
 MapSources keeps session credentials outside its profile document. Providers define authentication metadata through common fields. TileRenderer receives secrets separately and authorizes only HTTPS requests for the configured server. Authenticated sources use memory caches and visible tiles only. Read [Map providers](map-providers.md) for environment references and supported methods.
 
 Pane plugins can supply a primary action in place of their menu toggle. Map tools request activation through MapTools, and the map view supplies its widget. The Marker command uses this shared path without host code that identifies the marker plugin.
+
+The Polygons plugin creates a separate tool and reuses ObjectEditor for metadata and colors. Shared polygon helpers handle bounded geometry, interior labels, area estimates, and locale formatting. UserObjects validates polygon records before storage. MapTools prioritizes active gestures and separates one-step dismissal from full cancellation.

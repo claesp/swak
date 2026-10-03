@@ -109,3 +109,11 @@ Map authentication adds a boundary between the profile, session memory, and HTTP
 The shared request helper limits secrets, rejects controls, and checks the destination host and port. Authentication requires certificate validation even when a source offers a certificate exception. Redirects stay disabled. Authenticated requests cannot use the shared disk cache. Source and credential changes cancel old work and clear decoded images. HTTP 401 and 403 responses use the provider-wide retry delay.
 
 Environment references use the `SWAK_MAP_` prefix. Only put dedicated map secrets in that namespace. A profile can direct its named secret to its configured server, so use trusted profiles. Query credentials reach the provider URL and can appear in its server logs. SWAK uses generic tile errors without those URLs. Process memory and launch environments remain sensitive. Read [Map providers](map-providers.md) for storage limits and supported authentication methods.
+
+# Local polygon geometry
+
+The shared model accepts at most 64 corners per polygon. Coordinates must be finite and within the normalized map bounds. Validation rejects duplicate corners, crossing edges, overlapping edges, and zero area. It also reserves the Area property for the calculated value. Existing record, profile, object-count, and undo budgets still apply.
+
+Corner moves and deletion modify the editor draft only. Apply validates the full object before storage. Invalid moves retain the previous draft geometry. Escape discards the move preview. Tool changes, pane closure, and window shutdown discard unfinished geometry. The polygon tool adds no workers, timers, file access, or network access.
+
+Area calculations use bounded numerical integration on a sphere. They do not provide an ellipsoidal survey measurement. Geometry validation uses floating-point comparisons and rejects near-zero projected areas below a fixed threshold. It does not claim exact arithmetic for nearly coincident edges.

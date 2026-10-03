@@ -251,3 +251,19 @@ Tools > Marker Collections manages Core, MILSTD2525, and imported symbol collect
 In Map Providers, select a row and click Edit to choose its authentication method. Apply the provider configuration, then click Credentials to enter a session password or token. The dialog masks the value and never writes it into the profile. Read [Map providers](map-providers.md#credentials) for restart use through environment variables and the Thunderforest templates.
 
 Tools > Plugins > Marker activates marker placement. Click the map to open the marker editor. Press Escape to cancel placement. The configured marker key still toggles marker mode.
+
+# Create and edit polygons
+
+Press P while the map has focus, or select Tools > Plugins > Polygon. The crosshair and black guide lines follow the pointer. Click to place each blue corner. After two corners, the preview fills the area through the current pointer position with 30 percent blue.
+
+Click the first corner after placing at least three corners to close the polygon. Enter closes the placed outline. With exactly two placed corners, Enter adds the current pointer position as the third corner. A polygon needs three distinct corners and a nonzero area. Crossing or overlapping edges prevent completion. Each polygon supports at most 64 corners.
+
+The editor contains Title, Type, Color, Description, and properties. Apply saves the polygon. Enter in Title also saves it. The map shows the title at the center of the area. For concave shapes whose center lies outside the area, the label uses an interior span. Completed polygons hide their corner dots.
+
+Click inside a saved polygon to open Information. The selected area has a white outline. Right-click inside it and select Edit to show its corners again. Right-click a corner to Move or Delete it. Delete is disabled when it creates an invalid polygon. A move that creates an invalid polygon remains a preview until you choose a valid position.
+
+Escape during a corner move restores its previous position in the draft. Escape again cancels the edit. Apply saves all corner and metadata changes together. Delete or Backspace removes the selected polygon. Edit > Undo or Ctrl+Z restores a deleted polygon.
+
+P toggles polygon creation. M switches to marker creation. A tool switch discards an unfinished shape or edit. File > Settings > Keybindings contains the polygon shortcut. The Polygons section controls corner size, outline width, fill opacity, and guide opacity.
+
+Information formats area with the system locale and measurement system. Metric locales use m² below 1000 m² and km² from that threshold. Imperial locales use ft², acres, and mi² as the area increases. Area uses a spherical Earth radius of 6371008.8 meters and integrates along the straight map edges. It is an estimate, not an ellipsoidal survey measurement. The shape follows the displayed world and does not wrap across the date line.
