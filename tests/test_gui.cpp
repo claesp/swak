@@ -340,7 +340,7 @@ private slots:
         auto *root = window.findChild<QMenu *>(QStringLiteral("pluginsMenu"));
         QMetaObject::invokeMethod(root, "aboutToShow");
         QMenu *events = nullptr;
-        for (auto *action : root->actions()) if (action->menu() && action->text() == QStringLiteral("CoT Events")) events = action->menu();
+        for (auto *action : root->actions()) if (action->menu() && action->text() == QStringLiteral("CoT Messages")) events = action->menu();
         QVERIFY(events);
         QVERIFY(events->menuAction()->isCheckable());
         QVERIFY(!events->menuAction()->isChecked());
@@ -376,22 +376,22 @@ private slots:
             auto *status = window.findChild<QLabel *>(QStringLiteral("internalEventCount"));
             auto *table = window.findChild<QTableView *>(QStringLiteral("activityTable"));
             QVERIFY(history && status && table);
-            QVERIFY(window.findChild<QLabel *>(QStringLiteral("cotEventCount"))->text().startsWith(QStringLiteral("CoT Events:")));
+            QVERIFY(window.findChild<QLabel *>(QStringLiteral("cotEventCount"))->text().startsWith(QStringLiteral("CoT Messages:")));
             QCOMPARE(window.findChildren<QFrame *>(QStringLiteral("statusSeparator")).size(), 3);
             QVERIFY(!window.findChild<QLabel *>(QStringLiteral("latestActivity")));
             history->clear();
             history->restorePreferences({{QStringLiteral("capacity"), 2}});
             swak::logMessage(swak::Severity::Error, swak::Urgency::Immediate, QStringLiteral("swak.test"), QStringLiteral("Example failure"));
             QVERIFY(QTest::qWaitFor([&] { return history->rowCount() > 0; }));
-            QCOMPARE(status->text(), QStringLiteral("Internal events: %1").arg(history->rowCount()));
+            QCOMPARE(status->text(), QStringLiteral("Events: %1").arg(history->rowCount()));
             QVERIFY(!table->isVisible());
             swak::logMessage(swak::Severity::Info, swak::Urgency::Routine, QStringLiteral("swak.test"), QStringLiteral("Recovered"));
             QVERIFY(QTest::qWaitFor([&] { return history->rowCount() == 2; }));
-            QCOMPARE(status->text(), QStringLiteral("Internal events: 2"));
+            QCOMPARE(status->text(), QStringLiteral("Events: 2"));
             QVERIFY(!table->isVisible());
             auto *plugins = window.findChild<QMenu *>(QStringLiteral("pluginsMenu"));
             QMenu *historyMenu = nullptr;
-            for (auto *action : plugins->actions()) if (action->text() == QStringLiteral("Internal events")) historyMenu = action->menu();
+            for (auto *action : plugins->actions()) if (action->text() == QStringLiteral("Events")) historyMenu = action->menu();
             QVERIFY(historyMenu);
             historyMenu->menuAction()->trigger();
             QVERIFY(table->isVisible());
@@ -400,7 +400,7 @@ private slots:
             QVERIFY(window.screen()->grabWindow(window.winId()).save(QStringLiteral("internal-events-smoke.png")));
             historyMenu->findChild<QAction *>(QStringLiteral("clearActivityAction"))->trigger();
             QCOMPARE(history->rowCount(), 0);
-            QCOMPARE(status->text(), QStringLiteral("Internal events: 0"));
+            QCOMPARE(status->text(), QStringLiteral("Events: 0"));
             table->horizontalHeader()->resizeSection(0, 250);
             auto *button = window.findChild<QToolButton *>(QStringLiteral("mapProviderButton"));
             QVERIFY(button);
@@ -1516,7 +1516,7 @@ private slots:
         QVERIFY(plugins);
         QMenu *events = nullptr;
         for (auto *action : plugins->actions()) {
-            if (action->menu() && action->menu()->title() == QStringLiteral("CoT Events")) events = action->menu();
+            if (action->menu() && action->menu()->title() == QStringLiteral("CoT Messages")) events = action->menu();
         }
         QVERIFY(events);
         auto *clear = window.findChild<QAction *>(QStringLiteral("clearEventsAction"));
@@ -1525,7 +1525,7 @@ private slots:
         auto *toolbar = window.findChild<QToolBar *>(QStringLiteral("mainToolbar"));
         QVERIFY(toolbar && toolbar->actions().contains(clear));
         QVERIFY(!clear->icon().isNull());
-        QCOMPARE(clear->toolTip(), QStringLiteral("Clear CoT Events"));
+        QCOMPARE(clear->toolTip(), QStringLiteral("Clear CoT Messages"));
         QVERIFY(!window.menuBar()->actions().contains(events->menuAction()));
         auto *generate = window.findChild<QPushButton *>(QStringLiteral("generateEvent"));
         QVERIFY(generate);
@@ -1667,7 +1667,7 @@ private slots:
             QCOMPARE(action->text(), QStringLiteral("&Settings"));
             QVERIFY(!window.findChild<QMenu *>(QStringLiteral("settingsMenu")));
             QCOMPARE(window.findChild<QDockWidget *>(QStringLiteral("org.swak.editor.pane"))->windowTitle(), QStringLiteral("CoT Event Generator"));
-            QCOMPARE(window.findChild<QDockWidget *>(QStringLiteral("org.swak.events.pane"))->windowTitle(), QStringLiteral("CoT Events"));
+            QCOMPARE(window.findChild<QDockWidget *>(QStringLiteral("org.swak.events.pane"))->windowTitle(), QStringLiteral("CoT Messages"));
             QTimer::singleShot(0, &window, [&] {
                 auto *dialog = window.findChild<swak::SettingsDialog *>();
                 if (!dialog) { QFAIL("Settings dialog did not open."); return; }

@@ -26,7 +26,7 @@ public:
         });
     }
     QString preferenceId() const override { return QStringLiteral("org.swak.events"); }
-    QString settingsTitle() const override { return tr("CoT Events"); }
+    QString settingsTitle() const override { return tr("CoT Messages"); }
     QList<SettingField> settingsFields() const override
     {
         QList<SettingField> fields{choiceSetting(QStringLiteral("sortColumn"), tr("Sort column"),
@@ -112,7 +112,7 @@ class TracksPlugin final : public QObject, public Plugin, public MapLayer, publi
     Q_PLUGIN_METADATA(IID "org.swak.Plugin/2.0" FILE "tracks/MANIFEST")
     Q_INTERFACES(swak::Plugin swak::MapLayer swak::ToolPlugin swak::MenuPlugin swak::ToolbarPlugin)
 public:
-    QString name() const override { return tr("CoT Events"); }
+    QString name() const override { return tr("CoT Messages"); }
     void populateMenu(PluginServices &services, QMenu &menu) override
     {
         menu.addAction(createClearAction(services.store, menu));
@@ -184,11 +184,11 @@ private:
         auto *clear = new QAction(QIcon::fromTheme(QStringLiteral("edit-clear"),
             owner.style()->standardIcon(QStyle::SP_DialogResetButton)), tr("&Clear"), &owner);
         clear->setObjectName(QStringLiteral("clearEventsAction"));
-        clear->setToolTip(tr("Clear CoT Events"));
-        clear->setStatusTip(tr("Remove all current CoT events and clear the selection."));
+        clear->setToolTip(tr("Clear CoT Messages"));
+        clear->setStatusTip(tr("Remove all current CoT messages and clear the selection."));
         connect(clear, &QAction::triggered, &store, [&store] {
             store.clear();
-            logMessage(Severity::Info, Urgency::Routine, QStringLiteral("swak.events"), tr("CoT Events cleared."));
+            logMessage(Severity::Info, Urgency::Routine, QStringLiteral("swak.events"), tr("CoT Messages cleared."));
         });
         return clear;
     }

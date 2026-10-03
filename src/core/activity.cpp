@@ -68,7 +68,7 @@ QVariant ActivityModel::headerData(int section, Qt::Orientation orientation, int
     return QStringList{tr("Time"), tr("Severity"), tr("Urgency"), tr("Source"), tr("Event")}.at(section);
 }
 QString ActivityModel::preferenceId() const { return QStringLiteral("org.swak.activity"); }
-QString ActivityModel::settingsTitle() const { return tr("Internal events"); }
+QString ActivityModel::settingsTitle() const { return tr("Events"); }
 QList<SettingField> ActivityModel::settingsFields() const
 { return {numberSetting(QStringLiteral("capacity"), tr("Events to retain"), 1, 10000)}; }
 QJsonObject ActivityModel::savePreferences() const { return {{QStringLiteral("capacity"), capacity_}}; }

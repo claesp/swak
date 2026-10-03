@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "id": "org.swak.tracks",
-  "name": "CoT Events",
-  "description": "Show CoT events with original vector symbols for supported ground units.",
+  "name": "CoT Messages",
+  "description": "Show CoT messages with original vector symbols for supported ground units.",
   "version": "0.2.0",
   "apiVersion": 2,
   "entryPoint": "TracksPlugin",

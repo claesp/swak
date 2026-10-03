@@ -650,3 +650,15 @@ Eight sanitizer suites passed in `build/quality/20261003-135106-quick-235887`. A
 Coverage passed eight suites and all 48 native cases in `build/quality/20261003-135230-coverage-236588`. ObjectEditor reached 123 of 131 lines. The new palette and icon paths ran. Existing property-editor callbacks, description truncation, property sorting, and defensive marker failures retain gaps. Line coverage does not establish complete branch coverage. Source analysis passed in `build/quality/20261003-135454-analyze-237550`.
 
 The 60-second workload passed in `build/quality/20261003-135344-soak-237266`. It completed 1260 cycles with 11325440 bytes of peak memory growth. The maximum heartbeat gap was 66 milliseconds, and idle CPU time was 0.007 seconds. This short run does not replace two-hour qualification. Hardware graphics, native Wayland, and Qt 6.4 remain untested. Tests use Qt 6.8.2 and software Mesa. The release build log is `build/palette-release-final.log`.
+
+## 2026-10-03: Events and CoT Messages names
+
+The application now calls its diagnostic history Events and its CoT pane CoT Messages. The names also appear in Settings, menus, toolbar labels, status counters, tooltips, and plugin metadata. Current user guides and existing label tests use these names.
+
+Plugin identifiers, preference keys, and widget identifiers remain stable. Saved layouts and table configuration retain their existing associations. This change adds no dependency or interface contract.
+
+Eight sanitizer suites passed in `build/quality/20261003-135939-quick-238080`. All 48 native sanitizer cases passed in `build/quality/20261003-140043-gui-238705`. LeakSanitizer reported the existing Mesa leak of 240732 bytes in 1073 allocations. The GUI diagnostic remains failed without suppression. Native screenshots show the new pane, toolbar, and status names without clipping.
+
+Coverage passed eight suites and all 48 native cases in `build/quality/20261003-140114-coverage-238975`. The renamed labels ran through the existing tests. This text-only change adds no branches. Previously recorded property-editor and defensive-path gaps remain. Source analysis passed in `build/quality/20261003-140338-analyze-239810`.
+
+The 60-second workload passed in `build/quality/20261003-140230-soak-239648`. It completed 1254 cycles with 11321344 bytes of peak memory growth. The maximum heartbeat gap was 72 milliseconds, and idle CPU time was 0.007 seconds. This does not replace two-hour qualification. Tests use Qt 6.8.2 and software Mesa. Hardware graphics, native Wayland, and Qt 6.4 remain untested. The release build log is `build/event-names-release-final.log`.

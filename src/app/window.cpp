@@ -322,7 +322,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
             return;
         }
         auto *dialog = new QMessageBox(QMessageBox::Information, tr("About SWAK"),
-            tr("SWAK\nVersion %1\n\nA native Cursor-on-Target workspace.\nReceive, generate, and present CoT events with built-in plugins.")
+            tr("SWAK\nVersion %1\n\nA native Cursor-on-Target workspace.\nReceive, generate, and present CoT messages with built-in plugins.")
                 .arg(QStringLiteral(SWAK_VERSION)), QMessageBox::Close, this);
         dialog->setInformativeText(tr("Git SHA: %1").arg(QStringLiteral(SWAK_REVISION))
             + (QStringLiteral(SWAK_GIT_TAG).isEmpty() ? QString{} : tr("\nGit tag: %1").arg(QStringLiteral(SWAK_GIT_TAG))));
@@ -345,12 +345,12 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     auto *internal = new QLabel(this);
     internal->setObjectName(QStringLiteral("internalEventCount"));
     statusBar()->addWidget(internal);
-    const auto updateStatus = [this, status] { status->setText(tr("CoT Events: %1 / %2")
+    const auto updateStatus = [this, status] { status->setText(tr("CoT Messages: %1 / %2")
         .arg(QLocale().toString(store_.rowCount()), QLocale().toString(MaxEvents))); };
     connect(&store_, &Store::changed, this, updateStatus);
     updateStatus();
     const auto updateInternal = [activity, internal] {
-        internal->setText(tr("Internal events: %1").arg(QLocale().toString(activity->rowCount())));
+        internal->setText(tr("Events: %1").arg(QLocale().toString(activity->rowCount())));
     };
     connect(activity, &QAbstractItemModel::rowsInserted, internal, updateInternal);
     connect(activity, &QAbstractItemModel::rowsRemoved, internal, updateInternal);

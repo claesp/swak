@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "org.swak.editor",
   "name": "CoT Event Generator",
-  "description": "Generate, import, and export CoT events.",
+  "description": "Generate, import, and export CoT messages.",
   "version": "0.1.0",
   "apiVersion": 2,
   "entryPoint": "EditorPlugin",

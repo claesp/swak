@@ -98,13 +98,13 @@ The Settings dialog separates General sections from pane customization. The host
 
 Create actions with the supplied menu as their parent. Connect callbacks with a QObject context that owns the state they use. Do not retain window menus or store references in static plugin objects. Keep callbacks bounded and do not let exceptions escape them. Qt removes connections when the action or its context is destroyed.
 
-The CoT Events plugin adds Clear and connects it directly to the window event store. The host contains no event-specific menu code. This interface adds no external dependency and does not load external plugin files.
+The CoT Messages plugin adds Clear and connects it directly to the window event store. The host contains no event-specific menu code. This interface adds no external dependency and does not load external plugin files.
 
 # Toolbar and About
 
 `ToolbarPlugin` is an optional interface with identifier `org.swak.Toolbar/3.0`. The host labels each section with `name()` and separates adjacent sections. It calls `populateToolbar(PluginServices &, QToolBar &, QMenu *)` once for each window. It supplies the main toolbar and the same plugin menu, or null when the plugin has no menu interface. The host calls the menu provider first. A toolbar provider can reuse its menu actions or create actions owned by the toolbar.
 
-Use translated action text, a tooltip, and an icon with a fallback. Connect callbacks with a QObject context that owns their state. Do not retain toolbar or menu pointers in static plugin objects. The CoT Events plugin shares its Clear action across both surfaces. Shared actions keep their text, enabled state, and behavior consistent.
+Use translated action text, a tooltip, and an icon with a fallback. Connect callbacks with a QObject context that owns their state. Do not retain toolbar or menu pointers in static plugin objects. The CoT Messages plugin shares its Clear action across both surfaces. Shared actions keep their text, enabled state, and behavior consistent.
 
 The main toolbar stays at the top and has stable identifier `mainToolbar`. The View menu controls its visibility. The saved window layout retains visibility across restarts and missing plugins. Reset layout restores the default toolbar state.
 

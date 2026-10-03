@@ -4,13 +4,13 @@ A fresh profile starts with an empty map and no receiver socket. Later launches 
 
 Tools > Plugins restores hidden docks, which are movable tool panels. Select a plugin checkbox to show or hide its pane. A checked box means that the pane is open. Hover over its name, or press Right, to open its command submenu. Return or Space also toggles the selected pane. Close the pane to hide it.
 
-CoT Events, CoT Event Generator, UDP receiver, and Plugins each have an independent dock. The three tool docks start as tabs beside the map. Drag a dock title or tab to detach that pane.
+CoT Messages, CoT Event Generator, UDP receiver, and Plugins each have an independent dock. The three tool docks start as tabs beside the map. Drag a dock title or tab to detach that pane.
 
 Each detached pane has a resize handle in its lower-right corner. Close a pane to hide it. Use File > Quit to close the application.
 
-Use Tools > Plugins > CoT Events > Clear to remove all current events and clear the selection. Plugins add their commands under Tools > Plugins.
+Use Tools > Plugins > CoT Messages > Clear to remove all current events and clear the selection. Plugins add their commands under Tools > Plugins.
 
-The top toolbar groups plugin icons under each plugin name. Its Clear button performs the same action as the CoT Events menu command. Point to an icon to read its tooltip. Use View > Show main toolbar to hide or show the toolbar. The application saves this choice across restarts.
+The top toolbar groups plugin icons under each plugin name. Its Clear button performs the same action as the CoT Messages menu command. Point to an icon to read its tooltip. Use View > Show main toolbar to hide or show the toolbar. The application saves this choice across restarts.
 
 Use Help > About to read the application version and general information.
 
@@ -126,13 +126,13 @@ The application logging controls classify this message as Warning severity with 
 
 Open Tools > Map Providers to select or configure an online map. A fresh profile has no map provider and shows a plain green background. File > Settings contains source and rendering controls. Read [Map providers](map-providers.md) for sources, formats, attribution, and HTTPS behavior.
 
-# Internal events and map selection
+# Events and map selection
 
 The map toolbar button selects an online provider or clears the selection. Unavailable providers remain visible but disabled. Map Providers opens the manager from that dropdown.
 
-The status bar shows CoT Events and retained Internal events counts, with a separator between them. New events do not open or raise a pane. The status bar does not show transient event messages. Tools > Plugins > Internal events opens the retained history. Clear removes its rows and pending entries.
+The status bar shows CoT Messages and retained Events counts, with a separator between them. New events do not open or raise a pane. The status bar does not show transient event messages. Tools > Plugins > Events opens the retained history. Clear removes its rows and pending entries.
 
-File > Settings > Internal events controls the history limit from 1 through 10000 events. The default is 500. History stays in memory for the current process. Text logging remains disabled unless you enable it separately. Very large bursts discard older pending records to keep memory bounded.
+File > Settings > Events controls the history limit from 1 through 10000 events. The default is 500. History stays in memory for the current process. Text logging remains disabled unless you enable it separately. Very large bursts discard older pending records to keep memory bounded.
 
 # Failure recovery
 
@@ -142,7 +142,7 @@ A lock permission error permits read-only use of an existing valid profile. A pr
 
 Invalid map providers remain in the profile and cannot fetch tiles. Other valid providers remain usable. Correct the invalid entry in Map Providers.
 
-The receiver updates its pane for each batch. Internal events contain at most one traffic summary each second. A later clean batch clears the pane error. Summaries classify new rejections without retaining an old warning forever.
+The receiver updates its pane for each batch. Events contain at most one traffic summary each second. A later clean batch clears the pane error. Summaries classify new rejections without retaining an old warning forever.
 
 
 # Map background and zoom

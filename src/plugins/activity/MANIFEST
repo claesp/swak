@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "org.swak.activity",
-  "name": "Internal events",
+  "name": "Events",
   "description": "Present bounded internal-event history.",
   "version": "0.1.0",
   "apiVersion": 2,

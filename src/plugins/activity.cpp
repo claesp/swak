@@ -24,7 +24,7 @@ class ActivityPlugin final : public QObject, public Plugin, public PanePlugin, p
     Q_PLUGIN_METADATA(IID "org.swak.Plugin/2.0" FILE "activity/MANIFEST")
     Q_INTERFACES(swak::Plugin swak::PanePlugin swak::MenuPlugin)
 public:
-    QString name() const override { return tr("Internal events"); }
+    QString name() const override { return tr("Events"); }
     QWidget *create(PluginServices &services, QWidget *parent) override
     {
         auto *table = new ActivityTable(parent);

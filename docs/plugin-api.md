@@ -50,10 +50,10 @@ The host owns pane placement, visibility actions, and layout persistence. Plugin
 | `src/plugins/cot` | Cursor-on-Target XML | Codec |
 | `src/plugins/basemap` | Map background | Map layer |
 | `src/plugins/map` | OpenGL map | View and toolbar |
-| `src/plugins/tracks` | CoT Events | Map layer, tool, menu, and toolbar |
+| `src/plugins/tracks` | CoT Messages | Map layer, tool, menu, and toolbar |
 | `src/plugins/editor` | CoT Event Generator | Tool |
 | `src/plugins/udp` | UDP receiver | Source |
-| `src/plugins/activity` | Internal events | Pane and menu |
+| `src/plugins/activity` | Events | Pane and menu |
 | `src/plugins/information` | Information | Pane |
 | `src/plugins/markers` | Markers | Pane and map tool |
 | `src/plugins/mvt` | MVT vector tiles | Map provider and vector tiles |
@@ -91,7 +91,7 @@ Permission values are `network-udp`, `network-https`, `disk-cache`, `browser-lin
 
 `builtInPlugins()` validates manifests before the host uses their features. It rejects incompatible declarations and duplicate identifiers. It reports failures through the shared logger. Unknown metadata identifiers do not enter the SWAK plugin catalog.
 
-# Internal events
+# Events
 
 Use `logMessage(severity, urgency, category, message)` from any thread. Internal categories start with `swak.`. Supply a short operational description without payloads, credentials, or editor drafts. Severity values are Debug, Info, Warning, Error, and Fatal. Urgency values are Routine, Attention, and Immediate.
 
@@ -99,7 +99,7 @@ Internal history remains independent of text output. Text logging stays disabled
 
 A mutex protects a 256-record inbox. Each category contains at most 128 characters, and each message contains at most 2048 characters. The model collects records every 100 milliseconds. Excess bursts discard the oldest inbox records. This bound prevents an event queue from growing during overload.
 
-The model retains 500 events by default. File > Settings > Internal events allows 1 through 10000 events. Lower limits remove the oldest rows immediately. History stays in memory and does not survive process restarts. The limit, pane layout, table widths, order, and sort selection survive restarts.
+The model retains 500 events by default. File > Settings > Events allows 1 through 10000 events. Lower limits remove the oldest rows immediately. History stays in memory and does not survive process restarts. The limit, pane layout, table widths, order, and sort selection survive restarts.
 
 The status bar shows CoT and retained internal-event counts with separators. Incoming events do not open the history pane. Errors and fatal events use red text in the history table. Clearing the table also discards pending events for that model. It does not change text-output configuration.
 
@@ -226,4 +226,4 @@ Preset identifiers use the same bounded syntax as user source identifiers. Plugi
 
 `UserObject::symbol` stores an optional identifier of at most 64 letters, digits, periods, or hyphens. An empty identifier means the existing circle. Unsupported identifiers remain in preferences and render as circles. Symbol choice does not change the underlying geometry type. The editor stores the symbol and color together on Apply. Undo, movement, cancellation, and restart retain the complete record.
 
-`markerSymbols`, `markerSymbolForCot`, `markerFrame`, and `paintMarkerSymbol` form the shared vector-symbol API in `core/marker_symbols.h`. The marker tool and CoT Events plugin use these functions. `MapItem::symbol` carries the frame choice to the selection renderer. No plugin owns a separate icon catalog. The current subset and provenance appear in [the reference review](atak-reference-review.md).
+`markerSymbols`, `markerSymbolForCot`, `markerFrame`, and `paintMarkerSymbol` form the shared vector-symbol API in `core/marker_symbols.h`. The marker tool and CoT Messages plugin use these functions. `MapItem::symbol` carries the frame choice to the selection renderer. No plugin owns a separate icon catalog. The current subset and provenance appear in [the reference review](atak-reference-review.md).
