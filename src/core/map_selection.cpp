@@ -24,7 +24,7 @@ void MapSelection::paint(QPainter &painter, const Viewport &view) const
             }
         } else {
             const QColor inverse(255 - selected.color.red(), 255 - selected.color.green(), 255 - selected.color.blue());
-            QPen pen(selected.kind == MapItem::Kind::Line ? inverse : QColor(Qt::white), selected.lineWidth + 2);
+            QPen pen(selected.kind == MapItem::Kind::Line ? inverse : QColor(Qt::white), selected.kind == MapItem::Kind::Polygon ? selected.lineWidth : selected.lineWidth + 2);
             pen.setCosmetic(true);
             if (selected.kind == MapItem::Kind::Polygon) pen.setStyle(selected.outlineStyle);
             painter.setPen(pen);

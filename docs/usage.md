@@ -260,7 +260,7 @@ Click the first corner after placing at least three corners to close the polygon
 
 The editor contains Title, Type, Color, Description, and properties. Apply saves the polygon. Enter in Title also saves it. The map shows the title at the center of the area. For concave shapes whose center lies outside the area, the label uses an interior span. Completed polygons hide their corner dots.
 
-Click inside a saved polygon to open Information. The selected area has a white outline. Right-click inside it and select Edit to show its corners again. Right-click a corner to Move or Delete it. Delete is disabled when it creates an invalid polygon. A move that creates an invalid polygon remains a preview until you choose a valid position.
+Click inside a saved polygon to open Information. The selected area has a white outline at the configured polygon line width. Right-click inside it and select Edit to show its corners again. Right-click a corner to Move or Delete it. Delete is disabled when it creates an invalid polygon. A move that creates an invalid polygon remains a preview until you choose a valid position.
 
 Escape during a corner move restores its previous position in the draft. Escape again cancels the edit. Apply saves all corner and metadata changes together. Delete or Backspace removes the selected polygon. Edit > Undo or Ctrl+Z restores a deleted polygon.
 

@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 3, 2026: Read “Polygon creation and editing” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 3, 2026: Read “Polygon selection outline” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -756,3 +756,12 @@ The initial release build succeeded in `build/polygon-release.log`. The final me
 The 60-second sanitizer workload passed in `build/quality/20261003-222737-soak-25381`. It completed 1188 cycles with 13459456 bytes of peak memory growth. The maximum heartbeat gap was 41 milliseconds, and idle CPU time was 0.005 seconds. Each cycle includes polygon storage, area calculation, deletion, and undo. This short workload does not replace two-hour qualification.
 
 Final coverage passed all eight suites and 54 native cases in `build/quality/20261003-222934-coverage-25615`. Polygon helpers reached all 84 lines and eight functions. The polygon plugin reached 215 of 217 lines and all 51 functions. Its two unexecuted lines are closing braces. MapTools reached all 40 lines and 16 functions. ObjectEditor reached 205 of 210 lines. Its remaining gaps cover collection changes during a draft and description truncation. Defensive branches and nearly coincident floating-point geometry need further input testing.
+
+
+## 2026-10-03: Polygon selection outline
+
+Selected polygons now use their configured line width for the white outline. The previous renderer added two pixels, which doubled the default width from two to four pixels. Point and route selection retain their existing widths. The outline remains constant during zoom.
+
+Eight sanitizer suites passed in `build/quality/20261003-223556-quick-26949`. Source analysis passed in `build/quality/20261003-223600-analyze-27046`. All 54 native cases passed in `build/quality/20261003-223708-gui-27445`. The existing Mesa leak still makes the GUI sanitizer diagnostic fail. Coverage passed eight suites and 54 native cases in `build/quality/20261003-223747-coverage-27618`. The native OpenGL frame shows the thinner white outline. The final release build log is `build/outline-release-final.log`.
+
+The 60-second workload passed in `build/quality/20261003-223923-soak-28209`. It completed 1169 cycles with 13463552 bytes of peak memory growth. The maximum heartbeat gap was 37 milliseconds, and idle CPU time was 0.003 seconds. Two-hour qualification and hardware graphics remain untested.
