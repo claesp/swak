@@ -267,3 +267,9 @@ Escape during a corner move restores its previous position in the draft. Escape 
 P toggles polygon creation. M switches to marker creation. A tool switch discards an unfinished shape or edit. File > Settings > Keybindings contains the polygon shortcut. The Polygons section controls corner size, outline width, fill opacity, and guide opacity.
 
 Information formats area with the system locale and measurement system. Metric locales use m² below 1000 m² and km² from that threshold. Imperial locales use ft², acres, and mi² as the area increases. Area uses a spherical Earth radius of 6371008.8 meters and integrates along the straight map edges. It is an estimate, not an ellipsoidal survey measurement. The shape follows the displayed world and does not wrap across the date line.
+
+# Select overlapping objects
+
+When objects overlap, click their shared area to open the object chooser. Select the required object from the list. Each row shows its label and type. Numbers distinguish rows with the same label. Use More objects to reach another page. Press Escape to cancel without changing selection.
+
+For object commands, right-click the overlap and choose an object first. Its context menu then opens. Local markers and polygons provide their normal edit and delete commands. Downloaded objects provide information. Active drawing and corner editing continue to use their own controls.

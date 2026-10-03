@@ -163,30 +163,46 @@ public:
                 }
                 emit changed(); return true;
             }
-            const auto id = hit(view, pointer_);
-            if (!id.isEmpty()) { editor_.cancel(); select(id); return true; }
             editor_.cancel();
         }
         if (event.type() == QEvent::ContextMenu) {
             if (mode_ != Mode::Idle) return true;
-            auto &context = static_cast<QContextMenuEvent &>(event);
-            pointer_ = context.pos();
-            const auto id = hit(view, context.reason() == QContextMenuEvent::Keyboard ? map.rect().center() : context.pos());
-            if (id.isEmpty()) return false;
-            editor_.cancel(); select(id);
-            QMenu menu(&map); menu.setObjectName(QStringLiteral("markerContextMenu"));
-            auto *edit = menu.addAction(tr("Edit")); edit->setObjectName(QStringLiteral("editMarker"));
-            auto *move = menu.addAction(tr("Move")); move->setObjectName(QStringLiteral("moveMarker"));
-            auto *remove = menu.addAction(tr("Delete")); remove->setObjectName(QStringLiteral("deleteMarker"));
-            connect(edit, &QAction::triggered, this, [this, id] { const auto item = objects_.find(id); if (item) { selection_.clear(); editor_.edit(*item); } });
-            connect(move, &QAction::triggered, this, [this, id, &map] {
-                const auto item = objects_.find(id); if (!item) return;
-                moving_ = *item; mode_ = Mode::Moving; selection_.clear(); map.setCursor(Qt::CrossCursor); emit changed();
-            });
-            connect(remove, &QAction::triggered, this, [this, id] { objects_.remove(id); });
-            menu.exec(context.globalPos()); return true;
         }
         return false;
+    }
+    bool interact(const MapItem &item, QEvent &event, QWidget &map) override
+    {
+        if (item.owner != owner()) return false;
+        const auto record = objects_.find(item.id);
+        if (!record || record->type != QStringLiteral("circle")) return true;
+        map_ = &map;
+        const auto id = item.id;
+        if (event.type() == QEvent::MouseButtonRelease) { editor_.cancel(); select(id); return true; }
+        if (event.type() != QEvent::ContextMenu) return false;
+        auto &context = static_cast<QContextMenuEvent &>(event);
+        editor_.cancel(); select(id);
+        QMenu menu(&map); menu.setObjectName(QStringLiteral("markerContextMenu"));
+        auto *edit = menu.addAction(tr("Edit")); edit->setObjectName(QStringLiteral("editMarker"));
+        auto *move = menu.addAction(tr("Move")); move->setObjectName(QStringLiteral("moveMarker"));
+        auto *remove = menu.addAction(tr("Delete")); remove->setObjectName(QStringLiteral("deleteMarker"));
+        connect(edit, &QAction::triggered, this, [this, id] { const auto item = objects_.find(id); if (item) { selection_.clear(); editor_.edit(*item); } });
+        connect(move, &QAction::triggered, this, [this, id, &map] {
+            const auto item = objects_.find(id); if (!item) return;
+            moving_ = *item; mode_ = Mode::Moving; selection_.clear(); map.setCursor(Qt::CrossCursor); emit changed();
+        });
+        connect(remove, &QAction::triggered, this, [this, id] { objects_.remove(id); });
+        menu.exec(context.globalPos()); return true;
+    }
+    QList<MapItem> itemsAt(const Viewport &view, QPointF pointer) const override
+    {
+        QList<MapItem> result;
+        for (const auto &record : objects_.items()) {
+            if (record.type != QStringLiteral("circle")) continue;
+            if (QLineF(screen(location(record), view), pointer).length() > editor_.radius() + 5) continue;
+            MapItem item; item.owner = owner(); item.id = record.id; item.label = record.title; item.type = tr("Marker");
+            result.append(std::move(item));
+        }
+        return result;
     }
     void paint(QPainter &painter, const Viewport &view) const override
     {
@@ -216,15 +232,6 @@ public:
     }
 private:
     static QString owner() { return QStringLiteral("org.swak.markers"); }
-    QString hit(const Viewport &view, QPointF pointer) const {
-        QString id; double distance = editor_.radius() + 5;
-        for (const auto &item : objects_.items()) {
-            if (item.type != QStringLiteral("circle")) continue;
-            const auto offset = screen(location(item), view) - pointer; const double candidate = std::hypot(offset.x(), offset.y());
-            if (candidate < distance) { distance = candidate; id = item.id; }
-        }
-        return id;
-    }
     void paint(QPainter &painter, const UserObject &item, QPointF point) const {
         if (const auto symbol = collections_.symbol(item.collection, item.symbol)) paintCollectionSymbol(painter, *symbol, point, editor_.radius(), QColor(item.color));
         else paintMarkerSymbol(painter, {}, point, editor_.radius(), QColor(item.color));

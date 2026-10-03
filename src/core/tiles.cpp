@@ -503,8 +503,9 @@ QList<QJsonObject> TileRenderer::featuresAt(QPointF position) const
     return {};
 }
 
-std::optional<MapItem> TileRenderer::itemAt(QPointF position) const
+QList<MapItem> TileRenderer::itemsAt(QPointF position) const
 {
+    QList<MapItem> result;
     if (!contentVisible_) return {};
     for (const auto &tile : visible_) {
         if (!tile.rectangle.contains(position)) continue;
@@ -512,34 +513,37 @@ std::optional<MapItem> TileRenderer::itemAt(QPointF position) const
         if (!image || !image->vector) return {};
         const auto hits = vectorFeaturesAt(image->vectors, tile.rectangle, position, source_);
         if (hits.isEmpty()) return {};
-        const auto &feature = image->vectors.features.at(hits.first().value(QStringLiteral("featureIndex")).toInt());
-        MapItem item;
-        item.kind = feature.kind == VectorFeature::Kind::Point ? MapItem::Kind::Point : feature.kind == VectorFeature::Kind::Line ? MapItem::Kind::Line : MapItem::Kind::Polygon;
-        item.properties = feature.properties;
-        item.label = item.properties.take(QStringLiteral("name")).toString();
-        item.description = item.properties.take(QStringLiteral("description")).toString();
-        item.type = feature.layer;
-        if (item.label.isEmpty()) item.label = feature.layer;
-        item.properties.insert(QStringLiteral("Feature ID"), feature.id);
-        item.properties.insert(QStringLiteral("Map provider"), source_.value(QStringLiteral("name")));
-        QTransform world; const double count = 1 << tile.z;
-        world.translate(tile.x / count, tile.y / count); world.scale(1 / count, 1 / count);
-        if (!feature.points.isEmpty()) {
-            const auto nearest = std::min_element(feature.points.begin(), feature.points.end(), [&](const auto &a, const auto &b) {
-                const auto screen = [&](QPointF point) { return tile.rectangle.topLeft() + QPointF(point.x() * tile.rectangle.width(), point.y() * tile.rectangle.height()); };
-                return QLineF(screen(a), position).length() < QLineF(screen(b), position).length();
-            });
-            item.point = world.map(*nearest);
-            const auto coordinate = unproject(item.point);
-            item.properties.insert(QStringLiteral("Longitude"), coordinate.x());
-            item.properties.insert(QStringLiteral("Latitude"), coordinate.y());
+        for (const auto &hit : hits) {
+            const auto &feature = image->vectors.features.at(hit.value(QStringLiteral("featureIndex")).toInt());
+            MapItem item;
+            item.kind = feature.kind == VectorFeature::Kind::Point ? MapItem::Kind::Point : feature.kind == VectorFeature::Kind::Line ? MapItem::Kind::Line : MapItem::Kind::Polygon;
+            item.properties = feature.properties;
+            item.label = item.properties.take(QStringLiteral("name")).toString();
+            item.description = item.properties.take(QStringLiteral("description")).toString();
+            item.type = feature.layer;
+            if (item.label.isEmpty()) item.label = feature.layer;
+            item.properties.insert(QStringLiteral("Feature ID"), feature.id);
+            item.properties.insert(QStringLiteral("Map provider"), source_.value(QStringLiteral("name")));
+            QTransform world; const double count = 1 << tile.z;
+            world.translate(tile.x / count, tile.y / count); world.scale(1 / count, 1 / count);
+            if (!feature.points.isEmpty()) {
+                const auto nearest = std::min_element(feature.points.begin(), feature.points.end(), [&](const auto &a, const auto &b) {
+                    const auto screen = [&](QPointF point) { return tile.rectangle.topLeft() + QPointF(point.x() * tile.rectangle.width(), point.y() * tile.rectangle.height()); };
+                    return QLineF(screen(a), position).length() < QLineF(screen(b), position).length();
+                });
+                item.point = world.map(*nearest);
+                const auto coordinate = unproject(item.point);
+                item.properties.insert(QStringLiteral("Longitude"), coordinate.x());
+                item.properties.insert(QStringLiteral("Latitude"), coordinate.y());
+            }
+            item.path = world.map(feature.path); item.color = feature.color;
+            item.radius = source_.value(QStringLiteral("pointRadius")).toDouble(3);
+            item.lineWidth = source_.value(QStringLiteral("lineWidth")).toDouble(1.5);
+            result.append(std::move(item));
         }
-        item.path = world.map(feature.path); item.color = feature.color;
-        item.radius = source_.value(QStringLiteral("pointRadius")).toDouble(3);
-        item.lineWidth = source_.value(QStringLiteral("lineWidth")).toDouble(1.5);
-        return item;
+        return result;
     }
-    return {};
+    return result;
 }
 
 }

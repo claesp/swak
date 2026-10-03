@@ -80,6 +80,30 @@
 #include <QUdpSocket>
 #include <QLabel>
 
+static void chooseMapObject(QWidget *map, const QString &label)
+{
+    QTimer::singleShot(0, map, [label] {
+        auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget()); QVERIFY(menu);
+        const auto close = qScopeGuard([menu] { menu->close(); });
+        QCOMPARE(menu->objectName(), QStringLiteral("mapObjectChooser"));
+        for (auto *action : menu->actions()) if (action->text().contains(label)) { action->trigger(); return; }
+        QFAIL("Object is absent from the chooser");
+    });
+}
+
+static void withObjectContext(QWidget *map, const QString &label, std::function<void(QMenu *)> callback)
+{
+    QTimer::singleShot(0, map, [map, label, callback] {
+        auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget()); QVERIFY(menu);
+        const auto close = qScopeGuard([menu] { menu->close(); });
+        if (menu->objectName() != QStringLiteral("mapObjectChooser")) { callback(menu); return; }
+        for (auto *action : menu->actions()) if (!action->isSeparator() && (label.isEmpty() || action->text().contains(label))) {
+            action->trigger(); withObjectContext(map, label, callback); return;
+        }
+        QFAIL("Object is absent from the chooser");
+    });
+}
+
 class SelectionCanvas final : public QOpenGLWidget {
 public:
     swak::Viewport view;
@@ -474,8 +498,7 @@ private slots:
                 return !frame.isNull() && frame.pixelColor(frame.width()/2 - 70, frame.height()/2 - 70) == QColor("#92bfd0");
             }, 5000));
             QVERIFY(map->grabFramebuffer().save(QStringLiteral("vector-map-smoke.png")));
-            QTimer::singleShot(0, map, [] {
-                auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget()); QVERIFY(menu);
+            withObjectContext(map, QStringLiteral("Test place"), [](QMenu *menu) {
                 auto *action = menu->findChild<QAction *>(QStringLiteral("mapInformation")); QVERIFY(action);
                 const bool enabled = action->isEnabled(); action->trigger(); menu->close(); QVERIFY(enabled);
             });
@@ -488,8 +511,7 @@ private slots:
             QVERIFY(details.contains(QStringLiteral("Test place"))); QVERIFY(details.contains(QStringLiteral("cafe")));
             QVERIFY(dialog->grab().save(QStringLiteral("vector-information-smoke.png")));
             dialog->close();
-            QTimer::singleShot(0, map, [] {
-                auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget()); QVERIFY(menu);
+            withObjectContext(map, {}, [](QMenu *menu) {
                 bool changed = false;
                 for (auto *action : menu->actions()) if (auto *layers = action->menu())
                     for (auto *layer : layers->actions()) if (layer->text() == QStringLiteral("poi")) {
@@ -711,13 +733,20 @@ private slots:
         QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, QPoint(40, 40));
         QVERIFY(!selection->item()); QVERIFY(!dock->isVisible());
         window.findChild<QPushButton *>(QStringLiteral("generateEvent"))->click();
+        chooseMapObject(map, QStringLiteral("Local event"));
         QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
         QVERIFY(selection->item()); QCOMPARE(selection->item()->label, QStringLiteral("Local event"));
         QVERIFY(selection->item()->properties.contains(QStringLiteral("UID")));
         QTest::keyClick(map, Qt::Key_Escape);
         QVERIFY(!selection->item()); QVERIFY(window.store().selected().isEmpty()); QVERIFY(!dock->isVisible());
+        chooseMapObject(map, QStringLiteral("Local event"));
         QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center()); QVERIFY(selection->item());
         window.store().clear(); QVERIFY(!selection->item());
+        withObjectContext(map, QStringLiteral("Station"), [](QMenu *menu) {
+            auto *action = menu->findChild<QAction *>(QStringLiteral("mapItemInformation")); QVERIFY(action); action->trigger();
+        });
+        QContextMenuEvent context(QContextMenuEvent::Mouse, map->rect().center(), map->mapToGlobal(map->rect().center()));
+        QApplication::sendEvent(map, &context); QVERIFY(selection->item()); QCOMPARE(selection->item()->label, QStringLiteral("Station"));
         auto *preferences = dynamic_cast<swak::PreferenceParticipant *>(map); QVERIFY(preferences);
         preferences->restorePreferences({{QStringLiteral("zoom"), 0}, {QStringLiteral("centerX"), 0}, {QStringLiteral("centerY"), 1}});
         const auto values = preferences->savePreferences(); const double scale = 256 * std::exp2(values.value(QStringLiteral("zoom")).toDouble());
@@ -1499,6 +1528,79 @@ private slots:
         QVERIFY(!editor->draft()); QCOMPARE(tools->statusText(), QStringLiteral("P"));
         tools->cancel(); QVERIFY(!tools->coordinateGridActive());
         QVERIFY(window.findChild<swak::UserObjects *>()->items().isEmpty());
+    }
+
+    void overlappingObjects()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("overlap.json")), QPluginLoader::staticInstances());
+        window.show(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *map = window.findChild<QOpenGLWidget *>(); QVERIFY(map);
+        auto *objects = window.findChild<swak::UserObjects *>(); QVERIFY(objects);
+        auto *selection = window.findChild<swak::MapSelection *>(); QVERIFY(selection);
+        const auto state = dynamic_cast<swak::PreferenceParticipant *>(map)->savePreferences();
+        const swak::Viewport view{map->size(), {state.value(QStringLiteral("centerX")).toDouble(), state.value(QStringLiteral("centerY")).toDouble()}, state.value(QStringLiteral("zoom")).toDouble()};
+        const QPoint point(200, 200);
+        const auto world = [&](QPointF screen) { return view.center + (screen - QPointF(map->width() / 2.0, map->height() / 2.0)) / view.scale(); };
+        const auto coordinate = world(point);
+        swak::UserObject marker; marker.id = QStringLiteral("marker-a"); marker.title = QStringLiteral("First marker"); marker.type = QStringLiteral("circle");
+        marker.color = QStringLiteral("#fb8c00"); marker.geometry = {{QStringLiteral("x"), coordinate.x()}, {QStringLiteral("y"), coordinate.y()}};
+        QVERIFY(objects->put(marker).isEmpty()); marker.id = QStringLiteral("marker-b"); marker.title = QStringLiteral("Second marker"); QVERIFY(objects->put(marker).isEmpty());
+        swak::UserObject polygon; polygon.id = QStringLiteral("area-a"); polygon.title = QStringLiteral("First area"); polygon.type = QStringLiteral("polygon"); polygon.color = QStringLiteral("#1e88e5");
+        polygon.geometry = swak::polygonGeometry({world({100, 100}), world({300, 100}), world({300, 300}), world({100, 300})});
+        QVERIFY(objects->put(polygon).isEmpty()); polygon.id = QStringLiteral("area-b"); polygon.title = QStringLiteral("Second area"); QVERIFY(objects->put(polygon).isEmpty());
+        for (const auto &id : {QStringLiteral("marker-a"), QStringLiteral("marker-b"), QStringLiteral("area-a"), QStringLiteral("area-b")}) {
+            chooseMapObject(map, objects->find(id)->title);
+            QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, point);
+            QVERIFY(selection->item()); QCOMPARE(selection->item()->id, id);
+        }
+        QTimer::singleShot(0, map, [map] {
+            auto *menu = map->findChild<QMenu *>(QStringLiteral("mapObjectChooser")); QVERIFY(menu);
+            QVERIFY(menu->grab().save(QStringLiteral("overlap-chooser.png"))); menu->close();
+        });
+        QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, point);
+        QCOMPARE(selection->item()->id, QStringLiteral("area-b"));
+        // A model update cancels the menu before its snapshot becomes stale.
+        QTimer::singleShot(0, map, [objects] { objects->remove(QStringLiteral("area-b")); });
+        QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, point); QVERIFY(!selection->item());
+        for (const auto &pair : {qMakePair(QStringLiteral("First marker"), QStringLiteral("deleteMarker")), qMakePair(QStringLiteral("First area"), QStringLiteral("deletePolygon"))}) {
+            QTimer timer; timer.setInterval(0); int step = 0;
+            connect(&timer, &QTimer::timeout, map, [&] {
+                auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget()); if (!menu) return;
+                const auto close = qScopeGuard([menu] { menu->close(); });
+                if (step++ == 0) {
+                    QCOMPARE(menu->objectName(), QStringLiteral("mapObjectChooser"));
+                    for (auto *action : menu->actions()) if (action->text().contains(pair.first)) { action->trigger(); return; }
+                    QFAIL("Object is absent from the chooser");
+                }
+                timer.stop(); auto *action = menu->findChild<QAction *>(pair.second); QVERIFY(action); action->trigger();
+            });
+            timer.start();
+            QContextMenuEvent context(QContextMenuEvent::Mouse, point, map->mapToGlobal(point)); QApplication::sendEvent(map, &context);
+            QCOMPARE(step, 2);
+        }
+        QCOMPARE(objects->items().size(), 1);
+        // A single hit selects directly, and empty space clears the selection.
+        QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, point); QCOMPARE(selection->item()->id, QStringLiteral("marker-b"));
+        QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, QPoint(400, 400)); QVERIFY(!selection->item());
+        for (int i = 0; i < 31; ++i) { marker.id = QStringLiteral("extra-%1").arg(i, 2, 10, QLatin1Char('0')); QVERIFY(objects->put(marker).isEmpty()); }
+        QTimer::singleShot(0, map, [&] {
+            auto *menu = map->findChild<QMenu *>(QStringLiteral("mapObjectChooser")); QVERIFY(menu);
+            const auto close = qScopeGuard([menu] { menu->close(); });
+            auto *more = menu->actions().last()->menu(); QVERIFY(more);
+            QVERIFY(QMetaObject::invokeMethod(more, "aboutToShow", Qt::DirectConnection));
+            for (auto *action : more->actions()) if (action->data().toString() == QStringLiteral("marker-b")) { action->trigger(); return; }
+            QFAIL("Last overlapping marker is absent from the next page");
+        });
+        QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, point);
+        QVERIFY(selection->item()); QCOMPARE(selection->item()->id, QStringLiteral("marker-b"));
+        QTest::mousePress(map, Qt::LeftButton, Qt::NoModifier, point);
+        const auto destination = point + QPoint(40, 0);
+        QMouseEvent movement(QEvent::MouseMove, destination, map->mapToGlobal(destination), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(map, &movement);
+        QTest::mouseRelease(map, Qt::LeftButton, Qt::NoModifier, destination);
+        QVERIFY(selection->item()); QCOMPARE(selection->item()->id, QStringLiteral("marker-b"));
+        QVERIFY(dynamic_cast<swak::PreferenceParticipant *>(map)->savePreferences().value(QStringLiteral("centerX")) != state.value(QStringLiteral("centerX")));
     }
 
     void polygonWorkflow()

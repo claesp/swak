@@ -22,6 +22,17 @@ bool MapTools::handle(QEvent &event, const Viewport &view, QWidget &map)
         })) return true;
     return false;
 }
+QList<MapItem> MapTools::itemsAt(const Viewport &view, QPointF position) const
+{
+    QList<MapItem> result;
+    for (const auto &tool : tools_) if (tool) result.append(tool->itemsAt(view, position));
+    return result;
+}
+bool MapTools::interact(const MapItem &item, QEvent &event, QWidget &map)
+{
+    const auto snapshot = tools_;
+    return std::any_of(snapshot.cbegin(), snapshot.cend(), [&](const auto &tool) { return tool && tool->interact(item, event, map); });
+}
 void MapTools::paint(QPainter &painter, const Viewport &view) const
 {
     for (const auto &tool : tools_) if (tool) { painter.save(); tool->paint(painter, view); painter.restore(); }

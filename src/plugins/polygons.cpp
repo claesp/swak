@@ -147,24 +147,44 @@ public:
                 return true;
             }
             if (editor_.draft()) return true;
-            const auto id = hit(view, pointer_); if (!id.isEmpty()) { select(id); return true; }
         }
         if (event.type() == QEvent::ContextMenu) {
             auto &context = static_cast<QContextMenuEvent &>(event); pointer_ = context.pos();
-            if (drawing_ || moving_ >= 0) return true;
-            if (editor_.draft()) { if (editingVertices_) vertexMenu(context, view, map); return true; }
-            const auto id = hit(view, context.pos()); if (id.isEmpty()) return false;
-            tools_.cancel(); select(id);
-            QMenu menu(&map); menu.setObjectName(QStringLiteral("polygonContextMenu"));
-            auto *edit = menu.addAction(tr("Edit")); edit->setObjectName(QStringLiteral("editPolygon"));
-            auto *remove = menu.addAction(tr("Delete")); remove->setObjectName(QStringLiteral("deletePolygon"));
-            connect(edit, &QAction::triggered, this, [this, id] {
-                const auto item = objects_.find(id); if (item) { selection_.clear(); editor_.edit(*item); editingVertices_ = true; emit changed(); }
-            });
-            connect(remove, &QAction::triggered, this, [this, id] { objects_.remove(id); });
-            menu.exec(context.globalPos()); return true;
+        if (drawing_ || moving_ >= 0) return true;
+        if (editor_.draft()) { if (editingVertices_) vertexMenu(context, view, map); return true; }
         }
         return false;
+    }
+    bool interact(const MapItem &item, QEvent &event, QWidget &map) override
+    {
+        if (item.owner != owner()) return false;
+        const auto record = objects_.find(item.id);
+        if (!record || record->type != QStringLiteral("polygon")) return true;
+        map_ = &map;
+        const auto id = item.id;
+        if (event.type() == QEvent::MouseButtonRelease) { editor_.cancel(); select(id); return true; }
+        if (event.type() != QEvent::ContextMenu) return false;
+        auto &context = static_cast<QContextMenuEvent &>(event);
+        tools_.cancel(); select(id);
+        QMenu menu(&map); menu.setObjectName(QStringLiteral("polygonContextMenu"));
+        auto *edit = menu.addAction(tr("Edit")); edit->setObjectName(QStringLiteral("editPolygon"));
+        auto *remove = menu.addAction(tr("Delete")); remove->setObjectName(QStringLiteral("deletePolygon"));
+        connect(edit, &QAction::triggered, this, [this, id] {
+            const auto item = objects_.find(id); if (item) { selection_.clear(); editor_.edit(*item); editingVertices_ = true; emit changed(); }
+        });
+        connect(remove, &QAction::triggered, this, [this, id] { objects_.remove(id); });
+        menu.exec(context.globalPos()); return true;
+    }
+    QList<MapItem> itemsAt(const Viewport &view, QPointF pointer) const override
+    {
+        QList<MapItem> result;
+        for (const auto &record : objects_.items()) {
+            if (record.type != QStringLiteral("polygon")) continue;
+            if (!polygonVertices(record.geometry).containsPoint(worldPoint(pointer, view), Qt::OddEvenFill)) continue;
+            MapItem item; item.owner = owner(); item.id = record.id; item.label = record.title; item.type = tr("Polygon");
+            result.append(std::move(item));
+        }
+        return result;
     }
     void paint(QPainter &painter, const Viewport &view) const override
     {
@@ -207,14 +227,6 @@ private:
         UserObject item; item.id = QUuid::createUuid().toString(QUuid::WithoutBraces); item.type = QStringLiteral("polygon");
         item.title = tr("New Polygon"); item.color = QStringLiteral("#1e88e5"); item.geometry = polygonGeometry(candidate);
         resetPointer(); editor_.edit(item); emit changed();
-    }
-    QString hit(const Viewport &view, QPointF pointer) const {
-        const auto point = worldPoint(pointer, view);
-        for (auto it = objects_.items().cend(); it != objects_.items().cbegin();) {
-            --it;
-            if (it->type == QStringLiteral("polygon") && polygonVertices(it->geometry).containsPoint(point, Qt::OddEvenFill)) return it->id;
-        }
-        return {};
     }
     void draw(QPainter &painter, const QPolygonF &points, const QColor &color) const {
         auto fill = color; fill.setAlpha(qRound(editor_.fillOpacity * 255));

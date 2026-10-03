@@ -94,16 +94,20 @@ private slots:
         DataSources feeds(QPluginLoader::staticInstances()); QVERIFY(feeds.put(QStringLiteral("test"), source(server)).isEmpty());
         QVERIFY(QTest::qWaitFor([&] { return feeds.shapeCount(QStringLiteral("test")) == 1; }, 5000));
         Viewport view{QSizeF(1024, 512), QPointF(0.5, 0.5), 0};
-        const auto hit = feeds.itemAt(view, QPointF(512, 256)); QVERIFY(hit);
+        const auto itemAt = [&](const Viewport &viewport, QPointF position) -> std::optional<MapItem> {
+            const auto items = feeds.itemsAt(viewport, position);
+            return items.isEmpty() ? std::nullopt : std::optional<MapItem>(items.first());
+        };
+        const auto hit = itemAt(view, QPointF(512, 256)); QVERIFY(hit);
         QCOMPARE(hit->label, QStringLiteral("Station"));
-        QVERIFY(!feeds.itemAt(view, QPointF(256, 256)));
+        QVERIFY(!itemAt(view, QPointF(256, 256)));
         QImage canvas(1024, 512, QImage::Format_RGB32); canvas.fill(Qt::black);
         { QPainter painter(&canvas); feeds.paint(painter, view); }
         QCOMPARE(canvas.pixelColor(256, 256), QColor(Qt::black));
         QVERIFY(canvas.pixelColor(512, 256) != QColor(Qt::black));
         view.zoom = 3; view.center = QPointF(0.55, 0.5);
-        QVERIFY(feeds.itemAt(view, QPointF(512 - 0.05 * view.scale(), 256)));
-        QVERIFY(!feeds.itemAt(view, QPointF(512, 256)));
+        QVERIFY(itemAt(view, QPointF(512 - 0.05 * view.scale(), 256)));
+        QVERIFY(!itemAt(view, QPointF(512, 256)));
         MapSelection selection; selection.select(*hit);
         canvas.fill(Qt::black);
         { QPainter painter(&canvas); selection.paint(painter, Viewport{QSizeF(1024, 512), QPointF(0.5, 0.5), 0}); }
@@ -117,17 +121,21 @@ private slots:
         view = Viewport{QSizeF(1024, 512), QPointF(0.5, 0.5), 0};
         server.body = QByteArray(point).replace("Point", "LineString").replace("0,0,0", "-20,0 20,0");
         feeds.refresh(QStringLiteral("test"));
-        QVERIFY(QTest::qWaitFor([&] { const auto item = feeds.itemAt(view, QPointF(512, 256)); return item && item->kind == MapItem::Kind::Line; }, 5000));
-        QVERIFY(!feeds.itemAt(view, QPointF(512, 270)));
+        QVERIFY(QTest::qWaitFor([&] { const auto item = itemAt(view, QPointF(512, 256)); return item && item->kind == MapItem::Kind::Line; }, 5000));
+        QVERIFY(!itemAt(view, QPointF(512, 270)));
         server.body = QByteArray(point).replace("<Point><coordinates>0,0,0</coordinates></Point>",
             "<Polygon><outerBoundaryIs><LinearRing><coordinates>-20,-20 20,-20 20,20 -20,20 -20,-20</coordinates></LinearRing></outerBoundaryIs></Polygon>");
         feeds.refresh(QStringLiteral("test"));
-        QVERIFY(QTest::qWaitFor([&] { const auto item = feeds.itemAt(view, QPointF(512, 256)); return item && item->kind == MapItem::Kind::Polygon; }, 5000));
-        selection.select(*feeds.itemAt(view, QPointF(512, 256)));
+        QVERIFY(QTest::qWaitFor([&] { const auto item = itemAt(view, QPointF(512, 256)); return item && item->kind == MapItem::Kind::Polygon; }, 5000));
+        selection.select(*itemAt(view, QPointF(512, 256)));
         canvas.fill(Qt::black);
         { QPainter painter(&canvas); selection.paint(painter, view); }
         QVERIFY(canvas.pixelColor(512, 256).red() > 0);
-        QVERIFY(!feeds.itemAt(view, QPointF(512, 350)));
+        QVERIFY(!itemAt(view, QPointF(512, 350)));
+        QVERIFY(feeds.put(QStringLiteral("second"), source(server)).isEmpty());
+        QVERIFY(QTest::qWaitFor([&] { return feeds.shapeCount(QStringLiteral("second")) == 1; }, 5000));
+        QCOMPARE(feeds.itemsAt(view, QPointF(512, 256)).size(), 2);
+        QVERIFY(feeds.itemsAt(view, QPointF(512, 350)).isEmpty());
     }
     void geometry()
     {

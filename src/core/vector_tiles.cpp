@@ -71,7 +71,7 @@ QList<QJsonObject> vectorFeaturesAt(const VectorTile &tile, const QRectF &rectan
     const auto mapping = transform(rectangle);
     QPainterPathStroker stroke;
     stroke.setWidth(std::max(12.0, source.value(QStringLiteral("lineWidth")).toDouble(1.5) + 4));
-    for (auto it = tile.features.crbegin(); it != tile.features.crend() && result.size() < 12; ++it) {
+    for (auto it = tile.features.crbegin(); it != tile.features.crend(); ++it) {
         if (!vectorLayerVisible(source, it->layer)) continue;
         bool hit = false;
         if (it->kind == VectorFeature::Kind::Point) {

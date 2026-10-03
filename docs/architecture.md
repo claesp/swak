@@ -148,3 +148,5 @@ Pane plugins can supply a primary action in place of their menu toggle. Map tool
 The Polygons plugin creates a separate tool and reuses ObjectEditor for metadata and colors. Shared polygon helpers handle bounded geometry, interior labels, area estimates, and locale formatting. UserObjects validates polygon records before storage. MapTools prioritizes active gestures and separates one-step dismissal from full cancellation.
 
 Selection and feed renderers transform world paths into screen coordinates before Qt draws their strokes. They do not apply the map zoom to the painter. This avoids oversized OpenGL strokes at high zoom and keeps widths consistent with display scaling.
+
+The map collects object hits before it dispatches idle clicks. MapTools supplies plugin-owned hits through stable owner and object IDs. Data feeds, vector features, and CoT messages join the same chooser. A chosen local object returns to its plugin for selection or context actions. Active creation and corner editing retain event priority. Menu pages limit visible actions, and content changes cancel an open chooser.

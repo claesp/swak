@@ -361,6 +361,8 @@ private slots:
         renderer.setSource(provider_, source); draw();
         QVERIFY(QTest::qWaitFor([&] { return !renderer.featuresAt(QPointF(128, 128)).isEmpty(); }, 5000));
         draw(); QCOMPARE(canvas.pixelColor(50, 50), QColor("#92bfd0"));
+        QCOMPARE(renderer.itemsAt(QPointF(128, 128)).size(), renderer.featuresAt(QPointF(128, 128)).size());
+        QVERIFY(renderer.itemsAt(QPointF(-1, -1)).isEmpty());
         QVERIFY(renderer.layers().contains(QStringLiteral("poi")));
         source.insert(QStringLiteral("visibleLayers"), QJsonObject{{QStringLiteral("poi"), false}});
         renderer.setSource(provider_, source); draw();

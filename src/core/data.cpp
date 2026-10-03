@@ -308,8 +308,9 @@ void DataSources::paint(QPainter &painter, const Viewport &view) const
     }
     painter.restore();
 }
-std::optional<MapItem> DataSources::itemAt(const Viewport &view, QPointF position) const
+QList<MapItem> DataSources::itemsAt(const Viewport &view, QPointF position) const
 {
+    QList<MapItem> result;
     const double scale = view.scale();
     const QPointF origin = QPointF(view.size.width() / 2, view.size.height() / 2) - view.center * scale;
     if (!QRectF(origin, QSizeF(scale, scale)).contains(position)) return {};
@@ -366,11 +367,12 @@ std::optional<MapItem> DataSources::itemAt(const Viewport &view, QPointF positio
                 item.properties.insert(tr("Data provider"), source.value(QStringLiteral("name")));
                 item.point = shape->point; item.path = shape->path; item.color = QColor(source.value(QStringLiteral("color")).toString());
                 item.radius = radius; item.lineWidth = lineWidth;
-                return item;
+                result.append(std::move(item));
+                break;
             }
         }
     }
-    return {};
+    return result;
 }
 
 }

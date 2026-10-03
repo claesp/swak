@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 3, 2026: Read “Polygon corner colors” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 3, 2026: Read “Overlapping map objects” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -796,3 +796,24 @@ Eight sanitizer suites passed in `build/quality/20261003-230537-quick-32348`. So
 Coverage passed eight suites and 69 GUI cases in `build/quality/20261003-230725-coverage-33094`. The polygon plugin reached 215 of 217 lines and all 51 functions. Its two unexecuted lines are closing braces. Defensive branches and allocation failures retain coverage gaps. The release build passed in `build/corner-release.log`. The final build with committed version metadata uses `build/corner-release-final.log`.
 
 The 60-second workload passed in `build/quality/20261003-230841-soak-33718`. It completed 1190 cycles with 13541376 bytes of peak memory growth. The maximum heartbeat gap was 40 milliseconds, and idle CPU time was 0.003 seconds. This short run does not replace two-hour qualification.
+
+
+## 2026-10-03: Overlapping map objects
+
+The map now gathers all matching objects before it selects one. Multiple hits open an object chooser for left and right clicks. Left click selects the chosen object. Right click opens that object's context menu. Single hits act directly. Cancellation preserves the previous selection. Content changes close the menu to avoid stale actions.
+
+The chooser includes local markers, polygons, CoT messages, KML/KMZ data, and vector features. Rows show numbers, labels, and types or sources. Labels escape menu shortcut characters. More objects opens another page of 30 actions. Pages create actions only when opened. The old vector limit of 12 hits no longer hides objects. Stored geometry and parser limits still bound the candidate data.
+
+MapTool adds itemsAt and interact. MapTools aggregates hits and routes chosen IDs back to their owner. Markers and Polygons use the same interface and re-read records before acting. Active creation, movement, and polygon corner editing retain event priority. DataSources and TileRenderer replace itemAt with itemsAt. The unused first-hit API was removed after source analysis. Plugin contracts, architecture, usage, and affected MANIFEST versions were updated. No external dependency or saved schema changed.
+
+Tests cover marker-marker, polygon-polygon, and marker-polygon overlaps, cancellation, model changes during a menu, pagination, direct single hits, and empty clicks. Context tests delete the chosen marker and polygon. Existing CoT/data and vector tests now make explicit choices. Feed tests cover multiple matching sources. Vector tests compare geometry candidates with feature hits. Hardware graphics, native Wayland, and two-hour qualification remain untested.
+
+The final sanitizer run passed eight suites in `build/quality/20261003-232823-quick-38151`. Source analysis passed in `build/quality/20261003-232435-analyze-4`. The final native run passed all 70 cases in `build/quality/20261003-232917-gui-38505`. LeakSanitizer still reports the existing Mesa leak of 240732 bytes in 1073 allocations. The GUI diagnostic remains failed without suppression.
+
+The 60-second workload passed in `build/quality/20261003-232640-soak-37848`. It completed 1184 cycles with 13467648 bytes of peak memory growth. The maximum heartbeat gap was 58 milliseconds, and idle CPU time was 0.007 seconds. This short run does not replace two-hour qualification.
+
+The release build passed in `build/overlap-release.log`. The final build with committed version metadata uses `build/overlap-release-final.log`.
+
+Final coverage passed eight suites and 70 GUI cases in `build/quality/20261003-232942-coverage-38680`. MapTools reached 48 of 49 lines and all 19 functions. Its remaining line is a closing brace. The map plugin reached 648 of 649 lines. Its remaining line is a defensive switch default. Markers reached all 49 functions, and Polygons reached all 52 functions. Missing-record branches, allocation failures, and hardware-specific paths retain coverage gaps. Line coverage does not establish complete input coverage.
+
+The overlap workflow also passed at 200 percent scaling in `build/overlap-hidpi.log`. It covers pagination and dragging through an overlap. Native screenshots show the chooser's labels and object types.

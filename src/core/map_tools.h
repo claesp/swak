@@ -1,5 +1,6 @@
 #pragma once
 #include "core/projection.h"
+#include "core/map_selection.h"
 #include <QObject>
 #include <QPointer>
 #include <QWidget>
@@ -16,6 +17,8 @@ public:
     virtual bool coordinateGridActive() const { return false; }
     virtual void activate(QWidget &) {}
     virtual bool interactionActive() const { return false; }
+    virtual QList<MapItem> itemsAt(const Viewport &, QPointF) const { return {}; }
+    virtual bool interact(const MapItem &, QEvent &, QWidget &) { return false; }
     virtual bool cancel() = 0;
     virtual bool dismiss() { return cancel(); }
     virtual bool deleteSelection() { return false; }
@@ -34,6 +37,8 @@ public:
     void paintOverlay(QPainter &painter, const Viewport &view, QPointF pointer) const;
     QString statusText() const;
     bool coordinateGridActive() const;
+    QList<MapItem> itemsAt(const Viewport &view, QPointF position) const;
+    bool interact(const MapItem &item, QEvent &event, QWidget &map);
     bool cancel();
     bool dismiss();
     bool deleteSelection();

@@ -152,7 +152,7 @@ The host SettingsPage structure accepts an optional widget factory for catalog p
 
 `MapSelection` stores an optional owning `MapItem` value and emits `changed` when that value changes. The host owns this service per window. `MapItem` contains a label, type, plain-text description, JSON properties, normalized world geometry, and drawing dimensions. Selection uses the GUI thread. Consumers must tolerate a null service pointer.
 
-`DataSources::itemAt` and `TileRenderer::itemAt` return a snapshot for the topmost hit. The map view passes that snapshot to the shared selection. An empty hit clears selection. Data documents retain bounded description and property values in each `DataShape`. Vector selection retains the feature properties and selects the closest point in a multipoint feature.
+`DataSources::itemsAt` and `TileRenderer::itemsAt` return snapshots for all hits. The map view lets the user choose when objects overlap. It passes the chosen snapshot to the shared selection. An empty hit clears selection. Data documents retain bounded description and property values in each `DataShape`. Vector selection retains the feature properties and selects the closest point in a multipoint feature.
 
 A pane can derive from `PaneContent` and emit `visibilityRequested(bool)`. The host connects this signal to the dock. A show request raises the pane without taking keyboard focus. A hide request closes the pane view.
 
@@ -271,3 +271,13 @@ ObjectEditor supports circle and polygon metadata. Polygon editing hides marker 
 Polygon objects use type polygon and geometry.vertices, an array of normalized [x, y] pairs. The closing corner is implicit. The shared model accepts 3 to 64 distinct corners and rejects crossing edges, overlapping edges, and zero area. The existing object and profile budgets still apply. Unknown plugin records remain in the shared store.
 
 MapItem::outlineStyle controls the selected polygon outline. Imported areas retain dashed outlines by default. Local polygons request a solid white outline. No new external dependency is required.
+
+## Overlapping map objects
+
+`MapTool::itemsAt(view, position)` returns all committed objects under a logical map position. Each result supplies the stable owner, object ID, label, and type. The default returns an empty list. Hit testing must not change selection or open a menu. Keep results bounded by the underlying object store.
+
+`MapTool::interact(item, event, map)` handles a chosen object. The default returns false. A tool must reject another owner's item and find its current record by ID. A missing record causes no action. Left release selects the object. A context event opens that object's menu. Tool-specific creation, movement, and corner editing remain in `handle`.
+
+`MapTools` collects hits and routes chosen objects through this API. Markers and Polygons both use it. The view also collects CoT, data feed, and vector feature hits. `DataSources::itemsAt` and `TileRenderer::itemsAt` return all hits. These methods replace the former first-hit `itemAt` methods.
+
+The host opens a chooser when more than one object matches. Menu rows show a number, label, and type or source. More objects appear on pages of 30. Pages allocate their actions only when opened. Cancellation preserves selection. Content changes close the chooser before an old result can act. No saved schema changes. These shared C++ classes require all static plugins to rebuild together.

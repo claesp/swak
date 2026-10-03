@@ -284,6 +284,7 @@ protected:
     {
         if (tools_ && tools_->handle(*event, view_, *this)) { event->accept(); return; }
         const QPoint position = event->reason() == QContextMenuEvent::Keyboard ? rect().center() : event->pos();
+        if (chooseObject(position, *event)) { event->accept(); return; }
         const auto features = tiles_.featuresAt(position);
         QMenu menu(this);
         menu.setObjectName(QStringLiteral("mapContextMenu"));
@@ -291,25 +292,7 @@ protected:
         information->setObjectName(QStringLiteral("mapInformation"));
         information->setEnabled(!features.isEmpty());
         connect(information, &QAction::triggered, this, [this, features] { showInformation(features); });
-        auto names = tiles_.layers();
-        if (!names.isEmpty() && sources_) {
-            auto *layers = menu.addMenu(tr("Map layers"));
-            const QCollator collator;
-            std::sort(names.begin(), names.end(), [&](const auto &a, const auto &b) { return collator.compare(a, b) < 0; });
-            for (const auto &name : names) {
-                auto *action = layers->addAction(name);
-                action->setCheckable(true);
-                action->setChecked(vectorLayerVisible(sources_->activeSource(), name));
-                connect(action, &QAction::triggered, this, [this, name](bool visible) {
-                    auto source = sources_->activeSource();
-                    if (source.isEmpty()) return;
-                    auto visibility = source.value(QStringLiteral("visibleLayers")).toObject();
-                    visibility.insert(name, visible);
-                    source.insert(QStringLiteral("visibleLayers"), visibility);
-                    sources_->put(sources_->activeId(), source);
-                });
-            }
-        }
+        addLayerMenu(menu);
         menu.exec(mapToGlobal(position));
         event->accept();
     }
@@ -455,34 +438,127 @@ protected:
         unsetCursor();
         if (moved_) return;
         if (tools_ && tools_->handle(*event, view_, *this)) { event->accept(); update(); return; }
-        QString closest;
-        double distance = 14;
-        for (const auto &item : store_.events()) {
-            if (item.start > QDateTime::currentDateTimeUtc()) continue;
-            const auto delta = view_.screen(item.latitude, item.longitude) - event->position();
-            const double candidate = std::hypot(delta.x(), delta.y());
-            if (candidate < distance) { distance = candidate; closest = item.uid; }
+        if (!chooseObject(event->position(), *event)) {
+            if (selection_) selection_->clear();
+            store_.select({});
         }
-        if (!closest.isEmpty()) {
-            const auto selectedEvent = std::find_if(store_.events().begin(), store_.events().end(), [&](const Event &item) { return item.uid == closest; });
-            if (selectedEvent != store_.events().end() && selection_) {
-                MapItem item; item.label = selectedEvent->callsign.isEmpty() ? selectedEvent->uid : selectedEvent->callsign; item.type = selectedEvent->type;
-                item.point = project(selectedEvent->latitude, selectedEvent->longitude); item.color = Qt::white;
-                item.symbol = markerSymbolForCot(selectedEvent->type);
-                item.properties = {{QStringLiteral("UID"), selectedEvent->uid}, {QStringLiteral("How"), selectedEvent->how},
-                    {QStringLiteral("Latitude"), selectedEvent->latitude}, {QStringLiteral("Longitude"), selectedEvent->longitude},
-                    {QStringLiteral("Altitude"), selectedEvent->altitude}, {QStringLiteral("Circular error"), selectedEvent->circularError}, {QStringLiteral("Linear error"), selectedEvent->linearError},
-                    {QStringLiteral("Time"), selectedEvent->time.toString(Qt::ISODateWithMs)}, {QStringLiteral("Start"), selectedEvent->start.toString(Qt::ISODateWithMs)}, {QStringLiteral("Stale"), selectedEvent->stale.toString(Qt::ISODateWithMs)}};
-                selectedSource_ = QStringLiteral("cot"); selection_->select(std::move(item));
-            }
-        } else {
-            auto item = dataSources_ ? dataSources_->itemAt(view_, event->position()) : std::optional<MapItem>{};
-            selectedSource_ = QStringLiteral("data");
-            if (!item) { item = tiles_.itemAt(event->position()); selectedSource_ = QStringLiteral("vector"); }
-            if (selection_) { if (item) selection_->select(std::move(*item)); else selection_->clear(); }
-        }
-        store_.select(closest);
         update();
+    }
+    void addLayerMenu(QMenu &menu)
+    {
+        auto names = tiles_.layers();
+        if (!names.isEmpty() && sources_) {
+            auto *layers = menu.addMenu(tr("Map layers"));
+            const QCollator collator;
+            std::sort(names.begin(), names.end(), [&](const auto &a, const auto &b) { return collator.compare(a, b) < 0; });
+            for (const auto &name : names) {
+                auto *action = layers->addAction(name);
+                action->setCheckable(true);
+                action->setChecked(vectorLayerVisible(sources_->activeSource(), name));
+                connect(action, &QAction::triggered, this, [this, name](bool visible) {
+                    auto source = sources_->activeSource();
+                    if (source.isEmpty()) return;
+                    auto visibility = source.value(QStringLiteral("visibleLayers")).toObject();
+                    visibility.insert(name, visible);
+                    source.insert(QStringLiteral("visibleLayers"), visibility);
+                    sources_->put(sources_->activeId(), source);
+                });
+            }
+        }
+    }
+    struct Hit {
+        MapItem item;
+        QString source;
+    };
+    QList<Hit> objectsAt(QPointF position) const
+    {
+        QList<Hit> hits;
+        if (tools_) for (const auto &item : tools_->itemsAt(view_, position)) hits.append({item, QStringLiteral("local")});
+        const auto now = QDateTime::currentDateTimeUtc();
+        for (const auto &message : store_.events()) {
+            if (message.start > now || message.stale <= now || QLineF(view_.screen(message.latitude, message.longitude), position).length() >= 14) continue;
+            MapItem item; item.label = message.callsign.isEmpty() ? message.uid : message.callsign; item.type = message.type;
+            item.point = project(message.latitude, message.longitude); item.color = Qt::white;
+            item.symbol = markerSymbolForCot(message.type);
+            item.properties = {{QStringLiteral("UID"), message.uid}, {QStringLiteral("How"), message.how},
+                {QStringLiteral("Latitude"), message.latitude}, {QStringLiteral("Longitude"), message.longitude},
+                {QStringLiteral("Altitude"), message.altitude}, {QStringLiteral("Circular error"), message.circularError}, {QStringLiteral("Linear error"), message.linearError},
+                {QStringLiteral("Time"), message.time.toString(Qt::ISODateWithMs)}, {QStringLiteral("Start"), message.start.toString(Qt::ISODateWithMs)}, {QStringLiteral("Stale"), message.stale.toString(Qt::ISODateWithMs)}};
+            item.id = message.uid;
+            hits.append({std::move(item), QStringLiteral("cot")});
+        }
+        if (dataSources_) for (const auto &item : dataSources_->itemsAt(view_, position)) hits.append({item, QStringLiteral("data")});
+        for (const auto &item : tiles_.itemsAt(position)) hits.append({item, QStringLiteral("vector")});
+        return hits;
+    }
+    void closeOnContentChange(QMenu &menu)
+    {
+        connect(&store_, &Store::changed, &menu, &QMenu::close);
+        if (tools_) connect(tools_, &MapTools::changed, &menu, &QMenu::close);
+        if (dataSources_) connect(dataSources_, &DataSources::contentChanged, &menu, &QMenu::close);
+        if (sources_) connect(sources_, &MapSources::changed, &menu, &QMenu::close);
+    }
+    void selectHit(const Hit &hit)
+    {
+        selectedSource_ = hit.source;
+        if (selection_) selection_->select(hit.item);
+        store_.select(hit.source == QStringLiteral("cot") ? hit.item.id : QString{});
+    }
+    bool chooseObject(QPointF position, QEvent &event)
+    {
+        const auto hits = objectsAt(position);
+        if (hits.isEmpty()) return false;
+        qsizetype chosen = 0;
+        if (hits.size() > 1) {
+            QMenu menu(this); menu.setObjectName(QStringLiteral("mapObjectChooser"));
+            menu.addSection(tr("Choose an object"));
+            chosen = -1;
+            closeOnContentChange(menu);
+            // Build each page only when it opens. Dense overlaps keep a small menu.
+            const auto fillPage = [&](auto &&self, QMenu *page, qsizetype start) -> void {
+                const auto end = std::min(start + 30, hits.size());
+                for (auto i = start; i < end; ++i) {
+                    const auto &hit = hits.at(i);
+                    auto label = hit.item.label.isEmpty() ? tr("Unnamed object") : hit.item.label;
+                    auto detail = hit.item.type;
+                    if (hit.source == QStringLiteral("cot")) detail += tr(" / CoT message");
+                    if (hit.source == QStringLiteral("data")) detail += tr(" / Data provider");
+                    if (hit.source == QStringLiteral("vector")) detail += tr(" / Map feature");
+                    const auto text = QStringLiteral("%1. %2 (%3)").arg(i + 1).arg(label.left(100), detail.left(100));
+                    auto *action = page->addAction(QString(text).replace('&', QStringLiteral("&&")));
+                    action->setData(hit.item.id);
+                    connect(action, &QAction::triggered, &menu, [&, i] { chosen = i; menu.close(); });
+                }
+                if (end < hits.size()) {
+                    auto *more = page->addMenu(tr("More objects"));
+                    connect(more, &QMenu::aboutToShow, &menu, [&, more, end] { if (more->actions().isEmpty()) self(self, more, end); });
+                }
+            };
+            fillPage(fillPage, &menu, 0);
+            menu.exec(mapToGlobal(position.toPoint()));
+            if (chosen < 0) return true;
+        }
+        const auto &hit = hits.at(chosen);
+        if (hit.source == QStringLiteral("local")) {
+            selectedSource_.clear();
+            if (tools_) tools_->interact(hit.item, event, *this);
+        } else if (event.type() == QEvent::ContextMenu) {
+            QMenu menu(this); menu.setObjectName(QStringLiteral("mapItemContextMenu"));
+            auto *information = menu.addAction(tr("Information")); information->setObjectName(QStringLiteral("mapItemInformation"));
+            closeOnContentChange(menu);
+            if (hit.source == QStringLiteral("vector")) {
+                menu.setObjectName(QStringLiteral("mapContextMenu")); information->setObjectName(QStringLiteral("mapInformation"));
+                information->setText(tr("Map information"));
+                addLayerMenu(menu);
+                connect(information, &QAction::triggered, &menu, [this, hit] {
+                    auto properties = hit.item.properties; properties.insert(QStringLiteral("name"), hit.item.label);
+                    properties.insert(QStringLiteral("description"), hit.item.description);
+                    showInformation({QJsonObject{{QStringLiteral("layer"), hit.item.type}, {QStringLiteral("id"), properties.value(QStringLiteral("Feature ID"))}, {QStringLiteral("properties"), properties}}});
+                });
+            } else connect(information, &QAction::triggered, &menu, [this, hit] { selectHit(hit); });
+            menu.exec(mapToGlobal(position.toPoint()));
+        } else selectHit(hit);
+        return true;
     }
     void wheelEvent(QWheelEvent *event) override
     {

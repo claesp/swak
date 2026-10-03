@@ -60,7 +60,7 @@ public:
     int shapeCount(const QString &id) const;
     QStringList attributions() const;
     void paint(QPainter &painter, const Viewport &view) const;
-    std::optional<MapItem> itemAt(const Viewport &view, QPointF position) const;
+    QList<MapItem> itemsAt(const Viewport &view, QPointF position) const;
 signals:
     void changed();
     void contentChanged();

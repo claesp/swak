@@ -43,7 +43,7 @@ public:
     void stop();
     QStringList layers() const;
     QList<QJsonObject> featuresAt(QPointF position) const;
-    std::optional<MapItem> itemAt(QPointF position) const;
+    QList<MapItem> itemsAt(QPointF position) const;
 signals:
     void changed();
 private:
