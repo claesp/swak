@@ -1,4 +1,5 @@
 #include "core/marker_symbols.h"
+#include "core/marker_collections.h"
 #include "core/interfaces.h"
 #include "core/maps.h"
 #include "core/map_tools.h"
@@ -22,7 +23,7 @@ void setLocation(UserObject &item, QPointF point) { item.geometry = {{QStringLit
 QPointF screen(QPointF point, const Viewport &view) { return (point - view.center) * view.scale() + QPointF(view.size.width() / 2, view.size.height() / 2); }
 class MarkerEditor final : public ObjectEditor, public SettingsParticipant {
 public:
-    MarkerEditor(UserObjects &objects, QWidget *parent) : ObjectEditor(objects, parent) {}
+    MarkerEditor(UserObjects &objects, MarkerCollections &collections, QWidget *parent) : ObjectEditor(objects, collections, parent) {}
     QString preferenceId() const override { return QStringLiteral("org.swak.markers"); }
     QString settingsTitle() const override { return tr("Markers"); }
     QList<SettingField> settingsFields() const override {
@@ -65,8 +66,12 @@ private:
 };
 class MarkerTool final : public MapTool {
 public:
-    MarkerTool(PluginServices &services, MarkerEditor &editor) : MapTool(&editor), objects_(*services.objects), selection_(*services.selection), store_(services.store), editor_(editor)
+    MarkerTool(PluginServices &services, MarkerEditor &editor) : MapTool(&editor), objects_(*services.objects), selection_(*services.selection), store_(services.store), editor_(editor), collections_(*services.collections)
     {
+        connect(&collections_, &MarkerCollections::changed, this, [this] {
+            if (selection_.item() && selection_.item()->owner == owner()) select(selection_.item()->id);
+            emit changed();
+        });
         connect(&objects_, &UserObjects::changed, this, [this] {
             if (selection_.item() && selection_.item()->owner == owner()) {
                 const auto id = selection_.item()->id;
@@ -137,7 +142,12 @@ public:
                 if (!QRectF(0, 0, 1, 1).contains(point)) return true;
                 const bool creating = mode_ == Mode::Placing; mode_ = Mode::Idle; map.unsetCursor();
                 if (creating) {
-                    UserObject item; item.id = QUuid::createUuid().toString(QUuid::WithoutBraces); item.type = QStringLiteral("circle"); item.title = tr("New Marker"); item.color = editor_.color().name(); setLocation(item, point);
+                    if (editor_.newCollection().isEmpty()) {
+                        logMessage(Severity::Warning, Urgency::Attention, QStringLiteral("swak.markers"), tr("Enable a marker collection before placing a marker.")); emit changed(); return true;
+                    }
+                    UserObject item; item.collection = editor_.newCollection(); item.symbol = editor_.newSymbol(); item.id = QUuid::createUuid().toString(QUuid::WithoutBraces); item.type = QStringLiteral("circle"); item.title = tr("New Marker"); item.color = editor_.color().name();
+                    if (item.collection != CoreMarkerCollection || !item.symbol.isEmpty()) if (const auto symbol = collections_.symbol(item.collection, item.symbol)) item.color = symbol->color.name();
+                    setLocation(item, point);
                     editor_.edit(item);
                 } else {
                     setLocation(moving_, point);
@@ -179,15 +189,15 @@ public:
         for (const auto &item : objects_.items()) {
             if (item.type != QStringLiteral("circle") || (mode_ == Mode::Moving && item.id == moving_.id)) continue;
             painter.setBrush(QColor(item.color));
-            paintMarkerSymbol(painter, item.symbol, screen(location(item), view), editor_.radius(), QColor(item.color));
+            paint(painter, item, screen(location(item), view));
         }
-        if (editor_.draft() && !objects_.find(editor_.draft()->id)) { painter.setBrush(QColor(editor_.draft()->color)); paintMarkerSymbol(painter, editor_.draft()->symbol, screen(location(*editor_.draft()), view), editor_.radius(), QColor(editor_.draft()->color)); }
+        if (editor_.draft() && !objects_.find(editor_.draft()->id)) { painter.setBrush(QColor(editor_.draft()->color)); paint(painter, *editor_.draft(), screen(location(*editor_.draft()), view)); }
     }
     void paintOverlay(QPainter &painter, const Viewport &view, QPointF pointer) const override
     {
         painter.setPen(QPen(QColor("#152028"), 2)); painter.setBrush(editor_.color());
         if (mode_ != Mode::Idle) {
-            if (mode_ == Mode::Moving) { painter.setBrush(QColor(moving_.color)); paintMarkerSymbol(painter, moving_.symbol, pointer, editor_.radius(), QColor(moving_.color)); }
+            if (mode_ == Mode::Moving) { painter.setBrush(QColor(moving_.color)); paint(painter, moving_, pointer); }
             painter.setRenderHint(QPainter::Antialiasing, false);
             painter.setPen(QPen(QColor(0, 0, 0, qRound(editor_.guideOpacity() * 255)), 1));
             painter.drawLine(QPointF(0, pointer.y()), QPointF(view.size.width(), pointer.y()));
@@ -209,13 +219,22 @@ private:
         }
         return id;
     }
+    void paint(QPainter &painter, const UserObject &item, QPointF point) const {
+        if (const auto symbol = collections_.symbol(item.collection, item.symbol)) paintCollectionSymbol(painter, *symbol, point, editor_.radius(), QColor(item.color));
+        else paintMarkerSymbol(painter, {}, point, editor_.radius(), QColor(item.color));
+    }
     void select(const QString &id) {
         const auto record = objects_.find(id); if (!record || record->type != QStringLiteral("circle")) return;
-        MapItem item; item.owner = owner(); item.id = id; item.label = record->title; item.type = tr("Generic marker");
-        for (const auto &symbol : markerSymbols()) if (symbol.code == record->symbol) item.type = symbol.name;
+        MapItem item; item.owner = owner(); item.id = id; item.label = record->title;
+        item.markerOutline = markerFrame({}, {}, 1);
+        if (const auto symbol = collections_.symbol(record->collection, record->symbol)) { item.type = symbol->name; item.markerOutline = symbol->frame; }
+        else item.type = tr("Unavailable marker");
         item.description = record->description;
         item.point = location(*record); item.radius = editor_.radius(); item.symbol = record->symbol; item.color = QColor(record->color); item.properties = record->properties;
         const auto coordinate = unproject(item.point);
+        const auto collectionId = effectiveMarkerCollection(record->collection, record->symbol);
+        item.properties.insert(QStringLiteral("Collection"), collections_.collections().value(collectionId).toObject().value(QStringLiteral("name")).toString(collectionId));
+        item.properties.insert(QStringLiteral("Collection ID"), collectionId);
         item.properties.insert(QStringLiteral("ID"), id); item.properties.insert(QStringLiteral("Latitude"), coordinate.y()); item.properties.insert(QStringLiteral("Longitude"), coordinate.x());
         store_.select({}); selection_.select(std::move(item));
     }
@@ -228,20 +247,22 @@ private:
     MapSelection &selection_;
     Store &store_;
     MarkerEditor &editor_;
+    MarkerCollections &collections_;
 };
 }
-class MarkerPlugin final : public QObject, public Plugin, public PanePlugin, public MapExtension {
+class MarkerPlugin final : public QObject, public Plugin, public PanePlugin, public MapExtension, public MarkerCollectionProvider {
     Q_OBJECT
     Q_PLUGIN_METADATA(IID "org.swak.Plugin/2.0" FILE "markers/MANIFEST")
-    Q_INTERFACES(swak::Plugin swak::PanePlugin swak::MapExtension)
+    Q_INTERFACES(swak::Plugin swak::PanePlugin swak::MapExtension swak::MarkerCollectionProvider)
 public:
+    QJsonObject markerCollection() const override { return coreMarkerCollection(); }
     QString name() const override { return tr("Edit marker"); }
     QString mapId() const override { return QStringLiteral("org.swak.markers"); }
     QString mapName() const override { return tr("Markers"); }
     Kind mapKind() const override { return Kind::Tool; }
     QWidget *create(PluginServices &services, QWidget *parent) override {
-        if (!services.objects || !services.selection || !services.mapTools) return new QWidget(parent);
-        auto *editor = new MarkerEditor(*services.objects, parent);
+        if (!services.objects || !services.selection || !services.mapTools || !services.collections) return new QWidget(parent);
+        auto *editor = new MarkerEditor(*services.objects, *services.collections, parent);
         services.mapTools->add(new MarkerTool(services, *editor));
         QTimer::singleShot(0, editor, [editor] { emit editor->visibilityRequested(false); });
         return editor;

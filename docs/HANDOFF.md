@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation: See “Vector cache recovery” below. The release includes these changes.
+Latest implementation, October 3, 2026: Read “Marker collections” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -662,3 +662,26 @@ Eight sanitizer suites passed in `build/quality/20261003-135939-quick-238080`. A
 Coverage passed eight suites and all 48 native cases in `build/quality/20261003-140114-coverage-238975`. The renamed labels ran through the existing tests. This text-only change adds no branches. Previously recorded property-editor and defensive-path gaps remain. Source analysis passed in `build/quality/20261003-140338-analyze-239810`.
 
 The 60-second workload passed in `build/quality/20261003-140230-soak-239648`. It completed 1254 cycles with 11321344 bytes of peak memory growth. The maximum heartbeat gap was 72 milliseconds, and idle CPU time was 0.007 seconds. This does not replace two-hour qualification. Tests use Qt 6.8.2 and software Mesa. Hardware graphics, native Wayland, and Qt 6.4 remain untested. The release build log is `build/event-names-release-final.log`.
+
+
+## 2026-10-03: Marker collections
+
+Tools > Marker Collections and File > Settings > Marker collections now share a collection manager. The table supports activation, copying, metadata edits, deletion, import, and export. Core supplies Generic marker. A separate MILSTD2525 plugin supplies the existing sixteen military vector symbols. This remains a limited subset of the standard.
+
+The marker editor places Collection before Type and remembers both choices. Colors come from registered collections. Existing markers retain collection references through movement, deletion undo, and restart. Disabling a collection prevents new placement from that catalog but preserves existing icons. Missing definitions use a saved-color circle. Reimporting the original collection restores its icons. Valid saved definitions work without the original plugin.
+
+The new MarkerCollectionProvider role supplies the same bounded JSON schema as imported archives. PluginServices exposes the per-window collection service. Local rendering, selection, and editor previews use shared vector paths. Received CoT messages retain their existing symbol behavior. Read [the API](plugin-api.md) and [the collection manual](marker-collections.md) for contracts and archive examples.
+
+Import accepts ZIP, TAR, and gzip-compressed TAR. Export writes ZIP or compressed TAR through the existing libarchive dependency. Archives contain one collection.json member and no executable content. Imports reject links, extra members, invalid paths, oversized data, malformed vectors, and duplicate identifiers. No archive files are extracted. Export uses atomic writes and private file permissions. Native file dialogs resolve the default suffix before replacement confirmation.
+
+Eight sanitizer suites passed in `build/quality/20261003-144842-quick-247859`. All 50 native sanitizer cases passed in `build/quality/20261003-145018-gui-248574`. LeakSanitizer then reported the existing Mesa leak of 240732 bytes in 1073 allocations. The GUI diagnostic remains failed without suppression. Source analysis passed in `build/quality/20261003-145005-analyze-2`.
+
+Coverage passed eight suites and all 50 native cases in `build/quality/20261003-145106-coverage-249342`. Collection storage and archives reached 178 of 179 lines. The collection manager reached 88 of 90 lines. The military catalog reached all 23 lines. Tests cover import errors, success after failure, cancellation, missing plugins, disabled collections, placement, metadata changes, and restart.
+
+The archive writer failure after a successful open remains untested. Allocation failures, the export filter callback, the double-click edit shortcut, and catalog changes during an open marker draft retain gaps. Existing property editor callbacks also retain gaps. Line coverage does not establish complete branch or input coverage. The static-analysis review found no dead-code diagnostic.
+
+The release build succeeded with Qt 6.8.2 and GCC 14.2. Its log is `build/collections-release.log`. The final metadata build uses `build/collections-release-final.log`. Hardware graphics, native Wayland, Qt 6.4 compatibility, and two-hour qualification remain untested.
+
+The 60-second sanitizer workload passed in `build/quality/20261003-160617-soak-251322`. It completed 1187 cycles with 12238848 bytes of peak memory growth. The maximum heartbeat gap was 39 milliseconds, and idle CPU time was 0.003 seconds. Each cycle creates and removes a collection. This short workload does not replace two-hour qualification.
+
+Four focused collection and marker cases passed at 200 percent scaling. Native screenshots show the collection manager and marker editor without clipped controls. Screenshots are under `build/atak-native`.

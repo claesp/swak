@@ -55,7 +55,8 @@ The host owns pane placement, visibility actions, and layout persistence. Plugin
 | `src/plugins/udp` | UDP receiver | Source |
 | `src/plugins/activity` | Events | Pane and menu |
 | `src/plugins/information` | Information | Pane |
-| `src/plugins/markers` | Markers | Pane and map tool |
+| `src/plugins/markers` | Markers | Pane, map tool, and Core collection |
+| `src/plugins/milstd2525` | MILSTD2525 | Marker collection |
 | `src/plugins/mvt` | MVT vector tiles | Map provider and vector tiles |
 | `src/plugins/xyz` | XYZ image tiles | Map provider |
 | `src/plugins/wmts` | WMTS image tiles | Map provider |
@@ -216,7 +217,7 @@ The host places all attached panes above the map in `MapPanels`. Panes cover map
 
 `window.overlayLayout` stores pane relationships. `window.layout` stores the outer window toolbar state. The host reads older dock layouts when `overlayLayout` is absent. Individual pane records and unknown plugin sections remain available as before.
 
-The shared object editor shows Type after Title. Circle records offer Generic marker and the supported ground-unit symbols. The editor adds unique symbol colors from the shared catalog to its eight general colors. It preserves other valid stored colors. Apply saves the selected color with the object. Deletion undo and movement retain that color.
+The shared object editor shows Collection after Title and Type after Collection. Type lists symbols from the selected collection. The editor adds unique colors from registered collections to its eight general colors. It preserves other valid stored colors. Apply saves the selected color with the object. Deletion undo and movement retain that color.
 
 # Source presets and shared symbols
 
@@ -227,3 +228,15 @@ Preset identifiers use the same bounded syntax as user source identifiers. Plugi
 `UserObject::symbol` stores an optional identifier of at most 64 letters, digits, periods, or hyphens. An empty identifier means the existing circle. Unsupported identifiers remain in preferences and render as circles. Symbol choice does not change the underlying geometry type. The editor stores the symbol and color together on Apply. Undo, movement, cancellation, and restart retain the complete record.
 
 `markerSymbols`, `markerSymbolForCot`, `markerFrame`, and `paintMarkerSymbol` form the shared vector-symbol API in `core/marker_symbols.h`. The marker tool and CoT Messages plugin use these functions. `MapItem::symbol` carries the frame choice to the selection renderer. No plugin owns a separate icon catalog. The current subset and provenance appear in [the reference review](atak-reference-review.md).
+
+# Marker collection providers
+
+`MarkerCollectionProvider` declares `org.swak.MarkerCollection/1.0`. Its `markerCollection()` method returns one bounded collection definition. The manifest declares the `marker-collection` role alongside any other roles. The host validates this definition before accepting the plugin. Collection identifiers are independent of plugin identifiers and must remain stable and unique.
+
+The Markers plugin supplies Core through this interface. The separate MILSTD2525 plugin supplies the military catalog. Both use the same schema as imported archives. `PluginServices::collections` points to the per-window `MarkerCollections` service. The host owns this service, and all mutations occur on the interface thread. The same-build static plugin contract still applies.
+
+`MarkerCollections` owns portable definitions, enabled flags, and decoded vector paths. The service validates inputs before it publishes symbols. Rendering uses cached paths rather than repeated JSON parsing. `CollectionSymbol` contains an identifier, name, default color, frame, and glyph. `paintCollectionSymbol` is the shared painter entry point. Archive formats and bounds appear in [Marker collections](marker-collections.md).
+
+`UserObject::collection` stores the collection identifier beside `symbol`. Empty legacy references resolve to Core for an empty symbol and MILSTD2525 otherwise. Explicit unknown references remain intact. `MapItem::markerOutline` carries normalized geometry for the selected local symbol. The selection renderer scales that geometry at the current marker radius. Missing symbols use a circle without changing the saved record.
+
+`ObjectEditor` receives the collection service and stores its last collection and type choices in its existing preferences. The collection manager uses the same provider-table control as map and data management. Settings embeds that manager without pane controls. No new external dependency or dynamic-code loader is added.

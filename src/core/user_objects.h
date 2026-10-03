@@ -16,6 +16,7 @@ struct UserObject {
     QJsonObject geometry;
     QString color = QStringLiteral("#ffc857");
     QString symbol = {};
+    QString collection = {};
     QJsonObject json() const;
     static UserObject fromJson(const QJsonObject &value);
 };

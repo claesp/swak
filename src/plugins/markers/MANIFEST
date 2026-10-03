@@ -14,7 +14,8 @@
   "qtMinimum": "6.4.0",
   "interfaces": [
     "pane",
-    "map-tool"
+    "map-tool",
+    "marker-collection"
   ],
   "requires": [],
   "permissions": [],

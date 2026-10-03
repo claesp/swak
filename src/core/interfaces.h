@@ -17,6 +17,7 @@ class DataSources;
 class MapSelection;
 class MapTools;
 class UserObjects;
+class MarkerCollections;
 struct PluginServices {
     Store &store;
     ActivityModel &activity;
@@ -25,6 +26,7 @@ struct PluginServices {
     MapSelection *selection = nullptr;
     MapTools *mapTools = nullptr;
     UserObjects *objects = nullptr;
+    MarkerCollections *collections = nullptr;
 };
 class Plugin {
 public:

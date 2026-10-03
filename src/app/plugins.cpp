@@ -17,3 +17,5 @@ Q_IMPORT_PLUGIN(MvtProvider)
 Q_IMPORT_PLUGIN(InformationPlugin)
 
 Q_IMPORT_PLUGIN(MarkerPlugin)
+
+Q_IMPORT_PLUGIN(MilitaryMarkers)

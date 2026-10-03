@@ -7,11 +7,15 @@ class QTableWidget;
 class QLabel;
 class QComboBox;
 class QButtonGroup;
+class QGridLayout;
 namespace swak {
+class MarkerCollections;
 class ObjectEditor : public PaneContent {
     Q_OBJECT
 public:
-    ObjectEditor(UserObjects &objects, QWidget *parent);
+    ObjectEditor(UserObjects &objects, MarkerCollections &collections, QWidget *parent);
+    QString newCollection() const;
+    QString newSymbol() const;
     void edit(const UserObject &item);
     QJsonObject editorState() const;
     void restoreEditorState(const QJsonObject &values);
@@ -27,10 +31,18 @@ protected:
     void keyPressEvent(QKeyEvent *event) override;
 private:
     void apply();
+    void refreshCollections(const QString &selected);
+    void refreshTypes(const QString &selected);
+    void refreshColors();
     UserObjects &objects_;
     std::optional<UserObject> draft_;
     QLineEdit *title_;
     QComboBox *type_;
+    QComboBox *collection_;
+    MarkerCollections &collections_;
+    QString lastCollection_;
+    QString lastSymbol_;
+    QGridLayout *colorLayout_;
     QButtonGroup *colors_;
     QString color_;
     QPlainTextEdit *description_;

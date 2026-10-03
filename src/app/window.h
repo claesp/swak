@@ -45,6 +45,7 @@ private:
     QByteArray settingsGeometry_;
     QByteArray mapManagerGeometry_;
     QByteArray dataManagerGeometry_;
+    QByteArray markerManagerGeometry_;
     QJsonObject settingsNavigation_;
 };
 }

@@ -1,6 +1,6 @@
 # Build and run
 
-The baseline is Linux, C++20, CMake 3.24, Ninja, and Qt 6.4 or later. The graphics driver must support OpenGL 3.3. The project requires the Qt Core, Gui, Widgets, Network, OpenGLWidgets, Concurrent, and Test components. The KML plugin also requires libarchive development files.
+The baseline is Linux, C++20, CMake 3.24, Ninja, and Qt 6.4 or later. The graphics driver must support OpenGL 3.3. The project requires the Qt Core, Gui, Widgets, Network, OpenGLWidgets, Concurrent, and Test components. Marker collections and the KML plugin require libarchive development files.
 
 On Debian 13, install the build packages with these commands. The package manager requires administrator access. Debian 13 includes the OpenGL development files in `qt6-base-dev`.
 

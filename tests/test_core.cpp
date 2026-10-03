@@ -1,4 +1,8 @@
 #include "core/marker_symbols.h"
+#include "core/marker_collections.h"
+#include <QJsonDocument>
+#include <archive.h>
+#include <archive_entry.h>
 #include "core/plugin_catalog.h"
 #include <QJsonArray>
 #include "core/activity.h"
@@ -46,6 +50,107 @@ private:
         return event;
     }
 private slots:
+    void markerCollections()
+    {
+        MarkerCollections collections(QPluginLoader::staticInstances());
+        QCOMPARE(collections.collections().size(), 2);
+        QVERIFY(MarkerCollections::validate(coreMarkerCollection()).isEmpty());
+        QVERIFY(MarkerCollections::validate(militaryMarkerCollection()).isEmpty());
+        QVERIFY(collections.symbol({}, {}));
+        for (const auto &symbol : markerSymbols()) {
+            const auto found = collections.symbol({}, symbol.code); QVERIFY(found);
+            QCOMPARE(found->frame, markerFrame(symbol.code, {}, 1)); QCOMPARE(found->glyph, markerGlyph(symbol.code));
+        }
+        QVERIFY(!collections.remove(CoreMarkerCollection).isEmpty());
+        QVERIFY(!collections.put(coreMarkerCollection()).isEmpty());
+        QVERIFY(collections.setEnabled(MilitaryMarkerCollection, false).isEmpty());
+        QVERIFY(collections.symbol(MilitaryMarkerCollection, QStringLiteral("a-f-G-U")));
+        QVERIFY(!collections.setEnabled(QStringLiteral("missing"), true).isEmpty());
+        auto custom = coreMarkerCollection(); custom.insert(QStringLiteral("id"), QStringLiteral("test.collection")); custom.insert(QStringLiteral("name"), QStringLiteral("Custom"));
+        QVERIFY(collections.put(custom).isEmpty());
+        auto saved = collections.savePreferences();
+        MarkerCollections absent({}); absent.restorePreferences(saved);
+        QCOMPARE(absent.collections(), collections.collections()); QVERIFY(absent.symbol(CoreMarkerCollection, {}));
+        auto future = custom; future.insert(QStringLiteral("schemaVersion"), 2);
+        auto entries = saved.value(QStringLiteral("collections")).toObject(); entries.insert(QStringLiteral("test.collection"), future);
+        saved.insert(QStringLiteral("collections"), entries); absent.restorePreferences(saved);
+        QCOMPARE(absent.collections().value(QStringLiteral("test.collection")).toObject(), future);
+        QVERIFY(!absent.symbol(QStringLiteral("test.collection"), {}));
+        QVERIFY(!absent.setEnabled(QStringLiteral("test.collection"), true).isEmpty());
+        QVERIFY(collections.remove(QStringLiteral("test.collection")).isEmpty());
+        for (int i = 0; i < 14; ++i) { custom.insert(QStringLiteral("id"), QStringLiteral("custom.%1").arg(i)); QVERIFY(collections.put(custom).isEmpty()); }
+        custom.insert(QStringLiteral("id"), QStringLiteral("overflow")); QVERIFY(!collections.put(custom).isEmpty());
+        const auto before = collections.savePreferences(); entries.insert(QStringLiteral("invalid/key"), custom);
+        collections.restorePreferences({{QStringLiteral("collections"), entries}}); QCOMPARE(collections.savePreferences(), before);
+        UserObject record{QStringLiteral("test"), QStringLiteral("circle"), QStringLiteral("Custom marker"), {}, {},
+            {{QStringLiteral("x"), 0.5}, {QStringLiteral("y"), 0.5}}};
+        record.collection = QStringLiteral("test.collection"); QVERIFY(UserObjects::validate(record).isEmpty());
+        QCOMPARE(UserObject::fromJson(record.json()).collection, record.collection);
+        record.collection = QString(65, 'x'); QVERIFY(!UserObjects::validate(record).isEmpty());
+    }
+    void markerCollectionVectors()
+    {
+        const auto original = coreMarkerCollection();
+        for (const auto &path : QList<QJsonArray>{QJsonArray{}, QJsonArray{QJsonArray{}}, QJsonArray{QJsonArray{QStringLiteral("Z")}},
+                 QJsonArray{QJsonArray{QStringLiteral("L"), 0, 0}}, QJsonArray{QJsonArray{QStringLiteral("M"), 5, 0}},
+                 QJsonArray{QJsonArray{QStringLiteral("M"), 0, 0}, QJsonArray{QStringLiteral("C"), 1}},
+                 QJsonArray{QJsonArray{QStringLiteral("M"), 0, QJsonValue{}}}}) {
+            auto value = original; auto symbols = value.value(QStringLiteral("symbols")).toArray(); auto symbol = symbols[0].toObject();
+            symbol.insert(QStringLiteral("frame"), path); symbols[0] = symbol; value.insert(QStringLiteral("symbols"), symbols);
+            QVERIFY(!MarkerCollections::validate(value).isEmpty());
+        }
+        auto empty = original; empty.insert(QStringLiteral("symbols"), QJsonArray{}); QVERIFY(!MarkerCollections::validate(empty).isEmpty());
+        auto oversized = original; oversized.insert(QStringLiteral("extra"), QString(256 * 1024, 'x')); QVERIFY(!MarkerCollections::validate(oversized).isEmpty());
+        auto value = original; auto symbols = value.value(QStringLiteral("symbols")).toArray(); symbols.append(symbols[0]); value.insert(QStringLiteral("symbols"), symbols);
+        QVERIFY(!MarkerCollections::validate(value).isEmpty());
+        value = original; value.insert(QStringLiteral("name"), QStringLiteral("bad\nname")); QVERIFY(!MarkerCollections::validate(value).isEmpty());
+        value = original; value.insert(QStringLiteral("enabled"), QStringLiteral("yes")); QVERIFY(!MarkerCollections::validate(value).isEmpty());
+        value = original; value.insert(QStringLiteral("schemaVersion"), 2); QVERIFY(!MarkerCollections::validate(value).isEmpty());
+    }
+    void markerCollectionArchives()
+    {
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        MarkerCollections source(QPluginLoader::staticInstances());
+        auto custom = militaryMarkerCollection(); custom.insert(QStringLiteral("id"), QStringLiteral("archive.test")); QVERIFY(source.put(custom).isEmpty());
+        for (const auto &suffix : {QStringLiteral(".zip"), QStringLiteral(".tar.gz")}) {
+            const auto path = directory.filePath(QStringLiteral("markers") + suffix);
+            QVERIFY(source.exportArchive(QStringLiteral("archive.test"), path).isEmpty());
+            MarkerCollections imported({}); QVERIFY(imported.importArchive(path).isEmpty()); QCOMPARE(imported.collections().value(QStringLiteral("archive.test")).toObject(), custom);
+            QVERIFY(!imported.importArchive(path).isEmpty()); QCOMPARE(imported.collections().size(), 1);
+            QVERIFY(imported.remove(QStringLiteral("archive.test")).isEmpty()); QVERIFY(imported.importArchive(path).isEmpty());
+        }
+        QVERIFY(!source.exportArchive(QStringLiteral("archive.test"), QString(QChar::Null)).isEmpty());
+        QVERIFY(!source.exportArchive(QStringLiteral("missing"), directory.filePath(QStringLiteral("missing.zip"))).isEmpty());
+        QVERIFY(!source.exportArchive(QStringLiteral("archive.test"), directory.path()).isEmpty());
+        QVERIFY(!source.importArchive(directory.path()).isEmpty());
+        const auto zip = [&](const QString &member, const QByteArray &contents, bool extra, bool link) {
+            QByteArray data(1024 * 1024, '\0'); size_t used = 0;
+            std::unique_ptr<archive, decltype(&archive_write_free)> writer(archive_write_new(), archive_write_free);
+            archive_write_set_format_zip(writer.get()); archive_write_open_memory(writer.get(), data.data(), static_cast<size_t>(data.size()), &used);
+            std::unique_ptr<archive_entry, decltype(&archive_entry_free)> entry(archive_entry_new(), archive_entry_free);
+            archive_entry_set_pathname(entry.get(), member.toUtf8().constData()); archive_entry_set_filetype(entry.get(), link ? AE_IFLNK : AE_IFREG);
+            if (link) archive_entry_set_symlink(entry.get(), "outside");
+            archive_entry_set_perm(entry.get(), 0600); archive_entry_set_size(entry.get(), link ? 0 : contents.size());
+            archive_write_header(writer.get(), entry.get()); if (!link) archive_write_data(writer.get(), contents.constData(), static_cast<size_t>(contents.size()));
+            if (extra) { archive_entry_set_pathname(entry.get(), "extra.txt"); archive_entry_set_size(entry.get(), 0); archive_write_header(writer.get(), entry.get()); }
+            archive_write_close(writer.get()); data.resize(static_cast<qsizetype>(used)); return data;
+        };
+        const auto json = QJsonDocument(custom).toJson();
+        const auto valid = zip(QStringLiteral("collection.json"), json, false, false);
+        const QList<QByteArray> invalid{QByteArrayLiteral("not an archive"), valid.left(valid.size() / 2),
+            zip(QStringLiteral("../collection.json"), json, false, false), zip(QStringLiteral("/collection.json"), json, false, false),
+            zip(QStringLiteral("collection.json"), json, true, false), zip(QStringLiteral("collection.json"), json, false, true),
+            zip(QStringLiteral("collection.json"), QByteArray(256 * 1024 + 1, ' '), false, false),
+            zip(QStringLiteral("collection.json"), QByteArrayLiteral("[]"), false, false),
+            zip(QStringLiteral("collection.json"), QByteArrayLiteral("{"), false, false)};
+        MarkerCollections target({});
+        for (const auto &bytes : invalid) {
+            const auto path = directory.filePath(QStringLiteral("invalid.zip")); QFile file(path); QVERIFY(file.open(QIODevice::WriteOnly)); QCOMPARE(file.write(bytes), bytes.size()); file.close();
+            QVERIFY2(!target.importArchive(path).isEmpty(), qPrintable(QString::number(bytes.size()))); QVERIFY(target.collections().isEmpty());
+        }
+        const auto path = directory.filePath(QStringLiteral("recovery.zip")); QFile file(path); QVERIFY(file.open(QIODevice::WriteOnly)); QCOMPARE(file.write(valid), valid.size()); file.close();
+        QVERIFY(target.importArchive(path).isEmpty()); QVERIFY(target.symbol(QStringLiteral("archive.test"), QStringLiteral("a-h-G-U-C-I")));
+    }
     void vectorMarkerSymbols()
     {
         QCOMPARE(markerSymbols().size(), 16);
@@ -162,7 +267,7 @@ private slots:
 
     void pluginManifests()
     {
-        QCOMPARE(builtInPlugins().size(), 14);
+        QCOMPARE(builtInPlugins().size(), 15);
         for (const auto &entry : QPluginLoader::staticPlugins()) {
             if (entry.metaData().value(QStringLiteral("IID")).toString() != QStringLiteral("org.swak.Plugin/2.0")) continue;
             const auto manifest = entry.metaData().value(QStringLiteral("MetaData")).toObject();

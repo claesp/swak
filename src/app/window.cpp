@@ -4,6 +4,7 @@
 #include "core/user_objects.h"
 #include "app/map_manager.h"
 #include "app/data_manager.h"
+#include "app/marker_manager.h"
 #include "swak/version.h"
 #include "core/interfaces.h"
 #include "core/logging.h"
@@ -111,6 +112,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         if (auto *layer = qobject_cast<MapLayer *>(plugin)) { layers.append(layer); names.append(layer->name()); }
         if (auto *extension = qobject_cast<MapExtension *>(plugin)) names.append(extension->mapName());
         if (auto *provider = qobject_cast<DataProvider *>(plugin)) names.append(provider->dataName());
+        if (auto *provider = qobject_cast<MarkerCollectionProvider *>(plugin)) names.append(provider->markerCollection().value(QStringLiteral("name")).toString());
     }
     auto *mapSources = new MapSources(plugins, this);
     auto *dataSources = new DataSources(plugins, this);
@@ -118,7 +120,8 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     auto *selection = new MapSelection(this);
     auto *mapTools = new MapTools(this);
     auto *objects = new UserObjects(this);
-    PluginServices services{store_, *activity, *mapSources, dataSources, selection, mapTools, objects};
+    auto *collections = new MarkerCollections(plugins, this);
+    PluginServices services{store_, *activity, *mapSources, dataSources, selection, mapTools, objects, collections};
     if (view) {
         setCentralWidget(view->create(services, layers, this));
     } else {
@@ -271,6 +274,16 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         connect(dialog, &QDialog::finished, this, [this, dialog] { dataManagerGeometry_ = dialog->saveGeometry(); savePreferences(); });
         dialog->show();
     });
+    auto *manageMarkers = toolsMenu->addAction(tr("Marker Collections"));
+    manageMarkers->setObjectName(QStringLiteral("markerCollectionsAction"));
+    connect(manageMarkers, &QAction::triggered, this, [this, collections] {
+        if (auto *existing = findChild<MarkerManager *>(); existing && existing->isWindow()) { existing->show(); existing->raise(); return; }
+        auto *dialog = new MarkerManager(*collections, this, [this] { return savePreferences() ? QString{} : preferences_.error(); });
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        if (!markerManagerGeometry_.isEmpty()) dialog->restoreGeometry(markerManagerGeometry_);
+        connect(dialog, &QDialog::finished, this, [this, dialog] { markerManagerGeometry_ = dialog->saveGeometry(); savePreferences(); });
+        dialog->show();
+    });
     auto *pluginsMenu = new PluginMenu(tr("&Plugins"), toolsMenu);
     toolsMenu->addMenu(pluginsMenu);
     pluginsMenu->setObjectName(QStringLiteral("pluginsMenu"));
@@ -404,6 +417,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     settingsGeometry_ = geometryBytes(application, QStringLiteral("settingsGeometry"));
     mapManagerGeometry_ = geometryBytes(application, QStringLiteral("mapManagerGeometry"));
     dataManagerGeometry_ = geometryBytes(application, QStringLiteral("dataManagerGeometry"));
+    markerManagerGeometry_ = geometryBytes(application, QStringLiteral("markerManagerGeometry"));
     settingsNavigation_ = application.value(QStringLiteral("settingsNavigation")).toObject();
     connect(&saveTimer_, &QTimer::timeout, this, [this] {
         if (isVisible() && !closing_ && preferences_.writable()
@@ -493,6 +507,8 @@ bool Window::savePreferences()
     application.insert(QStringLiteral("mapManagerGeometry"), QString::fromLatin1(mapManagerGeometry_.toBase64()));
     if (auto *dialog = findChild<DataManager *>(); dialog && dialog->isWindow()) dataManagerGeometry_ = dialog->saveGeometry();
     application.insert(QStringLiteral("dataManagerGeometry"), QString::fromLatin1(dataManagerGeometry_.toBase64()));
+    if (auto *dialog = findChild<MarkerManager *>(); dialog && dialog->isWindow()) markerManagerGeometry_ = dialog->saveGeometry();
+    application.insert(QStringLiteral("markerManagerGeometry"), QString::fromLatin1(markerManagerGeometry_.toBase64()));
     document.insert(QStringLiteral("application"), application);
     document.insert(QStringLiteral("version"), 1);
     const bool saved = preferences_.save(document);
@@ -557,6 +573,10 @@ void Window::openSettings()
         } else if (auto *feeds = dynamic_cast<DataSources *>(participant)) {
             pages.append({feeds->preferenceId(), feeds->settingsTitle(), {}, {}, {}, {}, false,
                 [this, feeds](QWidget *parent) { return new DataManager(*feeds, parent,
+                    [this] { return savePreferences() ? QString{} : preferences_.error(); }, true); }});
+        } else if (auto *collections = dynamic_cast<MarkerCollections *>(participant)) {
+            pages.append({collections->preferenceId(), collections->settingsTitle(), {}, {}, {}, {}, false,
+                [this, collections](QWidget *parent) { return new MarkerManager(*collections, parent,
                     [this] { return savePreferences() ? QString{} : preferences_.error(); }, true); }});
         } else if (auto *provider = dynamic_cast<SettingsParticipant *>(participant)) {
             pages.append({provider->preferenceId(), provider->settingsTitle(), provider->settingsFields(), provider->savePreferences(),

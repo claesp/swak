@@ -95,3 +95,9 @@ The editor changes a copy until Apply succeeds. Move previews do not alter saved
 Marker records accept colors only in `#RRGGBB` format. The existing record and model budgets include this field. Color selection does not load files, styles, or remote resources. Overlay panels add no worker, network request, or dependency.
 
 The image provider accepts only known coordinate placeholders and a boolean row-inversion value. Tile coordinates remain bounded before shifts or quadkey generation. New presets do not enable downloads. Military symbols use built-in vector paths and bounded identifiers, without external fonts, images, or symbol scripts. Unknown saved identifiers remain intact and render as circles.
+
+# Marker collection archives
+
+Collection archives use the existing libarchive library with ZIP, TAR, and gzip support. The importer reads a regular file of at most one MiB. It accepts one regular `collection.json` entry with at most 256 KiB of expanded data. It rejects links, encryption, extra entries, and other paths. It never extracts archive members to disk or enables external decompression programs.
+
+Vector definitions accept bounded move, line, and cubic commands. They reject nonfinite coordinates, invalid colors, duplicate identifiers, and excessive geometry. The renderer does not load external images, fonts, scripts, or URLs. Imported tooltip text is escaped before Qt renders it. Catalog storage and decoded paths have fixed input limits. Libarchive and Qt still share the application process and remain part of its native-library trust boundary.

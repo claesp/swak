@@ -28,14 +28,15 @@ bool boundedGeometry(const QJsonValue &value, int depth = 0)
 QJsonObject UserObject::json() const
 {
     return {{QStringLiteral("id"), id}, {QStringLiteral("type"), type}, {QStringLiteral("title"), title},
-        {QStringLiteral("description"), description}, {QStringLiteral("properties"), properties}, {QStringLiteral("geometry"), geometry}, {QStringLiteral("color"), color}, {QStringLiteral("symbol"), symbol}};
+        {QStringLiteral("description"), description}, {QStringLiteral("properties"), properties}, {QStringLiteral("geometry"), geometry}, {QStringLiteral("color"), color}, {QStringLiteral("symbol"), symbol}, {QStringLiteral("collection"), collection}};
 }
 UserObject UserObject::fromJson(const QJsonObject &v)
 {
     return {v.value(QStringLiteral("id")).toString(), v.value(QStringLiteral("type")).toString(),
         v.value(QStringLiteral("title")).toString(), v.value(QStringLiteral("description")).toString(),
         v.value(QStringLiteral("properties")).toObject(), v.value(QStringLiteral("geometry")).toObject(),
-        v.value(QStringLiteral("color")).toString(QStringLiteral("#ffc857")), v.value(QStringLiteral("symbol")).toString(v.contains(QStringLiteral("symbol")) ? QStringLiteral("!") : QString{})};
+        v.value(QStringLiteral("color")).toString(QStringLiteral("#ffc857")), v.value(QStringLiteral("symbol")).toString(v.contains(QStringLiteral("symbol")) ? QStringLiteral("!") : QString{}),
+        v.value(QStringLiteral("collection")).toString(v.contains(QStringLiteral("collection")) ? QStringLiteral("!") : QString{})};
 }
 class DeleteObject final : public QUndoCommand {
 public:
@@ -69,7 +70,7 @@ QString UserObjects::validate(const UserObject &item)
     if (!identifier.match(item.id).hasMatch() || !identifier.match(item.type).hasMatch()) return tr("Invalid object identity or type.");
     if (item.title.trimmed().isEmpty() || item.title.size() > 128 || item.description.size() > 2048) return tr("Use a title up to 128 characters and a description up to 2048 characters.");
     static const QRegularExpression symbolPattern(QStringLiteral("\\A[a-zA-Z0-9.-]{0,64}\\z"));
-    if (!symbolPattern.match(item.symbol).hasMatch()) return tr("Use a marker symbol identifier up to 64 characters.");
+    if (!symbolPattern.match(item.symbol).hasMatch() || !symbolPattern.match(item.collection).hasMatch()) return tr("Use a marker symbol identifier up to 64 characters.");
     static const QRegularExpression colorPattern(QStringLiteral("\\A#[0-9a-fA-F]{6}\\z"));
     if (!colorPattern.match(item.color).hasMatch()) return tr("Use a color in #RRGGBB format.");
     if (item.properties.size() > 32) return tr("Use at most 32 properties.");

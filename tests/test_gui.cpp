@@ -19,6 +19,7 @@
 #include "core/logging.h"
 #include "app/settings_dialog.h"
 #include <QDialogButtonBox>
+#include <QFileDialog>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QListWidget>
@@ -35,6 +36,8 @@
 #include <QCollator>
 #include <QScopeGuard>
 #include "core/interfaces.h"
+#include "core/marker_collections.h"
+#include "app/marker_manager.h"
 #include "core/user_objects.h"
 #include "core/object_editor.h"
 #include <QApplication>
@@ -828,6 +831,117 @@ private slots:
         QSignalSpy frames(map, &QOpenGLWidget::frameSwapped); map->update(); QVERIFY(frames.wait(2000));
         QVERIFY(window.screen()->grabWindow(window.winId()).save(QStringLiteral("map-overlays.png")));
     }
+    void markerCollectionArchiveDialogs()
+    {
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const bool native = QApplication::testAttribute(Qt::AA_DontUseNativeDialogs);
+        QApplication::setAttribute(Qt::AA_DontUseNativeDialogs, true);
+        struct RestoreDialogs { bool value; ~RestoreDialogs() { QApplication::setAttribute(Qt::AA_DontUseNativeDialogs, value); } } restore{native};
+        swak::MarkerCollections collections(QPluginLoader::staticInstances()); collections.setDirectory(directory.path());
+        auto value = swak::coreMarkerCollection(); const auto id = QStringLiteral("archive.ui"); value.insert(QStringLiteral("id"), id);
+        value.insert(QStringLiteral("name"), QStringLiteral("Custom")); value.insert(QStringLiteral("description"), QStringLiteral("<img src='file:///private' />"));
+        QVERIFY(collections.put(value).isEmpty());
+        int saves = 0;
+        swak::MarkerManager manager(collections, nullptr, [&] { ++saves; return QString{}; }); manager.show(); QVERIFY(QTest::qWaitForWindowExposed(&manager));
+        auto *table = manager.findChild<QTableWidget *>(QStringLiteral("markerCollectionList"));
+        for (int row = 0; row < table->rowCount(); ++row) if (table->item(row, 1)->data(Qt::UserRole).toString() == id) {
+            table->setCurrentCell(row, 1); QVERIFY(table->item(row, 1)->toolTip().contains(QStringLiteral("&lt;img")));
+        }
+        const auto chooseFile = [&](const QString &button, const QString &path) {
+            bool found = false;
+            QTimer::singleShot(0, &manager, [&] {
+                auto *dialog = manager.findChild<QFileDialog *>(); QVERIFY(dialog); found = true;
+                if (path.isEmpty()) dialog->reject();
+                else { dialog->selectFile(path); QMetaObject::invokeMethod(dialog, "accept", Qt::QueuedConnection); }
+            });
+            manager.findChild<QPushButton *>(button)->click(); QVERIFY(found);
+        };
+        const auto file = directory.filePath(QStringLiteral("symbols.zip"));
+        chooseFile(QStringLiteral("exportMarkerCollection"), file.chopped(4)); QVERIFY(QFileInfo::exists(file)); QCOMPARE(saves, 1);
+        chooseFile(QStringLiteral("exportMarkerCollection"), {}); QCOMPARE(saves, 1);
+        manager.findChild<QPushButton *>(QStringLiteral("deleteMarkerCollection"))->click(); QVERIFY(!collections.collections().contains(id));
+        chooseFile(QStringLiteral("importMarkerCollection"), file); QVERIFY(collections.collections().contains(id));
+        const auto before = collections.collections();
+        chooseFile(QStringLiteral("importMarkerCollection"), file); QCOMPARE(collections.collections(), before);
+        QVERIFY(!manager.findChild<QLabel *>(QStringLiteral("markerCollectionStatus"))->text().isEmpty());
+        chooseFile(QStringLiteral("importMarkerCollection"), {}); QCOMPARE(collections.collections(), before);
+        QCOMPARE(collections.directory(), directory.path());
+        for (int row = 0; row < table->rowCount(); ++row) if (table->item(row, 1)->data(Qt::UserRole).toString() == swak::CoreMarkerCollection) table->setCurrentCell(row, 1);
+        manager.findChild<QPushButton *>(QStringLiteral("editMarkerCollection"))->click();
+        QVERIFY(manager.findChild<QLabel *>(QStringLiteral("markerCollectionStatus"))->text().contains(QStringLiteral("read-only")));
+        manager.findChild<QPushButton *>(QStringLiteral("deleteMarkerCollection"))->click(); QVERIFY(collections.collections().contains(swak::CoreMarkerCollection));
+    }
+    void markerCollectionWorkflow()
+    {
+        QTemporaryDir directory; const auto profile = directory.filePath(QStringLiteral("collections.json"));
+        QString collectionId, markerId;
+        {
+            swak::Window window(profile, QPluginLoader::staticInstances()); window.show(); window.activateWindow(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+            auto *collections = window.findChild<swak::MarkerCollections *>(); QVERIFY(collections);
+            window.findChild<QAction *>(QStringLiteral("markerCollectionsAction"))->trigger();
+            auto *manager = window.findChild<swak::MarkerManager *>(); QVERIFY(manager);
+            auto *table = manager->findChild<QTableWidget *>(QStringLiteral("markerCollectionList")); QVERIFY(table); QCOMPARE(table->rowCount(), 2);
+            bool edited = false;
+            QTimer::singleShot(0, manager, [&] {
+                auto *dialog = manager->findChild<QDialog *>(QStringLiteral("editMarkerCollectionDialog")); QVERIFY(dialog);
+                dialog->findChild<QLineEdit *>(QStringLiteral("collectionName"))->setText(QStringLiteral("Custom units"));
+                auto *source = dialog->findChild<QComboBox *>(QStringLiteral("collectionTemplate")); source->setCurrentIndex(source->findData(swak::MilitaryMarkerCollection));
+                dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click(); edited = true;
+            });
+            manager->findChild<QPushButton *>(QStringLiteral("addMarkerCollection"))->click(); QVERIFY(edited); QCOMPARE(table->rowCount(), 3);
+            const auto entries = collections->collections();
+            for (auto it = entries.begin(); it != entries.end(); ++it) if (!collections->builtIn(it.key())) collectionId = it.key();
+            QVERIFY(!collectionId.isEmpty());
+            QTimer::singleShot(0, manager, [&] {
+                auto *dialog = manager->findChild<QDialog *>(QStringLiteral("editMarkerCollectionDialog")); QVERIFY(dialog);
+                dialog->findChild<QLineEdit *>(QStringLiteral("collectionDescription"))->setText(QStringLiteral("Portable symbols"));
+                dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+            });
+            manager->findChild<QPushButton *>(QStringLiteral("editMarkerCollection"))->click();
+            QCOMPARE(collections->collections().value(collectionId).toObject().value(QStringLiteral("description")).toString(), QStringLiteral("Portable symbols"));
+            auto *toggle = manager->findChild<QAbstractButton *>(QStringLiteral("activeProvider/") + collectionId); QVERIFY(toggle); toggle->click();
+            QTRY_VERIFY(!collections->collections().value(collectionId).toObject().value(QStringLiteral("enabled")).toBool());
+            toggle = manager->findChild<QAbstractButton *>(QStringLiteral("activeProvider/") + collectionId); toggle->click();
+            QTRY_VERIFY(collections->collections().value(collectionId).toObject().value(QStringLiteral("enabled")).toBool());
+            QTimer::singleShot(0, manager, [&] {
+                auto *dialog = manager->findChild<QDialog *>(QStringLiteral("editMarkerCollectionDialog")); QVERIFY(dialog); dialog->reject();
+            });
+            manager->findChild<QPushButton *>(QStringLiteral("addMarkerCollection"))->click(); QCOMPARE(table->rowCount(), 3);
+            QVERIFY(collections->exportArchive(collectionId, directory.filePath(QStringLiteral("custom.zip"))).isEmpty());
+            QVERIFY(manager->grab().save(QStringLiteral("marker-collections.png")));
+            manager->close();
+            auto *map = window.findChild<QOpenGLWidget *>(); auto *editor = window.findChild<swak::ObjectEditor *>();
+            auto *objects = window.findChild<swak::UserObjects *>(); auto *selection = window.findChild<swak::MapSelection *>();
+            map->setFocus(); QTest::keyClick(map, Qt::Key_M); QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
+            auto *collection = editor->findChild<QComboBox *>(QStringLiteral("objectCollection")); auto *type = editor->findChild<QComboBox *>(QStringLiteral("objectType"));
+            QCOMPARE(collection->currentData().toString(), swak::CoreMarkerCollection); QCOMPARE(type->count(), 1);
+            collection->setCurrentIndex(collection->findData(collectionId)); QCOMPARE(type->count(), 16);
+            type->setCurrentIndex(type->findData(QStringLiteral("a-h-G-U-C-I")));
+            QVERIFY(editor->grab().save(QStringLiteral("marker-collection-editor.png")));
+            editor->findChild<QPushButton *>(QStringLiteral("applyObject"))->click();
+            markerId = objects->items().firstKey(); QCOMPARE(objects->find(markerId)->collection, collectionId);
+            QSignalSpy frames(map, &QOpenGLWidget::frameSwapped); map->update(); QVERIFY(frames.wait(2000));
+            QVERIFY(window.screen()->grabWindow(window.winId()).save(QStringLiteral("marker-collection-map.png")));
+            const auto outline = selection->item()->markerOutline; QVERIFY(!outline.isEmpty());
+            QVERIFY(collections->setEnabled(collectionId, false).isEmpty()); QCOMPARE(selection->item()->markerOutline, outline);
+            editor->edit(*objects->find(markerId)); QCOMPARE(collection->currentData().toString(), collectionId); editor->cancel();
+            QVERIFY(collections->remove(collectionId).isEmpty()); QCOMPARE(selection->item()->type, QStringLiteral("Unavailable marker"));
+            editor->edit(*objects->find(markerId)); QCOMPARE(collection->currentData().toString(), collectionId); QCOMPARE(type->currentData().toString(), QStringLiteral("a-h-G-U-C-I"));
+            editor->findChild<QPushButton *>(QStringLiteral("applyObject"))->click(); QCOMPARE(objects->find(markerId)->collection, collectionId);
+            QVERIFY(collections->importArchive(directory.filePath(QStringLiteral("custom.zip"))).isEmpty()); QCOMPARE(selection->item()->markerOutline, outline);
+            objects->remove(markerId); objects->undoStack().undo(); QCOMPARE(objects->find(markerId)->collection, collectionId);
+            QVERIFY(window.savePreferences());
+        }
+        swak::Window restored(profile, QPluginLoader::staticInstances()); restored.show(); QVERIFY(QTest::qWaitForWindowExposed(&restored));
+        auto *collections = restored.findChild<swak::MarkerCollections *>(); QVERIFY(collections->collections().contains(collectionId));
+        auto *objects = restored.findChild<swak::UserObjects *>(); QCOMPARE(objects->find(markerId)->collection, collectionId);
+        auto *editor = restored.findChild<swak::ObjectEditor *>(); QCOMPARE(editor->newCollection(), collectionId); QCOMPARE(editor->newSymbol(), QStringLiteral("a-h-G-U-C-I"));
+        for (const auto &id : collections->collections().keys()) QVERIFY(collections->setEnabled(id, false).isEmpty());
+        QVERIFY(editor->newCollection().isEmpty());
+        auto *map = restored.findChild<QOpenGLWidget *>(); map->setFocus(); QTest::keyClick(map, Qt::Key_M); QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
+        QVERIFY(!editor->draft()); QCOMPARE(objects->items().size(), 1);
+        QVERIFY(restored.findChild<QLabel *>(QStringLiteral("mapToolStatus"))->text().isEmpty()); QTest::keyClick(map, Qt::Key_Escape);
+    }
     void militaryMarkerWorkflow()
     {
         QTemporaryDir directory; const auto profile = directory.filePath(QStringLiteral("symbols.json")); QString id;
@@ -838,6 +952,8 @@ private slots:
             auto *objects = window.findChild<swak::UserObjects *>(); auto *selection = window.findChild<swak::MapSelection *>();
             map->setFocus(); QTest::keyClick(map, Qt::Key_M); QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
             auto *type = editor->findChild<QComboBox *>(QStringLiteral("objectType"));
+            auto *collection = editor->findChild<QComboBox *>(QStringLiteral("objectCollection")); QVERIFY(collection);
+            collection->setCurrentIndex(collection->findData(swak::MilitaryMarkerCollection));
             for (const auto &identity : {QStringLiteral("f"), QStringLiteral("h"), QStringLiteral("n"), QStringLiteral("u")}) {
                 const auto symbol = QStringLiteral("a-%1-G-U").arg(identity);
                 type->setCurrentIndex(type->findData(symbol));
@@ -885,7 +1001,7 @@ private slots:
             auto *objects = window.findChild<swak::UserObjects *>(); auto *selection = window.findChild<swak::MapSelection *>();
             map->setFocus(); QTest::keyClick(map, Qt::Key_M); QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
             auto *type = editor->findChild<QComboBox *>(QStringLiteral("objectType")); QVERIFY(type);
-            QCOMPARE(type->count(), 17); QCOMPARE(type->currentText(), QStringLiteral("Generic marker"));
+            QCOMPARE(type->count(), 1); QCOMPARE(type->currentText(), QStringLiteral("Generic marker"));
             QVERIFY(!type->itemIcon(0).isNull());
             auto *orange = editor->findChild<QToolButton *>(QStringLiteral("objectColor1")); QVERIFY(orange && orange->isChecked());
             for (int i = 0; i < 12; ++i) QVERIFY(editor->findChild<QToolButton *>(QStringLiteral("objectColor%1").arg(i)));

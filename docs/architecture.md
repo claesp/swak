@@ -138,3 +138,5 @@ The model stores committed objects in its own preferences component. Draft creat
 # Overlay layout
 
 `MapPanels` is a child widget above the map. Its nested QMainWindow retains the existing Qt dock behavior. A region mask exposes map pixels outside the panes and passes mouse input to the map there. A single-shot timer combines layout changes before it updates the mask. Pane backgrounds use the current palette. Floating panes remain native windows. The host destroys panes before their shared services.
+
+Marker collection plugins provide portable vector catalogs through `MarkerCollectionProvider`. The Markers plugin provides Core, and a separate MILSTD2525 plugin provides the military subset. The host owns one `MarkerCollections` service per window. Imported archives use the same data schema as these providers. The marker editor, tool, and selection renderer share this service and its decoded paths. Read [Marker collections](marker-collections.md) for storage, archive, and fallback behavior.

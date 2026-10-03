@@ -3,22 +3,6 @@
 #include <QObject>
 #include <algorithm>
 namespace swak {
-const QList<MarkerSymbol> &markerSymbols()
-{
-    static const auto symbols = [] {
-        QList<MarkerSymbol> result;
-        const QStringList identities{QStringLiteral("f"), QStringLiteral("h"), QStringLiteral("n"), QStringLiteral("u")};
-        const QStringList names{QObject::tr("Friendly"), QObject::tr("Hostile"), QObject::tr("Neutral"), QObject::tr("Unknown")};
-        const QList<QColor> colors{QColor("#80e0ff"), QColor("#ff8080"), QColor("#aaffaa"), QColor("#ffff80")};
-        const QStringList suffixes{QStringLiteral("G-U"), QStringLiteral("G-U-C-I"), QStringLiteral("G-U-C-A"), QStringLiteral("G-U-S-M")};
-        const QStringList roles{QObject::tr("ground unit"), QObject::tr("infantry"), QObject::tr("armor"), QObject::tr("medical unit")};
-        for (int identity = 0; identity < 4; ++identity) for (int role = 0; role < 4; ++role)
-            result.append({QStringLiteral("a-%1-%2").arg(identities.at(identity), suffixes.at(role)),
-                QObject::tr("%1 %2").arg(names.at(identity), roles.at(role)), colors.at(identity)});
-        return result;
-    }();
-    return symbols;
-}
 bool validMarkerSymbol(const QString &code)
 {
     return code.isEmpty() || std::any_of(markerSymbols().cbegin(), markerSymbols().cend(),
@@ -51,6 +35,19 @@ QPainterPath markerFrame(const QString &code, QPointF center, double radius)
     QTransform transform; transform.translate(center.x(), center.y()); transform.scale(radius, radius);
     return transform.map(path);
 }
+QPainterPath markerGlyph(const QString &code)
+{
+    QPainterPath path;
+    if (!validMarkerSymbol(code)) return path;
+    constexpr double r = 0.42;
+    if (code.endsWith(QLatin1String("-C-I"))) {
+        path.moveTo(-r, -r); path.lineTo(r, r); path.moveTo(-r, r); path.lineTo(r, -r);
+    } else if (code.endsWith(QLatin1String("-C-A"))) path.addEllipse(QPointF{}, r, r * 0.6);
+    else if (code.endsWith(QLatin1String("-S-M"))) {
+        path.moveTo(-r, 0); path.lineTo(r, 0); path.moveTo(0, -r); path.lineTo(0, r);
+    }
+    return path;
+}
 void paintMarkerSymbol(QPainter &painter, const QString &code, QPointF center, double radius, const QColor &color, bool selected)
 {
     painter.save();
@@ -58,16 +55,8 @@ void paintMarkerSymbol(QPainter &painter, const QString &code, QPointF center, d
     painter.setBrush(color);
     painter.drawPath(markerFrame(code, center, radius));
     painter.setPen(QPen(QColor("#152028"), 1)); painter.setBrush(Qt::NoBrush);
-    const double r = radius * 0.42;
-    if (!validMarkerSymbol(code)) { painter.restore(); return; }
-    if (code.endsWith(QLatin1String("-C-I"))) {
-        painter.drawLine(center + QPointF(-r, -r), center + QPointF(r, r));
-        painter.drawLine(center + QPointF(-r, r), center + QPointF(r, -r));
-    } else if (code.endsWith(QLatin1String("-C-A"))) painter.drawEllipse(center, r, r * 0.6);
-    else if (code.endsWith(QLatin1String("-S-M"))) {
-        painter.drawLine(center + QPointF(-r, 0), center + QPointF(r, 0));
-        painter.drawLine(center + QPointF(0, -r), center + QPointF(0, r));
-    }
+    QTransform transform; transform.translate(center.x(), center.y()); transform.scale(radius, radius);
+    painter.drawPath(transform.map(markerGlyph(code)));
     painter.restore();
 }
 }

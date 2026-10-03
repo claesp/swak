@@ -3,6 +3,7 @@
 #include "core/activity.h"
 #include "core/maps.h"
 #include "core/user_objects.h"
+#include "core/marker_collections.h"
 #include "core/data.h"
 #include "core/interfaces.h"
 #include "app/window.h"
@@ -68,6 +69,8 @@ private slots:
             QVERIFY(QTest::qWaitFor([&] { return map->isValid(); }, 5000));
         }
         UserObjects localObjects;
+        MarkerCollections collections(QPluginLoader::staticInstances());
+        auto markerCollection = coreMarkerCollection(); markerCollection.insert(QStringLiteral("id"), QStringLiteral("soak.collection"));
         Store headlessStore;
         Store &store = window ? window->store() : headlessStore;
         ActivityModel activity;
@@ -154,6 +157,9 @@ private slots:
             localObjects.undoStack().undo(); QVERIFY(localObjects.find(marker.id));
             localObjects.undoStack().redo(); QVERIFY(!localObjects.find(marker.id));
             QVERIFY(localObjects.undoStack().count() <= 100);
+            QVERIFY(collections.put(markerCollection).isEmpty());
+            QVERIFY(collections.symbol(QStringLiteral("soak.collection"), {}));
+            QVERIFY(collections.remove(QStringLiteral("soak.collection")).isEmpty());
             ++cycles;
             const qint64 resident = residentBytes();
             QVERIFY(resident > 0);

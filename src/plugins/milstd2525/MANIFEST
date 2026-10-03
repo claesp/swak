@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "org.swak.milstd2525",
+  "name": "MILSTD2525",
+  "description": "Provide the original military vector marker collection.",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entryPoint": "MilitaryMarkers",
+  "linkage": "static",
+  "platforms": [
+    "linux"
+  ],
+  "qtMajor": 6,
+  "qtMinimum": "6.4.0",
+  "interfaces": [
+    "marker-collection"
+  ],
+  "requires": [],
+  "permissions": [],
+  "settingsSchemaVersion": 1
+}

@@ -232,12 +232,16 @@ After Apply or Enter saves a marker, keyboard focus returns to the map. Press M 
 
 Attached panes cover the map instead of reducing its size. Opening Information keeps the map center and scale unchanged. Pane tabs, resizing, close buttons, and detachment still work. File > Settings > Panes controls the overlay edge and dimensions. Saved layouts from earlier versions become overlay layouts.
 
-The marker editor shows Title, Type, Color, Description, and properties in that order. Type offers Generic marker and the supported military symbols. Generic marker uses a circle icon. The palette includes eight general colors and four symbol colors. Select a color button before Apply.
+The marker editor shows Title, Collection, Type, Color, Description, and properties in that order. Type lists symbols from the selected collection. Core offers Generic marker with a circle icon. The palette includes eight general colors and colors from registered collections. Select a color button before Apply.
 
 Orange is the default color. File > Settings > Markers changes the default for new markers. Existing markers retain their own colors.
 
 # Ground-unit symbols
 
-The marker editor Type field offers the circle and sixteen military ground-unit symbols. Select a type before Apply. Each military type starts with its identity color. The color buttons can override that color. The normal Information panel shows the saved symbol name.
+The marker editor separates Core and MILSTD2525 types through its Collection field. Select a type before Apply. Each military type starts with its identity color. The color buttons can override that color. The normal Information panel shows the saved symbol name.
 
 Received CoT events use the same vector symbols for supported exact ground-unit types. Other types remain circles. Read [the symbol scope](atak-reference-review.md) before using these symbols for operational interpretation. The implementation is a limited subset of MIL-STD-2525C.
+
+# Marker collections
+
+Tools > Marker Collections manages Core, MILSTD2525, and imported symbol collections. File > Settings > Marker collections provides the same table. After placing a marker, choose Collection before Type. Add copies a collection, Edit changes its metadata, and Delete removes a user collection. Import and Export exchange bounded ZIP or TAR archives. Read [Marker collections](marker-collections.md) for formats, limits, and behavior when a collection disappears.

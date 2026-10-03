@@ -1,6 +1,7 @@
 #include "core/plugin_catalog.h"
 #include "core/interfaces.h"
 #include "core/maps.h"
+#include "core/marker_collections.h"
 #include "core/data.h"
 #include "core/vector_tiles.h"
 #include "core/logging.h"
@@ -52,6 +53,10 @@ QString validatePluginManifest(const QJsonObject &manifest, QObject *instance)
     if (auto *provider = qobject_cast<DataProvider *>(instance)) {
         if (provider->dataId() != manifest.value(QStringLiteral("id")).toString()) return QStringLiteral("Data plugin identifier mismatch.");
         roles.insert(QStringLiteral("data-provider"));
+    }
+    if (auto *provider = qobject_cast<MarkerCollectionProvider *>(instance)) {
+        if (!MarkerCollections::validate(provider->markerCollection()).isEmpty()) return QStringLiteral("Invalid marker collection definition.");
+        roles.insert(QStringLiteral("marker-collection"));
     }
     if (qobject_cast<VectorTileProvider *>(instance)) {
         if (!qobject_cast<MapProvider *>(instance)) return QStringLiteral("Vector tiles require a map provider.");
