@@ -5,6 +5,8 @@ class QLineEdit;
 class QPlainTextEdit;
 class QTableWidget;
 class QLabel;
+class QComboBox;
+class QButtonGroup;
 namespace swak {
 class ObjectEditor : public PaneContent {
     Q_OBJECT
@@ -28,6 +30,9 @@ private:
     UserObjects &objects_;
     std::optional<UserObject> draft_;
     QLineEdit *title_;
+    QComboBox *type_;
+    QButtonGroup *colors_;
+    QString color_;
     QPlainTextEdit *description_;
     QTableWidget *properties_;
     QLabel *status_;

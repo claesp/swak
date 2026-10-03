@@ -564,3 +564,19 @@ All four focus cases also passed at 200 percent scaling. The release build log i
 
 
 The 60-second sanitizer workload passed in `build/quality/20261003-080333-soak-200644`. It completed 1265 cycles with 11272192 bytes of peak memory growth. The maximum heartbeat gap was 38 milliseconds, and idle CPU time was 0.008 seconds. This short workload does not replace multi-hour qualification.
+
+## 2026-10-03: Map overlays and marker appearance
+
+All attached panes now use a shared overlay host above the map. Opening and closing panes leave map dimensions and coordinates unchanged. Existing tabs, resizing, detachment, menu actions, and focus behavior remain available. The host saves overlay relationships separately from the outer toolbar layout. A native test covers migration from the older layout format.
+
+The marker editor now shows Type after Title, followed by eight color buttons. Marker remains the only available type. Each record stores its own bounded color string. Older records without color use orange. New records use the configured default color. Apply, cancellation, movement, deletion undo, and restart retain the expected color.
+
+The initial interrupted work remained in the working tree. Native testing found that QMainWindow needed an explicit Qt::Widget flag for the overlay host. Screenshot review also found unreadable transparent pane titles. The host now paints the masked region with the current theme background. Tests wait for queued mask updates before capturing the map.
+
+Eight sanitizer suites passed in `build/quality/20261003-110857-quick-209833`. Final analysis passed in `build/quality/20261003-111636-analyze-3`. All 46 native sanitizer cases passed in `build/quality/20261003-111635-gui-212162`. LeakSanitizer then reported the existing Mesa leak of 240732 bytes in 1073 allocations. The diagnostic remains failed without suppression. The tile-rendering test now permits 15 seconds because the full map viewport requires more tiles. Coverage passed eight suites and all 46 native cases in `build/quality/20261003-111728-coverage-212881`.
+
+The overlay host reached 45 of 45 source lines. UserObjects reached 87 of 87 lines. ObjectEditor reached 91 of 99 lines, and Markers reached 181 of 184 lines. Remaining gaps include property-editor callbacks, description truncation, metadata sorting, and defensive marker failures. Line coverage does not establish complete branch or input coverage.
+
+Layout migration, overlay geometry, marker appearance, and all four focus cases passed at 200 percent scaling. Screenshots are in `build/overlays-native`. Tests use Qt 6.8.2, GCC 14.2, and software Mesa on Debian 13. Hardware graphics, native Wayland, Qt 6.4 compatibility, and two-hour qualification remain untested. This task adds no external dependency.
+
+The 60-second sanitizer workload passed in `build/quality/20261003-111945-soak-213547`. It completed 905 cycles with 7811072 bytes of peak memory growth. The maximum heartbeat gap was 61 milliseconds, and idle CPU time was 0.025 seconds. This short workload does not replace two-hour qualification. The release build log is `build/overlays-release.log`.

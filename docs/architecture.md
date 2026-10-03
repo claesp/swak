@@ -133,3 +133,8 @@ ProviderTable supplies shared row selection and activation controls for both cat
 The window owns `UserObjects`, `MapTools`, and their undo action. The marker plugin creates its editor pane and registers a tool instance. `ObjectEditor` supplies reusable metadata editing. The tool handles map gestures and draws local geometry. The map view forwards events through the shared registry and contains no marker-specific commands.
 
 The model stores committed objects in its own preferences component. Draft creation and move previews remain outside the model. A deletion command stores a complete record and restores its stable identity during undo. The normal Information pane uses shared selection data for both imported and local objects.
+
+
+# Overlay layout
+
+`MapPanels` is a child widget above the map. Its nested QMainWindow retains the existing Qt dock behavior. A region mask exposes map pixels outside the panes and passes mouse input to the map there. A single-shot timer combines layout changes before it updates the mask. Pane backgrounds use the current palette. Floating panes remain native windows. The host destroys panes before their shared services.

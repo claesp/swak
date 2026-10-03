@@ -14,6 +14,7 @@ struct UserObject {
     QString description;
     QJsonObject properties;
     QJsonObject geometry;
+    QString color = QStringLiteral("#ffc857");
     QJsonObject json() const;
     static UserObject fromJson(const QJsonObject &value);
 };

@@ -12,6 +12,10 @@
 #include <QHideEvent>
 #include <QKeyEvent>
 #include <QCollator>
+#include <QComboBox>
+#include <QButtonGroup>
+#include <QToolButton>
+#include <QPainter>
 #include <algorithm>
 namespace swak {
 namespace {
@@ -33,6 +37,26 @@ ObjectEditor::ObjectEditor(UserObjects &objects, QWidget *parent) : PaneContent(
     connect(title_, &QLineEdit::returnPressed, this, &ObjectEditor::apply);
     title_->setMaxLength(128); title_->setPlaceholderText(tr("New Marker")); layout->addWidget(title_);
     auto font = title_->font(); font.setPointSizeF(font.pointSizeF() > 0 ? font.pointSizeF() * 1.5 : 16); title_->setFont(font);
+    layout->addWidget(new QLabel(tr("Type"), this));
+    type_ = new QComboBox(this); type_->setObjectName(QStringLiteral("objectType")); type_->setAccessibleName(tr("Type"));
+    type_->addItem(tr("Marker"), QStringLiteral("circle")); layout->addWidget(type_);
+    layout->addWidget(new QLabel(tr("Color"), this));
+    colors_ = new QButtonGroup(this); colors_->setExclusive(true);
+    auto *colorRow = new QHBoxLayout; colorRow->setSpacing(4);
+    const QStringList names{tr("Red"), tr("Orange"), tr("Yellow"), tr("Green"), tr("Cyan"), tr("Blue"), tr("Indigo"), tr("Magenta")};
+    const QStringList values{QStringLiteral("#e53935"), QStringLiteral("#ffc857"), QStringLiteral("#f5e642"), QStringLiteral("#43a047"),
+        QStringLiteral("#00bcd4"), QStringLiteral("#1e88e5"), QStringLiteral("#5e35b1"), QStringLiteral("#d81b60")};
+    for (qsizetype i = 0; i < values.size(); ++i) {
+        auto *button = new QToolButton(this); button->setObjectName(QStringLiteral("objectColor%1").arg(i));
+        button->setToolTip(names.at(i)); button->setAccessibleName(names.at(i)); button->setCheckable(true);
+        button->setProperty("markerColor", values.at(i));
+        QPixmap icon(18, 18); icon.fill(QColor(values.at(i)));
+        { QPainter painter(&icon); painter.setPen(Qt::black); painter.drawRect(0, 0, 17, 17); }
+        button->setIcon(QIcon(icon)); button->setIconSize(QSize(18, 18)); button->setFixedSize(28, 28);
+        colors_->addButton(button); colorRow->addWidget(button);
+        connect(button, &QToolButton::clicked, this, [this, button] { color_ = button->property("markerColor").toString(); });
+    }
+    colorRow->addStretch(); layout->addLayout(colorRow);
     layout->addWidget(new QLabel(tr("Description"), this));
     description_ = new QPlainTextEdit(this); description_->setObjectName(QStringLiteral("objectDescription")); description_->setAccessibleName(tr("Description"));
     description_->setMaximumHeight(150); layout->addWidget(description_);
@@ -71,6 +95,11 @@ void ObjectEditor::restoreEditorState(const QJsonObject &values)
 void ObjectEditor::edit(const UserObject &item)
 {
     draft_ = item;
+    type_->clear(); type_->addItem(item.type == QStringLiteral("circle") ? tr("Marker") : item.type, item.type);
+    color_ = item.color;
+    colors_->setExclusive(false);
+    for (auto *button : colors_->buttons()) button->setChecked(button->property("markerColor").toString().compare(color_, Qt::CaseInsensitive) == 0);
+    colors_->setExclusive(true);
     title_->setText(objects_.find(item.id) ? item.title : QString{});
     description_->setPlainText(item.description); properties_->setRowCount(0); status_->clear();
     auto keys = item.properties.keys(); const QCollator collator;
@@ -96,6 +125,7 @@ void ObjectEditor::apply()
 {
     if (!draft_) return;
     auto item = *draft_; item.title = title_->text().trimmed(); if (item.title.isEmpty()) item.title = tr("New Marker");
+    item.type = type_->currentData().toString(); item.color = color_;
     item.description = description_->toPlainText(); item.properties = {};
     for (int row = 0; row < properties_->rowCount(); ++row) {
         const auto *name = properties_->item(row, 0); const auto *value = properties_->item(row, 1);

@@ -7,6 +7,7 @@
 
 class QLabel;
 namespace swak {
+class MapPanels;
 class Window final : public QMainWindow {
     Q_OBJECT
 public:
@@ -16,6 +17,11 @@ public:
     // cppcheck-suppress unusedFunction
     Store &store() { return store_; }
     bool savePreferences();
+    void addDockWidget(Qt::DockWidgetArea area, QDockWidget *dock);
+    void tabifyDockWidget(QDockWidget *first, QDockWidget *second);
+    void resizeDocks(const QList<QDockWidget *> &docks, const QList<int> &sizes, Qt::Orientation orientation);
+    Qt::DockWidgetArea dockWidgetArea(QDockWidget *dock) const;
+    QList<QDockWidget *> tabifiedDockWidgets(QDockWidget *dock) const;
 protected:
     void closeEvent(QCloseEvent *event) override;
     void showEvent(QShowEvent *event) override;
@@ -28,7 +34,9 @@ private:
     Store store_;
     Preferences preferences_;
     QTimer saveTimer_;
+    MapPanels *panels_ = nullptr;
     QByteArray defaultLayout_;
+    QByteArray defaultWindowLayout_;
     QLabel *preferencesStatus_ = nullptr;
     QString lastSaveError_;
     QElapsedTimer failedSave_;

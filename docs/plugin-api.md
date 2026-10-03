@@ -184,7 +184,7 @@ The view updates its status widget on the interface thread. It must use a guarde
 
 `PluginServices` supplies per-window `UserObjects` and `MapTools` pointers. The host owns both services. Static plugins use these shared interfaces rather than searching for host widgets. The marker plugin registers `MapExtension::Kind::Tool` and `PanePlugin`. Its MANIFEST declares `map-tool` and `pane`. It does not enter the map provider catalog.
 
-`UserObject` separates identity, type, title, description, text properties, and geometry. `UserObjects` owns committed records and portable preferences. Geometry is a bounded JSON object. The circle type uses normalized Mercator coordinates named `x` and `y`. Unknown object types retain their bounded records for future tools. New geometry types can reuse the metadata editor and deletion commands.
+`UserObject` separates identity, type, title, description, text properties, geometry, and color. Color uses the seven-character `#RRGGBB` format. Older records without color use orange (`#ffc857`). `UserObjects` owns committed records and portable preferences. Geometry is a bounded JSON object. The circle type uses normalized Mercator coordinates named `x` and `y`. Unknown object types retain their bounded records for future tools. New geometry types can reuse the metadata editor and deletion commands.
 
 `ObjectEditor` works on a copy of a record. Apply validates the whole copy before it writes through `UserObjects::put`. Cancellation drops that copy. `MapSelection` carries an owner identifier and object identifier for editable selections. Imported selections leave these fields empty. The regular Information pane remains read-only. It asks `MapTools::deleteSelection` to handle deletion, without knowing the owning plugin.
 
@@ -202,3 +202,12 @@ The tool registry holds guarded pointers. Pane ownership controls each tool life
 
 
 `MapTool::coordinateGridActive` requests the coordinate grid during an active tool mode. `MapTools` combines these requests. The view draws the grid only when a tool requests it and the user enables it. Mode changes emit `changed`, so grid visibility follows activation and cancellation.
+
+
+# Map overlay panels
+
+The host places all attached panes above the map in `MapPanels`. Panes cover map pixels without changing the map viewport. Plugins keep the same `PanePlugin` and `PaneContent` interfaces. They must use the supplied widget parent. Detached panes remain separate native windows.
+
+`window.overlayLayout` stores pane relationships. `window.layout` stores the outer window toolbar state. The host reads older dock layouts when `overlayLayout` is absent. Individual pane records and unknown plugin sections remain available as before.
+
+The shared object editor shows Type after Title. Circle records show Marker as their type. The editor offers eight color buttons and preserves other valid stored colors. Apply saves the selected color with the object. Deletion undo and movement retain that color.

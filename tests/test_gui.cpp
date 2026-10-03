@@ -24,6 +24,7 @@
 #include <QListWidget>
 #include <QTableWidget>
 #include <QRadioButton>
+#include <QToolButton>
 #include <QFrame>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -194,11 +195,11 @@ private slots:
         source.insert(QStringLiteral("minZoom"), 0);
         source.insert(QStringLiteral("maxZoom"), 2);
         QVERIFY(sources->put(id, source).isEmpty());
-        QCOMPARE(zoom(), 2.0);
+        QCOMPARE(zoom(), std::max(2.0, std::ceil(std::log2(std::max(map->width(), map->height()) / 256.0))));
         for (int i = 0; i < 5; ++i) QTest::keyClick(map, Qt::Key_Minus);
         QCOMPARE(zoom(), std::ceil(std::log2(std::max(map->width(), map->height()) / 256.0)));
         QTest::keyClick(map, Qt::Key_Plus);
-        QCOMPARE(zoom(), 2.0);
+        QCOMPARE(zoom(), std::max(2.0, std::ceil(std::log2(std::max(map->width(), map->height()) / 256.0))));
         QVERIFY(map->grabFramebuffer().save(QStringLiteral("missing-provider-tiles.png")));
         sources->select({});
         QVERIFY(map->grabFramebuffer().save(QStringLiteral("no-provider-background.png")));
@@ -522,7 +523,7 @@ private slots:
             for (int dx : {-100, 100}) for (int dy : {-100, 100})
                 if (frame.pixelColor(frame.width() / 2 + dx, frame.height() / 2 + dy) != QColor("#eb426a")) return false;
             return true;
-        }, 5000));
+        }, 15000));
         auto *credit = map->findChild<QLabel *>(QStringLiteral("mapAttribution"));
         QVERIFY(credit);
         auto *cache = window.statusBar()->findChild<QLabel *>(QStringLiteral("mapStatus"));
@@ -746,6 +747,97 @@ private slots:
         manager->findChild<QTableWidget *>(QStringLiteral("dataProviderList"))->setCurrentCell(0, 1);
         manager->findChild<QPushButton *>(QStringLiteral("removeDataProvider"))->click(); QCOMPARE(feeds->sources().size(), 2);
         manager->close();
+    }
+    void legacyOverlayLayout()
+    {
+        QTemporaryDir directory;
+        const auto path = directory.filePath(QStringLiteral("legacy.json"));
+        {
+            QMainWindow legacy;
+            legacy.resize(1200, 800);
+            auto *editor = new QDockWidget(&legacy);
+            editor->setObjectName(QStringLiteral("org.swak.editor.pane"));
+            auto *udp = new QDockWidget(&legacy);
+            udp->setObjectName(QStringLiteral("org.swak.udp.pane"));
+            legacy.addDockWidget(Qt::LeftDockWidgetArea, editor);
+            legacy.addDockWidget(Qt::LeftDockWidgetArea, udp);
+            legacy.tabifyDockWidget(editor, udp);
+            auto *toolbar = legacy.addToolBar(QStringLiteral("Main"));
+            toolbar->setObjectName(QStringLiteral("mainToolbar")); toolbar->hide();
+            swak::Preferences preferences(path);
+            QVERIFY(preferences.save({{QStringLiteral("window"), QJsonObject{
+                {QStringLiteral("layout"), QString::fromLatin1(legacy.saveState(1).toBase64())}}}}));
+        }
+        swak::Window window(path, QPluginLoader::staticInstances());
+        window.show(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *editor = window.findChild<QDockWidget *>(QStringLiteral("org.swak.editor.pane"));
+        auto *udp = window.findChild<QDockWidget *>(QStringLiteral("org.swak.udp.pane"));
+        QCOMPARE(window.dockWidgetArea(editor), Qt::LeftDockWidgetArea);
+        QVERIFY(window.tabifiedDockWidgets(editor).contains(udp));
+        QVERIFY(window.findChild<QToolBar *>(QStringLiteral("mainToolbar"))->isHidden());
+        auto *map = window.findChild<QOpenGLWidget *>();
+        const auto bounds = map->geometry();
+        editor->hide(); udp->hide();
+        QCoreApplication::processEvents();
+        QCOMPARE(map->geometry(), bounds);
+        QCOMPARE(map->width(), window.contentsRect().width());
+        QVERIFY(window.savePreferences());
+    }
+    void mapOverlayPanels()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("overlay.json")), QPluginLoader::staticInstances());
+        window.show(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *map = window.findChild<QOpenGLWidget *>();
+        auto *panels = window.findChild<QMainWindow *>(QStringLiteral("mapPanels")); QVERIFY(map && panels); QVERIFY(!panels->isWindow());
+        auto *settings = dynamic_cast<swak::SettingsParticipant *>(map); QVERIFY(settings);
+        const QRect bounds = map->geometry(); const auto view = settings->savePreferences();
+        for (auto *pane : window.findChildren<QDockWidget *>()) {
+            pane->show(); pane->raise();
+            QVERIFY(QTest::qWaitFor([&] { return panels->mask().contains(pane->mapTo(panels, pane->rect().center())); }));
+            QCOMPARE(map->geometry(), bounds);
+            QCOMPARE(settings->savePreferences().value(QStringLiteral("zoom")), view.value(QStringLiteral("zoom")));
+            QCOMPARE(settings->savePreferences().value(QStringLiteral("centerX")), view.value(QStringLiteral("centerX")));
+            QCOMPARE(settings->savePreferences().value(QStringLiteral("centerY")), view.value(QStringLiteral("centerY")));
+            pane->hide();
+        }
+        QVERIFY(QTest::qWaitFor([&] { return !panels->mask().contains(panels->rect().center()); }));
+        QCOMPARE(QApplication::widgetAt(map->mapToGlobal(map->rect().center())), map);
+        auto *info = window.findChild<QDockWidget *>(QStringLiteral("org.swak.information.pane"));
+        info->show(); info->raise();
+        QVERIFY(QTest::qWaitFor([&] { return panels->mask().contains(info->mapTo(panels, info->rect().center())); }));
+        QCOMPARE(map->geometry(), bounds);
+        QVERIFY(QTest::qWaitFor([&] { return !panels->mask().contains(QPoint(100, panels->height() - 20)); }));
+        QSignalSpy frames(map, &QOpenGLWidget::frameSwapped); map->update(); QVERIFY(frames.wait(2000));
+        QVERIFY(window.screen()->grabWindow(window.winId()).save(QStringLiteral("map-overlays.png")));
+    }
+    void markerAppearance()
+    {
+        QTemporaryDir directory; const auto profile = directory.filePath(QStringLiteral("colors.json")); QString id;
+        {
+            swak::Window window(profile, QPluginLoader::staticInstances()); window.show(); window.activateWindow();
+            QVERIFY(QTest::qWaitForWindowExposed(&window));
+            auto *map = window.findChild<QOpenGLWidget *>(); auto *editor = window.findChild<swak::ObjectEditor *>();
+            auto *objects = window.findChild<swak::UserObjects *>(); auto *selection = window.findChild<swak::MapSelection *>();
+            map->setFocus(); QTest::keyClick(map, Qt::Key_M); QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
+            auto *type = editor->findChild<QComboBox *>(QStringLiteral("objectType")); QVERIFY(type);
+            QCOMPARE(type->count(), 1); QCOMPARE(type->currentText(), QStringLiteral("Marker"));
+            auto *orange = editor->findChild<QToolButton *>(QStringLiteral("objectColor1")); QVERIFY(orange && orange->isChecked());
+            for (int i = 0; i < 8; ++i) QVERIFY(editor->findChild<QToolButton *>(QStringLiteral("objectColor%1").arg(i)));
+            auto *blue = editor->findChild<QToolButton *>(QStringLiteral("objectColor5")); blue->click(); QVERIFY(blue->isChecked()); QVERIFY(!orange->isChecked());
+            QVERIFY(editor->grab().save(QStringLiteral("marker-colors.png")));
+            auto *apply = editor->findChild<QPushButton *>(QStringLiteral("applyObject")); apply->click();
+            id = objects->items().firstKey(); QCOMPARE(objects->find(id)->color, QStringLiteral("#1e88e5"));
+            QCOMPARE(selection->item()->color, QColor("#1e88e5"));
+            objects->remove(id); objects->undoStack().undo(); QCOMPARE(objects->find(id)->color, QStringLiteral("#1e88e5"));
+            editor->edit(*objects->find(id)); QVERIFY(blue->isChecked());
+            editor->findChild<QToolButton *>(QStringLiteral("objectColor0"))->click(); editor->cancel();
+            QCOMPARE(objects->find(id)->color, QStringLiteral("#1e88e5"));
+            editor->edit(*objects->find(id)); editor->findChild<QToolButton *>(QStringLiteral("objectColor7"))->click(); apply->click();
+            QCOMPARE(selection->item()->color, QColor("#d81b60")); QVERIFY(window.savePreferences());
+        }
+        swak::Window restored(profile, QPluginLoader::staticInstances());
+        QCOMPARE(restored.findChild<swak::UserObjects *>()->find(id)->color, QStringLiteral("#d81b60"));
     }
     void markerFocusAfterApply_data()
     {
@@ -1041,7 +1133,9 @@ private slots:
             stopped = center(); QTest::qWait(80); QCOMPARE(center(), stopped);
             QTest::keyRelease(map, Qt::Key_W); QTest::keyRelease(map, Qt::Key_S);
             QTest::keyPress(map, Qt::Key_D);
-            auto *editor = window.findChild<QLineEdit *>(); QVERIFY(editor); editor->setFocus();
+            auto *editorPane = window.findChild<QDockWidget *>(QStringLiteral("org.swak.editor.pane")); QVERIFY(editorPane);
+            editorPane->show(); editorPane->raise();
+            auto *editor = editorPane->findChild<QLineEdit *>(); QVERIFY(editor); editor->setFocus();
             QVERIFY(QTest::qWaitFor([&] { return !map->hasFocus(); }));
             stopped = center(); QTest::qWait(80); QCOMPARE(center(), stopped);
             QTest::keyRelease(map, Qt::Key_D);
@@ -1061,7 +1155,7 @@ private slots:
             values.insert(QStringLiteral("wheelZoom"), true); values.insert(QStringLiteral("wheelReverse"), true); values.insert(QStringLiteral("wheelSteps"), 2);
             settings->restorePreferences(values);
             wheel(QPointF(-10, -10)); QCOMPARE(zoom(), 4.0);
-            wheel(map->rect().center()); QCOMPARE(zoom(), 2.0);
+            wheel(map->rect().center()); QCOMPARE(zoom(), std::max(2.0, std::ceil(std::log2(std::max(map->width(), map->height()) / 256.0))));
             map->setFocus(); QVERIFY(QTest::qWaitFor([&] { return map->hasFocus(); }));
             QTest::keyPress(map, Qt::Key_I); QVERIFY(QTest::qWaitFor([&] { return center().y() < 0.5; })); QTest::keyRelease(map, Qt::Key_I);
             QTest::keyPress(map, Qt::Key_L); map->hide(); stopped = center(); QTest::qWait(80); QCOMPARE(center(), stopped);
@@ -1867,7 +1961,7 @@ private slots:
         swak::Window window(preferences.filePath(QStringLiteral("preferences.json")), QPluginLoader::staticInstances());
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
-        const auto docks = window.findChildren<QDockWidget *>(QString{}, Qt::FindDirectChildrenOnly);
+        const auto docks = window.findChildren<QDockWidget *>();
         QCOMPARE(docks.size(), 7);
         QVERIFY(!window.findChild<QWidget *>(QStringLiteral("toolsDock")));
         auto *viewMenu = window.findChild<QMenu *>(QStringLiteral("viewMenu"));

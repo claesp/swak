@@ -45,6 +45,17 @@ private:
         return event;
     }
 private slots:
+    void markerColorStorage()
+    {
+        UserObject item{QStringLiteral("color"), QStringLiteral("circle"), QStringLiteral("Marker"), {}, {},
+            {{QStringLiteral("x"), 0.5}, {QStringLiteral("y"), 0.5}}};
+        QCOMPARE(UserObject::fromJson(item.json()).color, QStringLiteral("#ffc857"));
+        auto legacy = item.json(); legacy.remove(QStringLiteral("color"));
+        QCOMPARE(UserObject::fromJson(legacy).color, QStringLiteral("#ffc857"));
+        item.color = QStringLiteral("#1e88e5"); QVERIFY(UserObjects::validate(item).isEmpty());
+        QCOMPARE(UserObject::fromJson(item.json()).color, item.color);
+        item.color = QStringLiteral("not-a-color"); QVERIFY(!UserObjects::validate(item).isEmpty());
+    }
     void coordinateGrid()
     {
         QImage image(900, 600, QImage::Format_ARGB32_Premultiplied);

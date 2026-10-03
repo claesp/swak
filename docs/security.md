@@ -90,3 +90,6 @@ Local objects remain in the private preferences file and are not transmitted. Th
 Titles contain at most 128 characters. Descriptions contain at most 2048 characters. Each record has at most 32 text properties. Names contain at most 64 characters, and values contain at most 256 characters. Duplicate names and reserved coordinate names prevent Apply. Geometry uses finite coordinates and bounded JSON containers, with at most eight nested levels. Circle coordinates remain within the normalized world bounds.
 
 The editor changes a copy until Apply succeeds. Move previews do not alter saved coordinates. Imported objects never enter the editable store. Selection ownership prevents a marker command from deleting imported data. Objects and undo commands use per-window ownership. Tool registration uses guarded QObject pointers and no new worker threads or timers.
+
+
+Marker records accept colors only in `#RRGGBB` format. The existing record and model budgets include this field. Color selection does not load files, styles, or remote resources. Overlay panels add no worker, network request, or dependency.

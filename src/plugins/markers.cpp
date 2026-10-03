@@ -26,7 +26,7 @@ public:
     QString settingsTitle() const override { return tr("Markers"); }
     QList<SettingField> settingsFields() const override {
         return {keySetting(QStringLiteral("createKey"), tr("Create marker")), numberSetting(QStringLiteral("radius"), tr("Circle radius (pixels)"), 3, 24),
-            textSetting(QStringLiteral("color"), tr("Circle color (#RRGGBB)"), 7), numberSetting(QStringLiteral("guideOpacity"), tr("Guide line opacity"), 0, 1, 2)};
+            textSetting(QStringLiteral("color"), tr("Default marker color (#RRGGBB)"), 7), numberSetting(QStringLiteral("guideOpacity"), tr("Guide line opacity"), 0, 1, 2)};
     }
     QJsonObject savePreferences() const override {
         auto state = editorState(); state.insert(QStringLiteral("guideStyleVersion"), 2); state.insert(QStringLiteral("createKey"), QKeySequence(key_).toString(QKeySequence::PortableText));
@@ -136,7 +136,7 @@ public:
                 if (!QRectF(0, 0, 1, 1).contains(point)) return true;
                 const bool creating = mode_ == Mode::Placing; mode_ = Mode::Idle; map.unsetCursor();
                 if (creating) {
-                    UserObject item; item.id = QUuid::createUuid().toString(QUuid::WithoutBraces); item.type = QStringLiteral("circle"); item.title = tr("New Marker"); setLocation(item, point);
+                    UserObject item; item.id = QUuid::createUuid().toString(QUuid::WithoutBraces); item.type = QStringLiteral("circle"); item.title = tr("New Marker"); item.color = editor_.color().name(); setLocation(item, point);
                     editor_.edit(item);
                 } else {
                     setLocation(moving_, point);
@@ -177,15 +177,16 @@ public:
         painter.setPen(QPen(QColor("#152028"), 2)); painter.setBrush(editor_.color());
         for (const auto &item : objects_.items()) {
             if (item.type != QStringLiteral("circle") || (mode_ == Mode::Moving && item.id == moving_.id)) continue;
+            painter.setBrush(QColor(item.color));
             painter.drawEllipse(screen(location(item), view), editor_.radius(), editor_.radius());
         }
-        if (editor_.draft() && !objects_.find(editor_.draft()->id)) painter.drawEllipse(screen(location(*editor_.draft()), view), editor_.radius(), editor_.radius());
+        if (editor_.draft() && !objects_.find(editor_.draft()->id)) { painter.setBrush(QColor(editor_.draft()->color)); painter.drawEllipse(screen(location(*editor_.draft()), view), editor_.radius(), editor_.radius()); }
     }
     void paintOverlay(QPainter &painter, const Viewport &view) const override
     {
         painter.setPen(QPen(QColor("#152028"), 2)); painter.setBrush(editor_.color());
         if (mode_ != Mode::Idle) {
-            if (mode_ == Mode::Moving) painter.drawEllipse(pointer_, editor_.radius(), editor_.radius());
+            if (mode_ == Mode::Moving) { painter.setBrush(QColor(moving_.color)); painter.drawEllipse(pointer_, editor_.radius(), editor_.radius()); }
             painter.setRenderHint(QPainter::Antialiasing, false);
             painter.setPen(QPen(QColor(0, 0, 0, qRound(editor_.guideOpacity() * 255)), 1));
             painter.drawLine(QPointF(0, pointer_.y()), QPointF(view.size.width(), pointer_.y()));
@@ -210,7 +211,7 @@ private:
     void select(const QString &id) {
         const auto record = objects_.find(id); if (!record || record->type != QStringLiteral("circle")) return;
         MapItem item; item.owner = owner(); item.id = id; item.label = record->title; item.type = tr("Marker"); item.description = record->description;
-        item.point = location(*record); item.radius = editor_.radius(); item.color = editor_.color(); item.properties = record->properties;
+        item.point = location(*record); item.radius = editor_.radius(); item.color = QColor(record->color); item.properties = record->properties;
         const auto coordinate = unproject(item.point);
         item.properties.insert(QStringLiteral("ID"), id); item.properties.insert(QStringLiteral("Latitude"), coordinate.y()); item.properties.insert(QStringLiteral("Longitude"), coordinate.x());
         store_.select({}); selection_.select(std::move(item));

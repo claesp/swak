@@ -1,4 +1,5 @@
 #include "app/window.h"
+#include "app/map_panels.h"
 #include "core/map_tools.h"
 #include "core/user_objects.h"
 #include "app/map_manager.h"
@@ -147,13 +148,16 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     editMenu->addAction(undo);
     auto *viewMenu = menuBar()->addMenu(tr("&View"));
     viewMenu->setObjectName(QStringLiteral("viewMenu"));
+    panels_ = new MapPanels(centralWidget());
     QHash<QObject *, QDockWidget *> pluginDocks;
     const auto createDock = [this](const QString &title, const QString &id,
                                            QWidget *content, Qt::DockWidgetArea area) {
-        auto *dock = new QDockWidget(title, this);
+        auto *dock = new QDockWidget(title, panels_);
+        dock->setAutoFillBackground(true);
         const auto *participant = dynamic_cast<const PreferenceParticipant *>(content);
         dock->setObjectName(participant ? participant->preferenceId() + QStringLiteral(".pane") : id);
         auto *container = new QWidget(dock);
+        container->setAutoFillBackground(true);
         container->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
         auto *layout = new QVBoxLayout(container);
         layout->setContentsMargins(0, 0, 0, 0);
@@ -166,6 +170,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         connect(dock, &QDockWidget::topLevelChanged, grip, &QWidget::setVisible);
         dock->setWidget(container);
         addDockWidget(area, dock);
+        panels_->track(dock);
         if (auto *pane = dynamic_cast<PaneContent *>(content))
             connect(pane, &PaneContent::visibilityRequested, dock, [dock](bool visible) {
                 dock->setVisible(visible);
@@ -236,7 +241,8 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     auto *resetLayout = viewMenu->addAction(tr("Reset layout"));
     resetLayout->setObjectName(QStringLiteral("resetLayoutAction"));
     connect(resetLayout, &QAction::triggered, this, [this] {
-        restoreState(defaultLayout_, LayoutVersion);
+        panels_->restoreState(defaultLayout_, LayoutVersion);
+        QMainWindow::restoreState(defaultWindowLayout_, LayoutVersion);
         fitWindowsToScreens();
         savePreferences();
     });
@@ -303,7 +309,8 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     }
     addPaneAction(*pluginsMenu, *findChild<QDockWidget *>(QStringLiteral("pluginsDock")));
     pluginsMenu->setEnabled(!pluginsMenu->isEmpty());
-    defaultLayout_ = saveState(LayoutVersion);
+    defaultLayout_ = panels_->saveState(LayoutVersion);
+    defaultWindowLayout_ = QMainWindow::saveState(LayoutVersion);
     auto *helpMenu = menuBar()->addMenu(tr("&Help"));
     helpMenu->setObjectName(QStringLiteral("helpMenu"));
     auto *about = helpMenu->addAction(tr("&About"));
@@ -403,11 +410,16 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
             && (!failedSave_.isValid() || failedSave_.elapsed() >= 30000)) savePreferences();
     });
 }
+void Window::addDockWidget(Qt::DockWidgetArea area, QDockWidget *dock) { panels_->addDockWidget(area, dock); }
+void Window::tabifyDockWidget(QDockWidget *first, QDockWidget *second) { panels_->tabifyDockWidget(first, second); }
+void Window::resizeDocks(const QList<QDockWidget *> &docks, const QList<int> &sizes, Qt::Orientation orientation) { panels_->resizeDocks(docks, sizes, orientation); }
+Qt::DockWidgetArea Window::dockWidgetArea(QDockWidget *dock) const { return panels_->dockWidgetArea(dock); }
+QList<QDockWidget *> Window::tabifiedDockWidgets(QDockWidget *dock) const { return panels_->tabifiedDockWidgets(dock); }
 Window::~Window()
 {
     saveTimer_.stop();
     if (shown_ && !closing_) savePreferences();
-    const auto docks = findChildren<QDockWidget *>(QString{}, Qt::FindDirectChildrenOnly);
+    const auto docks = findChildren<QDockWidget *>();
     for (auto *dock : docks) delete dock;
     delete takeCentralWidget();
 }
@@ -418,9 +430,12 @@ void Window::restorePreferences()
     const auto geometry = geometryBytes(window, QStringLiteral("geometry"));
     if (!geometry.isEmpty()) restoreGeometry(geometry);
     const auto layout = geometryBytes(window, QStringLiteral("layout"));
-    const bool restored = !layout.isEmpty() && restoreState(layout, LayoutVersion);
+    if (!layout.isEmpty()) QMainWindow::restoreState(layout, LayoutVersion);
+    const auto overlayLayout = geometryBytes(window, QStringLiteral("overlayLayout"));
+    const auto paneLayout = overlayLayout.isEmpty() ? layout : overlayLayout;
+    const bool restored = !paneLayout.isEmpty() && panels_->restoreState(paneLayout, LayoutVersion);
     const auto panes = document.value(QStringLiteral("panes")).toObject();
-    for (auto *dock : findChildren<QDockWidget *>(QString{}, Qt::FindDirectChildrenOnly)) {
+    for (auto *dock : findChildren<QDockWidget *>()) {
         const auto pane = panes.value(dock->objectName()).toObject();
         if (!restored && !pane.isEmpty()) {
             const int area = preferenceInteger(pane, QStringLiteral("area"), Qt::RightDockWidgetArea, 1, 8);
@@ -448,10 +463,11 @@ bool Window::savePreferences()
     auto document = preferences_.document();
     auto window = document.value(QStringLiteral("window")).toObject();
     window.insert(QStringLiteral("geometry"), QString::fromLatin1(saveGeometry().toBase64()));
-    window.insert(QStringLiteral("layout"), QString::fromLatin1(saveState(LayoutVersion).toBase64()));
+    window.insert(QStringLiteral("layout"), QString::fromLatin1(QMainWindow::saveState(LayoutVersion).toBase64()));
+    window.insert(QStringLiteral("overlayLayout"), QString::fromLatin1(panels_->saveState(LayoutVersion).toBase64()));
     document.insert(QStringLiteral("window"), window);
     auto panes = document.value(QStringLiteral("panes")).toObject();
-    for (auto *dock : findChildren<QDockWidget *>(QString{}, Qt::FindDirectChildrenOnly)) {
+    for (auto *dock : findChildren<QDockWidget *>()) {
         auto pane = panes.value(dock->objectName()).toObject();
         pane.insert(QStringLiteral("area"), static_cast<int>(dockWidgetArea(dock)));
         pane.insert(QStringLiteral("floating"), dock->isFloating());
@@ -556,10 +572,10 @@ void Window::openSettings()
         else if (auto *layer = qobject_cast<MapLayer *>(plugin)) title = layer->name();
         if (!title.isEmpty()) pages.append({QString::fromLatin1(plugin->metaObject()->className()), title, {}, {}, {}, {}});
     }
-    for (auto *dock : findChildren<QDockWidget *>(QString{}, Qt::FindDirectChildrenOnly)) {
+    for (auto *dock : findChildren<QDockWidget *>()) {
         pages.append({dock->objectName(), dock->windowTitle(), {
             booleanSetting(QStringLiteral("visible"), tr("Visible")), booleanSetting(QStringLiteral("floating"), tr("Detached")),
-            choiceSetting(QStringLiteral("area"), tr("Dock area"), {tr("Left"), tr("Right"), tr("Top"), tr("Bottom")}, {1, 2, 4, 8}),
+            choiceSetting(QStringLiteral("area"), tr("Overlay edge"), {tr("Left"), tr("Right"), tr("Top"), tr("Bottom")}, {1, 2, 4, 8}),
             numberSetting(QStringLiteral("width"), tr("Width"), 100, 16384), numberSetting(QStringLiteral("height"), tr("Height"), 100, 16384),
             numberSetting(QStringLiteral("x"), tr("Detached X position"), -65536, 65536),
             numberSetting(QStringLiteral("y"), tr("Detached Y position"), -65536, 65536)},
@@ -605,7 +621,7 @@ void Window::fitWindowsToScreens()
             widget->setGeometry(fitWindowRectangle(widget->geometry(), screens));
     };
     fit(this);
-    for (auto *dock : findChildren<QDockWidget *>(QString{}, Qt::FindDirectChildrenOnly)) {
+    for (auto *dock : findChildren<QDockWidget *>()) {
         if (dock->isFloating()) fit(dock);
     }
 }
