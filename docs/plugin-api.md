@@ -176,7 +176,7 @@ The map owns its navigation keys. Information owns its dismissal key and limits 
 
 A view widget can implement `StatusProvider` from `core/interfaces.h`. The host calls `createStatusWidget(parent)` once and adds the result after the event counts, with a separator. The status bar owns the returned widget. A null result adds no section. A missing view plugin adds no section.
 
-The view updates its status widget on the interface thread. It must use a guarded pointer if the status widget can be destroyed first. The map uses `QPointer` and publishes cache size, zoom, pointer coordinates, tile diagnostics, and the certificate warning. The host contains no map-specific status code.
+The view updates its status widget on the interface thread. It must use a guarded pointer if the status widget can be destroyed first. The map uses `QPointer` and publishes cache size, zoom, pointer coordinates, tile diagnostics, and the certificate warning. The map returns a group with separate labels and QFrame separators. Empty diagnostics and warnings hide their sections, including separators. The host contains no map-specific status code.
 
 `SingleLineLabel` renders plain text on one line. It uses an ellipsis when space is limited and retains the full text in its tooltip. This shared widget serves status sections and Settings notices. Field labels retain their full width inside scrollable forms.
 

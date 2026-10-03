@@ -10,6 +10,7 @@
 #include <QDialogButtonBox>
 #include <QPlainTextEdit>
 #include <QVBoxLayout>
+#include <QFrame>
 #include <QPointer>
 #include <QJsonDocument>
 #include <QLabel>
@@ -154,12 +155,40 @@ public:
     }
     QWidget *createStatusWidget(QWidget *parent) override
     {
-        statusLabel_ = new SingleLineLabel(parent);
-        statusLabel_->setObjectName(QStringLiteral("mapStatus"));
-        statusLabel_->setAccessibleName(tr("Map status"));
-        update();
-        return statusLabel_.data();
+        auto *status = new QWidget(parent);
+        status->setObjectName(QStringLiteral("mapStatusSections"));
+        auto *layout = new QHBoxLayout(status);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(6);
+        const auto section = [status, layout](const QString &id, const QString &name, bool separator, int stretch) {
+            auto *container = new QWidget(status);
+            auto *row = new QHBoxLayout(container);
+            row->setContentsMargins(0, 0, 0, 0);
+            row->setSpacing(6);
+            if (separator) {
+                auto *line = new QFrame(container);
+                line->setObjectName(QStringLiteral("mapStatusSeparator"));
+                line->setFrameShape(QFrame::VLine);
+                line->setFrameShadow(QFrame::Sunken);
+                row->addWidget(line);
+            }
+            auto *label = new SingleLineLabel(container);
+            label->setObjectName(id);
+            label->setAccessibleName(name);
+            label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+            row->addWidget(label);
+            layout->addWidget(container, stretch);
+            return label;
+        };
+        cacheStatus_ = section(QStringLiteral("mapStatus"), tr("Map cache"), false, 0);
+        zoomStatus_ = section(QStringLiteral("mapZoomStatus"), tr("Map zoom"), true, 0);
+        pointerStatus_ = section(QStringLiteral("mapPointerStatus"), tr("Map pointer coordinates"), true, 1);
+        tileStatus_ = section(QStringLiteral("mapTileStatus"), tr("Map tile status"), true, 1);
+        tlsStatus_ = section(QStringLiteral("mapTlsStatus"), tr("Map HTTPS warning"), true, 0);
+        updateStatus();
+        return status;
     }
+
     QString preferenceId() const override { return QStringLiteral("org.swak.map"); }
     QString settingsTitle() const override { return tr("Map"); }
     QList<SettingField> settingsFields() const override
@@ -508,15 +537,19 @@ private:
         const bool onWorld = coord.x() >= -180 && coord.x() <= 180 && coord.y() >= -85.051129 && coord.y() <= 85.051129;
         const QString position = onWorld ? tr("%1°, %2°").arg(coord.y(), 0, 'f', 4).arg(coord.x(), 0, 'f', 4)
                                          : tr("Pointer outside map");
-        if (statusLabel_) {
-            const auto cacheBytes = tiles_.diskCacheBytes();
-            QString status = cacheBytes < 0 ? tr("Map cache: inactive") : tr("Map cache: %1").arg(QLocale().formattedDataSize(cacheBytes));
-            status += tr(" | Zoom %1 | %2").arg(view_.zoom, 0, 'f', 0).arg(position);
-            if (!tiles_.status().isEmpty()) status += QStringLiteral(" | ") + tiles_.status();
-            if (source.value(QStringLiteral("ignoreTls")).toBool(false)) status += QStringLiteral(" | ") + tr("HTTPS certificate checks disabled");
-            if (statusLabel_->text() != status) statusLabel_->setText(status);
-        }
+        const auto setText = [](const QPointer<QLabel> &label, const QString &text, bool optional = false) {
+            if (!label) return;
+            if (label->text() != text) label->setText(text);
+            if (optional) label->parentWidget()->setVisible(!text.isEmpty());
+        };
+        const auto cacheBytes = tiles_.diskCacheBytes();
+        setText(cacheStatus_, cacheBytes < 0 ? tr("Map cache: inactive") : tr("Map cache: %1").arg(QLocale().formattedDataSize(cacheBytes)));
+        setText(zoomStatus_, tr("Zoom %1").arg(view_.zoom, 0, 'f', 0));
+        setText(pointerStatus_, position);
+        setText(tileStatus_, tiles_.status(), true);
+        setText(tlsStatus_, source.value(QStringLiteral("ignoreTls")).toBool(false) ? tr("HTTPS certificate checks disabled") : QString{}, true);
     }
+
     static std::optional<std::array<int, 14>> readKeys(const QJsonObject &values)
     {
         std::array<int, 14> keys{};
@@ -633,7 +666,7 @@ private:
     MapSources *sources_ = nullptr;
     TileRenderer tiles_;
     QLabel *attribution_;
-    QPointer<QLabel> statusLabel_;
+    QPointer<QLabel> cacheStatus_, zoomStatus_, pointerStatus_, tileStatus_, tlsStatus_;
     double attributionOpacity_ = 0.55;
     double opacity_ = 1;
     int tileCacheMiB_ = 256;

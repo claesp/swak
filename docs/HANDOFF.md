@@ -599,3 +599,18 @@ Coverage passed eight suites and all 47 native cases in `build/quality/20261003-
 Source analysis passed in `build/quality/20261003-114030-analyze-216612`. The 60-second sanitizer workload passed in `build/quality/20261003-113926-soak-216458`. It completed 1271 cycles with 11337728 bytes of peak memory growth. The maximum heartbeat gap was 35 milliseconds, and idle CPU time was 0.008 seconds. This short workload does not replace two-hour qualification.
 
 The latency, marker workflow, and four focus cases also passed at 200 percent scaling. Tests use Qt 6.8.2, GCC 14.2, and software Mesa on Debian 13. Actual display latency, hardware graphics, native Wayland, and Qt 6.4 remain untested. This change adds no dependency. The release build log is `build/pointer-release.log`.
+
+
+## 2026-10-03: Separate map status fields
+
+The map status now contains separate widgets for cache size, zoom, pointer coordinates, tile diagnostics, and the HTTPS warning. QFrame separators replace pipe characters in the combined text. Empty diagnostics and warnings hide their whole sections. Each label keeps plain text, one-line rendering, and a tooltip with the full value.
+
+The map still uses the shared StatusProvider interface. Its returned widget contains the sections, and the status bar owns that widget. Guarded pointers protect updates if labels disappear first. No new dependency or background task was added.
+
+Focused native tests passed for status fields, certificate-warning visibility, and both workspace themes. Eight sanitizer suites passed in `build/quality/20261003-130700-quick-224369`. All 47 native sanitizer cases passed in `build/quality/20261003-130805-gui-224935`. LeakSanitizer reported the existing Mesa leak of 240732 bytes in 1073 allocations. The diagnostic remains failed without suppression.
+
+Coverage passed eight suites and all 47 native cases in `build/quality/20261003-130825-coverage-225093`. The map plugin reached 574 of 581 lines. The new status sections ran. Existing drag-navigation paths and some guarded-pointer branches remain untested. Line coverage does not establish complete branch or input coverage. Source analysis passed in `build/quality/20261003-131043-analyze-225818`.
+
+The 60-second sanitizer workload passed in `build/quality/20261003-130939-soak-225684`. It completed 1263 cycles with 11227136 bytes of peak memory growth. The maximum heartbeat gap was 36 milliseconds, and idle CPU time was 0.008 seconds. This short workload does not replace two-hour qualification.
+
+Provider-status and workspace tests passed at 200 percent scaling. Screenshots are in `build/overlays-native`. Tests use Qt 6.8.2, GCC 14.2, and software Mesa on Debian 13. Hardware graphics, native Wayland, and Qt 6.4 remain untested. The release build log is `build/status-sections-release.log`.

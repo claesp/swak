@@ -163,7 +163,9 @@ Use Edit to set its refresh interval and appearance. Remove deletes a feed, and 
 
 OpenFreeMap is available in Map Providers and the provider dropdown. It supplies native vector maps with layers, labels, and points of interest. Right-click the map to change Map layers or inspect Map information. The keyboard Menu key uses the map center. File > Settings > Map providers contains the same layer controls and vector appearance parameters. Read `map-providers.md` for source terms and supported formats.
 
-The bottom status bar shows local disk-cache size, zoom, pointer coordinates, and tile diagnostics in a separate map section. File > Settings > Map contains the Tile disk cache limit. The default is 128 MiB, with a range from 16 through 4096 MiB. The size describes the active HTTPS cache, which is separate from decoded memory. An inactive cache label means that no usable map provider cache is open.
+The bottom status bar shows separate map fields for cache size, zoom, pointer coordinates, tile diagnostics, and the HTTPS warning. Vertical separators divide these fields. Empty diagnostics and warnings disappear.
+
+File > Settings > Map contains the Tile disk cache limit. The default is 128 MiB, with a range from 16 through 4096 MiB. The size describes the active HTTPS cache, which is separate from decoded memory. An inactive cache label means that no usable map provider cache is open.
 
 File > Settings contains tables for Map providers and Data providers. The same tables appear in Tools > Map Providers and Tools > Data Providers. A map radio button selects one provider. Data checkboxes enable independent feeds. Row selection controls Edit and Delete without changing activation. Clear selection turns off map providers. Table names follow the operating system sort order.
 
