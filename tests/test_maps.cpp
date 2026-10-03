@@ -54,6 +54,7 @@ private slots:
         const auto id = QStringLiteral("org.swak.xyz.usgs-topo");
         QVERIFY(sources.sources().contains(id)); QVERIFY(!sources.networkEnabled());
         auto preset = sources.sources().value(id).toObject();
+        QCOMPARE(preset.value(QStringLiteral("maxZoom")).toInt(), 8);
         QCOMPARE(xyz->tileUrl(preset, 3, 2, 4).path(), QStringLiteral("/arcgis/rest/services/USGSTopo/MapServer/tile/3/4/2"));
         sources.remove(id); const auto saved = sources.savePreferences();
         MapSources restored(QPluginLoader::staticInstances()); restored.restorePreferences(saved);

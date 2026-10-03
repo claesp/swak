@@ -25,6 +25,7 @@
 #include <QTableWidget>
 #include <QRadioButton>
 #include <QToolButton>
+#include <QButtonGroup>
 #include <QFrame>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -837,6 +838,16 @@ private slots:
             auto *objects = window.findChild<swak::UserObjects *>(); auto *selection = window.findChild<swak::MapSelection *>();
             map->setFocus(); QTest::keyClick(map, Qt::Key_M); QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
             auto *type = editor->findChild<QComboBox *>(QStringLiteral("objectType"));
+            for (const auto &identity : {QStringLiteral("f"), QStringLiteral("h"), QStringLiteral("n"), QStringLiteral("u")}) {
+                const auto symbol = QStringLiteral("a-%1-G-U").arg(identity);
+                type->setCurrentIndex(type->findData(symbol));
+                auto *group = editor->findChild<QButtonGroup *>(); QVERIFY(group);
+                auto *color = group->checkedButton(); QVERIFY(color);
+                auto *apply = editor->findChild<QPushButton *>(QStringLiteral("applyObject")); apply->click();
+                const auto record = objects->items().first();
+                QCOMPARE(record.color, color->property("markerColor").toString());
+                editor->edit(record); QVERIFY(color->isChecked());
+            }
             const auto code = QStringLiteral("a-h-G-U-C-I"); type->setCurrentIndex(type->findData(code));
             QVERIFY(editor->grab().save(QStringLiteral("military-marker-editor.png")));
             auto *apply = editor->findChild<QPushButton *>(QStringLiteral("applyObject")); apply->click();
@@ -874,9 +885,10 @@ private slots:
             auto *objects = window.findChild<swak::UserObjects *>(); auto *selection = window.findChild<swak::MapSelection *>();
             map->setFocus(); QTest::keyClick(map, Qt::Key_M); QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
             auto *type = editor->findChild<QComboBox *>(QStringLiteral("objectType")); QVERIFY(type);
-            QCOMPARE(type->count(), 17); QCOMPARE(type->currentText(), QStringLiteral("Marker"));
+            QCOMPARE(type->count(), 17); QCOMPARE(type->currentText(), QStringLiteral("Generic marker"));
+            QVERIFY(!type->itemIcon(0).isNull());
             auto *orange = editor->findChild<QToolButton *>(QStringLiteral("objectColor1")); QVERIFY(orange && orange->isChecked());
-            for (int i = 0; i < 8; ++i) QVERIFY(editor->findChild<QToolButton *>(QStringLiteral("objectColor%1").arg(i)));
+            for (int i = 0; i < 12; ++i) QVERIFY(editor->findChild<QToolButton *>(QStringLiteral("objectColor%1").arg(i)));
             auto *blue = editor->findChild<QToolButton *>(QStringLiteral("objectColor5")); blue->click(); QVERIFY(blue->isChecked()); QVERIFY(!orange->isChecked());
             QVERIFY(editor->grab().save(QStringLiteral("marker-colors.png")));
             auto *apply = editor->findChild<QPushButton *>(QStringLiteral("applyObject")); apply->click();

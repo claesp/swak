@@ -15,7 +15,7 @@ public:
     {
         return {{QStringLiteral("org.swak.xyz.usgs-topo"), mapDefaults(tr("USGS Topo"),
             QStringLiteral("https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}"),
-            QStringLiteral("USGS The National Map and contributors | https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer"), 16)}};
+            QStringLiteral("USGS The National Map and contributors | https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer"), 8)}};
     }
     QList<SettingField> fields() const override {
         auto fields = commonMapFields();

@@ -20,6 +20,14 @@
 #include <algorithm>
 namespace swak {
 namespace {
+QIcon symbolIcon(const QString &code, const QColor &color)
+{
+    QPixmap icon(20, 20); icon.fill(Qt::transparent);
+    QPainter painter(&icon); painter.setRenderHint(QPainter::Antialiasing);
+    paintMarkerSymbol(painter, code, QPointF(10, 10), 7, color);
+    painter.end();
+    return QIcon(icon);
+}
 class PropertyDelegate final : public QStyledItemDelegate {
 public:
     using QStyledItemDelegate::QStyledItemDelegate;
@@ -40,7 +48,7 @@ ObjectEditor::ObjectEditor(UserObjects &objects, QWidget *parent) : PaneContent(
     auto font = title_->font(); font.setPointSizeF(font.pointSizeF() > 0 ? font.pointSizeF() * 1.5 : 16); title_->setFont(font);
     layout->addWidget(new QLabel(tr("Type"), this));
     type_ = new QComboBox(this); type_->setObjectName(QStringLiteral("objectType")); type_->setAccessibleName(tr("Type"));
-    type_->addItem(tr("Marker"), QStringLiteral("circle")); layout->addWidget(type_);
+    type_->addItem(symbolIcon({}, QColor("#ffc857")), tr("Generic marker"), QString{}); layout->addWidget(type_);
     connect(type_, &QComboBox::currentIndexChanged, this, [this] {
         const auto code = type_->currentData().toString();
         const auto &symbols = markerSymbols();
@@ -55,9 +63,13 @@ ObjectEditor::ObjectEditor(UserObjects &objects, QWidget *parent) : PaneContent(
     layout->addWidget(new QLabel(tr("Color"), this));
     colors_ = new QButtonGroup(this); colors_->setExclusive(true);
     auto *colorRow = new QHBoxLayout; colorRow->setSpacing(4);
-    const QStringList names{tr("Red"), tr("Orange"), tr("Yellow"), tr("Green"), tr("Cyan"), tr("Blue"), tr("Indigo"), tr("Magenta")};
-    const QStringList values{QStringLiteral("#e53935"), QStringLiteral("#ffc857"), QStringLiteral("#f5e642"), QStringLiteral("#43a047"),
+    QStringList names{tr("Red"), tr("Orange"), tr("Yellow"), tr("Green"), tr("Cyan"), tr("Blue"), tr("Indigo"), tr("Magenta")};
+    QStringList values{QStringLiteral("#e53935"), QStringLiteral("#ffc857"), QStringLiteral("#f5e642"), QStringLiteral("#43a047"),
         QStringLiteral("#00bcd4"), QStringLiteral("#1e88e5"), QStringLiteral("#5e35b1"), QStringLiteral("#d81b60")};
+    for (const auto &symbol : markerSymbols()) {
+        const auto color = symbol.color.name();
+        if (!values.contains(color)) { values.append(color); names.append(tr("%1 color").arg(symbol.name)); }
+    }
     for (qsizetype i = 0; i < values.size(); ++i) {
         auto *button = new QToolButton(this); button->setObjectName(QStringLiteral("objectColor%1").arg(i));
         button->setToolTip(names.at(i)); button->setAccessibleName(names.at(i)); button->setCheckable(true);
@@ -110,13 +122,11 @@ void ObjectEditor::edit(const UserObject &item)
     const QSignalBlocker blockType(type_);
     type_->clear();
     if (item.type == QStringLiteral("circle")) {
-        type_->addItem(tr("Marker"), QString{});
+        type_->addItem(symbolIcon({}, QColor(item.color)), tr("Generic marker"), QString{});
         auto symbols = markerSymbols(); const QCollator order;
         std::sort(symbols.begin(), symbols.end(), [&order](const auto &a, const auto &b) { return order.compare(a.name, b.name) < 0; });
         for (const auto &symbol : symbols) {
-            QPixmap icon(20, 20); icon.fill(Qt::transparent);
-            { QPainter painter(&icon); painter.setRenderHint(QPainter::Antialiasing); paintMarkerSymbol(painter, symbol.code, QPointF(10, 10), 7, symbol.color); }
-            type_->addItem(QIcon(icon), symbol.name, symbol.code);
+            type_->addItem(symbolIcon(symbol.code, symbol.color), symbol.name, symbol.code);
         }
         if (!validMarkerSymbol(item.symbol)) type_->addItem(tr("Unsupported symbol (%1)").arg(item.symbol), item.symbol);
         type_->setCurrentIndex(std::max(0, type_->findData(item.symbol)));

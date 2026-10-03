@@ -216,7 +216,7 @@ The host places all attached panes above the map in `MapPanels`. Panes cover map
 
 `window.overlayLayout` stores pane relationships. `window.layout` stores the outer window toolbar state. The host reads older dock layouts when `overlayLayout` is absent. Individual pane records and unknown plugin sections remain available as before.
 
-The shared object editor shows Type after Title. Circle records offer Marker and the supported ground-unit symbols. The editor offers eight color buttons and preserves other valid stored colors. Apply saves the selected color with the object. Deletion undo and movement retain that color.
+The shared object editor shows Type after Title. Circle records offer Generic marker and the supported ground-unit symbols. The editor adds unique symbol colors from the shared catalog to its eight general colors. It preserves other valid stored colors. Apply saves the selected color with the object. Deletion undo and movement retain that color.
 
 # Source presets and shared symbols
 

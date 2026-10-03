@@ -211,7 +211,7 @@ private:
     }
     void select(const QString &id) {
         const auto record = objects_.find(id); if (!record || record->type != QStringLiteral("circle")) return;
-        MapItem item; item.owner = owner(); item.id = id; item.label = record->title; item.type = tr("Marker");
+        MapItem item; item.owner = owner(); item.id = id; item.label = record->title; item.type = tr("Generic marker");
         for (const auto &symbol : markerSymbols()) if (symbol.code == record->symbol) item.type = symbol.name;
         item.description = record->description;
         item.point = location(*record); item.radius = editor_.radius(); item.symbol = record->symbol; item.color = QColor(record->color); item.properties = record->properties;

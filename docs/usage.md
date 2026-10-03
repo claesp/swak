@@ -232,7 +232,9 @@ After Apply or Enter saves a marker, keyboard focus returns to the map. Press M 
 
 Attached panes cover the map instead of reducing its size. Opening Information keeps the map center and scale unchanged. Pane tabs, resizing, close buttons, and detachment still work. File > Settings > Panes controls the overlay edge and dimensions. Saved layouts from earlier versions become overlay layouts.
 
-The marker editor shows Title, Type, Color, Description, and properties in that order. Type currently contains Marker only. Select one of the eight color buttons before Apply. Orange is the default color. File > Settings > Markers changes the default for new markers. Existing markers retain their own colors.
+The marker editor shows Title, Type, Color, Description, and properties in that order. Type offers Generic marker and the supported military symbols. Generic marker uses a circle icon. The palette includes eight general colors and four symbol colors. Select a color button before Apply.
+
+Orange is the default color. File > Settings > Markers changes the default for new markers. Existing markers retain their own colors.
 
 # Ground-unit symbols
 

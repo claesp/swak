@@ -634,3 +634,19 @@ Eight sanitizer suites passed in `build/quality/20261003-134128-quick-232481`. A
 Coverage passed eight suites and all 48 native cases in `build/quality/20261003-134245-coverage-233346`. The shared symbols reached 54 of 54 lines, and CoT Events reached 146 of 146 lines. The image provider reached 42 of 43 lines. Its early return for invalid common fields remains unexecuted in that provider. Existing property-editor callbacks, generic map settings fields, and defensive marker failures also retain gaps. Line coverage does not establish complete branch or input coverage.
 
 Tests use Qt 6.8.2, GCC 14.2, and software Mesa on Debian 13. Hardware graphics, native Wayland, Qt 6.4 compatibility, and two-hour qualification remain untested. Screenshots are under `build/atak-native` and the coverage report directory. The release build log is `build/atak-release.log`. The final release metadata refresh uses `build/atak-release-final.log`.
+
+## 2026-10-03: Marker palette and generic type
+
+The marker editor adds the four distinct colors from the shared symbol catalog to its eight general colors. Symbol selection and reopening a saved marker now select the matching color button. The palette reads catalog colors directly, which prevents separate color definitions from drifting apart.
+
+The circle type now appears as Generic marker in the editor and Information panel. Its selection entry has a circle icon from the same drawing helper as the other entries. Saved type identifiers and marker colors remain unchanged. No plugin contract or external dependency changed.
+
+The existing marker tests now cover all four symbol colors through Apply and reopening. They also require a Generic marker icon and all twelve color buttons. Focused tests passed at normal and 200 percent scaling. Native screenshot review found no clipped color buttons or labels.
+
+The USGS Topo preset now defaults to maximum zoom 8 at the user's request. Existing saved provider records retain their values. Metadata alone does not establish tile availability at higher levels. The provider test requires the new default.
+
+Eight sanitizer suites passed in `build/quality/20261003-135106-quick-235887`. All 48 native sanitizer cases passed in `build/quality/20261003-135210-gui-236419`. LeakSanitizer then reported the existing Mesa leak of 240732 bytes in 1073 allocations. The GUI diagnostic remains failed without suppression. The focused sanitizer test also passed after the USGS default changed to 8.
+
+Coverage passed eight suites and all 48 native cases in `build/quality/20261003-135230-coverage-236588`. ObjectEditor reached 123 of 131 lines. The new palette and icon paths ran. Existing property-editor callbacks, description truncation, property sorting, and defensive marker failures retain gaps. Line coverage does not establish complete branch coverage. Source analysis passed in `build/quality/20261003-135454-analyze-237550`.
+
+The 60-second workload passed in `build/quality/20261003-135344-soak-237266`. It completed 1260 cycles with 11325440 bytes of peak memory growth. The maximum heartbeat gap was 66 milliseconds, and idle CPU time was 0.007 seconds. This short run does not replace two-hour qualification. Hardware graphics, native Wayland, and Qt 6.4 remain untested. Tests use Qt 6.8.2 and software Mesa. The release build log is `build/palette-release-final.log`.
