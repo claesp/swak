@@ -1567,6 +1567,14 @@ private slots:
             };
             context(middle, QStringLiteral("editPolygon")); QVERIFY(editor->draft());
             const auto original = editor->draft()->geometry;
+            overlay.fill(Qt::transparent);
+            { QPainter painter(&overlay); tools->paintOverlay(painter, view, middle); }
+            QCOMPARE(overlay.pixelColor(a), QColor("#43a047"));
+            editor->findChild<QToolButton *>(QStringLiteral("objectColor0"))->click();
+            overlay.fill(Qt::transparent);
+            { QPainter painter(&overlay); tools->paintOverlay(painter, view, middle); }
+            QCOMPARE(overlay.pixelColor(a), QColor(editor->draft()->color));
+            QVERIFY(overlay.save(QStringLiteral("polygon-corner-color.png")));
             context(a, QStringLiteral("movePolygonVertex")); QCOMPARE(tools->statusText(), QStringLiteral("P")); motion(b); click(b);
             QCOMPARE(editor->draft()->geometry, original); QCOMPARE(tools->statusText(), QStringLiteral("P"));
             QTest::keyClick(map, Qt::Key_Escape); QVERIFY(editor->draft()); QVERIFY(tools->statusText().isEmpty());

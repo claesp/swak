@@ -184,11 +184,11 @@ public:
     {
         if (drawing_) {
             auto polygon = screenPolygon(points_, view); polygon.append(pointer);
-            draw(painter, polygon, QColor("#1e88e5")); dots(painter, screenPolygon(points_, view));
+            draw(painter, polygon, QColor("#1e88e5")); dots(painter, screenPolygon(points_, view), QColor("#1e88e5"));
         } else if (editor_.draft() && editingVertices_) {
             auto polygon = screenPolygon(polygonVertices(editor_.draft()->geometry), view);
             if (moving_ >= 0) { polygon[moving_] = pointer; draw(painter, polygon, QColor(editor_.draft()->color)); }
-            dots(painter, polygon);
+            dots(painter, polygon, QColor(editor_.draft()->color));
         }
         if (drawing_ || moving_ >= 0) {
             painter.setRenderHint(QPainter::Antialiasing, false);
@@ -221,8 +221,8 @@ private:
         painter.setPen(QPen(color, editor_.lineWidth)); painter.setBrush(points.size() >= 3 ? QBrush(fill) : Qt::NoBrush);
         if (points.size() >= 3) painter.drawPolygon(points); else painter.drawPolyline(points);
     }
-    void dots(QPainter &painter, const QPolygonF &points) const {
-        painter.setPen(Qt::NoPen); painter.setBrush(QColor("#1e88e5")); for (const auto &point : points) painter.drawEllipse(point, editor_.radius, editor_.radius);
+    void dots(QPainter &painter, const QPolygonF &points, const QColor &color) const {
+        painter.setPen(Qt::NoPen); painter.setBrush(color); for (const auto &point : points) painter.drawEllipse(point, editor_.radius, editor_.radius);
     }
     void vertexMenu(QContextMenuEvent &context, const Viewport &view, QWidget &map) {
         const auto points = polygonVertices(editor_.draft()->geometry);

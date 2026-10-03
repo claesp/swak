@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 3, 2026: Read “High-zoom OpenGL strokes” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 3, 2026: Read “Polygon corner colors” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -784,3 +784,15 @@ Coverage passed eight suites and 69 native cases in `build/quality/20261003-2259
 The 60-second workload passed in `build/quality/20261003-230048-soak-31725`. It completed 1195 cycles with 14532608 bytes of peak memory growth. The maximum heartbeat gap was 36 milliseconds, and idle CPU time was 0.003 seconds. Two-hour qualification remains untested.
 
 The release build succeeded in `build/selection-release.log`. The final build with committed version metadata uses `build/selection-release-final.log`.
+
+## 2026-10-03: Polygon corner colors
+
+Polygon corner dots now use the current polygon color during editing and corner moves. Color changes update the dots immediately. New polygons still start with blue dots. The existing polygon workflow test inspects dot colors after reopening a saved green polygon and changing its color.
+
+No plugin contract, stored format, or dependency changed. The change adds no allocations or object ownership. Existing hardware graphics, native Wayland, and two-hour qualification gaps remain.
+
+Eight sanitizer suites passed in `build/quality/20261003-230537-quick-32348`. Source analysis passed in `build/quality/20261003-230539-analyze-3`. All 69 GUI cases passed in `build/quality/20261003-230701-gui-32876`. The dot screenshot shows the selected red color. The GUI sanitizer diagnostic still fails on the existing Mesa leak of 240732 bytes in 1073 allocations.
+
+Coverage passed eight suites and 69 GUI cases in `build/quality/20261003-230725-coverage-33094`. The polygon plugin reached 215 of 217 lines and all 51 functions. Its two unexecuted lines are closing braces. Defensive branches and allocation failures retain coverage gaps. The release build passed in `build/corner-release.log`. The final build with committed version metadata uses `build/corner-release-final.log`.
+
+The 60-second workload passed in `build/quality/20261003-230841-soak-33718`. It completed 1190 cycles with 13541376 bytes of peak memory growth. The maximum heartbeat gap was 40 milliseconds, and idle CPU time was 0.003 seconds. This short run does not replace two-hour qualification.
