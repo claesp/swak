@@ -211,6 +211,8 @@ Click a saved marker to select it. Right-click it for Edit, Move, or Delete. Edi
 
 With the map or Information pane focused, Backspace or Delete removes the selected local marker. Imported objects remain read-only. Ctrl+Z and Edit > Undo restore deleted markers, including their position and properties. The history keeps the last 100 deletions during the current session. It does not survive a restart. Creation, editing, and movement do not enter this deletion history.
 
+Undo stays available while the history contains deletions to restore. After the last restore, the menu item becomes gray and Ctrl+Z does nothing. A new deletion enables Undo again.
+
 File > Settings > General > Markers changes circle color, radius, and guide opacity. File > Settings > Keybindings > Markers changes the creation key. It accepts one letter without modifiers. A tool activation key takes priority over a map navigation key with the same value. Choose different keys for these actions. The model allows at most 256 objects and reserves storage for undo. ID, Latitude, and Longitude are reserved property names.
 
 

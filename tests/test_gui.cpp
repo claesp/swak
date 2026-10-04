@@ -1065,6 +1065,48 @@ private slots:
         swak::Window restored(profile, QPluginLoader::staticInstances());
         QCOMPARE(restored.findChild<swak::UserObjects *>()->find(id)->color, QStringLiteral("#d81b60"));
     }
+    void undoMenuHistory()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("undo.json")), QPluginLoader::staticInstances());
+        window.show(); window.activateWindow(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *objects = window.findChild<swak::UserObjects *>(); QVERIFY(objects);
+        auto *undo = window.findChild<QAction *>(QStringLiteral("undoAction")); QVERIFY(undo);
+        auto *menu = window.findChild<QMenu *>(QStringLiteral("editMenu")); QVERIFY(menu);
+        auto *map = window.findChild<QOpenGLWidget *>(); QVERIFY(map);
+        QVERIFY(menu->actions().contains(undo));
+        QVERIFY(!undo->isEnabled());
+        for (int i = 0; i < 3; ++i) {
+            swak::UserObject item;
+            item.id = QString::number(i); item.type = QStringLiteral("circle"); item.title = item.id;
+            item.geometry = {{QStringLiteral("x"), 0.5}, {QStringLiteral("y"), 0.5}};
+            QVERIFY(objects->put(item).isEmpty());
+            objects->remove(item.id);
+        }
+        for (int remaining = 3; remaining > 0; --remaining) {
+            QVERIFY(undo->isEnabled());
+            if (remaining == 2) {
+                map->setFocus(); QTest::keyClick(map, Qt::Key_Z, Qt::ControlModifier);
+            } else {
+                menu->popup(window.mapToGlobal(QPoint(30, 30)));
+                QVERIFY(QTest::qWaitForWindowExposed(menu));
+                menu->setActiveAction(undo); QTest::keyClick(menu, Qt::Key_Return);
+            }
+            QCOMPARE(objects->undoStack().index(), remaining - 1);
+            QCOMPARE(undo->isEnabled(), remaining > 1);
+        }
+        QCOMPARE(objects->items().size(), 3);
+        menu->popup(window.mapToGlobal(QPoint(30, 30)));
+        QVERIFY(QTest::qWaitForWindowExposed(menu));
+        QVERIFY(!undo->isEnabled());
+        QVERIFY(menu->grab().save(QStringLiteral("undo-empty-menu.png")));
+        menu->setActiveAction(undo); QTest::keyClick(menu, Qt::Key_Return);
+        menu->close();
+        map->setFocus(); QTest::keyClick(map, Qt::Key_Z, Qt::ControlModifier);
+        QCOMPARE(objects->items().size(), 3); QCOMPARE(objects->undoStack().index(), 0);
+        objects->remove(QStringLiteral("0")); QVERIFY(undo->isEnabled());
+        objects->undoStack().clear(); QVERIFY(!undo->isEnabled());
+    }
     void markerFocusAfterApply_data()
     {
         QTest::addColumn<bool>("floatingEditor");

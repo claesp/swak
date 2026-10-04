@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 4, 2026: Read “Compact toolbar and Area mode” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 4, 2026: Read “Undo history availability” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -838,3 +838,14 @@ Coverage passed eight suites and 71 GUI cases in `build/quality/20261004-075934-
 The 60-second workload passed in `build/quality/20261004-080117-soak-45836`. It completed 1191 cycles with 14516224 bytes of peak memory growth. The maximum heartbeat gap was 55 milliseconds, and idle CPU time was 0.007 seconds. This short run does not replace two-hour qualification.
 
 The release build passed in `build/compact-release.log`. The final build with committed version metadata uses `build/compact-release-final.log`. The icon generator reproduced the checked-in paths from the bundled SVG assets without changes.
+
+
+## 2026-10-04: Undo history availability
+
+The existing Qt undo action already disables itself when no deletions remain to restore. No application logic change was needed. A new native regression deletes three objects and restores them through Edit > Undo and Ctrl+Z. It tests the disabled menu after the last restore, repeated input with empty history, a new deletion, and explicit history removal. A native screenshot shows the empty Undo item in gray. The usage manual now describes this behavior.
+
+All 72 GUI cases passed in `build/quality/20261004-082158-gui-49054`. The GUI sanitizer diagnostic remains failed because Mesa reports 187644 leaked bytes in 836 allocations. The allocation stacks point to libGLX_mesa. Eight sanitizer suites passed in `build/quality/20261004-082303-quick-49432`. Source analysis passed in `build/quality/20261004-082211-analyze-3`. The focused native test passed in `build/undo-focused.log` with Qt 6.8.2 and GCC 14.2.
+
+Coverage passed eight suites and 72 GUI cases in `build/quality/20261004-082347-coverage-49911`. UserObjects reached all 93 lines and all 18 functions. Its branch coverage remains 274 of 526 reported branches. This task adds no application branches. Allocation failures, native Wayland, hardware graphics, and two-hour qualification remain untested.
+
+The 60-second workload passed in `build/quality/20261004-082506-soak-50533`. It completed 1183 cycles with 13606912 bytes of peak memory growth. The maximum heartbeat gap was 37 milliseconds, and idle CPU time was 0.007 seconds. The release build passed in `build/undo-release.log`. The final build with committed version metadata uses `build/undo-release-final.log`.
