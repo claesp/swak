@@ -1262,3 +1262,29 @@ Focused native tests pass at 200 percent display scaling in build/predict-grid-s
 The shared delete confirmation uses QMessageBox::NoIcon. It no longer shows the large question icon. Delete remains the default action for Enter. Escape still cancels. The existing native deleteConfirmationKeys test passes in build/delete-no-icon-gui.log. The inspected screenshot is build/delete-no-icon.png. The debug build passes without compiler warnings in build/delete-no-icon-debug.log.
 
 This change affects dialog appearance only. The focused native test covers both responses. The earlier broad diagnostic results remain recorded above. Release and debug builds follow the commit, with logs build/delete-no-icon-release-committed.log and build/delete-no-icon-debug-committed.log.
+
+## 2026-10-05: Local LAN server entries
+
+The Servers browser no longer creates or restores the automatic legacy-udp entry. Explicit UDP entries remain supported. Local LAN is now a server protocol. Each entry selects a local IPv4 address and owns its discovery sockets, listener, and bounded peer records. Disabling or deleting one entry preserves the other entries.
+
+All server protocols support the Interface selector. It binds sockets to a selected local address. Missing addresses produce an error without fallback. The operating system still controls routes. Local LAN disables the Host, Port, and TLS fields. TLS credentials remain disabled for other plaintext protocols.
+
+The active global LAN configuration migrates to a Local LAN entry when the catalog has space. serverSchemaVersion 2 prevents repeated migration. Old inactive LAN configuration creates no entry. Missing interfaces remain visible in the editor. Profiles and extra-pane geometry survive an absent Servers plugin.
+
+SourcePlugin::additionalPanes returns stable PluginPane records. The host provides the shared overlay, menu toggle, and saved layout. The Servers manifest declares org.swak.lan.pane and has plugin version 0.4.0. The Local LAN pane shows per-entry status and a read-only peer table. The API and manuals describe these contracts.
+
+Discovery filters incoming interface indices and on-link addresses. Each entry retains at most 16 discovery records. The worker permits 16 active peer sessions across all entries. A rotating cursor bounds discovery work separately from stream reception. Changed peer addresses or listener ports replace old connections. LAN handshakes use the entry timeout.
+
+The quick sanitizer mode passes ten suites and the isolated LAN harness in build/quality/20261005-001035-quick-79896. Final sanitizer server tests pass in build/lan-servers-final.log. The isolated harness passes in build/lan-integration-final.log. It exercises two interfaces, peer-table rows, bidirectional CoT, entry removal, reconnects, listener port changes, and disabling a peer.
+
+Final native sanitizer tests pass all 95 cases in build/quality/20261005-001927-gui-85173. The runner still exits with status 23 for the known Mesa leak: 240732 bytes in 1073 allocations. The leak remains unsuppressed. Focused tests pass at 200 percent scaling in build/lan-hidpi.log. Native screenshots show the editor and Local LAN pane.
+
+The 60-second workload passes in build/quality/20261005-001336-soak-81877. It completes 1010 cycles with 17367040 bytes of peak memory growth. Its maximum heartbeat gap is 167 milliseconds. Idle CPU time is 0.013 seconds. Source analysis passes in build/quality/20261005-001453-analyze-18. Style passes in build/quality/20261005-002036-style-4.
+
+Coverage passes ten suites, the LAN harness, and 95 native cases in build/quality/20261005-001502-coverage-82541. The final editor workflow and missing-plugin tests supplement that report. build/lan-coverage-gui-final.log records the final full native run. build/lan-coverage-refresh.log records refreshed coverage output. Coverage reaches 12505 of 13302 lines, 1215 of 1273 functions, and 18372 of 34436 branches.
+
+Remaining network gaps include forced listener allocation failures, discovery bind failures, TTL failures, full peer capacity, and physical interface removal. Server checkbox callbacks and the double-click editor path remain uncovered in the native suite. Native Wayland, hardware graphics, physical LAN discovery, all locale combinations, and two-hour operation remain unqualified. This task rebuilds a development release, not a qualified production release.
+
+The dependency review consulted the [Qt certificate-loading advisory](https://www.qt.io/blog/security-advisory-untrusted-search-path-vulnerability-in-openssl). CVE-2025-14575 affects upstream Qt 6.8.2 under specific certificate-store and working-directory conditions. This host uses Debian package 6.8.2+dfsg-9+deb13u2. Its local changelog does not identify that fix. Its patch status remains unverified. No dependency changes occur in this task.
+
+The release preset builds without compiler warnings in build/lan-release.log. The post-commit release build uses build/lan-release-committed.log. The executable remains build/release/swak. Tests use Qt 6.8.2 and GCC 14.2.

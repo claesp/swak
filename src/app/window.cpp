@@ -253,6 +253,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     }
     panels_ = new MapPanels(mainView);
     QHash<QObject *, QDockWidget *> pluginDocks;
+    QHash<QObject *, QList<QDockWidget *>> additionalDocks;
     const auto createDock =
         [this](const QString &title, const QString &id, QWidget *content, Qt::DockWidgetArea area) {
             auto *dock = new QDockWidget(title, panels_);
@@ -318,6 +319,16 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
                                     Qt::RightDockWidgetArea);
             sideDocks.append(dock);
             pluginDocks.insert(plugin, dock);
+            for (const auto &extra : source->additionalPanes(services, this)) {
+                if (!extra.widget || extra.id.isEmpty()) {
+                    continue;
+                }
+                auto *extraDock =
+                    createDock(extra.title, extra.id, extra.widget, Qt::RightDockWidgetArea);
+                additionalDocks[plugin].append(extraDock);
+                sideDocks.append(extraDock);
+                extraDock->hide();
+            }
         }
     }
     for (auto *plugin : plugins) {
@@ -507,6 +518,9 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
                 }
                 addPaneAction(*pluginsMenu, *dock);
             }
+        }
+        for (auto *extra : additionalDocks.value(plugin)) {
+            addPaneAction(*pluginsMenu, *extra);
         }
         if (menu && menu != pluginsMenu && menu->isEmpty()) {
             delete menu;

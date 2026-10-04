@@ -4702,7 +4702,7 @@ private slots:
             QVERIFY(!action->isChecked());
             dock->setFloating(false);
         }
-        QCOMPARE(activated, 6);
+        QCOMPARE(activated, 7);
         QVERIFY(window.grab().save(QStringLiteral("plugin-labels-smoke.png")));
     }
     void clearEventsMenu()
@@ -5367,7 +5367,7 @@ private slots:
                 auto *tabs = dialog->findChild<QTabWidget *>();
                 auto *panes =
                     dialog->findChild<QListWidget *>(QStringLiteral("paneSettingsSections"));
-                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 9) {
+                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 10) {
                     dialog->reject();
                     QFAIL("The pane tab is incomplete.");
                     return;
@@ -5546,9 +5546,12 @@ private slots:
                 ->setText(QStringLiteral("Saved callsign"));
             window.findChild<QDoubleSpinBox *>(QStringLiteral("latitude"))->setValue(12.345);
             window.findChild<QSpinBox *>(QStringLiteral("lifetime"))->setValue(1200);
-            window.findChild<swak::Servers *>()->restorePreferences(
-                {{QStringLiteral("address"), QStringLiteral("::1")},
-                 {QStringLiteral("port"), 17001}});
+            auto savedServer = swak::serverDefaults();
+            savedServer.insert("name", "Saved UDP");
+            savedServer.insert("protocol", "udp");
+            savedServer.insert("host", "::1");
+            savedServer.insert("port", 17001);
+            QVERIFY(window.findChild<swak::Servers *>()->put("saved-udp", savedServer).isEmpty());
             auto *table = window.findChild<QTableView *>(QStringLiteral("eventsTable"));
             table->horizontalHeader()->resizeSection(0, 240);
             table->horizontalHeader()->moveSection(3, 0);
@@ -5580,14 +5583,14 @@ private slots:
             QCOMPARE(window.findChild<QSpinBox *>(QStringLiteral("lifetime"))->value(), 1200);
             QCOMPARE(window.findChild<swak::Servers *>()
                          ->sources()
-                         .value(QStringLiteral("legacy-udp"))
+                         .value(QStringLiteral("saved-udp"))
                          .toObject()
                          .value(QStringLiteral("host"))
                          .toString(),
                      QStringLiteral("::1"));
             QCOMPARE(window.findChild<swak::Servers *>()
                          ->sources()
-                         .value(QStringLiteral("legacy-udp"))
+                         .value(QStringLiteral("saved-udp"))
                          .toObject()
                          .value(QStringLiteral("port"))
                          .toInt(),
@@ -5621,8 +5624,20 @@ private slots:
             receiver->setFloating(true);
             receiver->resize(480, 310);
             receiver->move(170, 140);
-            window.findChild<swak::Servers *>()->restorePreferences(
-                {{QStringLiteral("port"), 17654}});
+            auto savedServer = swak::serverDefaults();
+            savedServer.insert("name", "Saved UDP");
+            savedServer.insert("protocol", "udp");
+            savedServer.insert("host", "127.0.0.1");
+            savedServer.insert("port", 17654);
+            QVERIFY(window.findChild<swak::Servers *>()->put("saved-udp", savedServer).isEmpty());
+            auto lan = swak::serverDefaults();
+            lan.insert("name", "Saved LAN");
+            lan.insert("protocol", "lan");
+            lan.insert("localAddress", "203.0.113.254");
+            QVERIFY(window.findChild<swak::Servers *>()->put("saved-lan", lan).isEmpty());
+            auto *lanPane = window.findChild<QDockWidget *>("org.swak.lan.pane");
+            lanPane->setFloating(true);
+            lanPane->resize(700, 300);
             window.close();
         }
         {
@@ -5647,9 +5662,19 @@ private slots:
             auto *receiver = window.findChild<QDockWidget *>(QStringLiteral("org.swak.udp.pane"));
             QVERIFY(receiver->isFloating());
             QCOMPARE(receiver->size(), QSize(480, 310));
+            auto *lanPane = window.findChild<QDockWidget *>("org.swak.lan.pane");
+            QVERIFY(lanPane && lanPane->isFloating());
+            QCOMPARE(lanPane->size(), QSize(700, 300));
             QCOMPARE(window.findChild<swak::Servers *>()
                          ->sources()
-                         .value(QStringLiteral("legacy-udp"))
+                         .value("saved-lan")
+                         .toObject()
+                         .value("localAddress")
+                         .toString(),
+                     QStringLiteral("203.0.113.254"));
+            QCOMPARE(window.findChild<swak::Servers *>()
+                         ->sources()
+                         .value(QStringLiteral("saved-udp"))
                          .toObject()
                          .value(QStringLiteral("port"))
                          .toInt(),
@@ -5924,6 +5949,100 @@ private slots:
             2000));
         QVERIFY(window.savePreferences());
     }
+    void localLanPane()
+    {
+        QTemporaryDir directory;
+        const auto path = directory.filePath("lan-pane.json");
+        {
+            swak::Window window(path, QPluginLoader::staticInstances());
+            window.show();
+            QVERIFY(QTest::qWaitForWindowExposed(&window));
+            auto *pane = window.findChild<QDockWidget *>("org.swak.lan.pane");
+            QVERIFY(pane);
+            auto *menu = window.findChild<QMenu *>("pluginsMenu");
+            QVERIFY(menu);
+            QAction *toggle = nullptr;
+            for (auto *action : menu->actions()) {
+                if (action->text() == QStringLiteral("Local LAN")) {
+                    toggle = action;
+                }
+            }
+            QVERIFY(toggle && toggle->isCheckable());
+            pane->hide();
+            toggle->trigger();
+            QVERIFY(!pane->isHidden());
+            auto *summary = pane->findChild<QPlainTextEdit *>("localLanSummary");
+            QVERIFY(summary && summary->isReadOnly());
+            QVERIFY(summary->toPlainText().contains("No Local LAN servers"));
+            auto *servers = window.findChild<swak::Servers *>();
+            const auto editDraft = [&](const QString &title, bool accept) {
+                QTimer::singleShot(0, &window, [&, title, accept] {
+                    auto *dialog = window.findChild<QDialog *>("serverEditor");
+                    QVERIFY(dialog);
+                    for (auto *line : dialog->findChildren<QLineEdit *>()) {
+                        if (line->objectName().endsWith("/name")) {
+                            line->setText(title);
+                        }
+                    }
+                    for (auto *choice : dialog->findChildren<QComboBox *>()) {
+                        if (choice->objectName().endsWith("/protocol")) {
+                            choice->setCurrentIndex(choice->findData(QStringLiteral("lan")));
+                        }
+                        if (choice->objectName().endsWith("/localAddress") &&
+                            servers->sources().isEmpty()) {
+                            int selected = -1;
+                            for (int i = 0; i < choice->count(); ++i) {
+                                const QHostAddress address(choice->itemData(i).toString());
+                                if (address.protocol() == QAbstractSocket::IPv4Protocol &&
+                                    !address.isLoopback() && !address.isNull()) {
+                                    selected = i;
+                                    break;
+                                }
+                            }
+                            if (selected < 0) {
+                                dialog->reject();
+                                QFAIL("This test requires a local IPv4 interface.");
+                            }
+                            choice->setCurrentIndex(selected);
+                        }
+                    }
+                    if (accept) {
+                        dialog->findChild<QDialogButtonBox *>()
+                            ->button(QDialogButtonBox::Ok)
+                            ->click();
+                    } else {
+                        dialog->reject();
+                    }
+                });
+            };
+            editDraft(QStringLiteral("Test LAN"), true);
+            window.findChild<QPushButton *>("addServer")->click();
+            QCOMPARE(servers->sources().size(), 1);
+            const auto id = servers->sources().keys().first();
+            QVERIFY(!servers->sources().value(id).toObject().value("enabled").toBool());
+            QCOMPARE(servers->sources().value(id).toObject().value("protocol").toString(),
+                     QStringLiteral("lan"));
+            editDraft(QStringLiteral("Cancelled"), false);
+            window.findChild<QPushButton *>("editServer")->click();
+            QCOMPARE(servers->sources().value(id).toObject().value("name").toString(),
+                     QStringLiteral("Test LAN"));
+            editDraft(QStringLiteral("Renamed LAN"), true);
+            window.findChild<QPushButton *>("editServer")->click();
+            QCOMPARE(servers->sources().value(id).toObject().value("name").toString(),
+                     QStringLiteral("Renamed LAN"));
+            QVERIFY(summary->toPlainText().contains("Renamed LAN: Disconnected"));
+            pane->setFloating(true);
+            pane->resize(850, 320);
+            QVERIFY(pane->grab().save(QStringLiteral("local-lan-pane.png")));
+            QVERIFY(window.savePreferences());
+        }
+        {
+            swak::Window window(path, QPluginLoader::staticInstances());
+            auto *pane = window.findChild<QDockWidget *>("org.swak.lan.pane");
+            QVERIFY(pane && pane->isFloating());
+            QCOMPARE(pane->size(), QSize(850, 320));
+        }
+    }
     void serverFormAndTrace()
     {
         auto values = swak::serverDefaults();
@@ -5953,7 +6072,21 @@ private slots:
         protocol->setCurrentIndex(protocol->findData(QStringLiteral("udp")));
         QVERIFY(!ca->isEnabled());
         QCOMPARE(ca->text(), QStringLiteral("retained.pem"));
+        auto *host = dialog.findChild<QLineEdit *>(QStringLiteral("server/host"));
+        auto *port = dialog.findChild<QDoubleSpinBox *>(QStringLiteral("server/port"));
+        auto *interface = dialog.findChild<QComboBox *>(QStringLiteral("server/localAddress"));
+        QVERIFY(host && port && interface);
+        protocol->setCurrentIndex(protocol->findData(QStringLiteral("lan")));
+        QVERIFY(!host->isEnabled());
+        QVERIFY(!port->isEnabled());
+        QVERIFY(!ca->isEnabled());
+        QVERIFY(interface->isEnabled());
+        dialog.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dialog));
+        QVERIFY(dialog.grab().save(QStringLiteral("server-lan-fields.png")));
         protocol->setCurrentIndex(protocol->findData(QStringLiteral("stcp")));
+        QVERIFY(host->isEnabled());
+        QVERIFY(port->isEnabled());
         dialog.show();
         QVERIFY(QTest::qWaitForWindowExposed(&dialog));
         QVERIFY(dialog.grab().save(QStringLiteral("server-tcp-fields.png")));
@@ -6344,14 +6477,17 @@ private slots:
             auto *servers = window.findChild<swak::Servers *>();
             QVERIFY(servers);
             if (!cycle) {
-                servers->restorePreferences(
-                    {{QStringLiteral("address"), QStringLiteral("127.0.0.1")},
-                     {QStringLiteral("port"), port},
-                     {QStringLiteral("running"), true}});
+                auto savedServer = swak::serverDefaults();
+                savedServer.insert("name", "Saved UDP");
+                savedServer.insert("protocol", "udp");
+                savedServer.insert("host", "127.0.0.1");
+                savedServer.insert("port", port);
+                savedServer.insert("enabled", true);
+                QVERIFY(servers->put("saved-udp", savedServer).isEmpty());
             }
             QVERIFY(QTest::qWaitFor(
                 [&] {
-                    return servers->status(QStringLiteral("legacy-udp"))
+                    return servers->status(QStringLiteral("saved-udp"))
                         .contains(QStringLiteral("Listening"));
                 },
                 5000));
@@ -6364,7 +6500,7 @@ private slots:
             auto *servers = window.findChild<swak::Servers *>();
             QVERIFY(QTest::qWaitFor(
                 [&] {
-                    return servers->status(QStringLiteral("legacy-udp"))
+                    return servers->status(QStringLiteral("saved-udp"))
                         .contains(QStringLiteral("Cannot bind"));
                 },
                 5000));
@@ -6376,11 +6512,11 @@ private slots:
             auto *servers = window.findChild<swak::Servers *>();
             QVERIFY(QTest::qWaitFor(
                 [&] {
-                    return servers->status(QStringLiteral("legacy-udp"))
+                    return servers->status(QStringLiteral("saved-udp"))
                         .contains(QStringLiteral("Listening"));
                 },
                 5000));
-            servers->remove(QStringLiteral("legacy-udp"));
+            servers->remove(QStringLiteral("saved-udp"));
             QVERIFY(window.savePreferences());
         }
         {
@@ -6414,13 +6550,7 @@ private slots:
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         QCOMPARE(window.findChild<QDoubleSpinBox *>(QStringLiteral("latitude"))->value(), 0.0);
         QCOMPARE(window.findChild<QSpinBox *>(QStringLiteral("lifetime"))->value(), 300);
-        QCOMPARE(window.findChild<swak::Servers *>()
-                     ->sources()
-                     .value(QStringLiteral("legacy-udp"))
-                     .toObject()
-                     .value(QStringLiteral("port"))
-                     .toInt(),
-                 6969);
+        QVERIFY(window.findChild<swak::Servers *>()->sources().isEmpty());
         const auto values = dynamic_cast<swak::PreferenceParticipant *>(
                                 window.findChild<QOpenGLWidget *>(QStringLiteral("map")))
                                 ->savePreferences();
@@ -6515,7 +6645,7 @@ private slots:
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         const auto docks = window.findChildren<QDockWidget *>();
-        QCOMPARE(docks.size(), 9);
+        QCOMPARE(docks.size(), 10);
         QVERIFY(!window.findChild<QWidget *>(QStringLiteral("toolsDock")));
         auto *viewMenu = window.findChild<QMenu *>(QStringLiteral("viewMenu"));
         auto *fileMenu = window.findChild<QMenu *>(QStringLiteral("fileMenu"));

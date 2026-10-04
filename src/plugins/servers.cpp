@@ -17,6 +17,15 @@ public:
     {
         return tr("Servers");
     }
+    QList<PluginPane> additionalPanes(PluginServices &services, QWidget *parent) override
+    {
+        if (!services.servers) {
+            return {};
+        }
+        return {{QStringLiteral("org.swak.lan.pane"),
+                 tr("Local LAN"),
+                 new LocalLanStatus(*services.servers, parent)}};
+    }
     QWidget *create(PluginServices &services, const Codec &, QWidget *parent) override
     {
         auto *servers = services.servers;

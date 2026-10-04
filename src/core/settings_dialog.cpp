@@ -273,8 +273,9 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages,
                                           editor = editors.at(i),
                                           label = labels.at(i),
                                           value = field.enabledValue] {
+                        const auto current = QJsonValue::fromVariant(choice->currentData());
                         const bool enabled =
-                            QJsonValue::fromVariant(choice->currentData()) == value;
+                            value.isArray() ? value.toArray().contains(current) : current == value;
                         editor->setEnabled(enabled);
                         label->setEnabled(enabled);
                     };

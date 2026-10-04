@@ -158,3 +158,5 @@ Editable CoT fields use the shared cotFieldEditor control. Settings metadata sel
 The Trace map tool stores at most ten authoritative positions for each of 128 selected CoT or local markers. It receives accepted events through Store::eventAccepted. It draws bounded paths through MapTools and adds context actions through the shared contribution hook. Its menu owns the helper and its configuration.
 
 TrackMotion estimates display velocity from increasing sender timestamps. Prediction uses at most two update intervals and a configured time limit. The estimate rejects extreme projected speeds. A correction term preserves position continuity when messages arrive. Prediction slows before its limit and stops on expiry. Authoritative coordinates and trace history remain unchanged.
+
+Source plugins can supply additional panes through PluginPane records. The host owns their layout and menu actions. The Servers plugin uses this interface for the Local LAN status pane. Each enabled Local LAN server entry owns independent discovery sockets, a listener, and bounded peer records on the existing network thread.

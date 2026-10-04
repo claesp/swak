@@ -105,7 +105,7 @@ Use tools/cot_harness.py for manual and sustained traffic. Read [CoT connections
 
 A full TAK Server deployment and two physical LAN peers require separate integration tests. An isolated namespace test does not establish physical-network discovery or firewall behavior. It also does not establish interoperability across all authenticated TAK configurations.
 
-Linux hosts with unprivileged user and network namespaces can run an isolated two-peer test. It creates a temporary dummy interface inside the namespace. It does not change host interfaces or firewall rules. The test exchanges CoT in both directions and disables one peer.
+Linux hosts with unprivileged user and network namespaces can run an isolated two-peer test. It creates two temporary dummy interfaces inside the namespace. It does not change host interfaces or firewall rules. The test exchanges CoT in both directions across independent Local LAN entries. It also tests entry removal, peer-table selection, listener port changes, reconnects, and disabling a peer.
 
 ```sh
 python3 tools/test_lan.py --executable build/debug/swak_server_tests

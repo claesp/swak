@@ -8,12 +8,14 @@
 #include "core/store.h"
 
 #include <QBuffer>
+#include <QCollator>
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QHostAddress>
-#include <QJsonDocument>
+#include <QMap>
 #include <QMutex>
 #include <QMutexLocker>
+#include <QNetworkDatagram>
 #include <QNetworkInterface>
 #include <QRegularExpression>
 #include <QSslCertificate>
@@ -51,31 +53,6 @@ bool safe(const QString &s, int limit, bool empty = false)
                       c.category() == QChar::Other_Format;
            });
 }
-QString validateLan(const QJsonObject &v)
-{
-    QHostAddress address;
-    if (!address.setAddress(
-            v.value(QStringLiteral("address")).toString(QStringLiteral("127.0.0.1"))) ||
-        address.protocol() != QAbstractSocket::IPv4Protocol || address.isMulticast() ||
-        address == QHostAddress::AnyIPv4 || address == QHostAddress::Broadcast) {
-        return tr("Select a local IPv4 address for LAN discovery.");
-    }
-    if (v.value(QStringLiteral("enabled")).toBool()) {
-        bool found = false;
-        for (const auto &interface : QNetworkInterface::allInterfaces()) {
-            for (const auto &entry : interface.addressEntries()) {
-                if (entry.ip() == address && interface.flags().testFlag(QNetworkInterface::IsUp) &&
-                    !address.isLoopback()) {
-                    found = true;
-                }
-            }
-        }
-        if (!found) {
-            return tr("LAN discovery requires an active, non-loopback local IPv4 address.");
-        }
-    }
-    return {};
-}
 } // namespace
 QJsonObject serverDefaults()
 {
@@ -84,6 +61,7 @@ QJsonObject serverDefaults()
             {QStringLiteral("protocol"), QStringLiteral("tls")},
             {QStringLiteral("port"), 8089},
             {QStringLiteral("enabled"), false},
+            {QStringLiteral("localAddress"), QString{}},
             {QStringLiteral("ca"), QString{}},
             {QStringLiteral("certificate"), QString{}},
             {QStringLiteral("key"), QString{}},
@@ -91,15 +69,49 @@ QJsonObject serverDefaults()
             {QStringLiteral("retrySeconds"), 5},
             {QStringLiteral("timeoutSeconds"), 15}};
 }
-QList<SettingField> serverFields()
+QList<SettingField> serverFields(const QJsonObject &source)
 {
+    QStringList interfaceLabels{tr("System default")};
+    QJsonArray interfaceValues{QString{}};
+    QMap<QString, QString> addresses;
+    for (const auto &interface : QNetworkInterface::allInterfaces()) {
+        if (!interface.flags().testFlag(QNetworkInterface::IsUp)) {
+            continue;
+        }
+        for (const auto &entry : interface.addressEntries()) {
+            if (!entry.ip().isNull()) {
+                addresses.insert(entry.ip().toString(),
+                                 interface.humanReadableName() + QStringLiteral(" / ") +
+                                     entry.ip().toString());
+            }
+        }
+    }
+    const auto current = source.value("localAddress").toString();
+    if (!current.isEmpty() && !addresses.contains(current)) {
+        addresses.insert(current, tr("Unavailable: %1").arg(current));
+    }
+    auto keys = addresses.keys();
+    const QCollator collator;
+    std::sort(keys.begin(), keys.end(), [&](const auto &a, const auto &b) {
+        return collator.compare(addresses.value(a), addresses.value(b)) < 0;
+    });
+    for (const auto &address : keys) {
+        interfaceLabels.append(addresses.value(address));
+        interfaceValues.append(address);
+    }
     QList<SettingField> fields{
         textSetting(QStringLiteral("name"), tr("Name"), 128),
         textSetting(QStringLiteral("host"), tr("Host or local bind address"), 253),
-        choiceSetting(QStringLiteral("protocol"),
-                      tr("Protocol"),
-                      {tr("TLS CoT stream"), tr("TCP CoT stream"), tr("UDP input")},
-                      {QStringLiteral("tls"), QStringLiteral("stcp"), QStringLiteral("udp")}),
+        choiceSetting(
+            QStringLiteral("protocol"),
+            tr("Protocol"),
+            {tr("TLS CoT stream"), tr("TCP CoT stream"), tr("UDP input"), tr("Local LAN")},
+            {QStringLiteral("tls"),
+             QStringLiteral("stcp"),
+             QStringLiteral("udp"),
+             QStringLiteral("lan")}),
+        choiceSetting(
+            QStringLiteral("localAddress"), tr("Interface"), interfaceLabels, interfaceValues),
         numberSetting(QStringLiteral("port"), tr("Port"), 1, 65535),
         textSetting(QStringLiteral("ca"), tr("CA certificate (PEM)"), 4096),
         textSetting(QStringLiteral("certificate"), tr("Client certificate (PEM or PKCS12)"), 4096),
@@ -111,6 +123,10 @@ QList<SettingField> serverFields()
                       2,
                       120)};
     for (auto &field : fields) {
+        if (field.path == "host" || field.path == "port") {
+            field.enabledBy = QStringLiteral("protocol");
+            field.enabledValue = QJsonArray{"tls", "stcp", "udp"};
+        }
         if (QStringList{QStringLiteral("ca"),
                         QStringLiteral("certificate"),
                         QStringLiteral("key"),
@@ -129,21 +145,39 @@ QString validateServer(const QJsonObject &v)
     }
     const auto protocol = v.value(QStringLiteral("protocol")).toString();
     if (protocol != QLatin1String("tls") && protocol != QLatin1String("stcp") &&
-        protocol != QLatin1String("udp")) {
+        protocol != QLatin1String("udp") && protocol != QLatin1String("lan")) {
         return tr("The server protocol is unavailable.");
     }
-    const auto host = v.value(QStringLiteral("host")).toString();
-    QHostAddress address;
-    static const QRegularExpression hostname(
-        QStringLiteral("\\A[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?\\z"));
-    if (!safe(host, 253) || (!address.setAddress(host) && !hostname.match(host).hasMatch())) {
-        return tr("Enter a host name or numeric address without a URL or port.");
+    if (v.contains("localAddress") && !v.value("localAddress").isString()) {
+        return tr("Select a local interface address.");
     }
-    if (address.isMulticast() || address == QHostAddress::Broadcast) {
-        return tr("Use a unicast address.");
+    const auto local = v.value("localAddress").toString();
+    QHostAddress localAddress;
+    if (!local.isEmpty() &&
+        (!safe(local, 128) || !localAddress.setAddress(local) || localAddress.isMulticast() ||
+         localAddress == QHostAddress::Any || localAddress == QHostAddress::AnyIPv4 ||
+         localAddress == QHostAddress::AnyIPv6 || localAddress == QHostAddress::Broadcast)) {
+        return tr("Select a local interface address.");
     }
-    if (protocol == QLatin1String("udp") && !address.setAddress(host)) {
-        return tr("UDP input requires a numeric local address.");
+    if (protocol == QLatin1String("lan")) {
+        if (local.isEmpty() || localAddress.isLoopback() ||
+            localAddress.protocol() != QAbstractSocket::IPv4Protocol) {
+            return tr("Local LAN requires a non-loopback IPv4 interface.");
+        }
+    } else {
+        const auto host = v.value(QStringLiteral("host")).toString();
+        QHostAddress address;
+        static const QRegularExpression hostname(
+            QStringLiteral("\\A[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?\\z"));
+        if (!safe(host, 253) || (!address.setAddress(host) && !hostname.match(host).hasMatch())) {
+            return tr("Enter a host name or numeric address without a URL or port.");
+        }
+        if (address.isMulticast() || address == QHostAddress::Broadcast) {
+            return tr("Use a unicast address.");
+        }
+        if (protocol == QLatin1String("udp") && !address.setAddress(host)) {
+            return tr("UDP input requires a numeric local address.");
+        }
     }
     for (const auto &[key, low, high] :
          {std::tuple{"port", 1, 65535}, {"retrySeconds", 1, 60}, {"timeoutSeconds", 2, 120}}) {
@@ -181,7 +215,7 @@ public:
     {
         clock_.start();
     }
-    void configure(const QJsonObject &sources, const QJsonObject &lan, quint64 generation)
+    void configure(const QJsonObject &sources, quint64 generation)
     {
         std::erase_if(sessions_, [&sources](const auto &session) {
             return !session->peer && (!sources.contains(session->id) ||
@@ -199,28 +233,37 @@ public:
             mailbox_->dropped = 0;
             mailbox_->generation = generation;
         }
+        std::erase_if(sessions_, [&sources](const auto &session) {
+            return session->peer &&
+                   (!sources.contains(session->lanId) ||
+                    sources.value(session->lanId).toObject() != session->lanSource);
+        });
+        std::erase_if(lans_, [&sources](const auto &lan) {
+            return !sources.contains(lan->id) || sources.value(lan->id).toObject() != lan->source;
+        });
         for (auto it = sources.begin(); it != sources.end(); ++it) {
-            if (it.value().toObject().value(QStringLiteral("enabled")).toBool() &&
-                validateServer(it.value().toObject()).isEmpty() &&
-                std::none_of(sessions_.begin(), sessions_.end(), [&it](const auto &session) {
-                    return session->id == it.key();
-                })) {
+            const auto source = it.value().toObject();
+            if (!source.value("enabled").toBool() || !validateServer(source).isEmpty()) {
+                continue;
+            }
+            if (source.value("protocol") == QLatin1String("lan")) {
+                if (std::none_of(lans_.begin(), lans_.end(), [&it](const auto &lan) {
+                        return lan->id == it.key();
+                    })) {
+                    auto lan = std::make_unique<Lan>();
+                    lan->id = it.key();
+                    lan->source = source;
+                    setupLan(*lan);
+                    lans_.push_back(std::move(lan));
+                }
+            } else if (std::none_of(sessions_.begin(), sessions_.end(), [&it](const auto &session) {
+                           return session->id == it.key();
+                       })) {
                 auto session = std::make_unique<Session>();
                 session->id = it.key();
-                session->source = it.value().toObject();
+                session->source = source;
                 sessions_.push_back(std::move(session));
             }
-        }
-        if (lan != lan_) {
-            std::erase_if(sessions_, [](const auto &session) {
-                return session->peer;
-            });
-            discovery_.reset();
-            announcer_.reset();
-            listener_.reset();
-            peers_.clear();
-            lan_ = lan;
-            setupLan(lan);
         }
         if (!timer_) {
             timer_ = new QTimer(this);
@@ -229,7 +272,7 @@ public:
                 tick();
             });
         }
-        if (!sessions_.empty() || discovery_) {
+        if (!sessions_.empty() || !lans_.empty()) {
             timer_->start();
         } else {
             timer_->stop();
@@ -239,10 +282,9 @@ public:
     void reconnect()
     {
         sessions_.clear();
-        const auto lan = lan_;
+        lans_.clear();
         const auto sources = sources_;
-        lan_ = {};
-        configure(sources, lan, generation_);
+        configure(sources, generation_);
     }
     void send(const QByteArray &payload, quint64 generation)
     {
@@ -277,13 +319,26 @@ private:
         int failures = 0;
         bool ready = false, peer = false, greeted = false;
         QByteArray greeting;
-        QString peerId;
+        QString peerId, lanId;
+        QJsonObject lanSource;
     };
     struct Peer
     {
         QHostAddress address;
         quint16 port;
         qint64 seen;
+    };
+    struct Lan
+    {
+        QString id, state;
+        QJsonObject source;
+        QHostAddress address, broadcast;
+        int prefix = 0;
+        uint interfaceIndex = 0;
+        qint64 nextAnnounce = 0, retryAt = 0;
+        QHash<QString, Peer> peers;
+        std::unique_ptr<QUdpSocket> discovery, announcer;
+        std::unique_ptr<QTcpServer> listener;
     };
     void state(Session &s, const QString &text, Severity severity = Severity::Info)
     {
@@ -453,14 +508,25 @@ private:
             s.tcp->write("SWAK-COT/1 " + localId_.toLatin1() + '\n');
         }
     }
+    bool bindInterface(Session &s)
+    {
+        const auto local = s.source.value("localAddress").toString();
+        if (!local.isEmpty() && !s.tcp->bind(QHostAddress(local), 0)) {
+            fail(s, tr("Cannot bind interface %1: %2.").arg(local, s.tcp->errorString().left(256)));
+            return false;
+        }
+        return true;
+    }
     void start(Session &s)
     {
         s.started = clock_.elapsed();
         if (s.source.value(QStringLiteral("protocol")) == QLatin1String("udp")) {
             s.udp = std::make_unique<QUdpSocket>();
-            if (!s.udp->bind(QHostAddress(s.source.value(QStringLiteral("host")).toString()),
-                             static_cast<quint16>(s.source.value(QStringLiteral("port")).toInt()),
-                             QUdpSocket::DontShareAddress)) {
+            const auto local = s.source.value("localAddress").toString();
+            if (!s.udp->bind(
+                    QHostAddress(local.isEmpty() ? s.source.value("host").toString() : local),
+                    static_cast<quint16>(s.source.value(QStringLiteral("port")).toInt()),
+                    QUdpSocket::DontShareAddress)) {
                 fail(s,
                      tr("Cannot bind UDP input: %1. Use an available port and an address assigned "
                         "to this computer.")
@@ -484,6 +550,9 @@ private:
             }
             auto *ssl = socket.get();
             s.tcp = std::move(socket);
+            if (!bindInterface(s)) {
+                return;
+            }
             attach(s);
             connect(ssl, &QSslSocket::encrypted, this, [this, &s] {
                 connected(s);
@@ -501,8 +570,7 @@ private:
                 static_cast<quint16>(s.source.value(QStringLiteral("port")).toInt()));
         } else {
             s.tcp = std::make_unique<QTcpSocket>();
-            if (s.peer && !s.tcp->bind(localAddress_, 0)) {
-                fail(s, tr("Cannot bind the selected LAN interface."));
+            if (!bindInterface(s)) {
                 return;
             }
             attach(s);
@@ -613,7 +681,8 @@ private:
         const auto now = clock_.elapsed();
         if ((s.partial &&
              now - s.partial > s.source.value(QStringLiteral("timeoutSeconds")).toInt(15) * 1000) ||
-            (s.peer && !s.greeted && now - s.started > 15000)) {
+            (s.peer && !s.greeted &&
+             now - s.started > s.source.value(QStringLiteral("timeoutSeconds")).toInt(15) * 1000)) {
             fail(s, tr("Incomplete message timed out."));
             return;
         }
@@ -632,151 +701,174 @@ private:
             s.lastPing = now;
         }
     }
-    bool onLink(const QHostAddress &address) const
+    bool onLink(const Lan &lan, const QHostAddress &address) const
     {
-        return address.protocol() == QAbstractSocket::IPv4Protocol && address != localAddress_ &&
-               address.isInSubnet(localAddress_, prefix_) && !address.isMulticast() &&
-               address != broadcast_ && address != QHostAddress::Broadcast;
+        return address.protocol() == QAbstractSocket::IPv4Protocol && address != lan.address &&
+               address.isInSubnet(lan.address, lan.prefix) && !address.isMulticast() &&
+               address != lan.broadcast && address != QHostAddress::Broadcast;
     }
-    void setupLan(const QJsonObject &lan)
+    void setupLan(Lan &lan)
     {
-        lanStatus_ = tr("LAN discovery inactive");
-        if (!lan.value(QStringLiteral("enabled")).toBool()) {
+        lan.discovery.reset();
+        lan.announcer.reset();
+        lan.listener.reset();
+        lan.retryAt = clock_.elapsed() + lan.source.value("retrySeconds").toInt(5) * 1000;
+        lan.state = tr("LAN discovery inactive");
+        if (!lan.source.value(QStringLiteral("enabled")).toBool()) {
             return;
         }
-        const auto invalid = validateLan(lan);
-        if (!invalid.isEmpty()) {
-            lanStatus_ = invalid;
-            logMessage(
-                Severity::Warning, Urgency::Attention, QStringLiteral("swak.servers"), invalid);
-            return;
-        }
-        lanStatus_ = tr("Cannot start discovery on the selected LAN interface.");
-        localAddress_ = QHostAddress(lan.value(QStringLiteral("address")).toString());
+        lan.address = QHostAddress(lan.source.value(QStringLiteral("localAddress")).toString());
+        lan.interfaceIndex = 0;
         for (const auto &interface : QNetworkInterface::allInterfaces()) {
+            if (!interface.flags().testFlag(QNetworkInterface::IsUp)) {
+                continue;
+            }
             for (const auto &entry : interface.addressEntries()) {
-                if (entry.ip() == localAddress_) {
-                    prefix_ = entry.prefixLength();
-                    broadcast_ = entry.broadcast();
+                if (entry.ip() == lan.address) {
+                    lan.interfaceIndex = static_cast<uint>(interface.index());
+                    lan.prefix = entry.prefixLength();
+                    lan.broadcast = entry.broadcast();
                 }
             }
         }
-        if (prefix_ < 1 || prefix_ > 30 || broadcast_.isNull()) {
+        if (!lan.interfaceIndex) {
+            lan.state = tr("LAN discovery requires an active, non-loopback local IPv4 address.");
+            logMessage(
+                Severity::Warning, Urgency::Attention, QStringLiteral("swak.servers"), lan.state);
             return;
         }
-        listener_ = std::make_unique<QTcpServer>();
-        listener_->setMaxPendingConnections(MaxPeers);
-        if (!listener_->listen(localAddress_, 0)) {
-            listener_.reset();
+        lan.state = tr("Cannot start discovery on the selected LAN interface.");
+        if (lan.prefix < 1 || lan.prefix > 30 || lan.broadcast.isNull()) {
             return;
         }
-        discovery_ = std::make_unique<QUdpSocket>();
-        if (!discovery_->bind(QHostAddress::AnyIPv4,
-                              DiscoveryPort,
-                              QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint)) {
-            discovery_.reset();
-            listener_.reset();
+        lan.listener = std::make_unique<QTcpServer>();
+        lan.listener->setMaxPendingConnections(MaxPeers);
+        if (!lan.listener->listen(lan.address, 0)) {
+            lan.listener.reset();
             return;
         }
-        discovery_->setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption, 32 * 1024);
-        announcer_ = std::make_unique<QUdpSocket>();
+        lan.discovery = std::make_unique<QUdpSocket>();
+        if (!lan.discovery->bind(QHostAddress::AnyIPv4,
+                                 DiscoveryPort,
+                                 QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint)) {
+            lan.discovery.reset();
+            lan.listener.reset();
+            return;
+        }
+        lan.discovery->setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption, 32 * 1024);
+        lan.announcer = std::make_unique<QUdpSocket>();
         const int ttl = 1;
-        if (!announcer_->bind(localAddress_, 0) ||
-            ::setsockopt(static_cast<int>(announcer_->socketDescriptor()),
+        if (!lan.announcer->bind(lan.address, 0) ||
+            ::setsockopt(static_cast<int>(lan.announcer->socketDescriptor()),
                          IPPROTO_IP,
                          IP_TTL,
                          &ttl,
                          sizeof(ttl)) != 0) {
-            discovery_.reset();
-            announcer_.reset();
-            listener_.reset();
+            lan.discovery.reset();
+            lan.announcer.reset();
+            lan.listener.reset();
             return;
         }
-        lanStatus_ = tr("LAN discovery active");
-        nextAnnounce_ = 0;
+        lan.state = tr("LAN discovery active");
+        lan.nextAnnounce = 0;
     }
-    void discover()
+    void discover(Lan &lan)
     {
-        if (!discovery_) {
+        if (!lan.discovery) {
             return;
         }
         const auto now = clock_.elapsed();
-        if (now >= nextAnnounce_) {
-            announcer_->writeDatagram(
-                lanAnnouncement(localId_, listener_->serverPort()), broadcast_, DiscoveryPort);
-            nextAnnounce_ = now + 5000;
+        if (now >= lan.nextAnnounce) {
+            lan.announcer->writeDatagram(lanAnnouncement(localId_, lan.listener->serverPort()),
+                                         lan.broadcast,
+                                         DiscoveryPort);
+            lan.nextAnnounce = now + 5000;
         }
-        for (int i = 0; i < 16 && discovery_->hasPendingDatagrams(); ++i) {
-            if (discovery_->pendingDatagramSize() > 512 || discovery_->pendingDatagramSize() <= 0) {
-                discovery_->readDatagram(nullptr, 0);
+        for (int i = 0; i < 16 && lan.discovery->hasPendingDatagrams(); ++i) {
+            if (lan.discovery->pendingDatagramSize() > 512 ||
+                lan.discovery->pendingDatagramSize() <= 0) {
+                lan.discovery->readDatagram(nullptr, 0);
                 continue;
             }
-            QByteArray bytes(512, Qt::Uninitialized);
-            QHostAddress from;
-            const auto count = discovery_->readDatagram(bytes.data(), bytes.size(), &from);
-            if (count <= 0 || !onLink(from)) {
+            const auto datagram = lan.discovery->receiveDatagram(512);
+            const auto from = datagram.senderAddress();
+            const auto bytes = datagram.data();
+            if (bytes.isEmpty() || datagram.interfaceIndex() != lan.interfaceIndex ||
+                !onLink(lan, from)) {
                 continue;
             }
-            bytes.resize(count);
-            const auto peer = parseLanAnnouncement(bytes, from, localAddress_, prefix_);
+            const auto peer = parseLanAnnouncement(bytes, from, lan.address, lan.prefix);
             if (!peer || peer->id == localId_) {
                 continue;
             }
             const auto &id = peer->id;
             const auto port = peer->port;
-            if (!peers_.contains(id) && peers_.size() >= MaxPeers) {
+            if (!lan.peers.contains(id) && lan.peers.size() >= MaxPeers) {
                 continue;
             }
-            peers_.insert(id, {from, static_cast<quint16>(port), now});
+            const auto previous = lan.peers.constFind(id);
+            if (previous != lan.peers.cend() &&
+                (previous->address != from || previous->port != port)) {
+                std::erase_if(sessions_, [&lan, &id](const auto &session) {
+                    return session->lanId == lan.id && session->peerId == id;
+                });
+            }
+            lan.peers.insert(id, {from, static_cast<quint16>(port), now});
             if (localId_ < id && std::none_of(
                                      sessions_.begin(),
                                      sessions_.end(),
-                                     [&id](const auto &s) {
-                                         return s->peerId == id;
+                                     [&id, &lan](const auto &s) {
+                                         return s->lanId == lan.id && s->peerId == id;
                                      })) {
-                addPeer(id, from, static_cast<quint16>(port), {});
+                addPeer(lan, id, from, static_cast<quint16>(port), {});
             }
         }
-        for (int i = 0; i < MaxPeers && listener_->hasPendingConnections(); ++i) {
-            std::unique_ptr<QTcpSocket> socket(listener_->nextPendingConnection());
-            if (!socket || !onLink(socket->peerAddress())) {
+        for (int i = 0; i < MaxPeers && lan.listener->hasPendingConnections(); ++i) {
+            std::unique_ptr<QTcpSocket> socket(lan.listener->nextPendingConnection());
+            if (!socket || !onLink(lan, socket->peerAddress())) {
                 continue;
             }
-            for (auto it = peers_.begin(); it != peers_.end(); ++it) {
+            for (auto it = lan.peers.begin(); it != lan.peers.end(); ++it) {
                 if (it->address == socket->peerAddress() && it.key() < localId_ &&
                     now - it->seen <= 15000 &&
-                    std::none_of(sessions_.begin(), sessions_.end(), [&it](const auto &s) {
-                        return s->peerId == it.key();
+                    std::none_of(sessions_.begin(), sessions_.end(), [&it, &lan](const auto &s) {
+                        return s->lanId == lan.id && s->peerId == it.key();
                     })) {
-                    addPeer(it.key(), it->address, it->port, std::move(socket));
+                    addPeer(lan, it.key(), it->address, it->port, std::move(socket));
                     break;
                 }
             }
         }
-        for (auto it = peers_.begin(); it != peers_.end();) {
+        for (auto it = lan.peers.begin(); it != lan.peers.end();) {
             if (now - it->seen > 20000) {
-                it = peers_.erase(it);
+                it = lan.peers.erase(it);
             } else {
                 ++it;
             }
         }
-        std::erase_if(sessions_, [this](const auto &s) {
-            return s->peer && (!peers_.contains(s->peerId) || (!s->tcp && s->peerId < localId_));
+        std::erase_if(sessions_, [this, &lan](const auto &s) {
+            return s->peer && s->lanId == lan.id &&
+                   (!lan.peers.contains(s->peerId) || (!s->tcp && s->peerId < localId_));
         });
     }
-    void addPeer(const QString &id,
+    void addPeer(const Lan &lan,
+                 const QString &id,
                  const QHostAddress &address,
                  quint16 port,
                  std::unique_ptr<QTcpSocket> socket)
     {
-        if (sessions_.size() >= MaxServers + MaxPeers) {
+        if (std::count_if(sessions_.begin(), sessions_.end(), [](const auto &session) {
+                return session->peer;
+            }) >= MaxPeers) {
             return;
         }
         auto s = std::make_unique<Session>();
-        s->id = QStringLiteral("LAN/") + id;
+        s->id = QStringLiteral("LAN/") + lan.id + '/' + id;
+        s->lanId = lan.id;
+        s->lanSource = lan.source;
         s->peerId = id;
         s->peer = true;
-        s->source = serverDefaults();
+        s->source = lan.source;
         s->source.insert(QStringLiteral("protocol"), QStringLiteral("stcp"));
         s->source.insert(QStringLiteral("host"), address.toString());
         s->source.insert(QStringLiteral("port"), port);
@@ -802,7 +894,25 @@ private:
                     {QStringLiteral("rejected"), static_cast<double>(s->rejected)},
                     {QStringLiteral("control"), static_cast<double>(s->controls)}});
         }
-        stats.insert(QStringLiteral("lan"), lanStatus_);
+        for (const auto &lan : lans_) {
+            stats.insert(lan->id,
+                         QJsonObject{{"state", lan->state},
+                                     {"lan", true},
+                                     {"address", lan->address.toString()},
+                                     {"peers", lan->peers.size()}});
+            for (auto it = lan->peers.begin(); it != lan->peers.end(); ++it) {
+                const auto key = QStringLiteral("LAN/") + lan->id + '/' + it.key();
+                auto detail = stats.value(key).toObject();
+                if (detail.isEmpty()) {
+                    detail.insert("state", tr("Discovered"));
+                }
+                detail.insert("serverId", lan->id);
+                detail.insert("peerId", it.key());
+                detail.insert("address", it->address.toString());
+                detail.insert("port", it->port);
+                stats.insert(key, detail);
+            }
+        }
         const QMutexLocker lock(&mailbox_->mutex);
         stats.insert(QStringLiteral("dropped"), static_cast<double>(mailbox_->dropped));
         mailbox_->stats = stats;
@@ -817,7 +927,18 @@ private:
         for (const auto &payload : outbound) {
             send(payload, generation_);
         }
-        discover();
+        QElapsedTimer discoveryBudget;
+        discoveryBudget.start();
+        for (size_t n = 0; n < lans_.size() && discoveryBudget.elapsed() < 2; ++n) {
+            if (lanCursor_ >= lans_.size()) {
+                lanCursor_ = 0;
+            }
+            const auto &lan = lans_[lanCursor_++];
+            if (!lan->discovery && clock_.elapsed() >= lan->retryAt) {
+                setupLan(*lan);
+            }
+            discover(*lan);
+        }
         QElapsedTimer budget;
         budget.start();
         const auto count = sessions_.size();
@@ -845,21 +966,16 @@ private:
             lastPublish_ = clock_.elapsed();
         }
     }
-    QJsonObject sources_, lan_;
+    QJsonObject sources_;
+    std::vector<std::unique_ptr<Lan>> lans_;
     std::shared_ptr<ServerMailbox> mailbox_;
     std::vector<std::unique_ptr<Session>> sessions_;
     QTimer *timer_ = nullptr;
     QElapsedTimer clock_;
     quint64 generation_ = 0;
-    size_t cursor_ = 0;
-    qint64 lastPublish_ = 0, nextAnnounce_ = 0;
+    size_t cursor_ = 0, lanCursor_ = 0;
+    qint64 lastPublish_ = 0;
     const QString localId_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    QString lanStatus_ = tr("LAN discovery inactive");
-    QHostAddress localAddress_, broadcast_;
-    int prefix_ = 0;
-    QHash<QString, Peer> peers_;
-    std::unique_ptr<QUdpSocket> discovery_, announcer_;
-    std::unique_ptr<QTcpServer> listener_;
 };
 Servers::Servers(Store &store, QObject *parent)
     : QObject(parent), store_(store), mailbox_(std::make_shared<ServerMailbox>())
@@ -871,8 +987,6 @@ Servers::Servers(Store &store, QObject *parent)
     timer_.setInterval(33);
     connect(&timer_, &QTimer::timeout, this, &Servers::collect);
     timer_.start();
-    lan_ = {{QStringLiteral("enabled"), false},
-            {QStringLiteral("address"), QStringLiteral("127.0.0.1")}};
 }
 Servers::~Servers()
 {
@@ -886,11 +1000,7 @@ QList<SettingField> Servers::settingsFields() const
 }
 QJsonObject Servers::savePreferences() const
 {
-    return {{QStringLiteral("servers"), sources_}, {QStringLiteral("lan"), lan_}};
-}
-QString Servers::validateSettings(const QJsonObject &values) const
-{
-    return validateLan(values.value(QStringLiteral("lan")).toObject());
+    return {{QStringLiteral("servers"), sources_}, {QStringLiteral("serverSchemaVersion"), 2}};
 }
 void Servers::restorePreferences(const QJsonObject &values)
 {
@@ -898,26 +1008,25 @@ void Servers::restorePreferences(const QJsonObject &values)
     if (values.contains(QStringLiteral("servers"))) {
         const auto entries = values.value(QStringLiteral("servers")).toObject();
         for (auto it = entries.begin(); it != entries.end() && sources_.size() < MaxServers; ++it) {
-            if (safe(it.key(), 64) && it.value().isObject()) {
+            if (it.key() != QLatin1String("legacy-udp") && safe(it.key(), 64) &&
+                it.value().isObject()) {
                 sources_.insert(it.key(), it.value());
             }
         }
-    } else if (values.contains(QStringLiteral("port")) ||
-               values.contains(QStringLiteral("address"))) {
-        auto source = serverDefaults();
-        source.insert(QStringLiteral("name"), tr("Legacy UDP input"));
-        source.insert(QStringLiteral("protocol"), QStringLiteral("udp"));
-        source.insert(
-            QStringLiteral("host"),
-            preferenceText(values, QStringLiteral("address"), QStringLiteral("127.0.0.1"), 64));
-        source.insert(QStringLiteral("port"),
-                      preferenceInteger(values, QStringLiteral("port"), 6969, 1, 65535));
-        source.insert(QStringLiteral("enabled"), values.value(QStringLiteral("running")).toBool());
-        sources_.insert(QStringLiteral("legacy-udp"), source);
     }
-    const auto lanValues = values.value(QStringLiteral("lan")).toObject();
-    if (!lanValues.isEmpty()) {
-        lan_ = lanValues;
+    const auto oldLan = values.value("lan").toObject();
+    if (values.value("serverSchemaVersion").toInt() < 2 && oldLan.value("enabled").toBool() &&
+        sources_.size() < MaxServers) {
+        auto source = serverDefaults();
+        source.insert("name", tr("Local LAN"));
+        source.insert("protocol", "lan");
+        source.insert("localAddress", oldLan.value("address"));
+        source.insert("enabled", true);
+        auto id = QStringLiteral("migrated-lan");
+        for (int suffix = 1; sources_.contains(id); ++suffix) {
+            id = QStringLiteral("migrated-lan-%1").arg(suffix);
+        }
+        sources_.insert(id, source);
     }
     configure();
     emit changed();
@@ -944,17 +1053,6 @@ void Servers::remove(const QString &id)
         emit changed();
     }
 }
-QString Servers::setLan(const QJsonObject &values)
-{
-    const auto error = validateLan(values);
-    if (!error.isEmpty()) {
-        return error;
-    }
-    lan_ = values;
-    configure();
-    emit changed();
-    return {};
-}
 void Servers::reconnect()
 {
     QMetaObject::invokeMethod(
@@ -969,12 +1067,11 @@ void Servers::configure()
     ++generation_;
     stats_ = {};
     const auto sourceValues = sources_;
-    const auto lanValues = lan_;
     const auto generation = generation_;
     QMetaObject::invokeMethod(
         worker_,
-        [worker = worker_, sourceValues, lanValues, generation] {
-            worker->configure(sourceValues, lanValues, generation);
+        [worker = worker_, sourceValues, generation] {
+            worker->configure(sourceValues, generation);
         },
         Qt::QueuedConnection);
 }
@@ -1012,6 +1109,11 @@ QString Servers::status(const QString &id) const
         return tr("Invalid or unavailable server configuration.");
     }
     const auto state = stats_.value(id).toObject();
+    if (state.value("lan").toBool()) {
+        return tr("%1. Interface: %2. Peers: %3.")
+            .arg(state.value("state").toString(), entry.value("localAddress").toString())
+            .arg(state.value("peers").toInt());
+    }
     if (state.isEmpty()) {
         return entry.value(QStringLiteral("enabled")).toBool() ? tr("Connecting")
                                                                : tr("Disconnected");

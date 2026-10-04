@@ -396,3 +396,5 @@ Select Add to create a named type. Select a row before Edit or Delete .... Each 
 Longitude/latitude labels support decimal degrees, degrees and minutes, or degrees, minutes, and seconds. UTM and MGRS use WGS 84 and include the Norway and Svalbard zone exceptions. Polar regions use UPS. At broad zoom levels, these grids show zone boundaries. Closer views add lines in meters or MGRS subdivisions. Target spacing adapts to rounded intervals and bounded drawing work.
 
 Grid types and the active choice survive restart. The catalog holds at most 32 types. Existing longitude/latitude appearance values migrate from older map profiles. Marker icon scaling applies to existing local markers, CoT symbols, and data points. Marker radius applies to existing local markers. Active previews also repaint after these changes.
+
+To use serverless communication, add a server with the Local LAN protocol and select its IPv4 interface. Enable its Active checkbox. Tools > Plugins > Local LAN shows discovery status and peer connections. The Interface field also selects a local address for TCP, TLS, and UDP entries.

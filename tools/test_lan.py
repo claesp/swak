@@ -40,6 +40,10 @@ def main():
         ["ip", "address", "add", "192.0.2.1/24", "brd", "+", "dev", "swak-test0"],
         ["ip", "address", "add", "192.0.2.2/24", "brd", "+", "dev", "swak-test0"],
         ["ip", "link", "set", "swak-test0", "up"],
+        ["ip", "link", "add", "swak-test1", "type", "dummy"],
+        ["ip", "address", "add", "198.51.100.1/24", "brd", "+", "dev", "swak-test1"],
+        ["ip", "address", "add", "198.51.100.2/24", "brd", "+", "dev", "swak-test1"],
+        ["ip", "link", "set", "swak-test1", "up"],
     ]:
         subprocess.run(command, check=True, timeout=5)
     env = os.environ.copy()

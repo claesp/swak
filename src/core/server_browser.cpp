@@ -7,15 +7,112 @@
 #include "core/single_line_label.h"
 
 #include <QCollator>
-#include <QNetworkInterface>
+#include <QHeaderView>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSignalBlocker>
+#include <QTableWidget>
 #include <QUuid>
 #include <QVBoxLayout>
 
 #include <algorithm>
 namespace swak {
+LocalLanStatus::LocalLanStatus(Servers &servers, QWidget *parent)
+    : QWidget(parent), servers_(servers)
+{
+    setObjectName(QStringLiteral("localLanStatus"));
+    auto *layout = new QVBoxLayout(this);
+    status_ = new QPlainTextEdit(this);
+    status_->setObjectName(QStringLiteral("localLanSummary"));
+    status_->setAccessibleName(tr("Local LAN status"));
+    status_->setReadOnly(true);
+    status_->setMaximumHeight(110);
+    layout->addWidget(status_);
+    peers_ = new QTableWidget(0, 7, this);
+    peers_->setObjectName(QStringLiteral("localLanPeers"));
+    peers_->setAccessibleName(tr("Local peers"));
+    peers_->setHorizontalHeaderLabels({tr("Server"),
+                                       tr("Peer"),
+                                       tr("Address"),
+                                       tr("Port"),
+                                       tr("Status"),
+                                       tr("Received"),
+                                       tr("Rejected")});
+    peers_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    peers_->setSelectionBehavior(QAbstractItemView::SelectRows);
+    peers_->setSelectionMode(QAbstractItemView::SingleSelection);
+    peers_->verticalHeader()->hide();
+    peers_->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    layout->addWidget(peers_);
+    connect(&servers_, &Servers::changed, this, &LocalLanStatus::refresh);
+    connect(&servers_, &Servers::statusChanged, this, &LocalLanStatus::refresh);
+    refresh();
+}
+void LocalLanStatus::refresh()
+{
+    const auto sources = servers_.sources();
+    const auto stats = servers_.statistics();
+    QStringList statuses;
+    for (auto it = sources.begin(); it != sources.end(); ++it) {
+        const auto source = it.value().toObject();
+        if (source.value("protocol") == QLatin1String("lan")) {
+            statuses.append(source.value("name").toString() + QStringLiteral(": ") +
+                            servers_.status(it.key()));
+        }
+    }
+    const QCollator collator;
+    std::sort(statuses.begin(), statuses.end(), [&](const auto &a, const auto &b) {
+        return collator.compare(a, b) < 0;
+    });
+    const auto summary = statuses.isEmpty() ? tr("No Local LAN servers. Add a server with the "
+                                                 "Local LAN protocol to enable discovery.")
+                                            : statuses.join('\n');
+    if (status_->toPlainText() != summary) {
+        status_->setPlainText(summary);
+    }
+    if (auto *item = peers_->item(peers_->currentRow(), 0)) {
+        selectedPeer_ = item->data(Qt::UserRole).toString();
+    }
+    QStringList ids;
+    for (auto it = stats.begin(); it != stats.end(); ++it) {
+        if (!it.value().toObject().value("peerId").toString().isEmpty()) {
+            ids.append(it.key());
+        }
+    }
+    const auto name = [&](const QString &id) {
+        return sources.value(stats.value(id).toObject().value("serverId").toString())
+            .toObject()
+            .value("name")
+            .toString();
+    };
+    std::sort(ids.begin(), ids.end(), [&](const auto &a, const auto &b) {
+        const int order = collator.compare(name(a), name(b));
+        return order == 0 ? collator.compare(a, b) < 0 : order < 0;
+    });
+    peers_->setUpdatesEnabled(false);
+    peers_->setRowCount(static_cast<int>(ids.size()));
+    for (int row = 0; row < ids.size(); ++row) {
+        const auto id = ids.at(row);
+        const auto peer = stats.value(id).toObject();
+        const QStringList values{name(id),
+                                 peer.value("peerId").toString(),
+                                 peer.value("address").toString(),
+                                 QLocale().toString(peer.value("port").toInt()),
+                                 peer.value("state").toString(),
+                                 QLocale().toString(peer.value("received").toDouble(), 'f', 0),
+                                 QLocale().toString(peer.value("rejected").toDouble(), 'f', 0)};
+        for (int column = 0; column < values.size(); ++column) {
+            auto *item = new QTableWidgetItem(values.at(column));
+            item->setData(Qt::UserRole, id);
+            item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+            peers_->setItem(row, column, item);
+        }
+        if (id == selectedPeer_) {
+            peers_->setCurrentCell(row, 0);
+        }
+    }
+    peers_->setUpdatesEnabled(true);
+}
 QWidget *Servers::createSettingsWidget(QWidget *parent)
 {
     return new ServerBrowser(*this, parent);
@@ -65,47 +162,6 @@ ServerBrowser::ServerBrowser(Servers &servers, QWidget *parent) : QWidget(parent
             &QPushButton::clicked,
             &servers_,
             &Servers::reconnect);
-    connect(
-        button(tr("LAN peers"), QStringLiteral("lanPeers")), &QPushButton::clicked, this, [this] {
-            QStringList labels;
-            QJsonArray addresses;
-            const auto current = servers_.lan().value(QStringLiteral("address")).toString();
-            for (const auto &interface : QNetworkInterface::allInterfaces()) {
-                for (const auto &entry : interface.addressEntries()) {
-                    if (entry.ip().protocol() == QAbstractSocket::IPv4Protocol &&
-                        !entry.ip().isLoopback() &&
-                        interface.flags().testFlag(QNetworkInterface::IsUp)) {
-                        labels.append(interface.humanReadableName() + QStringLiteral(" / ") +
-                                      entry.ip().toString());
-                        addresses.append(entry.ip().toString());
-                    }
-                }
-            }
-            if (!addresses.contains(current)) {
-                labels.append(current);
-                addresses.append(current);
-            }
-            QString error;
-            SettingsDialog dialog(
-                {{QStringLiteral("lan"),
-                  tr("LAN peers"),
-                  {booleanSetting(QStringLiteral("enabled"),
-                                  tr("Enable plaintext LAN discovery and CoT exchange")),
-                   choiceSetting(
-                       QStringLiteral("address"), tr("Local network"), labels, addresses)},
-                  servers_.lan(),
-                  {},
-                  [this, &error](const QJsonObject &v) {
-                      error = servers_.setLan(v);
-                  }}},
-                [&error] {
-                    return error;
-                },
-                this,
-                true);
-            dialog.setWindowTitle(tr("LAN peers"));
-            dialog.exec();
-        });
     layout->addLayout(row);
     status_ = new QPlainTextEdit(this);
     status_->setObjectName(QStringLiteral("serverStatus"));
@@ -146,11 +202,15 @@ void ServerBrowser::refresh()
             source.value(QStringLiteral("protocol")).toString() == QLatin1String("tls") ? tr("TLS")
             : source.value(QStringLiteral("protocol")).toString() == QLatin1String("stcp")
                 ? tr("TCP")
+            : source.value(QStringLiteral("protocol")).toString() == QLatin1String("lan")
+                ? tr("Local LAN")
             : source.value(QStringLiteral("protocol")).toString() == QLatin1String("udp")
                 ? tr("UDP")
                 : tr("Unavailable"),
-            source.value(QStringLiteral("host")).toString() + QStringLiteral(":") +
-                QString::number(source.value(QStringLiteral("port")).toInt()),
+            source.value("protocol") == QLatin1String("lan")
+                ? source.value("localAddress").toString()
+                : source.value(QStringLiteral("host")).toString() + QStringLiteral(":") +
+                      QString::number(source.value(QStringLiteral("port")).toInt()),
             source.value(QStringLiteral("enabled")).toBool(),
             validateServer(source).isEmpty());
         connect(active, &QAbstractButton::clicked, this, [this, id](bool enabled) {
@@ -175,23 +235,11 @@ void ServerBrowser::refresh()
 }
 void ServerBrowser::status()
 {
-    QStringList peers;
-    const auto stats = servers_.statistics();
-    for (auto it = stats.begin(); it != stats.end(); ++it) {
-        if (it.key().startsWith(QLatin1String("LAN/"))) {
-            peers.append(it.key().mid(4) + QStringLiteral(": ") +
-                         it.value().toObject().value(QStringLiteral("state")).toString());
-        }
-    }
-    const auto text = (table_->selectedId().isEmpty()
-                           ? QString{}
-                           : servers_.status(table_->selectedId()) + QStringLiteral(" ")) +
-                      stats.value(QStringLiteral("lan")).toString(tr("LAN discovery inactive")) +
-                      tr(". Peers: %1.").arg(peers.size());
+    const auto id = table_->selectedId();
+    const auto text = id.isEmpty() ? QString{} : servers_.status(id);
     if (status_->toPlainText() != text) {
         status_->setPlainText(text);
     }
-    status_->setToolTip(peers.join(QLatin1Char('\n')).toHtmlEscaped());
 }
 void ServerBrowser::edit(bool adding)
 {
@@ -208,7 +256,7 @@ void ServerBrowser::edit(bool adding)
     SettingsDialog dialog(
         {{id,
           tr("CoT server"),
-          serverFields(),
+          serverFields(adding ? serverDefaults() : servers_.sources().value(id).toObject()),
           adding ? serverDefaults() : servers_.sources().value(id).toObject(),
           validateServer,
           [this, id, &error](const QJsonObject &v) {

@@ -2,7 +2,7 @@
 
 SWAK receives CoT XML from multiple server connections. Open Tools > Servers, File > Settings > Servers, or the Servers pane. Add creates an empty entry. Edit and Delete affect the selected row. Each Active checkbox controls one connection. Names follow the system alphabetic order.
 
-The browser replaces the UDP receiver. Existing UDP addresses, ports, and startup choices become a Legacy UDP input. Its stable component and pane identifiers remain `org.swak.udp` and `org.swak.udp.pane`. Unsupported saved protocols remain in the profile and do not connect.
+The browser replaces the UDP receiver. The application removes the automatic Legacy UDP input entry. Explicit UDP entries remain available. Its stable component and pane identifiers remain `org.swak.udp` and `org.swak.udp.pane`. Unsupported saved protocols remain in the profile and do not connect.
 
 TLS is the default protocol. The default port is 8089. Certificate validation remains required. Set the CA certificate path for a private server authority. Set the client certificate path for certificate authentication. PEM certificates require a separate PEM private key. PKCS12 files contain the certificate and key together.
 
@@ -20,15 +20,15 @@ The generator uses this identity when it opens and when the identity changes. Us
 
 Generate event normally adds a local event. Enable Send generated CoT to connected servers and LAN peers to transmit it. Only connected TCP, TLS, and established LAN sessions receive generated messages. UDP inputs remain receive-only. Received events are never forwarded automatically. This rule prevents forwarding loops across servers and peers.
 
-# Optional LAN peers
+# Local LAN servers
 
-LAN peers provides serverless discovery and direct CoT exchange. Enable it and select one active IPv4 network interface. The mode remains disabled in a new profile. It uses plaintext without peer authentication. Use it only on a trusted local network.
+Local LAN provides serverless discovery and direct CoT exchange. Add a server and select Local LAN as its protocol. Select an active IPv4 interface, then enable the entry in the Active column. A new profile contains no LAN entry. It uses plaintext without peer authentication. Use it only on a trusted local network.
 
 SWAK sends a small broadcast every five seconds on UDP port 17421. The broadcast contains a protocol name, version, random session identifier, and TCP listener port. It contains no location, callsign, certificate, or password. Its IP time-to-live is one. Discovery accepts only addresses on the selected subnet. It rejects loopback, multicast, network, broadcast, and local addresses.
 
 Two peers use their session identifiers to choose one connection initiator. The lower identifier connects to the higher identifier. Each side sends `SWAK-COT/1`, a space, its discovery identifier, and a newline. Each side compares the greeting with recent discovery data before accepting CoT. The greeting prevents accidental protocol mixing. It does not authenticate a peer.
 
-Discovery records expire after 20 seconds. The client allows at most 16 peers. A peer connection uses the same XML limits and timeout rules as a server connection. Multiple clients on the same IP address do not discover each other. IPv6 discovery, routed discovery, relay forwarding, and automatic firewall changes are not supported.
+Discovery records expire after 20 seconds. Each LAN entry retains at most 16 discovered peers. The client allows at most 16 connected peers across all LAN entries. A peer connection uses the same XML limits and timeout rules as a server connection. Multiple clients on the same IP address do not discover each other. IPv6 discovery, routed discovery, relay forwarding, and automatic firewall changes are not supported.
 
 # CoT movement and expiration
 
@@ -78,4 +78,14 @@ The Servers pane shows full connection errors in a read-only text box. Select an
 
 For the local simulator, use TCP CoT stream at 127.0.0.1:18087. Start the separate emulator first. Its default listener does not accept TLS. Read [CoT emulator](cot-emulator.md) for remote connections and startup errors.
 
-The Active column controls server connections. The editor preserves that state and does not show a second Connect checkbox. Select TLS to enable the certificate, private key, and password fields. TCP and UDP keep those fields disabled without removing stored credentials.
+The Active column controls server connections. The editor preserves that state and does not show a second Connect checkbox. Select TLS to enable the certificate, private key, and password fields. TCP, UDP, and Local LAN keep those fields disabled without removing stored credentials.
+
+# Interface selection and LAN status
+
+Each server editor includes an Interface selector. It lists local addresses with their interface names. System default uses normal routing for TCP and TLS. For UDP, it uses the configured local bind address. An explicit interface address binds the socket to that address. The operating system still controls routing. A missing address produces a connection error without fallback.
+
+Local LAN requires an explicit, non-loopback IPv4 address. Its Host and Port fields remain disabled because discovery supplies peer addresses and ports. Separate LAN entries can use separate interfaces. Changing, disabling, or deleting an entry closes only its discovery sockets and peer sessions. Reconnect restarts all active entries.
+
+Tools > Plugins > Local LAN opens the status pane. It shows the status of each LAN entry and a read-only table of discovered peers. Columns show the server, peer identifier, address, port, connection status, received messages, and rejected messages. The pane uses the same saved layout as other panes.
+
+An active global LAN configuration from an older profile becomes a Local LAN server entry when the catalog has space. An inactive configuration creates no entry. The serverSchemaVersion field prevents repeated migration after the user deletes the new entry. The interface address remains visible as unavailable on a computer that does not have it. Select a replacement interface before connecting.

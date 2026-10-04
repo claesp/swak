@@ -115,9 +115,19 @@ public:
     virtual void
     populateToolbar(PluginServices &services, QToolBar &toolbar, QMenu *pluginMenu) = 0;
 };
+struct PluginPane
+{
+    QString id;
+    QString title;
+    QWidget *widget = nullptr;
+};
 class SourcePlugin
 {
 public:
+    virtual QList<PluginPane> additionalPanes(PluginServices &, QWidget *)
+    {
+        return {};
+    }
     virtual QString paneId() const
     {
         return {};

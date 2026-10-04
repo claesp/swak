@@ -3,6 +3,7 @@
 #include "core/identity.h"
 #include "core/lan_protocol.h"
 #include "core/projection.h"
+#include "core/server_browser.h"
 #include "core/servers.h"
 #include "core/store.h"
 
@@ -10,14 +11,17 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QJsonDocument>
+#include <QPlainTextEdit>
 #include <QPointer>
 #include <QSignalSpy>
 #include <QSslConfiguration>
 #include <QSslKey>
 #include <QSslSocket>
+#include <QTableWidget>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTest>
+#include <QUdpSocket>
 #include <QUuid>
 
 #include <algorithm>
@@ -190,12 +194,15 @@ private slots:
         }
         Store firstStore, secondStore;
         Servers first(firstStore), second(secondStore);
-        const QJsonObject firstLan{{QStringLiteral("enabled"), true},
-                                   {QStringLiteral("address"), QStringLiteral("192.0.2.1")}};
-        const QJsonObject secondLan{{QStringLiteral("enabled"), true},
-                                    {QStringLiteral("address"), QStringLiteral("192.0.2.2")}};
-        QVERIFY(first.setLan(firstLan).isEmpty());
-        QVERIFY(second.setLan(secondLan).isEmpty());
+        auto firstLan = serverDefaults();
+        firstLan.insert("name", "First LAN");
+        firstLan.insert("protocol", "lan");
+        firstLan.insert("enabled", true);
+        firstLan.insert("localAddress", "192.0.2.1");
+        auto secondLan = firstLan;
+        secondLan.insert("localAddress", "192.0.2.2");
+        QVERIFY(first.put("lan", firstLan).isEmpty());
+        QVERIFY(second.put("lan", secondLan).isEmpty());
         const auto connected = [](const Servers &servers) {
             const auto states = servers.statistics();
             return std::any_of(states.begin(), states.end(), [](const auto &state) {
@@ -224,12 +231,155 @@ private slots:
         QTest::qWait(100);
         QCOMPARE(firstStore.rowCount(), 1);
         QCOMPARE(secondStore.rowCount(), 1);
+        LocalLanStatus pane(first);
+        auto *table = pane.findChild<QTableWidget *>("localLanPeers");
+        QVERIFY(table);
+        QCOMPARE(table->rowCount(), 1);
+        QCOMPARE(table->item(0, 2)->text(), QStringLiteral("192.0.2.2"));
+        QCOMPARE(table->item(0, 4)->text(), QStringLiteral("Connected"));
+        QVERIFY(!(table->item(0, 0)->flags() & Qt::ItemIsEditable));
+        table->setCurrentCell(0, 0);
+        auto otherFirst = firstLan, otherSecond = secondLan;
+        otherFirst.insert("localAddress", "198.51.100.1");
+        otherSecond.insert("localAddress", "198.51.100.2");
+        QVERIFY(first.put("other", otherFirst).isEmpty());
+        QVERIFY(second.put("other", otherSecond).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return table->rowCount() == 2 &&
+                       table->item(1, 4)->text() == QStringLiteral("Connected");
+            },
+            12000));
+        QCOMPARE(table->item(table->currentRow(), 2)->text(), QStringLiteral("192.0.2.2"));
+        first.remove("other");
+        second.remove("other");
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return table->rowCount() == 1;
+            },
+            3000));
+        QVERIFY(connected(first) && connected(second));
+        QSignalSpy statusChanges(&first, &Servers::statusChanged);
+        first.reconnect();
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return statusChanges.count() >= 2;
+            },
+            12000));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return connected(first) && connected(second);
+            },
+            12000));
+        QVERIFY(second.send(sampleEvent(QStringLiteral("after-reconnect"))).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return firstStore.rowCount() == 2;
+            },
+            3000));
         auto disabled = secondLan;
         disabled.insert(QStringLiteral("enabled"), false);
-        QVERIFY(second.setLan(disabled).isEmpty());
+        QVERIFY(second.put("lan", disabled).isEmpty());
         QVERIFY(QTest::qWaitFor(
             [&] {
                 return !connected(first) && !connected(second);
+            },
+            3000));
+    }
+    void serverMigration()
+    {
+        Store store;
+        Servers servers(store);
+        servers.restorePreferences({{"address", "127.0.0.1"}, {"port", 6969}, {"running", true}});
+        QVERIFY(servers.sources().isEmpty());
+        servers.restorePreferences(
+            {{"servers", QJsonObject{{"legacy-udp", source(6969)}, {"saved", source(8088)}}},
+             {"lan", QJsonObject{{"enabled", true}, {"address", "192.0.2.1"}}}});
+        QVERIFY(!servers.sources().contains("legacy-udp"));
+        QCOMPARE(servers.sources().size(), 2);
+        QCOMPARE(servers.sources().value("migrated-lan").toObject().value("protocol").toString(),
+                 QStringLiteral("lan"));
+        servers.remove("migrated-lan");
+        auto saved = servers.savePreferences();
+        saved.insert("lan", QJsonObject{{"enabled", true}, {"address", "192.0.2.1"}});
+        servers.restorePreferences(saved);
+        QCOMPARE(servers.sources().size(), 1);
+        LocalLanStatus pane(servers);
+        auto *summary = pane.findChild<QPlainTextEdit *>("localLanSummary");
+        QVERIFY(summary->toPlainText().contains("No Local LAN servers"));
+        auto lan = serverDefaults();
+        lan.insert("name", "Unavailable LAN");
+        lan.insert("protocol", "lan");
+        lan.insert("localAddress", "203.0.113.254");
+        QVERIFY(servers.put("lan", lan).isEmpty());
+        QVERIFY(summary->toPlainText().contains("Disconnected"));
+        lan.insert("enabled", true);
+        QVERIFY(servers.put("lan", lan).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return summary->toPlainText().contains("active, non-loopback");
+            },
+            3000));
+        servers.remove("lan");
+        QVERIFY(summary->toPlainText().contains("No Local LAN servers"));
+        const auto fields = serverFields(lan);
+        const auto interface = std::find_if(fields.begin(), fields.end(), [](const auto &f) {
+            return f.path == "localAddress";
+        });
+        QVERIFY(interface != fields.end());
+    }
+    void interfaceBinding()
+    {
+        Store store;
+        Servers servers(store);
+        QTcpServer listener;
+        QVERIFY(listener.listen(QHostAddress::LocalHost, 0));
+        auto entry = source(listener.serverPort());
+        entry.insert("localAddress", "203.0.113.254");
+        QVERIFY(servers.put("bound", entry).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return servers.status("bound").contains("Cannot bind interface 203.0.113.254");
+            },
+            3000));
+        QVERIFY(!listener.hasPendingConnections());
+        entry.insert("localAddress", "127.0.0.1");
+        QVERIFY(servers.put("bound", entry).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return listener.hasPendingConnections();
+            },
+            3000));
+        std::unique_ptr<QTcpSocket> peer(listener.nextPendingConnection());
+        peer->setParent(nullptr);
+        QCOMPARE(peer->peerAddress(), QHostAddress(QHostAddress::LocalHost));
+        servers.remove("bound");
+        QUdpSocket reservation;
+        QVERIFY(reservation.bind(QHostAddress::LocalHost, 0));
+        entry.insert("port", reservation.localPort());
+        reservation.close();
+        entry.insert("protocol", "udp");
+        entry.insert("host", "0.0.0.0");
+        QVERIFY(servers.put("udp", entry).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return servers.status("udp").contains("Listening");
+            },
+            3000));
+        QUdpSocket sender;
+        sender.writeDatagram(encodeCot(sampleEvent()),
+                             QHostAddress::LocalHost,
+                             static_cast<quint16>(entry.value("port").toInt()));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return store.rowCount() == 1;
+            },
+            3000));
+        entry.insert("localAddress", "203.0.113.254");
+        QVERIFY(servers.put("udp", entry).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return servers.status("udp").contains("Cannot bind UDP");
             },
             3000));
     }
@@ -245,6 +395,12 @@ private slots:
             copy.insert(QStringLiteral("host"), host);
             QVERIFY(!validateServer(copy).isEmpty());
         }
+        for (const auto &local :
+             QJsonArray{42, "invalid", "0.0.0.0", "::", "224.0.0.1", "255.255.255.255"}) {
+            auto invalid = v;
+            invalid.insert("localAddress", local);
+            QVERIFY(!validateServer(invalid).isEmpty());
+        }
         for (int port : {0, 65536, -1}) {
             auto copy = v;
             copy.insert(QStringLiteral("port"), port);
@@ -255,10 +411,11 @@ private slots:
         QVERIFY(!validateServer(copy).isEmpty());
         Store store;
         Servers servers(store);
-        QVERIFY(!servers
-                     .setLan({{QStringLiteral("enabled"), true},
-                              {QStringLiteral("address"), QStringLiteral("127.0.0.1")}})
-                     .isEmpty());
+        auto invalidLan = serverDefaults();
+        invalidLan.insert("name", "Invalid LAN");
+        invalidLan.insert("protocol", "lan");
+        invalidLan.insert("localAddress", "127.0.0.1");
+        QVERIFY(!servers.put("lan", invalidLan).isEmpty());
         for (int i = 0; i < 16; ++i) {
             copy = v;
             copy.insert(QStringLiteral("enabled"), false);
@@ -494,6 +651,14 @@ private slots:
         Servers servers(store);
         auto v = source(listener.serverPort());
         v.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        v.insert("localAddress", "203.0.113.254");
+        QVERIFY(servers.put(QStringLiteral("tls"), v).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return servers.status("tls").contains("Cannot bind interface");
+            },
+            3000));
+        v.insert("localAddress", "127.0.0.1");
         QVERIFY(servers.put(QStringLiteral("tls"), v).isEmpty());
         QVERIFY(QTest::qWaitFor(
             [&] {

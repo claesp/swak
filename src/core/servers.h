@@ -12,7 +12,7 @@ class Store;
 class ServerWorker;
 struct ServerMailbox;
 QJsonObject serverDefaults();
-QList<SettingField> serverFields();
+QList<SettingField> serverFields(const QJsonObject &source = {});
 QString validateServer(const QJsonObject &source);
 class Servers final : public QObject, public SettingsParticipant, public SettingsWidgetProvider
 {
@@ -31,7 +31,6 @@ public:
     QList<SettingField> settingsFields() const override;
     QJsonObject savePreferences() const override;
     void restorePreferences(const QJsonObject &values) override;
-    QString validateSettings(const QJsonObject &values) const override;
     QWidget *createSettingsWidget(QWidget *parent) override;
     QJsonObject sources() const
     {
@@ -43,11 +42,6 @@ public:
     QJsonObject statistics() const;
     QString send(const Event &event);
     void reconnect();
-    QJsonObject lan() const
-    {
-        return lan_;
-    }
-    QString setLan(const QJsonObject &values);
 signals:
     void changed();
     void statusChanged();
@@ -62,7 +56,6 @@ private:
     std::shared_ptr<ServerMailbox> mailbox_;
     QTimer timer_;
     QJsonObject sources_;
-    QJsonObject lan_;
     QJsonObject stats_;
     quint64 generation_ = 0;
 };

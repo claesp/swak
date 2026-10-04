@@ -312,7 +312,7 @@ TracePlugin uses the existing menu and map-tool roles. Its MANIFEST declares org
 
 PaneContent::watchPane attaches the host dock to the content. PaneContent::paneClosed receives an explicit close event from that dock. The default method does nothing. Information clears both map selection and CoT selection. Child dialogs and tab changes do not count as pane closure.
 
-SettingField supports enabledBy and enabledValue. A field names a choice field in the same configuration page and its required value. SettingsDialog disables the editor and label when the value differs. Disabled fields retain their values. The Servers form uses this for TLS credentials. These additions retain plugin API version 2 because this build links and rebuilds all native plugins together.
+SettingField supports enabledBy and enabledValue. A field names a choice field in the same configuration page and its required value. An enabledValue array accepts any listed value. SettingsDialog disables the editor and label when the value differs. Disabled fields retain their values. The Servers form uses this for TLS credentials. These additions retain plugin API version 2 because this build links and rebuilds all native plugins together.
 
 Store::eventAccepted emits each accepted authoritative Event on the GUI thread, including events inside a batch. A receiver must copy any data that it retains. Trace uses this signal so a batch cannot hide intermediate accepted positions. Store::changed still marks the completed batch for drawing and disappearance handling.
 
@@ -404,3 +404,11 @@ GridTypes is a map-owned SettingsParticipant and SettingsWidgetProvider. Its com
 Each record contains name, system, color, opacity, spacing, width, and format. The renderer bounds zones, per-axis lines, and line samples. GeographicLib supplies UTM/UPS conversion and MGRS notation. Drawing uses the current Viewport and logical pixels. This extends the same-build static API without a new plugin loading mechanism.
 
 MapPanels publishes its occupied region through the shared MapOcclusionProperty widget property. The map positions reference controls above bottom overlays on the left edge. Map coordinates and click targets still use the complete viewport. Scale distance uses the legend position, not a resized map projection.
+
+# Additional source panes
+
+SourcePlugin::additionalPanes returns optional PluginPane records. Each record supplies a stable id, a translated title, and a widget owned by the supplied parent. The host places each widget in an overlay pane and adds a checkable Tools > Plugins action. The shared layout service saves geometry and visibility. Plugins declare these panes in the MANIFEST additionalPanes array with id and name fields.
+
+The Servers plugin supplies org.swak.lan.pane for Local LAN status and peer rows. It uses the same Servers service as the main browser. Servers stores Local LAN configuration as ordinary server records with protocol lan and localAddress. The former global lan getter and setter no longer exist. Statistics identify each peer through serverId and peerId. LAN server statistics expose state, address, and peer count.
+
+Plugin API version 2 remains the same because this build compiles all static plugins together. The outer preference format remains version 1. Servers uses its own serverSchemaVersion value of 2 to track migration inside that format.
