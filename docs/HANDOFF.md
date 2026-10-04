@@ -1256,3 +1256,9 @@ The native sanitizer runner still exits with status 23 for the known Mesa leak o
 Final coverage passes ten suites and all 94 native cases in build/quality/20261004-232914-coverage-74664. It reaches 12216 of 13169 lines, 1195 of 1266 functions, and 17669 of 33764 branches. Every GridTypes and Predict function runs. The new Area measurement helper also runs. Remaining measurement gaps include empty and subpixel segment guards. Existing shape cancellation, missing-target, editor-limit, and conversion-error gaps remain.
 
 Focused native tests pass at 200 percent display scaling in build/predict-grid-shapes-hidpi.log. Preview screenshots are under build/predict-grid-shapes-native. The commit is followed by release and debug builds in build/predict-grid-shapes-release-committed.log and build/predict-grid-shapes-debug-committed.log. The executable remains build/release/swak. Tests use Qt 6.8.2 and GCC 14.2. No dependency changes in this task.
+
+## 2026-10-04: Compact delete confirmation
+
+The shared delete confirmation uses QMessageBox::NoIcon. It no longer shows the large question icon. Delete remains the default action for Enter. Escape still cancels. The existing native deleteConfirmationKeys test passes in build/delete-no-icon-gui.log. The inspected screenshot is build/delete-no-icon.png. The debug build passes without compiler warnings in build/delete-no-icon-debug.log.
+
+This change affects dialog appearance only. The focused native test covers both responses. The earlier broad diagnostic results remain recorded above. Release and debug builds follow the commit, with logs build/delete-no-icon-release-committed.log and build/delete-no-icon-debug-committed.log.

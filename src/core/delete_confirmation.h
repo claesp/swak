@@ -7,7 +7,7 @@
 namespace swak {
 inline bool confirmDeletion(QWidget *parent, const QString &name)
 {
-    QMessageBox dialog(QMessageBox::Question,
+    QMessageBox dialog(QMessageBox::NoIcon,
                        QObject::tr("Delete"),
                        QObject::tr("Delete %1?").arg(name.left(256)),
                        QMessageBox::NoButton,
