@@ -1,5 +1,4 @@
 #include "core/interfaces.h"
-#include "core/map_label.h"
 #include "core/map_tools.h"
 #include "core/maps.h"
 #include "core/prediction.h"
@@ -190,41 +189,33 @@ public:
             const QColor color(qRound(base.red() * (1 - source.gray) + gray * source.gray),
                                qRound(base.green() * (1 - source.gray) + gray * source.gray),
                                qRound(base.blue() * (1 - source.gray) + gray * source.gray));
-            QList<QRectF> labels;
-            // Draw long forecasts first so nearby endpoints remain visible.
-            for (auto minute = Minutes.crbegin(); minute != Minutes.crend(); ++minute) {
-                const auto found = ends.constFind(endpointId(source.event.uid, *minute));
+            auto previous = source.world;
+            double previousOpacity = 1;
+            for (qsizetype index = 0; index < static_cast<qsizetype>(Minutes.size()); ++index) {
+                const auto found = ends.constFind(
+                    endpointId(source.event.uid, Minutes.at(static_cast<size_t>(index))));
                 if (found == ends.cend()) {
-                    continue;
+                    break;
                 }
                 auto target = found->world;
-                target.setX(target.x() - std::round(target.x() - source.world.x()));
-                painter.setOpacity(opacity_ * source.opacity * found->opacity);
-                painter.setPen(QPen(color, width_, Qt::DashLine, Qt::RoundCap));
-                painter.setBrush(color);
+                target.setX(target.x() - std::round(target.x() - previous.x()));
+                painter.setOpacity(opacity_ * source.opacity *
+                                   std::min(previousOpacity, found->opacity));
+                const auto delta = (target - previous) * scale;
+                const auto length = std::hypot(delta.x(), delta.y());
+                const auto normal =
+                    length > .001 ? QPointF(-delta.y(), delta.x()) / length : QPointF(0, 1);
+                const auto tick = normal * (7.0 - static_cast<double>(index) * 2);
                 for (int wrap = -1; wrap <= 1; ++wrap) {
                     const auto offset = origin + QPointF(wrap * scale, 0);
                     const auto end = target * scale + offset;
-                    painter.drawLine(source.world * scale + offset, end);
-                    painter.drawEllipse(end, 3, 3);
-                    if (QRectF(QPointF{}, view.size).contains(end)) {
-                        const auto text = tr("%1 min").arg(*minute);
-                        auto baseline = end + QPointF(7, painter.fontMetrics().ascent() + 7);
-                        auto bounds = mapLabelBounds(painter.fontMetrics(), baseline, text);
-                        for (int attempt = 0; attempt < 9; ++attempt) {
-                            if (std::none_of(
-                                    labels.cbegin(), labels.cend(), [&bounds](const QRectF &label) {
-                                        return label.intersects(bounds);
-                                    })) {
-                                break;
-                            }
-                            baseline.ry() += bounds.height() + 2;
-                            bounds = mapLabelBounds(painter.fontMetrics(), baseline, text);
-                        }
-                        labels.append(bounds);
-                        paintMapLabel(painter, baseline, text);
-                    }
+                    painter.setPen(QPen(color, width_, Qt::DashLine, Qt::RoundCap));
+                    painter.drawLine(previous * scale + offset, end);
+                    painter.setPen(QPen(color, width_, Qt::SolidLine, Qt::RoundCap));
+                    painter.drawLine(end - tick, end + tick);
                 }
+                previous = target;
+                previousOpacity = found->opacity;
             }
         }
         painter.restore();

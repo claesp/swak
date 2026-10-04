@@ -1176,3 +1176,29 @@ Final source style passed in build/quality/20261004-215839-style-3. Source analy
 Final coverage passed ten suites and 90 native cases in build/quality/20261004-215903-coverage-46102. Additional targeted tests then covered future-dated sources, unselected sources, missing map services, and the fitted-speed limit. Those tests passed in debug, sanitizer, and coverage builds. Their logs use build/predict-gap-*.log. The first sandboxed sanitizer retry could not inspect process memory. The retry outside that restriction passed with leak detection enabled.
 
 The refreshed coverage report reaches 11587 of 12530 lines, 1144 of 1216 functions, and 16568 of 31694 branches. Every Predict function ran. Remaining Predictor lines include the unreachable zero-variance defense and compiler bookkeeping for multiline expressions. Existing application gaps include client-key errors, startup rejection logging, and some cache and editor branches. Source analysis reported no unused first-party function.
+
+## 2026-10-04: Forecast trends, deletion, and map lock
+
+Predict now uses the latest movement segment for speed and heading. A third position supplies acceleration and heading change. Acceleration is limited to five meters per second squared. Turn rate is limited to five degrees per second. Both trends decay with a 30-second time constant. Bounded five-second steps produce the three forecast endpoints. Speed stays between zero and 1000 meters per second. History limits and reset rules remain in force.
+
+Forecast drawing connects the object to one minute, then ten minutes, then thirty minutes. Perpendicular marks replace text labels. Their lengths are 14, 10, and 6 logical pixels. Existing animation, pause, teleport, stale appearance, and target limits still apply. The Information pane now shows Restricted as Yes or No for Areas.
+
+All Delete actions open the shared confirmation dialog. This includes objects, area corners, providers, servers, and marker collections. Enter deletes and Escape cancels. Action labels use Delete .... Edit precedes Delete in object context menus. Keyboard repeat does not open repeated confirmations. Object identities are copied before the dialog so selection changes cannot change the deletion target. Model removal still supports noninteractive callers without a dialog.
+
+MapPanels stops unhandled keys at the overlay boundary, after child controls process them. Tables cannot pass arrow keys to map navigation. The main toolbar has a lock toggle at its far right. It stops drag, double-click centering, wheel zoom, keyboard pan, and keyboard zoom. It also stops an active pan. Object selection and tools remain available. The navigationLocked preference survives restart and appears in Map configuration.
+
+PluginServices exposes the map-owned navigationLock action. The shared toolbar helper places trailing actions after an expanding spacer. Repeated arrangement replaces that spacer. The static plugins use the same build and retain API version 2. Updated plugin manifests carry patch versions. No dependency changed.
+
+The debug suite passed 92 native cases and 53 core cases in build/navigation-gui-final.log and build/navigation-core.log. Native screenshots show the forecast marks and the right-aligned lock button. The release build passed without compiler warnings in build/navigation-release.log. Source analysis passed in build/quality/20261004-222526-analyze-17. The quick sanitizer mode passed ten suites in build/quality/20261004-222508-quick-50726.
+
+All 92 native sanitizer cases passed in build/quality/20261004-222710-gui-52446. The runner still fails with status 23 for the known Mesa leak of 240732 bytes in 1073 allocations. This leak remains unsuppressed. The dialog screenshot confirms the Delete and Cancel controls. Native tests also exercise Enter, Escape, object Undo, server cancellation, menu order, and repeated toolbar arrangement.
+
+The 60-second workload passed in build/quality/20261004-222803-soak-52825. It completed 942 cycles with 17305600 bytes of peak memory growth. The maximum heartbeat gap was 64 milliseconds. Idle CPU time was 0.019 seconds. All 49 first-party .h files compiled independently in build/navigation-headers.log.
+
+Hardware graphics, native Wayland, two-hour operation, forecast accuracy on real routes, and every locale/theme combination remain unqualified. The predictor estimates recent motion trends. It does not know planned routes or later changes in operator intent. This task rebuilds the development release executable but does not qualify a production release.
+
+Coverage passed ten suites and all 92 native cases in build/quality/20261004-222922-coverage-53527. Additional focused tests covered cancellation for map providers, data providers, and marker collections. Those tests passed in debug, sanitizer, and coverage builds. The sanitizer subset still reports only the recorded Mesa leak. The strengthened trend test passed in all three builds. Focused native tests passed at 200% scaling in build/navigation-hidpi.log.
+
+The refreshed report reaches 11679 of 12637 lines, 1144 of 1220 functions, and 16743 of 32086 branches. Every PredictionHistory, PredictTool, and deletion-helper function ran. Remaining gaps include expression bookkeeping in prediction arithmetic, cancellation of an Area corner deletion, missing deletion targets, and some locked-tool combinations. Existing gaps include client-key errors, startup rejection logging, and cache paths. Source analysis reports no unused first-party function. These results do not prove that all faults are absent.
+
+Final style evidence uses build/navigation-quality-style-finish.log. Final builds after the commit use build/navigation-release-committed.log and build/navigation-debug-committed.log. The release executable remains build/release/swak. These tests use Qt 6.8.2 and GCC 14.2.

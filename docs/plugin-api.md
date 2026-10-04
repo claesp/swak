@@ -367,7 +367,7 @@ MapItem.radius stores the unscaled symbol radius. MapSelection applies the viewp
 
 PredictPlugin uses MenuPlugin, MapExtension, MapTool, and SettingsParticipant. Its MANIFEST declares org.swak.predict. Its context and Information actions share the same implementation through the existing MapTool hooks. The menu owns the tool. No window-specific code or new dependency is required.
 
-PredictionHistory fits a constant velocity to bounded recent positions and unwraps longitude before the fit. It converts that velocity to ground speed and bearing at the latest latitude. Each forecast follows a great-circle direction for its requested duration. The model accepts horizons through 1800 seconds. It does not use the animation estimate as input.
+PredictionHistory derives current speed and bearing from the latest segment. The preceding segment supplies acceleration and heading change. Acceleration is bounded to five meters per second squared. Heading change is bounded to five degrees per second. Both trends decay with a 30-second time constant. Five-second integration steps follow great-circle segments, with speed bounded to 1000 meters per second. The model accepts horizons through 1800 seconds. It does not use the animation estimate as input.
 
 PredictTool listens to Store::eventAccepted and keeps history only for enabled CoT identities. It uses a private TrackMotion instance for forecast endpoints. That member has no QObject parent because it is not a separate configuration participant. It inherits movement duration, teleport distance, and fade duration from the store animation. Its short movement extrapolation is disabled because the endpoints already represent forecasts.
 
@@ -376,3 +376,16 @@ The source TrackMotion snapshot supplies the line origin, stale color, and opaci
 TrackMotion::remove discards a live animation record without a fade. A paused snapshot remains visible until resume. Predict uses this method for removed targets and new history after an expired source. Explicit target removal also removes that target from painting immediately.
 
 UserObject.restricted stores the Area restriction flag. JSON uses the optional restricted boolean and defaults to false when the field is absent or invalid. ObjectEditor exposes the control only for polygon records and emits configurationChanged for draft previews. The Area renderer adds Qt BDiagPattern in screen coordinates above the existing fill. Editing vertices retains the flag because it is separate from geometry.
+
+
+# Navigation and deletion controls
+
+PluginServices::navigationLock supplies an optional QAction owned by the map view. The view publishes it during creation. The map toolbar plugin exposes the same action. Its checked state blocks user panning and zooming and persists as navigationLocked. All static plugins rebuild together, so the common API version remains 2.
+
+The swakToolbarTrailing action property places controls after an expanding spacer. arrangeToolbarSections handles this property and the existing creation and measurement groups. Repeated arrangement replaces the old spacer.
+
+MapPanels consumes unhandled keyboard and wheel events after child controls process them. Overlay boundaries must not forward navigation events to the map.
+
+The shared confirmDeletion helper uses plain text and bounds the displayed name to 256 characters. Enter activates Delete. Escape activates Cancel. deleteObject captures the object identity before the dialog and delegates accepted deletion to UserObjects. Model removal remains available without a dialog for noninteractive work. Interactive deletion paths must use the shared helper. Context actions use menuOrder to place Edit before Delete ... while other entries retain locale ordering.
+
+Predict draws successive segments from the source to 1 minute, then 10 minutes, then 30 minutes. Perpendicular endpoint marks measure 14, 10, and 6 logical pixels. Forecast labels are absent. Areas expose their Restricted flag as a derived Information property.

@@ -3,7 +3,7 @@
   "id": "org.swak.polygons",
   "name": "Areas",
   "description": "Create and edit local areas.",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "apiVersion": 2,
   "entryPoint": "PolygonPlugin",
   "linkage": "static",

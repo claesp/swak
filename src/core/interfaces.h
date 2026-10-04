@@ -34,6 +34,7 @@ struct PluginServices
     MarkerCollections *collections = nullptr;
     Identity *identity = nullptr;
     Servers *servers = nullptr;
+    QAction *navigationLock = nullptr;
 };
 class Plugin
 {

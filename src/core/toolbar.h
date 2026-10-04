@@ -16,9 +16,15 @@ inline void setToolbarSection(QAction &action, ToolbarSection section, int order
 }
 inline void arrangeToolbarSections(QToolBar &toolbar)
 {
-    QList<QAction *> grouped;
+    QList<QAction *> grouped, trailing;
     for (auto *action : toolbar.actions()) {
-        if (action->property("swakToolbarSection").isValid()) {
+        if (action->objectName() == QStringLiteral("toolbarTrailingSpaceAction")) {
+            toolbar.removeAction(action);
+            delete action;
+        } else if (action->property("swakToolbarTrailing").toBool()) {
+            trailing.append(action);
+            toolbar.removeAction(action);
+        } else if (action->property("swakToolbarSection").isValid()) {
             grouped.append(action);
             toolbar.removeAction(action);
         }
@@ -38,6 +44,15 @@ inline void arrangeToolbarSections(QToolBar &toolbar)
         }
         toolbar.addAction(action);
         section = next;
+    }
+    if (!trailing.isEmpty()) {
+        auto *space = new QWidget(&toolbar);
+        space->setObjectName(QStringLiteral("toolbarTrailingSpace"));
+        space->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        toolbar.addWidget(space)->setObjectName(QStringLiteral("toolbarTrailingSpaceAction"));
+        for (auto *action : trailing) {
+            toolbar.addAction(action);
+        }
     }
     bool separator = true;
     for (auto *action : toolbar.actions()) {

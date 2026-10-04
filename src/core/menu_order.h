@@ -27,6 +27,11 @@ inline void sortMenuActions(QMenu &menu)
             if (aTail != bTail) {
                 return aTail < bTail;
             }
+            const int aOrder = a->property("menuOrder").toInt();
+            const int bOrder = b->property("menuOrder").toInt();
+            if (aOrder != bOrder) {
+                return aOrder < bOrder;
+            }
             const auto label = [](const QAction *action) {
                 auto text = action->text().section('\t', 0, 0);
                 text.remove('&');

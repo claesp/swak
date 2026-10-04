@@ -6,6 +6,7 @@
 #include "core/activity.h"
 #include "core/cot.h"
 #include "core/cot_picker.h"
+#include "core/delete_confirmation.h"
 #include "core/identity.h"
 #include "core/interfaces.h"
 #include "core/logging.h"
@@ -22,6 +23,7 @@
 #include "core/servers.h"
 #include "core/settings_dialog.h"
 #include "core/tiles.h"
+#include "core/toolbar.h"
 #include "core/ui_icons.h"
 #include "core/user_objects.h"
 #include "swak/version.h"
@@ -258,6 +260,16 @@ public:
         return Kind::Tool;
     }
 };
+
+static void answerDeletion(Qt::Key key = Qt::Key_Return)
+{
+    QTimer::singleShot(0, qApp, [key] {
+        auto *dialog = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
+        QVERIFY(dialog);
+        QCOMPARE(dialog->objectName(), QStringLiteral("deleteConfirmation"));
+        QTest::keyClick(dialog, key);
+    });
+}
 
 class GuiTest final : public QObject
 {
@@ -955,6 +967,10 @@ private slots:
         });
         dialog->findChild<QPushButton *>(QStringLiteral("addMapProvider"))->click();
         QCOMPARE(list->rowCount(), originalCount + 1);
+        answerDeletion(Qt::Key_Escape);
+        dialog->findChild<QPushButton *>(QStringLiteral("removeMapProvider"))->click();
+        QCOMPARE(list->rowCount(), originalCount + 1);
+        answerDeletion();
         dialog->findChild<QPushButton *>(QStringLiteral("removeMapProvider"))->click();
         QCOMPARE(list->rowCount(), originalCount);
         for (int i = 0; i < list->rowCount(); ++i) {
@@ -1236,6 +1252,11 @@ private slots:
         auto *manager = restored.findChild<swak::DataManager *>();
         manager->findChild<QTableWidget *>(QStringLiteral("dataProviderList"))
             ->setCurrentCell(0, 1);
+        const auto countBeforeDelete = feeds->sources().size();
+        answerDeletion(Qt::Key_Escape);
+        manager->findChild<QPushButton *>(QStringLiteral("removeDataProvider"))->click();
+        QCOMPARE(feeds->sources().size(), countBeforeDelete);
+        answerDeletion();
         manager->findChild<QPushButton *>(QStringLiteral("removeDataProvider"))->click();
         QCOMPARE(feeds->sources().size(), 2);
         manager->close();
@@ -1389,6 +1410,10 @@ private slots:
         QCOMPARE(saves, 1);
         chooseFile(QStringLiteral("exportMarkerCollection"), {});
         QCOMPARE(saves, 1);
+        answerDeletion(Qt::Key_Escape);
+        manager.findChild<QPushButton *>(QStringLiteral("deleteMarkerCollection"))->click();
+        QVERIFY(collections.collections().contains(id));
+        answerDeletion();
         manager.findChild<QPushButton *>(QStringLiteral("deleteMarkerCollection"))->click();
         QVERIFY(!collections.collections().contains(id));
         chooseFile(QStringLiteral("importMarkerCollection"), file);
@@ -1411,6 +1436,7 @@ private slots:
         QVERIFY(manager.findChild<QLabel *>(QStringLiteral("markerCollectionStatus"))
                     ->text()
                     .contains(QStringLiteral("read-only")));
+        answerDeletion();
         manager.findChild<QPushButton *>(QStringLiteral("deleteMarkerCollection"))->click();
         QVERIFY(collections.collections().contains(swak::CoreMarkerCollection));
     }
@@ -2069,6 +2095,12 @@ private slots:
                     QVERIFY(menu);
                     auto *action = menu->findChild<QAction *>(actionName);
                     QVERIFY(action);
+                    if (actionName.startsWith(QStringLiteral("delete"))) {
+                        QCOMPARE(menu->actions().at(0)->objectName(), QStringLiteral("editMarker"));
+                        QCOMPARE(menu->actions().at(1), action);
+                        QCOMPARE(action->text(), QStringLiteral("Delete ..."));
+                        answerDeletion();
+                    }
                     action->trigger();
                     menu->close();
                 });
@@ -2121,12 +2153,17 @@ private slots:
             QCOMPARE(objects->find(id)->title, QStringLiteral("Updated marker"));
             QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, position());
             QVERIFY(selection->item());
+            answerDeletion(Qt::Key_Escape);
+            QTest::keyClick(map, Qt::Key_Backspace);
+            QCOMPARE(objects->items().size(), 1);
+            answerDeletion();
             QTest::keyClick(map, Qt::Key_Backspace);
             QVERIFY(objects->items().isEmpty());
             undo->trigger();
             QCOMPARE(objects->items().size(), 1);
             auto *readOnly = regular->findChild<QPlainTextEdit *>();
             QVERIFY(readOnly);
+            answerDeletion();
             QTest::keyClick(readOnly, Qt::Key_Delete);
             QVERIFY(objects->items().isEmpty());
             undo->trigger();
@@ -2159,6 +2196,7 @@ private slots:
             regular->activateWindow();
             QVERIFY(QTest::qWaitForWindowExposed(regular));
             readOnly->setFocus();
+            answerDeletion();
             QTest::keyClick(readOnly, Qt::Key_Delete);
             QVERIFY(!objects->find(id));
             QTest::keyClick(readOnly, Qt::Key_Z, Qt::ControlModifier);
@@ -2403,6 +2441,108 @@ private slots:
             restored.findChild<QWidget *>(QStringLiteral("informationPane")));
         QCOMPARE(info->savePreferences().value(QStringLiteral("dismissKey")).toString(),
                  QStringLiteral("F12"));
+    }
+    void deleteConfirmationKeys()
+    {
+        QWidget parent;
+        parent.show();
+        answerDeletion(Qt::Key_Escape);
+        QVERIFY(!swak::confirmDeletion(&parent, QStringLiteral("<b>Area</b>")));
+        QTimer::singleShot(0, &parent, [] {
+            auto *dialog = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
+            QVERIFY(dialog);
+            QVERIFY(dialog->grab().save(QStringLiteral("delete-confirmation.png")));
+            QTest::keyClick(dialog, Qt::Key_Return);
+        });
+        QVERIFY(swak::confirmDeletion(&parent, QStringLiteral("Area")));
+    }
+    void navigationLock()
+    {
+        QTemporaryDir directory;
+        const auto profile = directory.filePath(QStringLiteral("locked.json"));
+        {
+            swak::Window window(profile, QPluginLoader::staticInstances());
+            window.show();
+            window.activateWindow();
+            QVERIFY(QTest::qWaitForWindowExposed(&window));
+            auto *map = window.findChild<QOpenGLWidget *>();
+            auto *settings = dynamic_cast<swak::SettingsParticipant *>(map);
+            auto *lock = window.findChild<QAction *>(QStringLiteral("mapNavigationLock"));
+            QVERIFY(lock && settings);
+            settings->restorePreferences({{QStringLiteral("zoom"), 5}});
+            map->setFocus();
+            QVERIFY(QTest::qWaitFor([&] {
+                return map->hasFocus();
+            }));
+            auto *toolbar = window.findChild<QToolBar *>();
+            QCOMPARE(toolbar->actions().last(), lock);
+            swak::arrangeToolbarSections(*toolbar);
+            QCOMPARE(toolbar->actions().last(), lock);
+            QCOMPARE(
+                toolbar->findChildren<QWidget *>(QStringLiteral("toolbarTrailingSpace")).size(), 1);
+            const auto icon = lock->icon().pixmap(24, 24).toImage();
+            QTest::keyPress(map, Qt::Key_Right);
+            QTest::qWait(40);
+            lock->trigger();
+            QVERIFY(lock->isChecked());
+            QVERIFY(lock->icon().pixmap(24, 24).toImage() != icon);
+            const auto before = settings->savePreferences();
+            QTest::qWait(80);
+            QTest::keyRelease(map, Qt::Key_Right);
+            for (auto key :
+                 {Qt::Key_Left, Qt::Key_Right, Qt::Key_Up, Qt::Key_Down, Qt::Key_Q, Qt::Key_E}) {
+                QTest::keyPress(map, key);
+                QTest::qWait(20);
+                QTest::keyRelease(map, key);
+            }
+            QTest::mousePress(map, Qt::LeftButton, Qt::NoModifier, QPoint(100, 100));
+            QTest::mouseMove(map, QPoint(180, 180));
+            QTest::mouseRelease(map, Qt::LeftButton, Qt::NoModifier, QPoint(180, 180));
+            QTest::mouseDClick(map, Qt::LeftButton, Qt::NoModifier, QPoint(50, 50));
+            const auto wheel = [&] {
+                QWheelEvent event(QPointF(100, 100),
+                                  map->mapToGlobal(QPoint(100, 100)),
+                                  {},
+                                  QPoint(0, 120),
+                                  Qt::NoButton,
+                                  Qt::NoModifier,
+                                  Qt::NoScrollPhase,
+                                  false);
+                QApplication::sendEvent(map, &event);
+            };
+            wheel();
+            QCOMPARE(settings->savePreferences(), before);
+            lock->trigger();
+            wheel();
+            QVERIFY(settings->savePreferences().value(QStringLiteral("zoom")) !=
+                    before.value(QStringLiteral("zoom")));
+            auto *pane =
+                window.findChild<QDockWidget *>(QStringLiteral("org.swak.information.pane"));
+            QVERIFY(pane);
+            pane->show();
+            pane->raise();
+            auto *table = pane->findChild<QTableWidget *>();
+            QVERIFY(table);
+            table->setRowCount(1);
+            table->setItem(0, 0, new QTableWidgetItem(QStringLiteral("Value")));
+            table->setCurrentCell(0, 0);
+            table->setFocus();
+            QVERIFY(QTest::qWaitFor([&] {
+                return !map->hasFocus();
+            }));
+            const auto focused = settings->savePreferences();
+            for (auto key : {Qt::Key_Left, Qt::Key_Right, Qt::Key_Up, Qt::Key_Down}) {
+                QTest::keyPress(table, key);
+                QTest::qWait(50);
+                QTest::keyRelease(table, key);
+            }
+            QCOMPARE(settings->savePreferences(), focused);
+            lock->trigger();
+            QVERIFY(window.savePreferences());
+            QVERIFY(window.grab().save(QStringLiteral("navigation-lock.png")));
+        }
+        swak::Window restored(profile, QPluginLoader::staticInstances());
+        QVERIFY(restored.findChild<QAction *>(QStringLiteral("mapNavigationLock"))->isChecked());
     }
     void keyboardPanAndWheelSettings()
     {
@@ -3201,6 +3341,7 @@ private slots:
                 timer.stop();
                 auto *action = menu->findChild<QAction *>(pair.second);
                 QVERIFY(action);
+                answerDeletion();
                 action->trigger();
             });
             timer.start();
@@ -3373,6 +3514,7 @@ private slots:
                         frame.pixelColor(QPoint(200, 250) * map->devicePixelRatioF());
                     QVERIFY(color.blue() > color.red());
                 }
+                answerDeletion();
                 QTest::keyClick(map, Qt::Key_Delete);
                 QVERIFY(!objects->find(id));
                 objects->undoStack().undo();
@@ -3473,6 +3615,9 @@ private slots:
             restricted->click();
             editor->findChild<QPushButton *>(QStringLiteral("applyObject"))->click();
             QVERIFY(objects->find(id)->restricted);
+            QVERIFY(selection->item());
+            QCOMPARE(selection->item()->properties.value(QStringLiteral("Restricted")).toString(),
+                     QStringLiteral("Yes"));
             selection->clear();
             const auto saved = image();
             QVERIFY(saved != plain);
@@ -3647,6 +3792,9 @@ private slots:
                     seen = true;
                     QCOMPARE(entry->isEnabled(), enabled);
                     if (enabled) {
+                        if (name.startsWith(QStringLiteral("delete"))) {
+                            answerDeletion();
+                        }
                         entry->trigger();
                     }
                     menu->close();
@@ -3694,6 +3842,7 @@ private slots:
             context(b, QStringLiteral("deletePolygonVertex"), false);
             editor->findChild<QPushButton *>(QStringLiteral("applyObject"))->click();
             QCOMPARE(swak::polygonVertices(objects->find(id)->geometry).size(), 3);
+            answerDeletion();
             QTest::keyClick(map, Qt::Key_Delete);
             QVERIFY(objects->items().isEmpty());
             objects->undoStack().undo();
@@ -3945,6 +4094,7 @@ private slots:
                     .value(QStringLiteral("enabled"))
                     .toBool());
         dataTable->setCurrentCell(0, 2);
+        answerDeletion();
         dataManager.findChild<QPushButton *>(QStringLiteral("removeDataProvider"))->click();
         QVERIFY(!feeds.sources().contains(QStringLiteral("a")));
         QVERIFY(feeds.sources().contains(QStringLiteral("b")));
@@ -4699,7 +4849,8 @@ private slots:
                 }
                 occupiedRows += painted;
             }
-            QVERIFY(occupiedRows > 40);
+            QVERIFY(occupiedRows > 0);
+            QVERIFY(occupiedRows <= 18);
             QMenu menu;
             tool->populateContextMenu(item, menu);
             auto *action = menu.findChild<QAction *>(QStringLiteral("predictMarker"));
@@ -5854,7 +6005,12 @@ private slots:
         QCOMPARE(sent.event->team, QStringLiteral("Blue"));
         auto *browser = window.findChild<QWidget *>(QStringLiteral("serverBrowser"));
         QVERIFY(browser->grab().save(QStringLiteral("server-browser.png")));
-        servers->remove(QStringLiteral("harness"));
+        list->setCurrentCell(0, 1);
+        answerDeletion(Qt::Key_Escape);
+        window.findChild<QPushButton *>(QStringLiteral("removeServer"))->click();
+        QCOMPARE(list->rowCount(), 1);
+        answerDeletion();
+        window.findChild<QPushButton *>(QStringLiteral("removeServer"))->click();
         QCOMPARE(list->rowCount(), 0);
         QTcpServer unused;
         QVERIFY(unused.listen(QHostAddress::LocalHost, 0));

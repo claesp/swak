@@ -3,7 +3,7 @@
   "id": "org.swak.predict",
   "name": "Predict",
   "description": "Estimate future CoT positions from bounded recent history.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "apiVersion": 2,
   "entryPoint": "PredictPlugin",
   "linkage": "static",

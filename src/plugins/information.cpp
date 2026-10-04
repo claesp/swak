@@ -236,7 +236,7 @@ protected:
         auto *key = static_cast<QKeyEvent *>(event);
         if (inPane && key->modifiers() == Qt::NoModifier &&
             (key->key() == Qt::Key_Delete || key->key() == Qt::Key_Backspace) && tools_ &&
-            tools_->deleteSelection()) {
+            (key->isAutoRepeat() || tools_->deleteSelection())) {
             key->accept();
             return true;
         }

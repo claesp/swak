@@ -1,5 +1,6 @@
 #include "core/server_browser.h"
 
+#include "core/delete_confirmation.h"
 #include "core/provider_table.h"
 #include "core/servers.h"
 #include "core/settings_dialog.h"
@@ -46,10 +47,20 @@ ServerBrowser::ServerBrowser(Servers &servers, QWidget *parent) : QWidget(parent
     connect(button(tr("Edit"), QStringLiteral("editServer")), &QPushButton::clicked, this, [this] {
         edit(false);
     });
-    connect(
-        button(tr("Delete"), QStringLiteral("removeServer")), &QPushButton::clicked, this, [this] {
-            servers_.remove(table_->selectedId());
-        });
+    connect(button(tr("Delete ..."), QStringLiteral("removeServer")),
+            &QPushButton::clicked,
+            this,
+            [this] {
+                const auto id = table_->selectedId();
+                if (!id.isEmpty() && confirmDeletion(this,
+                                                     servers_.sources()
+                                                         .value(id)
+                                                         .toObject()
+                                                         .value(QStringLiteral("name"))
+                                                         .toString(id))) {
+                    servers_.remove(id);
+                }
+            });
     connect(button(tr("Reconnect"), QStringLiteral("reconnectServers")),
             &QPushButton::clicked,
             &servers_,

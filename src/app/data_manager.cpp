@@ -1,5 +1,6 @@
 #include "app/data_manager.h"
 
+#include "core/delete_confirmation.h"
 #include "core/logging.h"
 #include "core/provider_table.h"
 #include "core/settings_dialog.h"
@@ -49,7 +50,7 @@ DataManager::DataManager(DataSources &sources,
     };
     auto *add = button(tr("Add"), QStringLiteral("addDataProvider"));
     auto *editButton = button(tr("Edit"), QStringLiteral("editDataProvider"));
-    auto *remove = button(tr("Delete"), QStringLiteral("removeDataProvider"));
+    auto *remove = button(tr("Delete ..."), QStringLiteral("removeDataProvider"));
     auto *update = button(tr("Refresh now"), QStringLiteral("refreshDataProvider"));
     layout->addLayout(row);
     status_ = new SingleLineLabel(this);
@@ -77,10 +78,16 @@ DataManager::DataManager(DataSources &sources,
         updateStatus();
     });
     connect(remove, &QPushButton::clicked, this, [this] {
-        if (list_->selectedId().isEmpty()) {
+        const auto id = list_->selectedId();
+        if (id.isEmpty() || !confirmDeletion(this,
+                                             sources_.sources()
+                                                 .value(id)
+                                                 .toObject()
+                                                 .value(QStringLiteral("name"))
+                                                 .toString(id))) {
             return;
         }
-        sources_.remove(list_->selectedId());
+        sources_.remove(id);
         this->save();
     });
     connect(update, &QPushButton::clicked, this, [this] {

@@ -3,7 +3,7 @@
   "id": "org.swak.map",
   "name": "OpenGL map",
   "description": "Present map imagery and event layers with OpenGL.",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "apiVersion": 2,
   "entryPoint": "MapPlugin",
   "linkage": "static",

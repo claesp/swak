@@ -1,5 +1,6 @@
 #include "app/marker_manager.h"
 
+#include "core/delete_confirmation.h"
 #include "core/logging.h"
 #include "core/provider_table.h"
 #include "core/single_line_label.h"
@@ -53,7 +54,7 @@ MarkerManager::MarkerManager(MarkerCollections &collections,
     };
     auto *add = button(tr("Add"), QStringLiteral("addMarkerCollection"));
     auto *editButton = button(tr("Edit"), QStringLiteral("editMarkerCollection"));
-    auto *remove = button(tr("Delete"), QStringLiteral("deleteMarkerCollection"));
+    auto *remove = button(tr("Delete ..."), QStringLiteral("deleteMarkerCollection"));
     auto *import = button(tr("Import"), QStringLiteral("importMarkerCollection"));
     auto *exportButton = button(tr("Export"), QStringLiteral("exportMarkerCollection"));
     layout->addLayout(row);
@@ -78,10 +79,16 @@ MarkerManager::MarkerManager(MarkerCollections &collections,
         }
     });
     connect(remove, &QPushButton::clicked, this, [this] {
-        if (table_->selectedId().isEmpty()) {
+        const auto id = table_->selectedId();
+        if (id.isEmpty() || !confirmDeletion(this,
+                                             collections_.collections()
+                                                 .value(id)
+                                                 .toObject()
+                                                 .value(QStringLiteral("name"))
+                                                 .toString(id))) {
             return;
         }
-        const auto error = collections_.remove(table_->selectedId());
+        const auto error = collections_.remove(id);
         if (error.isEmpty()) {
             this->save();
         } else {

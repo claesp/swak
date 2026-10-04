@@ -1,5 +1,6 @@
 #include "app/map_manager.h"
 
+#include "core/delete_confirmation.h"
 #include "core/logging.h"
 #include "core/provider_table.h"
 #include "core/settings_dialog.h"
@@ -48,7 +49,7 @@ MapManager::MapManager(MapSources &sources,
     auto *editButton = new QPushButton(tr("Edit"), this);
     editButton->setObjectName(QStringLiteral("editMapProvider"));
     row->addWidget(editButton);
-    auto *remove = new QPushButton(tr("Delete"), this);
+    auto *remove = new QPushButton(tr("Delete ..."), this);
     remove->setObjectName(QStringLiteral("removeMapProvider"));
     row->addWidget(remove);
     auto *credentials = new QPushButton(tr("Credentials"), this);
@@ -165,8 +166,14 @@ MapManager::MapManager(MapSources &sources,
         }
     });
     connect(remove, &QPushButton::clicked, this, [this] {
-        if (!list_->selectedId().isEmpty()) {
-            sources_.remove(list_->selectedId());
+        const auto id = list_->selectedId();
+        if (!id.isEmpty() && confirmDeletion(this,
+                                             sources_.sources()
+                                                 .value(id)
+                                                 .toObject()
+                                                 .value(QStringLiteral("name"))
+                                                 .toString(id))) {
+            sources_.remove(id);
         }
     });
     refresh();

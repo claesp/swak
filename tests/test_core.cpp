@@ -59,6 +59,35 @@ private:
         return event;
     }
 private slots:
+    void predictionTrends()
+    {
+        auto event = sample();
+        event.latitude = 0;
+        event.longitude = 0;
+        const double step = 100.0 / 6371000 * 180 / 3.141592653589793;
+        PredictionHistory history;
+        history.append(event, 100);
+        event.time = event.time.addSecs(10);
+        event.longitude = step;
+        history.append(event, 100);
+        event.time = event.time.addSecs(10);
+        event.longitude = 3 * step;
+        history.append(event, 100);
+        auto point = history.forecast(60);
+        QVERIFY(point);
+        QVERIFY(groundDistance(project(0, event.longitude), *point) > 20 * 60);
+        event.time = event.time.addSecs(10);
+        event.latitude = step;
+        event.longitude += step;
+        history.append(event, 100);
+        point = history.forecast(60);
+        QVERIFY(point);
+        QVERIFY(unproject(*point).y() > event.latitude);
+        QVERIFY(unproject(*point).y() - event.latitude >
+                2 * std::abs(unproject(*point).x() - event.longitude));
+        QVERIFY(history.forecast(600));
+        QVERIFY(history.forecast(1800));
+    }
     void predictionHistory()
     {
         PredictionHistory history;
@@ -160,7 +189,7 @@ private slots:
             fastSouth.append(event, 100, 600);
         }
         QCOMPARE(fastSouth.size(), 50);
-        QVERIFY(!fastSouth.forecast(1800));
+        QVERIFY(fastSouth.forecast(1800));
     }
     void markerScaling()
     {

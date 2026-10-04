@@ -1,3 +1,4 @@
+#include "core/delete_confirmation.h"
 #include "core/interfaces.h"
 #include "core/logging.h"
 #include "core/map_label.h"
@@ -5,6 +6,7 @@
 #include "core/maps.h"
 #include "core/marker_collections.h"
 #include "core/marker_symbols.h"
+#include "core/menu_order.h"
 #include "core/object_editor.h"
 #include "core/store.h"
 #include "core/toolbar.h"
@@ -254,7 +256,7 @@ public:
             if (mode_ == Mode::Idle &&
                 (key.key() == Qt::Key_Delete || key.key() == Qt::Key_Backspace) &&
                 selection_.item() && selection_.item()->owner == owner()) {
-                return deleteSelection();
+                return key.isAutoRepeat() || deleteSelection();
             }
         }
         if (event.type() == QEvent::MouseMove) {
@@ -362,8 +364,11 @@ public:
         edit->setObjectName(QStringLiteral("editMarker"));
         auto *move = menu.addAction(uiIcon(UiIcon::Move), tr("Move"));
         move->setObjectName(QStringLiteral("moveMarker"));
-        auto *remove = menu.addAction(uiIcon(UiIcon::Clear), tr("Delete"));
+        auto *remove = menu.addAction(uiIcon(UiIcon::Clear), tr("Delete ..."));
         remove->setObjectName(QStringLiteral("deleteMarker"));
+        edit->setProperty("menuOrder", -2);
+        remove->setProperty("menuOrder", -1);
+        sortMenuActions(menu);
         connect(edit, &QAction::triggered, this, [this, id] {
             const auto currentObject = objects_.find(id);
             if (currentObject) {
@@ -383,7 +388,7 @@ public:
             emit changed();
         });
         connect(remove, &QAction::triggered, this, [this, id] {
-            objects_.remove(id);
+            deleteObject(objects_, id, &editor_);
         });
         if (tools_) {
             tools_->populateContextMenu(item, menu);
@@ -458,8 +463,9 @@ public:
             return false;
         }
         const auto id = selection_.item()->id;
-        editor_.cancel();
-        objects_.remove(id);
+        if (deleteObject(objects_, id, &editor_)) {
+            editor_.cancel();
+        }
         return true;
     }
 

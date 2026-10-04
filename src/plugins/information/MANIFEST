@@ -3,7 +3,7 @@
   "id": "org.swak.information",
   "name": "Information",
   "description": "Show read-only properties for the selected map object.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "apiVersion": 2,
   "entryPoint": "InformationPlugin",
   "linkage": "static",

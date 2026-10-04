@@ -1,8 +1,10 @@
+#include "core/delete_confirmation.h"
 #include "core/interfaces.h"
 #include "core/map_label.h"
 #include "core/map_tools.h"
 #include "core/maps.h"
 #include "core/measure.h"
+#include "core/menu_order.h"
 #include "core/object_editor.h"
 #include "core/polygon.h"
 #include "core/store.h"
@@ -264,7 +266,7 @@ public:
         if (interactionActive() || !selection_.item() || selection_.item()->owner != owner()) {
             return false;
         }
-        objects_.remove(selection_.item()->id);
+        deleteObject(objects_, selection_.item()->id, &editor_);
         return true;
     }
     bool handle(QEvent &event, const Viewport &view, QWidget &map) override
@@ -288,7 +290,7 @@ public:
                 return dismiss();
             }
             if (key.key() == Qt::Key_Delete || key.key() == Qt::Key_Backspace) {
-                return deleteSelection();
+                return key.isAutoRepeat() || deleteSelection();
             }
         }
         if (event.type() == QEvent::MouseMove) {
@@ -454,8 +456,11 @@ public:
         edit->setObjectName(QStringLiteral("editShape"));
         auto *move = menu.addAction(uiIcon(UiIcon::Move), tr("Move"));
         move->setObjectName(QStringLiteral("moveShape"));
-        auto *remove = menu.addAction(uiIcon(UiIcon::Clear), tr("Delete"));
+        auto *remove = menu.addAction(uiIcon(UiIcon::Clear), tr("Delete ..."));
         remove->setObjectName(QStringLiteral("deleteShape"));
+        edit->setProperty("menuOrder", -2);
+        remove->setProperty("menuOrder", -1);
+        sortMenuActions(menu);
         connect(edit, &QAction::triggered, this, [this, id = item.id] {
             if (const auto found = objects_.find(id)) {
                 selection_.clear();
@@ -476,7 +481,7 @@ public:
             }
         });
         connect(remove, &QAction::triggered, this, [this, id = item.id] {
-            objects_.remove(id);
+            deleteObject(objects_, id, &editor_);
         });
         menu.exec(context);
         return true;
@@ -695,7 +700,7 @@ private:
                 QMenu menu(&map);
                 auto *move = menu.addAction(uiIcon(UiIcon::Move), tr("Move"));
                 move->setObjectName(QStringLiteral("moveShapePoint"));
-                auto *remove = menu.addAction(uiIcon(UiIcon::Clear), tr("Delete"));
+                auto *remove = menu.addAction(uiIcon(UiIcon::Clear), tr("Delete ..."));
                 remove->setEnabled(false);
                 remove->setToolTip(tr("This shape needs both control points."));
                 connect(move, &QAction::triggered, this, [this, i] {

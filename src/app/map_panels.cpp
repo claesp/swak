@@ -45,7 +45,8 @@ void MapPanels::track(QDockWidget *pane)
 }
 bool MapPanels::event(QEvent *event)
 {
-    if (event->type() == QEvent::Wheel) {
+    if (event->type() == QEvent::Wheel || event->type() == QEvent::KeyPress ||
+        event->type() == QEvent::KeyRelease) {
         event->accept();
         return true;
     }

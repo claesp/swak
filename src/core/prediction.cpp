@@ -4,6 +4,7 @@
 #include "core/projection.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <numbers>
 
@@ -48,54 +49,57 @@ std::optional<QPointF> PredictionHistory::forecast(int seconds) const
     if (samples_.size() < 2 || seconds < 0 || seconds > 1800) {
         return {};
     }
-    // Fit velocity to recent positions. Unwrap longitude before the fit.
-    double meanTime = 0;
-    QPointF meanPoint;
-    QPointF previous = samples_.first().world;
-    QList<QPointF> points;
-    points.reserve(samples_.size());
-    for (const auto &sample : samples_) {
-        auto point = sample.world;
-        point.setX(point.x() - std::round(point.x() - previous.x()));
-        points.append(point);
-        previous = point;
-        meanPoint += point;
-        meanTime += static_cast<double>(samples_.last().time.msecsTo(sample.time)) / 1000;
+    const auto segment = [](const Sample &first, const Sample &last) {
+        const auto a = unproject(first.world), b = unproject(last.world);
+        const double latitude = a.y() * Radians, nextLatitude = b.y() * Radians;
+        const double longitude = std::remainder((b.x() - a.x()) * Radians, 2 * std::numbers::pi);
+        const double duration = static_cast<double>(first.time.msecsTo(last.time)) / 1000;
+        const double bearing =
+            std::atan2(std::sin(longitude) * std::cos(nextLatitude),
+                       std::cos(latitude) * std::sin(nextLatitude) -
+                           std::sin(latitude) * std::cos(nextLatitude) * std::cos(longitude));
+        return std::array<double, 3>{
+            groundDistance(first.world, last.world) / duration, bearing, duration};
+    };
+    const auto latest = segment(samples_.at(samples_.size() - 2), samples_.last());
+    double speed = latest[0], bearing = latest[1];
+    double acceleration = 0, turn = 0;
+    if (samples_.size() >= 3) {
+        const auto previous =
+            segment(samples_.at(samples_.size() - 3), samples_.at(samples_.size() - 2));
+        const double interval = (previous[2] + latest[2]) / 2;
+        acceleration = std::clamp((speed - previous[0]) / interval, -5.0, 5.0);
+        if (speed >= .5 && previous[0] >= .5) {
+            turn =
+                std::clamp(std::remainder(bearing - previous[1], 2 * std::numbers::pi) / interval,
+                           -5 * Radians,
+                           5 * Radians);
+        }
     }
-    const auto count = static_cast<double>(samples_.size());
-    meanPoint /= count;
-    meanTime /= count;
-    double variance = 0;
-    QPointF covariance;
-    for (qsizetype i = 0; i < samples_.size(); ++i) {
-        const auto time =
-            static_cast<double>(samples_.last().time.msecsTo(samples_.at(i).time)) / 1000 -
-            meanTime;
-        covariance += (points.at(i) - meanPoint) * time;
-        variance += time * time;
+    auto position = unproject(samples_.last().world);
+    // Decay recent trends instead of extending acceleration or turns for half an hour.
+    for (int elapsed = 0; elapsed < seconds; elapsed += 5) {
+        const double duration = std::min(5, seconds - elapsed);
+        const double trend =
+            30 * (std::exp(-elapsed / 30.0) - std::exp(-(elapsed + duration) / 30.0));
+        const double nextSpeed = std::clamp(speed + acceleration * trend, 0.0, MaxSpeed);
+        const double change = turn * trend;
+        const double direction = bearing + change / 2;
+        const double distance = (speed + nextSpeed) / 2 * duration / Radius;
+        const double latitude = position.y() * Radians;
+        const double targetLatitude =
+            std::asin(std::clamp(std::sin(latitude) * std::cos(distance) +
+                                     std::cos(latitude) * std::sin(distance) * std::cos(direction),
+                                 -1.0,
+                                 1.0));
+        const double longitude =
+            position.x() * Radians +
+            std::atan2(std::sin(direction) * std::sin(distance) * std::cos(latitude),
+                       std::cos(distance) - std::sin(latitude) * std::sin(targetLatitude));
+        position = QPointF(std::remainder(longitude / Radians, 360.0), targetLatitude / Radians);
+        speed = nextSpeed;
+        bearing += change;
     }
-    if (variance <= 0) {
-        return {};
-    }
-    const auto position = unproject(samples_.last().world);
-    const double latitude = position.y() * Radians;
-    const auto velocity =
-        covariance / variance * (2 * std::numbers::pi * Radius * std::cos(latitude));
-    const auto speed = std::hypot(velocity.x(), velocity.y());
-    if (!std::isfinite(speed) || speed > MaxSpeed) {
-        return {};
-    }
-    const auto bearing = std::atan2(velocity.x(), -velocity.y());
-    const auto distance = speed * seconds / Radius;
-    const auto targetLatitude =
-        std::asin(std::clamp(std::sin(latitude) * std::cos(distance) +
-                                 std::cos(latitude) * std::sin(distance) * std::cos(bearing),
-                             -1.0,
-                             1.0));
-    const auto targetLongitude =
-        position.x() * Radians +
-        std::atan2(std::sin(bearing) * std::sin(distance) * std::cos(latitude),
-                   std::cos(distance) - std::sin(latitude) * std::sin(targetLatitude));
-    return project(targetLatitude / Radians, std::remainder(targetLongitude / Radians, 360.0));
+    return project(position.y(), position.x());
 }
 } // namespace swak

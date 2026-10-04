@@ -1,8 +1,10 @@
+#include "core/delete_confirmation.h"
 #include "core/interfaces.h"
 #include "core/logging.h"
 #include "core/map_label.h"
 #include "core/map_tools.h"
 #include "core/maps.h"
+#include "core/menu_order.h"
 #include "core/object_editor.h"
 #include "core/polygon.h"
 #include "core/store.h"
@@ -221,7 +223,7 @@ public:
         if (interactionActive() || !selection_.item() || selection_.item()->owner != owner()) {
             return false;
         }
-        objects_.remove(selection_.item()->id);
+        deleteObject(objects_, selection_.item()->id, &editor_);
         return true;
     }
     bool handle(QEvent &event, const Viewport &view, QWidget &map) override
@@ -262,7 +264,7 @@ public:
                 return true;
             }
             if (key.key() == Qt::Key_Delete || key.key() == Qt::Key_Backspace) {
-                return deleteSelection();
+                return key.isAutoRepeat() || deleteSelection();
             }
         }
         if (event.type() == QEvent::MouseMove) {
@@ -363,8 +365,11 @@ public:
         menu.setObjectName(QStringLiteral("polygonContextMenu"));
         auto *edit = menu.addAction(uiIcon(UiIcon::Edit), tr("Edit"));
         edit->setObjectName(QStringLiteral("editPolygon"));
-        auto *remove = menu.addAction(uiIcon(UiIcon::Clear), tr("Delete"));
+        auto *remove = menu.addAction(uiIcon(UiIcon::Clear), tr("Delete ..."));
         remove->setObjectName(QStringLiteral("deletePolygon"));
+        edit->setProperty("menuOrder", -2);
+        remove->setProperty("menuOrder", -1);
+        sortMenuActions(menu);
         connect(edit, &QAction::triggered, this, [this, id] {
             const auto currentObject = objects_.find(id);
             if (currentObject) {
@@ -375,7 +380,7 @@ public:
             }
         });
         connect(remove, &QAction::triggered, this, [this, id] {
-            objects_.remove(id);
+            deleteObject(objects_, id, &editor_);
         });
         tools_.populateContextMenu(item, menu);
         menu.exec(context.globalPos());
@@ -545,7 +550,7 @@ private:
         menu.setObjectName(QStringLiteral("polygonVertexMenu"));
         auto *move = menu.addAction(uiIcon(UiIcon::Move), tr("Move"));
         move->setObjectName(QStringLiteral("movePolygonVertex"));
-        auto *remove = menu.addAction(uiIcon(UiIcon::Clear), tr("Delete"));
+        auto *remove = menu.addAction(uiIcon(UiIcon::Clear), tr("Delete ..."));
         remove->setObjectName(QStringLiteral("deletePolygonVertex"));
         remove->setEnabled(validatePolygon(reduced).isEmpty());
         connect(move, &QAction::triggered, this, [this, index, &map] {
@@ -558,7 +563,9 @@ private:
             emit changed();
         });
         connect(remove, &QAction::triggered, this, [this, reduced] {
-            editor_.setGeometry(polygonGeometry(reduced));
+            if (confirmDeletion(&editor_, tr("this area corner"))) {
+                editor_.setGeometry(polygonGeometry(reduced));
+            }
         });
         menu.exec(context.globalPos());
     }
@@ -584,6 +591,7 @@ private:
         item.properties = record->properties;
         item.properties.insert(QStringLiteral("ID"), id);
         item.properties.insert(QStringLiteral("Area"), formatArea(polygonArea(points)));
+        item.properties.insert(tr("Restricted"), record->restricted ? tr("Yes") : tr("No"));
         store_.select({});
         selection_.select(std::move(item));
     }

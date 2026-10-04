@@ -133,6 +133,24 @@ public:
     MapWidget(Store &store, QList<MapLayer *> layers, QWidget *parent)
         : QOpenGLWidget(parent), store_(store), layers_(std::move(layers))
     {
+        navigationLock_ = new QAction(tr("Lock"), this);
+        navigationLock_->setObjectName(QStringLiteral("mapNavigationLock"));
+        navigationLock_->setCheckable(true);
+        navigationLock_->setIcon(uiIcon(UiIcon::Unlock));
+        navigationLock_->setToolTip(tr("Lock map panning and zooming"));
+        connect(navigationLock_, &QAction::toggled, this, [this](bool locked) {
+            stopPanning();
+            dragging_ = false;
+            moved_ = true;
+            wheelRemainder_ = 0;
+            if (!tools_ || !tools_->coordinateGridActive()) {
+                unsetCursor();
+            }
+            navigationLock_->setIcon(uiIcon(locked ? UiIcon::Lock : UiIcon::Unlock));
+            navigationLock_->setToolTip(locked ? tr("Unlock map panning and zooming")
+                                               : tr("Lock map panning and zooming"));
+            update();
+        });
         panTimer_.setInterval(16);
         panTimer_.setTimerType(Qt::PreciseTimer);
         connect(&panTimer_, &QTimer::timeout, this, [this] {
@@ -316,6 +334,10 @@ public:
         return status;
     }
 
+    QAction *navigationLockAction() const
+    {
+        return navigationLock_;
+    }
     QString preferenceId() const override
     {
         return QStringLiteral("org.swak.map");
@@ -331,6 +353,7 @@ public:
             numberSetting(QStringLiteral("centerY"), tr("Vertical center (0–1)"), 0, 1, 6),
             numberSetting(
                 QStringLiteral("zoom"), tr("Zoom"), zoomLimits().first, zoomLimits().second),
+            booleanSetting(QStringLiteral("navigationLocked"), tr("Lock map panning and zooming")),
             choiceSetting(QStringLiteral("markerScale"),
                           tr("Marker icon scale"),
                           {QStringLiteral("50%"),
@@ -398,6 +421,7 @@ public:
             {QStringLiteral("centerY"), view_.center.y()},
             {QStringLiteral("zoom"), view_.zoom},
             {QStringLiteral("markerScale"), view_.markerScalePercent},
+            {QStringLiteral("navigationLocked"), navigationLock_->isChecked()},
             {QStringLiteral("tileCacheMiB"), tileCacheMiB_},
             {QStringLiteral("diskCacheMiB"), diskCacheMiB_},
             {QStringLiteral("opacity"), opacity_},
@@ -423,6 +447,7 @@ public:
     void restorePreferences(const QJsonObject &values) override
     {
         stopPanning();
+        navigationLock_->setChecked(values.value(QStringLiteral("navigationLocked")).toBool(false));
         view_.markerScalePercent = values.value(QStringLiteral("markerScale")).toInt(100);
         view_.markerScalePercent = qRound(view_.markerSize(100));
         keys_ = readKeys(values).value_or(DefaultKeys);
@@ -678,11 +703,13 @@ protected:
         if (event->button() != Qt::LeftButton) {
             return;
         }
-        dragging_ = true;
+        dragging_ = !navigationLock_->isChecked();
         moved_ = false;
         last_ = event->position();
         press_ = last_;
-        setCursor(Qt::ClosedHandCursor);
+        if (dragging_) {
+            setCursor(Qt::ClosedHandCursor);
+        }
     }
     void mouseDoubleClickEvent(QMouseEvent *event) override
     {
@@ -692,6 +719,10 @@ protected:
         }
         if (event->button() != Qt::LeftButton) {
             QOpenGLWidget::mouseDoubleClickEvent(event);
+            return;
+        }
+        if (navigationLock_->isChecked()) {
+            event->accept();
             return;
         }
         view_.center +=
@@ -964,6 +995,10 @@ protected:
     }
     void wheelEvent(QWheelEvent *event) override
     {
+        if (navigationLock_->isChecked()) {
+            event->accept();
+            return;
+        }
         if (!wheelZoom_ || !QRectF(rect()).contains(event->position())) {
             wheelRemainder_ = 0;
             event->ignore();
@@ -1010,6 +1045,10 @@ protected:
             stopPanning();
             event->accept();
             update();
+            return;
+        }
+        if (navigationLock_->isChecked()) {
+            event->accept();
             return;
         }
         const auto modifiers = event->modifiers() & ~Qt::KeypadModifier;
@@ -1245,6 +1284,9 @@ private:
     }
     void zoomAt(QPointF anchor, int delta)
     {
+        if (navigationLock_->isChecked()) {
+            return;
+        }
         const QPointF offset = anchor - QPointF(width() / 2.0, height() / 2.0);
         const QPointF before = view_.center + offset / view_.scale();
         view_.zoom += delta;
@@ -1287,6 +1329,7 @@ private:
     Store &store_;
     DataSources *dataSources_ = nullptr;
     QList<MapLayer *> layers_;
+    QAction *navigationLock_;
     Viewport view_;
     QPointF cursor_;
     QPointF last_;
@@ -1308,6 +1351,7 @@ public:
     create(PluginServices &services, const QList<MapLayer *> &layers, QWidget *parent) override
     {
         auto *widget = new MapWidget(services.store, layers, parent);
+        services.navigationLock = widget->navigationLockAction();
         widget->setMapSources(&services.maps);
         widget->setDataSources(services.data);
         widget->setSelection(services.selection);
@@ -1316,6 +1360,10 @@ public:
     }
     void populateToolbar(PluginServices &services, QToolBar &toolbar, QMenu *) override
     {
+        if (services.navigationLock) {
+            services.navigationLock->setProperty("swakToolbarTrailing", true);
+            toolbar.addAction(services.navigationLock);
+        }
         auto *mapSources = &services.maps;
         auto *mapButton = new QToolButton(&toolbar);
         mapButton->setObjectName(QStringLiteral("mapProviderButton"));
