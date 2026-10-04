@@ -1,12 +1,14 @@
 #pragma once
 #include "core/logging.h"
 #include "core/settings.h"
+
 #include <QAbstractTableModel>
 #include <QDateTime>
 #include <QTimer>
 
 namespace swak {
-struct ActivityEvent {
+struct ActivityEvent
+{
     quint64 sequence;
     QDateTime time;
     Severity severity;
@@ -14,11 +16,18 @@ struct ActivityEvent {
     QString category;
     QString message;
 };
-void publishActivity(Severity severity, Urgency urgency, const QString &category, const QString &message);
-class ActivityModel final : public QAbstractTableModel, public SettingsParticipant {
+void publishActivity(Severity severity,
+                     Urgency urgency,
+                     const QString &category,
+                     const QString &message);
+class ActivityModel final : public QAbstractTableModel, public SettingsParticipant
+{
     Q_OBJECT
 public:
-    enum { SortRole = Qt::UserRole + 1 };
+    enum
+    {
+        SortRole = Qt::UserRole + 1
+    };
     explicit ActivityModel(QObject *parent = nullptr);
     int rowCount(const QModelIndex &parent = {}) const override;
     int columnCount(const QModelIndex &parent = {}) const override;
@@ -32,6 +41,7 @@ public:
     void clear();
 signals:
     void latest(const QString &message, bool error);
+
 private:
     void collect();
     QList<ActivityEvent> events_;
@@ -39,4 +49,4 @@ private:
     int capacity_ = 500;
     QTimer timer_;
 };
-}
+} // namespace swak

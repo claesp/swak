@@ -5,7 +5,8 @@
 #include <QString>
 class QPainter;
 namespace swak {
-struct MarkerSymbol {
+struct MarkerSymbol
+{
     QString code;
     QString name;
     QColor color;
@@ -15,6 +16,10 @@ QString markerSymbolForCot(const QString &type);
 bool validMarkerSymbol(const QString &code);
 QPainterPath markerGlyph(const QString &code);
 QPainterPath markerFrame(const QString &code, QPointF center, double radius);
-void paintMarkerSymbol(QPainter &painter, const QString &code, QPointF center, double radius,
-                       const QColor &color, bool selected = false);
-}
+void paintMarkerSymbol(QPainter &painter,
+                       const QString &code,
+                       QPointF center,
+                       double radius,
+                       const QColor &color,
+                       bool selected = false);
+} // namespace swak

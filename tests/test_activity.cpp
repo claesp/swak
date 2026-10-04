@@ -1,32 +1,44 @@
 #include "core/activity.h"
+
 #include <QAbstractItemModelTester>
 #include <QSignalSpy>
-#include <QTest>
 #include <QSortFilterProxyModel>
+#include <QTest>
+
 #include <thread>
 #include <vector>
 using namespace swak;
-class ActivityTest final : public QObject {
+class ActivityTest final : public QObject
+{
     Q_OBJECT
 private slots:
     void boundedHistory()
     {
         ActivityModel model;
-        QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::QtTest);
+        QAbstractItemModelTester tester(&model,
+                                        QAbstractItemModelTester::FailureReportingMode::QtTest);
         model.clear();
         model.restorePreferences({{QStringLiteral("capacity"), 3}});
         QSignalSpy latest(&model, &ActivityModel::latest);
         configureLogging({});
-        for (int i = 0; i < 10; ++i)
-            logMessage(Severity::Info, Urgency::Routine, QStringLiteral("swak.test"), QString::number(i));
-        QVERIFY(QTest::qWaitFor([&] { return model.rowCount() == 3; }));
+        for (int i = 0; i < 10; ++i) {
+            logMessage(
+                Severity::Info, Urgency::Routine, QStringLiteral("swak.test"), QString::number(i));
+        }
+        QVERIFY(QTest::qWaitFor([&] {
+            return model.rowCount() == 3;
+        }));
         QCOMPARE(model.index(0, 4).data().toString(), QStringLiteral("7"));
         QCOMPARE(model.index(2, 4).data().toString(), QStringLiteral("9"));
         QCOMPARE(latest.last().first().toString(), QStringLiteral("9"));
         QVERIFY(!loggingConfiguration().value(QStringLiteral("enabled")).toBool());
-        logMessage(Severity::Info, Urgency::Routine, QStringLiteral("swak.test"), QStringLiteral("10"));
-        logMessage(Severity::Info, Urgency::Routine, QStringLiteral("swak.test"), QStringLiteral("11"));
-        QVERIFY(QTest::qWaitFor([&] { return model.index(2, 4).data().toString() == QStringLiteral("11"); }));
+        logMessage(
+            Severity::Info, Urgency::Routine, QStringLiteral("swak.test"), QStringLiteral("10"));
+        logMessage(
+            Severity::Info, Urgency::Routine, QStringLiteral("swak.test"), QStringLiteral("11"));
+        QVERIFY(QTest::qWaitFor([&] {
+            return model.index(2, 4).data().toString() == QStringLiteral("11");
+        }));
         QCOMPARE(model.rowCount(), 3);
         QCOMPARE(model.index(0, 4).data().toString(), QStringLiteral("9"));
         model.restorePreferences({{QStringLiteral("capacity"), 1}});
@@ -44,9 +56,12 @@ private slots:
         const auto text = QString::fromUtf8("Map 🌍");
         publishActivity(Severity::Warning, Urgency::Immediate, {}, text);
         publishActivity(Severity::Error, Urgency::Routine, {}, QStringLiteral("error"));
-        QVERIFY(QTest::qWaitFor([&] { return model.rowCount() == 2; }));
+        QVERIFY(QTest::qWaitFor([&] {
+            return model.rowCount() == 2;
+        }));
         QCOMPARE(model.index(0, 4).data().toString(), text);
-        QCOMPARE(model.index(0, 0).data(ActivityModel::SortRole).metaType(), QMetaType::fromType<QDateTime>());
+        QCOMPARE(model.index(0, 0).data(ActivityModel::SortRole).metaType(),
+                 QMetaType::fromType<QDateTime>());
         QSortFilterProxyModel proxy;
         proxy.setSourceModel(&model);
         proxy.setSortRole(ActivityModel::SortRole);
@@ -60,13 +75,26 @@ private slots:
         ActivityModel model;
         model.clear();
         std::vector<std::thread> writers;
-        for (int i = 0; i < 4; ++i) writers.emplace_back([] {
-            for (int j = 0; j < 1000; ++j)
-                logMessage(Severity::Warning, Urgency::Attention, QStringLiteral("swak.test"), QStringLiteral("event"));
-        });
-        for (auto &writer : writers) writer.join();
-        logMessage(Severity::Error, Urgency::Immediate, QStringLiteral("swak.test"), QString(10000, 'x') + '\n');
-        QVERIFY(QTest::qWaitFor([&] { return model.rowCount() == 256; }));
+        for (int i = 0; i < 4; ++i) {
+            writers.emplace_back([] {
+                for (int j = 0; j < 1000; ++j) {
+                    logMessage(Severity::Warning,
+                               Urgency::Attention,
+                               QStringLiteral("swak.test"),
+                               QStringLiteral("event"));
+                }
+            });
+        }
+        for (auto &writer : writers) {
+            writer.join();
+        }
+        logMessage(Severity::Error,
+                   Urgency::Immediate,
+                   QStringLiteral("swak.test"),
+                   QString(10000, 'x') + '\n');
+        QVERIFY(QTest::qWaitFor([&] {
+            return model.rowCount() == 256;
+        }));
         QCOMPARE(model.index(255, 4).data().toString().size(), 2048);
         QVERIFY(model.index(255, 4).data(Qt::ForegroundRole).isValid());
         QCOMPARE(model.index(255, 1).data().toString(), QStringLiteral("Error"));
@@ -74,8 +102,11 @@ private slots:
         model.clear();
         publishActivity(static_cast<Severity>(99), Urgency::Routine, {}, {});
         publishActivity(Severity::Info, static_cast<Urgency>(99), {}, {});
-        publishActivity(Severity::Info, Urgency::Routine, QStringLiteral("test"), QStringLiteral("a\nb\033"));
-        QVERIFY(QTest::qWaitFor([&] { return model.rowCount() == 1; }));
+        publishActivity(
+            Severity::Info, Urgency::Routine, QStringLiteral("test"), QStringLiteral("a\nb\033"));
+        QVERIFY(QTest::qWaitFor([&] {
+            return model.rowCount() == 1;
+        }));
         QCOMPARE(model.index(0, 4).data().toString(), QStringLiteral("ab"));
     }
 };

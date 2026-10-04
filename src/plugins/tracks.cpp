@@ -1,48 +1,73 @@
-#include "core/map_label.h"
-#include "core/ui_icons.h"
-#include "core/marker_symbols.h"
-#include "core/logging.h"
 #include "core/interfaces.h"
+#include "core/logging.h"
+#include "core/map_label.h"
+#include "core/marker_symbols.h"
+#include "core/preferences.h"
 #include "core/projection.h"
 #include "core/store.h"
-#include "core/preferences.h"
-#include <QJsonArray>
+#include "core/ui_icons.h"
+
 #include <QHeaderView>
-#include <QPainter>
-#include <QMenu>
-#include <QToolBar>
-#include <QStyle>
 #include <QIcon>
+#include <QJsonArray>
+#include <QMenu>
+#include <QPainter>
 #include <QSet>
 #include <QSortFilterProxyModel>
+#include <QStyle>
 #include <QTableView>
+#include <QToolBar>
+
 #include <algorithm>
 
 namespace swak {
-class EventTable final : public QTableView, public SettingsParticipant {
+class EventTable final : public QTableView, public SettingsParticipant
+{
 public:
     explicit EventTable(QWidget *parent) : QTableView(parent)
     {
-        connect(horizontalHeader(), &QHeaderView::sectionResized, this, [this](int column, int, int width) {
-            if (width > 0) widths_.insert(column, width);
-        });
+        connect(horizontalHeader(),
+                &QHeaderView::sectionResized,
+                this,
+                [this](int column, int, int width) {
+                    if (width > 0) {
+                        widths_.insert(column, width);
+                    }
+                });
     }
-    QString preferenceId() const override { return QStringLiteral("org.swak.events"); }
-    QString settingsTitle() const override { return tr("CoT Messages"); }
+    QString preferenceId() const override
+    {
+        return QStringLiteral("org.swak.events");
+    }
+    QString settingsTitle() const override
+    {
+        return tr("CoT Messages");
+    }
     QList<SettingField> settingsFields() const override
     {
-        QList<SettingField> fields{choiceSetting(QStringLiteral("sortColumn"), tr("Sort column"),
-            {tr("Identity"), tr("Type"), tr("Latitude"), tr("Longitude"), tr("Stale time")}, QJsonArray::fromStringList(columnIds())),
-            choiceSetting(QStringLiteral("sortOrder"), tr("Sort order"), {tr("Ascending"), tr("Descending")})};
+        QList<SettingField> fields{
+            choiceSetting(
+                QStringLiteral("sortColumn"),
+                tr("Sort column"),
+                {tr("Identity"), tr("Type"), tr("Latitude"), tr("Longitude"), tr("Stale time")},
+                QJsonArray::fromStringList(columnIds())),
+            choiceSetting(QStringLiteral("sortOrder"),
+                          tr("Sort order"),
+                          {tr("Ascending"), tr("Descending")})};
         const auto columns = savePreferences().value(QStringLiteral("columns")).toArray();
-        const QStringList names{tr("Identity"), tr("Type"), tr("Latitude"), tr("Longitude"), tr("Stale time")};
+        const QStringList names{
+            tr("Identity"), tr("Type"), tr("Latitude"), tr("Longitude"), tr("Stale time")};
         for (int i = 0; i < columns.size(); ++i) {
             const auto column = columns.at(i).toObject();
-            const auto title = names.at(columnIds().indexOf(column.value(QStringLiteral("id")).toString()));
+            const auto title =
+                names.at(columnIds().indexOf(column.value(QStringLiteral("id")).toString()));
             const auto path = QStringLiteral("columns/%1/").arg(i);
-            fields.append(numberSetting(path + QStringLiteral("width"), tr("%1 width").arg(title), 24, 4096));
-            fields.append(booleanSetting(path + QStringLiteral("hidden"), tr("Hide %1").arg(title)));
-            fields.append(numberSetting(path + QStringLiteral("position"), tr("%1 position (0–4)").arg(title), 0, 4));
+            fields.append(
+                numberSetting(path + QStringLiteral("width"), tr("%1 width").arg(title), 24, 4096));
+            fields.append(
+                booleanSetting(path + QStringLiteral("hidden"), tr("Hide %1").arg(title)));
+            fields.append(numberSetting(
+                path + QStringLiteral("position"), tr("%1 position (0–4)").arg(title), 0, 4));
         }
         return fields;
     }
@@ -51,8 +76,9 @@ public:
         QSet<int> positions;
         for (const auto &entry : values.value(QStringLiteral("columns")).toArray()) {
             const int position = entry.toObject().value(QStringLiteral("position")).toInt(-1);
-            if (position < 0 || position >= columnIds().size() || positions.contains(position))
+            if (position < 0 || position >= columnIds().size() || positions.contains(position)) {
                 return tr("Use each column position once, from 0 through 4.");
+            }
             positions.insert(position);
         }
         return {};
@@ -63,14 +89,18 @@ public:
         const auto *header = horizontalHeader();
         for (int visual = 0; visual < header->count(); ++visual) {
             const int logical = header->logicalIndex(visual);
-            columns.append(QJsonObject{{QStringLiteral("id"), columnIds().at(logical)},
-                {QStringLiteral("position"), visual},
-                {QStringLiteral("width"), header->isSectionHidden(logical) ? widths_.value(logical, 100) : header->sectionSize(logical)},
-                {QStringLiteral("hidden"), header->isSectionHidden(logical)}});
+            columns.append(
+                QJsonObject{{QStringLiteral("id"), columnIds().at(logical)},
+                            {QStringLiteral("position"), visual},
+                            {QStringLiteral("width"),
+                             header->isSectionHidden(logical) ? widths_.value(logical, 100)
+                                                              : header->sectionSize(logical)},
+                            {QStringLiteral("hidden"), header->isSectionHidden(logical)}});
         }
         const int sort = header->sortIndicatorSection();
         return {{QStringLiteral("columns"), columns},
-                {QStringLiteral("sortColumn"), sort >= 0 && sort < columnIds().size() ? columnIds().at(sort) : QString{}},
+                {QStringLiteral("sortColumn"),
+                 sort >= 0 && sort < columnIds().size() ? columnIds().at(sort) : QString{}},
                 {QStringLiteral("sortOrder"), static_cast<int>(header->sortIndicatorOrder())}};
     }
     void restorePreferences(const QJsonObject &values) override
@@ -78,54 +108,86 @@ public:
         QList<QJsonObject> columns;
         for (const auto &entry : values.value(QStringLiteral("columns")).toArray()) {
             auto column = entry.toObject();
-            if (!column.contains(QStringLiteral("position"))) column.insert(QStringLiteral("position"), static_cast<int>(columns.size()));
+            if (!column.contains(QStringLiteral("position"))) {
+                column.insert(QStringLiteral("position"), static_cast<int>(columns.size()));
+            }
             columns.append(column);
         }
-        std::stable_sort(columns.begin(), columns.end(), [](const QJsonObject &a, const QJsonObject &b) {
-            return a.value(QStringLiteral("position")).toInt() < b.value(QStringLiteral("position")).toInt();
-        });
+        std::stable_sort(
+            columns.begin(), columns.end(), [](const QJsonObject &a, const QJsonObject &b) {
+                return a.value(QStringLiteral("position")).toInt() <
+                       b.value(QStringLiteral("position")).toInt();
+            });
         auto *header = horizontalHeader();
         QSet<int> restored;
         for (const auto &entry : columns) {
             const auto column = entry;
-            const int logical = static_cast<int>(columnIds().indexOf(column.value(QStringLiteral("id")).toString()));
-            if (logical < 0 || restored.contains(logical)) continue;
+            const int logical = static_cast<int>(
+                columnIds().indexOf(column.value(QStringLiteral("id")).toString()));
+            if (logical < 0 || restored.contains(logical)) {
+                continue;
+            }
             const int visual = static_cast<int>(restored.size());
             restored.insert(logical);
             header->moveSection(header->visualIndex(logical), visual);
-            header->resizeSection(logical, preferenceInteger(column, QStringLiteral("width"), 100, 24, 4096));
+            header->resizeSection(
+                logical, preferenceInteger(column, QStringLiteral("width"), 100, 24, 4096));
             header->setSectionHidden(logical, column.value(QStringLiteral("hidden")).toBool(false));
         }
-        const int sort = static_cast<int>(columnIds().indexOf(values.value(QStringLiteral("sortColumn")).toString()));
-        if (sort >= 0) sortByColumn(sort, static_cast<Qt::SortOrder>(
-            preferenceInteger(values, QStringLiteral("sortOrder"), Qt::AscendingOrder, 0, 1)));
+        const int sort = static_cast<int>(
+            columnIds().indexOf(values.value(QStringLiteral("sortColumn")).toString()));
+        if (sort >= 0) {
+            sortByColumn(sort,
+                         static_cast<Qt::SortOrder>(preferenceInteger(
+                             values, QStringLiteral("sortOrder"), Qt::AscendingOrder, 0, 1)));
+        }
     }
+
 private:
     QHash<int, int> widths_;
     static const QStringList &columnIds()
     {
-        static const QStringList ids{QStringLiteral("identity"), QStringLiteral("type"), QStringLiteral("latitude"),
-                                     QStringLiteral("longitude"), QStringLiteral("stale")};
+        static const QStringList ids{QStringLiteral("identity"),
+                                     QStringLiteral("type"),
+                                     QStringLiteral("latitude"),
+                                     QStringLiteral("longitude"),
+                                     QStringLiteral("stale")};
         return ids;
     }
 };
-class TracksPlugin final : public QObject, public Plugin, public MapLayer, public ToolPlugin, public MenuPlugin, public ToolbarPlugin {
+class TracksPlugin final : public QObject,
+                           public Plugin,
+                           public MapLayer,
+                           public ToolPlugin,
+                           public MenuPlugin,
+                           public ToolbarPlugin
+{
     Q_OBJECT
     Q_PLUGIN_METADATA(IID "org.swak.Plugin/2.0" FILE "tracks/MANIFEST")
     Q_INTERFACES(swak::Plugin swak::MapLayer swak::ToolPlugin swak::MenuPlugin swak::ToolbarPlugin)
 public:
-    QString name() const override { return tr("CoT Messages"); }
+    QString name() const override
+    {
+        return tr("CoT Messages");
+    }
     void populateMenu(PluginServices &services, QMenu &menu) override
     {
         menu.addAction(createClearAction(services.store, menu));
     }
     void populateToolbar(PluginServices &services, QToolBar &toolbar, QMenu *pluginMenu) override
     {
-        auto *clear = pluginMenu ? pluginMenu->findChild<QAction *>(QStringLiteral("clearEventsAction")) : nullptr;
-        if (!clear) clear = createClearAction(services.store, toolbar);
+        auto *clear = pluginMenu
+                          ? pluginMenu->findChild<QAction *>(QStringLiteral("clearEventsAction"))
+                          : nullptr;
+        if (!clear) {
+            clear = createClearAction(services.store, toolbar);
+        }
         toolbar.addAction(clear);
     }
-    int order() const override { return 100; }
+    int order() const override
+    {
+        return 100;
+    }
     void paint(QPainter &painter, const Viewport &view, const Store &store) const override
     {
         const auto now = QDateTime::currentDateTimeUtc();
@@ -133,24 +195,39 @@ public:
         int labels = 0;
         for (const auto &visual : store.motion().snapshot()) {
             const auto &event = visual.event;
-            if (event.start > now) continue;
-            const QPointF point = (visual.world - view.center) * view.scale() + QPointF(view.size.width() / 2, view.size.height() / 2);
-            if (!visible.adjusted(-12, -12, 12, 12).contains(point)) continue;
+            if (event.start > now) {
+                continue;
+            }
+            const QPointF point = (visual.world - view.center) * view.scale() +
+                                  QPointF(view.size.width() / 2, view.size.height() / 2);
+            if (!visible.adjusted(-12, -12, 12, 12).contains(point)) {
+                continue;
+            }
             const bool selected = event.uid == store.selected();
             const auto symbol = markerSymbolForCot(event.type);
-            QColor color = event.type.startsWith(QLatin1String("a-f-")) ? QColor("#54c8ff") :
-                event.type.startsWith(QLatin1String("a-h-")) ? QColor("#ff7a7a") : QColor("#f6d477");
+            QColor color = event.type.startsWith(QLatin1String("a-f-"))   ? QColor("#54c8ff")
+                           : event.type.startsWith(QLatin1String("a-h-")) ? QColor("#ff7a7a")
+                                                                          : QColor("#f6d477");
             const auto &symbols = markerSymbols();
-            const auto found = std::find_if(symbols.cbegin(), symbols.cend(), [&symbol](const auto &entry) { return entry.code == symbol; });
-            if (found != symbols.cend()) color = found->color;
+            const auto found =
+                std::find_if(symbols.cbegin(), symbols.cend(), [&symbol](const auto &entry) {
+                    return entry.code == symbol;
+                });
+            if (found != symbols.cend()) {
+                color = found->color;
+            }
             const auto gray = qGray(color.rgb());
             color.setRed(qRound(color.red() * (1 - visual.gray) + gray * visual.gray));
             color.setGreen(qRound(color.green() * (1 - visual.gray) + gray * visual.gray));
             color.setBlue(qRound(color.blue() * (1 - visual.gray) + gray * visual.gray));
-            painter.save(); painter.setOpacity(visual.opacity);
+            painter.save();
+            painter.setOpacity(visual.opacity);
             paintMarkerSymbol(painter, symbol, point, selected ? 8 : 6, color, selected);
             if (selected || labels++ < 100) {
-                paintMapLabel(painter, point + QPointF(16, -8), (event.callsign.isEmpty() ? event.uid : event.callsign).left(32), selected);
+                paintMapLabel(painter,
+                              point + QPointF(16, -8),
+                              (event.callsign.isEmpty() ? event.uid : event.callsign).left(32),
+                              selected);
             }
             painter.restore();
         }
@@ -173,8 +250,14 @@ public:
         table->horizontalHeader()->setSectionsMovable(true);
         table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
         table->horizontalHeader()->setStretchLastSection(true);
-        connect(table->selectionModel(), &QItemSelectionModel::currentRowChanged, table,
-                [&store](const QModelIndex &current) { if (current.isValid()) store.select(current.data(Qt::UserRole).toString()); });
+        connect(table->selectionModel(),
+                &QItemSelectionModel::currentRowChanged,
+                table,
+                [&store](const QModelIndex &current) {
+                    if (current.isValid()) {
+                        store.select(current.data(Qt::UserRole).toString());
+                    }
+                });
         connect(&store, &Store::selectionChanged, table, [table, proxy, &store] {
             for (int row = 0; row < proxy->rowCount(); ++row) {
                 if (proxy->index(row, 0).data(Qt::UserRole).toString() == store.selected()) {
@@ -186,6 +269,7 @@ public:
         });
         return table;
     }
+
 private:
     QAction *createClearAction(Store &store, QWidget &owner)
     {
@@ -195,10 +279,13 @@ private:
         clear->setStatusTip(tr("Remove all current CoT messages and clear the selection."));
         connect(clear, &QAction::triggered, &store, [&store] {
             store.clear();
-            logMessage(Severity::Info, Urgency::Routine, QStringLiteral("swak.events"), tr("CoT Messages cleared."));
+            logMessage(Severity::Info,
+                       Urgency::Routine,
+                       QStringLiteral("swak.events"),
+                       tr("CoT Messages cleared."));
         });
         return clear;
     }
 };
-}
+} // namespace swak
 #include "tracks.moc"

@@ -5,10 +5,12 @@ namespace swak {
 class Servers;
 class ProviderTable;
 class SingleLineLabel;
-class ServerBrowser final : public QWidget {
+class ServerBrowser final : public QWidget
+{
     Q_OBJECT
 public:
     explicit ServerBrowser(Servers &servers, QWidget *parent = nullptr);
+
 private:
     void refresh();
     void status();
@@ -17,4 +19,4 @@ private:
     ProviderTable *table_;
     QPlainTextEdit *status_;
 };
-}
+} // namespace swak

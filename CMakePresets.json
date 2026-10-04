@@ -1,19 +1,75 @@
 {
   "version": 5,
   "configurePresets": [
-    {"name": "debug", "generator": "Ninja", "binaryDir": "${sourceDir}/build/debug", "cacheVariables": {"CMAKE_BUILD_TYPE": "Debug", "BUILD_TESTING": "ON", "SWAK_SANITIZERS": "OFF", "SWAK_COVERAGE": "OFF"}},
-    {"name": "release", "inherits": "debug", "binaryDir": "${sourceDir}/build/release", "cacheVariables": {"CMAKE_BUILD_TYPE": "Release", "BUILD_TESTING": "OFF"}},
-    {"name": "sanitize", "inherits": "debug", "binaryDir": "${sourceDir}/build/sanitize", "cacheVariables": {"SWAK_SANITIZERS": "ON"}},
-    {"name": "coverage", "inherits": "debug", "binaryDir": "${sourceDir}/build/coverage", "cacheVariables": {"SWAK_COVERAGE": "ON"}}
+    {
+      "name": "debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_TESTING": "ON",
+        "SWAK_SANITIZERS": "OFF",
+        "SWAK_COVERAGE": "OFF"
+      }
+    },
+    {
+      "name": "release",
+      "inherits": "debug",
+      "binaryDir": "${sourceDir}/build/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING": "OFF"
+      }
+    },
+    {
+      "name": "sanitize",
+      "inherits": "debug",
+      "binaryDir": "${sourceDir}/build/sanitize",
+      "cacheVariables": {
+        "SWAK_SANITIZERS": "ON"
+      }
+    },
+    {
+      "name": "coverage",
+      "inherits": "debug",
+      "binaryDir": "${sourceDir}/build/coverage",
+      "cacheVariables": {
+        "SWAK_COVERAGE": "ON"
+      }
+    }
   ],
   "buildPresets": [
-    {"name": "debug", "configurePreset": "debug"},
-    {"name": "release", "configurePreset": "release"},
-    {"name": "sanitize", "configurePreset": "sanitize"},
-    {"name": "coverage", "configurePreset": "coverage"}
+    {
+      "name": "debug",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "sanitize",
+      "configurePreset": "sanitize"
+    },
+    {
+      "name": "coverage",
+      "configurePreset": "coverage"
+    }
   ],
   "testPresets": [
-    {"name": "debug", "configurePreset": "debug", "output": {"outputOnFailure": true}},
-    {"name": "sanitize", "configurePreset": "sanitize", "output": {"outputOnFailure": true}}
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "sanitize",
+      "configurePreset": "sanitize",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
   ]
 }

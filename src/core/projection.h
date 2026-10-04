@@ -3,7 +3,8 @@
 #include <QSizeF>
 
 namespace swak {
-struct Viewport {
+struct Viewport
+{
     QSizeF size;
     QPointF center{0.5, 0.5};
     double zoom = 1;
@@ -13,4 +14,4 @@ struct Viewport {
 };
 QPointF project(double latitude, double longitude);
 QPointF unproject(QPointF point);
-}
+} // namespace swak

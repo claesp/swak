@@ -1,14 +1,21 @@
 #pragma once
 #include "core/maps.h"
+
 #include <QDialog>
+
 #include <functional>
 class QLabel;
 namespace swak {
 class ProviderTable;
-class MapManager final : public QDialog {
+class MapManager final : public QDialog
+{
     Q_OBJECT
 public:
-    explicit MapManager(MapSources &sources, QWidget *parent = nullptr, std::function<QString()> save = {}, bool embedded = false);
+    explicit MapManager(MapSources &sources,
+                        QWidget *parent = nullptr,
+                        std::function<QString()> save = {},
+                        bool embedded = false);
+
 private:
     void reportError(const QString &message);
     void refresh();
@@ -20,4 +27,4 @@ private:
 
     QLabel *status_;
 };
-}
+} // namespace swak

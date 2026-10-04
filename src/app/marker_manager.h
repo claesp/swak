@@ -1,14 +1,21 @@
 #pragma once
 #include "core/marker_collections.h"
+
 #include <QDialog>
+
 #include <functional>
 class QLabel;
 namespace swak {
 class ProviderTable;
-class MarkerManager final : public QDialog {
+class MarkerManager final : public QDialog
+{
     Q_OBJECT
 public:
-    MarkerManager(MarkerCollections &collections, QWidget *parent, std::function<QString()> save, bool embedded = false);
+    MarkerManager(MarkerCollections &collections,
+                  QWidget *parent,
+                  std::function<QString()> save,
+                  bool embedded = false);
+
 private:
     void refresh();
     void edit(bool adding);
@@ -19,4 +26,4 @@ private:
     ProviderTable *table_;
     QLabel *status_;
 };
-}
+} // namespace swak

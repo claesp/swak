@@ -33,3 +33,7 @@ Circle, Distance, and Line use original vector paths in tools/generate_icons.py.
 The UID lock and unlock buttons use original vector paths in the shared icon factory. They add no external dependency.
 
 The Server, Data providers, OK, and Apply icons use original vector paths in the shared factory. Team swatches use the existing vector icon engine. These changes add no runtime dependency.
+
+# Source formatters
+
+Development uses clang-format 19, Black 25.1.0, and cmake-format 0.6.13 to enforce the documented source style. These tools provide repeatable formatting across the repository. They are not linked, packaged, or installed with SWAK. Read [Coding style](coding-style.md) for commands and exclusions.

@@ -1,57 +1,94 @@
 #pragma once
+#include "core/map_selection.h"
 #include "core/maps.h"
 #include "core/projection.h"
 #include "core/vector_tiles.h"
-#include "core/map_selection.h"
-#include <QThreadPool>
-#include <QSet>
+
 #include <QCache>
 #include <QImage>
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
-#include <QNetworkDiskCache>
 #include <QLockFile>
+#include <QNetworkAccessManager>
+#include <QNetworkDiskCache>
+#include <QNetworkReply>
+#include <QSet>
+#include <QThreadPool>
 #include <QTimer>
+
 #include <memory>
 class QPainter;
 namespace swak {
 inline constexpr QRgb MapBackgroundRgb = qRgb(48, 61, 43);
 QImage decodeMapTile(const QByteArray &bytes);
-struct TilePlacement { QString key; int z; int x; int y; QRectF rectangle; };
+struct TilePlacement
+{
+    QString key;
+    int z;
+    int x;
+    int y;
+    QRectF rectangle;
+};
 QList<TilePlacement> visibleTiles(const Viewport &view, int minimumZoom, int maximumZoom);
 QList<TilePlacement> tileFetchArea(const QList<TilePlacement> &visible, int margin);
-class TileRenderer final : public QObject {
+class TileRenderer final : public QObject
+{
     Q_OBJECT
 public:
     explicit TileRenderer(QObject *parent = nullptr);
     ~TileRenderer() override;
-    void setSource(MapProvider *provider, const QJsonObject &source, const QByteArray &credential = {});
-    void paint(QPainter &painter, const Viewport &view, double opacity, bool smooth, double missingOpacity = 0.2);
+    void
+    setSource(MapProvider *provider, const QJsonObject &source, const QByteArray &credential = {});
+    void paint(QPainter &painter,
+               const Viewport &view,
+               double opacity,
+               bool smooth,
+               double missingOpacity = 0.2);
     QString status() const;
-    struct Coverage { int total = 0; int rendered = 0; };
+    struct Coverage
+    {
+        int total = 0;
+        int rendered = 0;
+    };
     Coverage coverage() const;
     void setMemoryLimit(int mebibytes);
     void setDiskLimit(int mebibytes);
     void setPrefetchMargin(int margin);
-    qint64 diskCacheBytes() const { return diskBytes_; }
+    qint64 diskCacheBytes() const
+    {
+        return diskBytes_;
+    }
     // Network tests inspect the request bound and cancellation.
     // cppcheck-suppress unusedFunction
-    qsizetype pendingCount() const { return pending_.size(); }
+    qsizetype pendingCount() const
+    {
+        return pending_.size();
+    }
     // Regression tests enforce the decoded memory budget.
     // cppcheck-suppress unusedFunction
-    qsizetype memoryCostKiB() const { return images_.totalCost(); }
+    qsizetype memoryCostKiB() const
+    {
+        return images_.totalCost();
+    }
     void stop();
     QStringList layers() const;
     QList<QJsonObject> featuresAt(QPointF position) const;
     QList<MapItem> itemsAt(QPointF position) const;
 signals:
     void changed();
+
 private:
-    struct Image { QImage pixels; VectorTile vectors; bool vector = false; QDateTime expires; bool transient = false; };
+    struct Image
+    {
+        QImage pixels;
+        VectorTile vectors;
+        bool vector = false;
+        QDateTime expires;
+        bool transient = false;
+    };
     void pump();
     void compactImages();
     void cancel();
-    void decodeVector(const QString &key, QByteArray bytes, const QUrl &url, QDateTime expires, bool transient);
+    void decodeVector(
+        const QString &key, QByteArray bytes, const QUrl &url, QDateTime expires, bool transient);
     void fail(const QString &key, const QString &message, int retrySeconds, bool providerWide);
     QNetworkAccessManager network_;
     QNetworkDiskCache *disk_ = nullptr;
@@ -73,7 +110,11 @@ private:
     qint64 diskBytes_ = -1;
     int diskLimitMiB_ = 128;
     QDateTime retryAt_;
-    struct Failure { QDateTime retryAt; int delay; };
+    struct Failure
+    {
+        QDateTime retryAt;
+        int delay;
+    };
     QCache<QString, Failure> failures_{256};
     QString status_;
     bool ready_ = false;
@@ -85,4 +126,4 @@ private:
     int activeJobs_ = 0;
     bool compact_ = false;
 };
-}
+} // namespace swak

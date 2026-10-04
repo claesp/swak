@@ -1,12 +1,15 @@
 #pragma once
 #include "core/settings.h"
+
 #include <QDialog>
+
 #include <functional>
 
 class QLabel;
 class QComboBox;
 namespace swak {
-struct SettingsPage {
+struct SettingsPage
+{
     QString id;
     QString title;
     QList<SettingField> fields;
@@ -17,12 +20,18 @@ struct SettingsPage {
     std::function<QWidget *(QWidget *)> createContent = {};
     QJsonObject defaults = {};
 };
-class SettingsDialog final : public QDialog {
+class SettingsDialog final : public QDialog
+{
     Q_OBJECT
 public:
-    SettingsDialog(QList<SettingsPage> pages, std::function<QString()> save, QWidget *parent, bool providerForm = false, bool newProvider = false);
+    SettingsDialog(QList<SettingsPage> pages,
+                   std::function<QString()> save,
+                   QWidget *parent,
+                   bool providerForm = false,
+                   bool newProvider = false);
     QJsonObject navigation() const;
     void restoreNavigation(const QJsonObject &values);
+
 private:
     bool applyChanges();
     QList<SettingsPage> pages_;
@@ -32,4 +41,4 @@ private:
     bool newProvider_ = false;
     QComboBox *providerChoice_ = nullptr;
 };
-}
+} // namespace swak

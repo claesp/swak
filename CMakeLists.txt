@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.24)
-project(swak VERSION 0.1.0 LANGUAGES CXX)
+project(
+    swak
+    VERSION 0.1.0
+    LANGUAGES CXX
+)
 
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_AUTOMOC ON)
@@ -19,21 +23,35 @@ endif()
 
 add_library(swak_build INTERFACE)
 target_compile_features(swak_build INTERFACE cxx_std_20)
-set(version_command "${CMAKE_COMMAND}" "-DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
-    "-DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/generated/swak/version.h" "-DBASE_VERSION=${PROJECT_VERSION}"
-    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/version.cmake")
+set(version_command
+    "${CMAKE_COMMAND}" "-DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
+    "-DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/generated/swak/version.h"
+    "-DBASE_VERSION=${PROJECT_VERSION}" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/version.cmake"
+)
 execute_process(COMMAND ${version_command} COMMAND_ERROR_IS_FATAL ANY)
-add_custom_target(swak_version COMMAND ${version_command}
-    BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/generated/swak/version.h" VERBATIM)
+add_custom_target(
+    swak_version
+    COMMAND ${version_command}
+    BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/generated/swak/version.h"
+    VERBATIM
+)
 add_dependencies(swak_build swak_version)
 target_include_directories(swak_build INTERFACE "${CMAKE_CURRENT_BINARY_DIR}/generated")
-target_compile_options(swak_build INTERFACE
-    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic;-Wconversion;-Wshadow;-fstack-protector-strong>)
+target_compile_options(
+    swak_build
+    INTERFACE
+        $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic;-Wconversion;-Wshadow;-fstack-protector-strong>
+)
 target_link_options(swak_build INTERFACE $<$<CXX_COMPILER_ID:GNU,Clang>:-Wl,-z,relro,-z,now>)
-target_compile_options(swak_build INTERFACE
-    $<$<AND:$<CONFIG:Release,RelWithDebInfo>,$<CXX_COMPILER_ID:GNU,Clang>>:-include;${CMAKE_CURRENT_SOURCE_DIR}/src/core/hardening.h>)
+target_compile_options(
+    swak_build
+    INTERFACE
+        $<$<AND:$<CONFIG:Release,RelWithDebInfo>,$<CXX_COMPILER_ID:GNU,Clang>>:-include;${CMAKE_CURRENT_SOURCE_DIR}/src/core/hardening.h>
+)
 if(SWAK_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(swak_build INTERFACE -fsanitize=address,undefined -fno-omit-frame-pointer)
+    target_compile_options(
+        swak_build INTERFACE -fsanitize=address,undefined -fno-omit-frame-pointer
+    )
     target_link_options(swak_build INTERFACE -fsanitize=address,undefined)
 endif()
 if(SWAK_COVERAGE)
@@ -41,10 +59,73 @@ if(SWAK_COVERAGE)
     target_link_options(swak_build INTERFACE --coverage)
 endif()
 
-add_library(swak_core STATIC src/core/measure.cpp src/core/measure.h src/core/lan_protocol.cpp src/core/track_motion.cpp src/core/settings_dialog.cpp src/core/server_browser.cpp src/core/cot.cpp src/core/cot_stream.cpp src/core/identity.cpp src/core/servers.cpp src/core/ui_icons.cpp src/core/ui_icons.h src/core/polygon.cpp src/core/polygon.h src/core/map_auth.cpp src/core/marker_collections.cpp src/core/marker_collections.h src/core/milstd2525_symbols.cpp src/core/marker_symbols.cpp src/core/marker_symbols.h src/core/map_grid.cpp src/core/map_grid.h src/core/object_editor.cpp src/core/object_editor.h src/core/user_objects.cpp src/core/user_objects.h src/core/map_tools.cpp src/core/map_tools.h src/core/map_selection.cpp src/core/map_selection.h src/core/vector_tiles.cpp src/core/vector_tiles.h src/core/data.cpp src/core/data.h src/core/event.cpp src/core/event.h src/core/files.cpp src/core/files.h src/core/interfaces.h src/core/single_line_label.h
-    src/core/plugin_catalog.cpp src/core/plugin_catalog.h src/core/activity.cpp src/core/activity.h src/core/store.cpp src/core/store.h src/core/projection.cpp src/core/projection.h src/core/preferences.cpp src/core/preferences.h src/core/settings.cpp src/core/settings.h src/core/cot_picker.cpp src/core/cot_picker.h src/core/maps.cpp src/core/maps.h src/core/tiles.cpp src/core/tiles.h src/core/logging.cpp src/core/logging.h)
+add_library(
+    swak_core STATIC
+    src/core/measure.cpp
+    src/core/measure.h
+    src/core/lan_protocol.cpp
+    src/core/track_motion.cpp
+    src/core/settings_dialog.cpp
+    src/core/server_browser.cpp
+    src/core/cot.cpp
+    src/core/cot_stream.cpp
+    src/core/identity.cpp
+    src/core/servers.cpp
+    src/core/ui_icons.cpp
+    src/core/ui_icons.h
+    src/core/polygon.cpp
+    src/core/polygon.h
+    src/core/map_auth.cpp
+    src/core/marker_collections.cpp
+    src/core/marker_collections.h
+    src/core/milstd2525_symbols.cpp
+    src/core/marker_symbols.cpp
+    src/core/marker_symbols.h
+    src/core/map_grid.cpp
+    src/core/map_grid.h
+    src/core/object_editor.cpp
+    src/core/object_editor.h
+    src/core/user_objects.cpp
+    src/core/user_objects.h
+    src/core/map_tools.cpp
+    src/core/map_tools.h
+    src/core/map_selection.cpp
+    src/core/map_selection.h
+    src/core/vector_tiles.cpp
+    src/core/vector_tiles.h
+    src/core/data.cpp
+    src/core/data.h
+    src/core/event.cpp
+    src/core/event.h
+    src/core/files.cpp
+    src/core/files.h
+    src/core/interfaces.h
+    src/core/single_line_label.h
+    src/core/plugin_catalog.cpp
+    src/core/plugin_catalog.h
+    src/core/activity.cpp
+    src/core/activity.h
+    src/core/store.cpp
+    src/core/store.h
+    src/core/projection.cpp
+    src/core/projection.h
+    src/core/preferences.cpp
+    src/core/preferences.h
+    src/core/settings.cpp
+    src/core/settings.h
+    src/core/cot_picker.cpp
+    src/core/cot_picker.h
+    src/core/maps.cpp
+    src/core/maps.h
+    src/core/tiles.cpp
+    src/core/tiles.h
+    src/core/logging.cpp
+    src/core/logging.h
+)
 target_include_directories(swak_core PUBLIC src)
-target_link_libraries(swak_core PUBLIC swak_build LibArchive::LibArchive Qt6::Widgets Qt6::Network Qt6::Concurrent)
+target_link_libraries(
+    swak_core PUBLIC swak_build LibArchive::LibArchive Qt6::Widgets Qt6::Network Qt6::Concurrent
+)
 
 function(swak_plugin name file)
     add_library(${name} STATIC ${file})
@@ -71,13 +152,60 @@ swak_plugin(swak_tracks src/plugins/tracks.cpp)
 swak_plugin(swak_servers src/plugins/servers.cpp Qt6::Network)
 swak_plugin(swak_editor src/plugins/editor.cpp)
 
-add_executable(swak src/app/main.cpp src/app/window.cpp src/app/window.h src/app/map_panels.cpp src/app/map_panels.h src/app/map_manager.cpp src/app/map_manager.h src/app/data_manager.cpp src/app/data_manager.h src/app/marker_manager.cpp src/app/marker_manager.h src/app/plugins.cpp)
-target_link_libraries(swak PRIVATE swak_shapes swak_trace swak_milstd2525 swak_polygons swak_markers swak_information swak_mvt swak_kml swak_activity swak_cot swak_map swak_basemap swak_tracks swak_servers swak_editor swak_xyz swak_wmts swak_wms)
+add_executable(
+    swak
+    src/app/main.cpp
+    src/app/window.cpp
+    src/app/window.h
+    src/app/map_panels.cpp
+    src/app/map_panels.h
+    src/app/map_manager.cpp
+    src/app/map_manager.h
+    src/app/data_manager.cpp
+    src/app/data_manager.h
+    src/app/marker_manager.cpp
+    src/app/marker_manager.h
+    src/app/plugins.cpp
+)
+target_link_libraries(
+    swak
+    PRIVATE swak_shapes
+            swak_trace
+            swak_milstd2525
+            swak_polygons
+            swak_markers
+            swak_information
+            swak_mvt
+            swak_kml
+            swak_activity
+            swak_cot
+            swak_map
+            swak_basemap
+            swak_tracks
+            swak_servers
+            swak_editor
+            swak_xyz
+            swak_wmts
+            swak_wms
+)
 install(TARGETS swak RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES packaging/org.swak.Swak.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
-install(FILES packaging/org.swak.Swak.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
-install(FILES third_party/protozero/LICENSE.md third_party/protozero/LICENSE.from_folly DESTINATION ${CMAKE_INSTALL_DOCDIR}/protozero)
-install(FILES docs/servers.md docs/usage.md docs/map-providers.md docs/data-providers.md docs/dependencies.md docs/atak-reference-review.md docs/marker-collections.md DESTINATION ${CMAKE_INSTALL_DOCDIR})
+install(FILES packaging/org.swak.Swak.svg
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
+)
+install(FILES third_party/protozero/LICENSE.md third_party/protozero/LICENSE.from_folly
+        DESTINATION ${CMAKE_INSTALL_DOCDIR}/protozero
+)
+install(
+    FILES docs/servers.md
+          docs/usage.md
+          docs/map-providers.md
+          docs/data-providers.md
+          docs/dependencies.md
+          docs/atak-reference-review.md
+          docs/marker-collections.md
+    DESTINATION ${CMAKE_INSTALL_DOCDIR}
+)
 
 if(BUILD_TESTING)
     find_package(Qt6 6.4 REQUIRED COMPONENTS Test)
@@ -106,11 +234,54 @@ if(BUILD_TESTING)
     add_test(NAME data COMMAND swak_data_tests)
     set_tests_properties(data PROPERTIES TIMEOUT 60 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_executable(swak_map_tests tests/test_maps.cpp src/app/plugins.cpp)
-    target_link_libraries(swak_map_tests PRIVATE swak_shapes swak_trace swak_milstd2525 swak_polygons swak_markers swak_information swak_mvt swak_kml swak_activity swak_cot swak_map swak_basemap swak_tracks swak_servers swak_editor swak_xyz swak_wmts swak_wms Qt6::Test)
+    target_link_libraries(
+        swak_map_tests
+        PRIVATE swak_shapes
+                swak_trace
+                swak_milstd2525
+                swak_polygons
+                swak_markers
+                swak_information
+                swak_mvt
+                swak_kml
+                swak_activity
+                swak_cot
+                swak_map
+                swak_basemap
+                swak_tracks
+                swak_servers
+                swak_editor
+                swak_xyz
+                swak_wmts
+                swak_wms
+                Qt6::Test
+    )
     add_test(NAME maps COMMAND swak_map_tests)
     set_tests_properties(maps PROPERTIES TIMEOUT 60 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_executable(swak_tests tests/test_core.cpp src/app/plugins.cpp)
-    target_link_libraries(swak_tests PRIVATE swak_shapes swak_trace swak_milstd2525 swak_polygons swak_markers swak_information swak_mvt swak_kml swak_activity swak_cot swak_map swak_basemap swak_tracks swak_servers swak_editor swak_xyz swak_wmts swak_wms Qt6::Test Qt6::Network)
+    target_link_libraries(
+        swak_tests
+        PRIVATE swak_shapes
+                swak_trace
+                swak_milstd2525
+                swak_polygons
+                swak_markers
+                swak_information
+                swak_mvt
+                swak_kml
+                swak_activity
+                swak_cot
+                swak_map
+                swak_basemap
+                swak_tracks
+                swak_servers
+                swak_editor
+                swak_xyz
+                swak_wmts
+                swak_wms
+                Qt6::Test
+                Qt6::Network
+    )
     add_test(NAME core COMMAND swak_tests)
     set_tests_properties(core PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_executable(swak_activity_tests tests/test_activity.cpp)
@@ -124,14 +295,91 @@ if(BUILD_TESTING)
     add_executable(swak_preferences_tests tests/test_preferences.cpp)
     target_link_libraries(swak_preferences_tests PRIVATE swak_core Qt6::Test)
     add_test(NAME preferences COMMAND swak_preferences_tests)
-    add_executable(swak_soak_tests tests/test_soak.cpp src/app/window.cpp src/app/window.h src/app/map_panels.cpp src/app/map_panels.h src/app/map_manager.cpp src/app/map_manager.h src/app/data_manager.cpp src/app/data_manager.h src/app/marker_manager.cpp src/app/marker_manager.h src/app/plugins.cpp)
-    target_link_libraries(swak_soak_tests PRIVATE swak_shapes swak_trace swak_milstd2525 swak_polygons swak_markers swak_information swak_mvt swak_kml swak_activity swak_cot swak_map swak_basemap swak_tracks swak_servers swak_editor swak_xyz swak_wmts swak_wms Qt6::Test Qt6::Network)
+    add_executable(
+        swak_soak_tests
+        tests/test_soak.cpp
+        src/app/window.cpp
+        src/app/window.h
+        src/app/map_panels.cpp
+        src/app/map_panels.h
+        src/app/map_manager.cpp
+        src/app/map_manager.h
+        src/app/data_manager.cpp
+        src/app/data_manager.h
+        src/app/marker_manager.cpp
+        src/app/marker_manager.h
+        src/app/plugins.cpp
+    )
+    target_link_libraries(
+        swak_soak_tests
+        PRIVATE swak_shapes
+                swak_trace
+                swak_milstd2525
+                swak_polygons
+                swak_markers
+                swak_information
+                swak_mvt
+                swak_kml
+                swak_activity
+                swak_cot
+                swak_map
+                swak_basemap
+                swak_tracks
+                swak_servers
+                swak_editor
+                swak_xyz
+                swak_wmts
+                swak_wms
+                Qt6::Test
+                Qt6::Network
+    )
     add_test(NAME soak COMMAND swak_soak_tests)
-    set_tests_properties(soak PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 60 LABELS "stress")
+    set_tests_properties(
+        soak PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 60 LABELS "stress"
+    )
     set_tests_properties(core preferences PROPERTIES TIMEOUT 60)
-    add_executable(swak_gui_tests tests/test_gui.cpp src/app/window.cpp src/app/window.h src/app/map_panels.cpp src/app/map_panels.h src/app/map_manager.cpp src/app/map_manager.h src/app/data_manager.cpp src/app/data_manager.h src/app/marker_manager.cpp src/app/marker_manager.h src/app/plugins.cpp)
+    add_executable(
+        swak_gui_tests
+        tests/test_gui.cpp
+        src/app/window.cpp
+        src/app/window.h
+        src/app/map_panels.cpp
+        src/app/map_panels.h
+        src/app/map_manager.cpp
+        src/app/map_manager.h
+        src/app/data_manager.cpp
+        src/app/data_manager.h
+        src/app/marker_manager.cpp
+        src/app/marker_manager.h
+        src/app/plugins.cpp
+    )
     add_dependencies(swak_gui_tests swak_cot_emulator)
-    target_link_libraries(swak_gui_tests PRIVATE swak_shapes swak_trace swak_milstd2525 swak_polygons swak_markers swak_information swak_mvt swak_kml swak_activity swak_cot swak_map swak_basemap swak_tracks swak_servers swak_editor swak_xyz swak_wmts swak_wms Qt6::Test Qt6::Network Qt6::OpenGLWidgets)
+    target_link_libraries(
+        swak_gui_tests
+        PRIVATE swak_shapes
+                swak_trace
+                swak_milstd2525
+                swak_polygons
+                swak_markers
+                swak_information
+                swak_mvt
+                swak_kml
+                swak_activity
+                swak_cot
+                swak_map
+                swak_basemap
+                swak_tracks
+                swak_servers
+                swak_editor
+                swak_xyz
+                swak_wmts
+                swak_wms
+                Qt6::Test
+                Qt6::Network
+                Qt6::OpenGLWidgets
+    )
 endif()
 
-install(FILES third_party/lucide/LICENSE third_party/lucide/LICENSE.Feather DESTINATION ${CMAKE_INSTALL_DOCDIR}/lucide)
+install(FILES third_party/lucide/LICENSE third_party/lucide/LICENSE.Feather
+        DESTINATION ${CMAKE_INSTALL_DOCDIR}/lucide
+)

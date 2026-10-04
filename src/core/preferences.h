@@ -4,11 +4,13 @@
 #include <QList>
 #include <QRect>
 #include <QString>
+
 #include <memory>
 
 class QLockFile;
 namespace swak {
-class PreferenceParticipant {
+class PreferenceParticipant
+{
 public:
     virtual ~PreferenceParticipant() = default;
     virtual QString preferenceId() const = 0;
@@ -16,18 +18,32 @@ public:
     virtual void restorePreferences(const QJsonObject &values) = 0;
 };
 
-class Preferences final {
+class Preferences final
+{
 public:
     explicit Preferences(QString path);
     ~Preferences();
     Preferences(const Preferences &) = delete;
     Preferences &operator=(const Preferences &) = delete;
     static QString defaultPath();
-    const QJsonObject &document() const { return document_; }
-    const QString &error() const { return error_; }
-    const QString &path() const { return path_; }
+    const QJsonObject &document() const
+    {
+        return document_;
+    }
+    const QString &error() const
+    {
+        return error_;
+    }
+    const QString &path() const
+    {
+        return path_;
+    }
     bool save(const QJsonObject &document);
-    bool writable() const { return writable_; }
+    bool writable() const
+    {
+        return writable_;
+    }
+
 private:
     QString path_;
     QString error_;
@@ -36,8 +52,13 @@ private:
     bool writable_ = false;
 };
 
-double preferenceNumber(const QJsonObject &values, const QString &key, double fallback, double low, double high);
-int preferenceInteger(const QJsonObject &values, const QString &key, int fallback, int low, int high);
-QString preferenceText(const QJsonObject &values, const QString &key, const QString &fallback, qsizetype limit);
+double preferenceNumber(
+    const QJsonObject &values, const QString &key, double fallback, double low, double high);
+int preferenceInteger(
+    const QJsonObject &values, const QString &key, int fallback, int low, int high);
+QString preferenceText(const QJsonObject &values,
+                       const QString &key,
+                       const QString &fallback,
+                       qsizetype limit);
 QRect fitWindowRectangle(QRect rectangle, const QList<QRect> &screens);
-}
+} // namespace swak

@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 4, 2026: Read “File menu Quit placement” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 4, 2026: Read “Project coding style and repository review” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -1122,3 +1122,28 @@ All 86 native sanitizer cases passed in build/quality/20261004-203418-gui-23970.
 The 60-second workload passed in build/quality/20261004-203457-soak-24241. It completed 1120 cycles with 17547264 bytes of peak memory growth. The maximum heartbeat gap was 44 milliseconds. Idle CPU time was 0.015 seconds.
 
 Coverage passed ten suites and all 86 native cases in build/quality/20261004-203610-coverage-24381. The menu sorter reached all 29 lines and seven functions. Branch coverage remains incomplete at 58 of 96 branches. Hardware graphics, native Wayland, all locale/theme combinations, and two-hour operation remain unqualified. Final builds use build/quit-release-final.log and build/quit-debug-final.log.
+
+
+## 2026-10-04: Project coding style and repository review
+
+The project now defines its source style in docs/coding-style.md. AGENTS.md requires that style and its automated pass. Read docs/style-review-2026-10-04.md for review scope, evidence, and exceptions. The standard follows the qt-linux-gui skill and retains Qt 6.4, C++20, and Ninja.
+
+The enforced inventory contains 123 C++ files, eight Python files, and two CMake files. Formatting expands compressed statements and adds explicit control braces. Direct standard-library includes replace incidental declarations. The whole first-party tree follows the formatter files. Third-party files and generated icon output remain unchanged.
+
+Development uses clang-format 19, Black 25.1.0, and cmake-format 0.6.13. tools/style.py reports differences. Its --fix flag applies changes. tools/quality.py now has a style mode and seven tests for the formatter runner. Source analysis includes the C++ development tools. No formatter enters the release application.
+
+The formatters were extracted into build/dev-tools on this machine. The Python tools use its dist-packages directory through PYTHONPATH. The Clang tool uses its library directory through LD_LIBRARY_PATH. These paths are local conveniences. Follow docs/coding-style.md to install tools on another machine.
+
+The final style pass succeeded in build/quality/20261004-205356-style-18. All 50 first-party headers compiled independently in build/style-headers.log. C++ token comparison passed after accounting for includes, braces, comments, whitespace, and adjacent string literals. This comparison is evidence, not a semantic proof. Its report is build/style-token-review.log.
+
+Source analysis passed in build/quality/20261004-205022-analyze-3. Ten sanitizer suites passed in build/quality/20261004-205026-quick-28293. All 86 native sanitizer cases passed in build/quality/20261004-205242-gui-30010. The existing Mesa leak remains unsuppressed at 240732 bytes in 1073 allocations.
+
+The 60-second workload passed in build/quality/20261004-205329-soak-30973. It completed 1096 cycles with 17375232 bytes of peak memory growth. The maximum heartbeat gap was 44 milliseconds. Idle CPU time was 0.010 seconds.
+
+The debug build passed in build/style-debug-final.log. The initial release build passed in build/style-release.log. The final builds after the commit use build/style-release-committed.log and build/style-debug-committed.log. Qt 6.8.2 and GCC 14.2 ran these tests. Hardware graphics, native Wayland, all locale/theme combinations, and two-hour desktop operation remain unqualified.
+
+The full rebuild exposed four shadowed callback locals in the server browser and marker tools. Those locals now use distinct names. The final release rebuild in build/style-release-clean.log has no compiler warnings. Final style and source analysis passed in build/quality/20261004-205730-style-17 and build/quality/20261004-205733-analyze-78.
+
+All 86 final native sanitizer cases passed in build/quality/20261004-205727-gui-33221. The same Mesa leak remains. Final coverage passed ten suites and all 86 native cases in build/quality/20261004-205814-coverage-33819. It reached 11225 of 12172 lines, 1106 of 1178 functions, and 16161 of 31042 branches.
+
+Coverage gaps include invalid client-key files, startup manifest rejection logging, and some vector-cache eviction paths. Some missing lines are compiler instrumentation at lambda closing braces. No new unused function was reported by source analysis. This is not proof that all dead code or defects are absent. The final token comparison accounts for the four reviewed local renames in build/style-token-review-final.log.

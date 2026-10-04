@@ -5,6 +5,7 @@ Read [docs/HANDOFF.md](docs/HANDOFF.md) before starting work in a new session. T
 Follow these standing requirements:
 
 - Use Qt and modern C++ for this native Linux application.
+- Follow docs/coding-style.md and run tools/style.py before committing code changes.
 - Use CMake with the Ninja generator and the repository presets.
 - Keep features behind plugin interfaces where practical.
 - Use the shared core API for every plugin and embed a MANIFEST with its metadata.

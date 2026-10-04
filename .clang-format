@@ -1,0 +1,50 @@
+BasedOnStyle: LLVM
+Standard: c++20
+IndentWidth: 4
+ContinuationIndentWidth: 4
+ColumnLimit: 100
+UseTab: Never
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass: true
+  AfterStruct: true
+  AfterEnum: true
+  AfterFunction: true
+  AfterNamespace: false
+  AfterControlStatement: Never
+  BeforeElse: false
+  BeforeCatch: false
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortLambdasOnASingleLine: Empty
+AllowShortBlocksOnASingleLine: Never
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+InsertBraces: true
+AccessModifierOffset: -4
+PointerAlignment: Right
+ReferenceAlignment: Right
+NamespaceIndentation: None
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^"'
+    Priority: 1
+  - Regex: '^<Q'
+    Priority: 2
+  - Regex: '.*'
+    Priority: 3
+BinPackArguments: false
+BinPackParameters: false
+FixNamespaceComments: true
+ReflowComments: false
+StatementMacros:
+  - Q_UNUSED
+  - Q_OBJECT
+  - Q_GADGET
+  - Q_PLUGIN_METADATA
+  - Q_INTERFACES
+  - Q_DECLARE_INTERFACE
+  - Q_DECLARE_METATYPE
+  - Q_IMPORT_PLUGIN
+  - Q_GLOBAL_STATIC

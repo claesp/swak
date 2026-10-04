@@ -1,31 +1,42 @@
 #pragma once
+#include "core/preferences.h"
 #include "core/settings_dialog.h"
 #include "core/store.h"
-#include "core/preferences.h"
+
+#include <QElapsedTimer>
 #include <QMainWindow>
 #include <QTimer>
-#include <QElapsedTimer>
 
 class QLabel;
 namespace swak {
 class MapPanels;
-class Window final : public QMainWindow {
+class Window final : public QMainWindow
+{
     Q_OBJECT
 public:
-    Window(const QString &preferencesPath, const QList<QObject *> &plugins, QWidget *parent = nullptr);
+    Window(const QString &preferencesPath,
+           const QList<QObject *> &plugins,
+           QWidget *parent = nullptr);
     ~Window() override;
     // Native GUI tests use this access to inspect event updates.
     // cppcheck-suppress unusedFunction
-    Store &store() { return store_; }
+    Store &store()
+    {
+        return store_;
+    }
     bool savePreferences();
     void addDockWidget(Qt::DockWidgetArea area, QDockWidget *dock);
     void tabifyDockWidget(QDockWidget *first, QDockWidget *second);
-    void resizeDocks(const QList<QDockWidget *> &docks, const QList<int> &sizes, Qt::Orientation orientation);
+    void resizeDocks(const QList<QDockWidget *> &docks,
+                     const QList<int> &sizes,
+                     Qt::Orientation orientation);
     Qt::DockWidgetArea dockWidgetArea(QDockWidget *dock) const;
     QList<QDockWidget *> tabifiedDockWidgets(QDockWidget *dock) const;
+
 protected:
     void closeEvent(QCloseEvent *event) override;
     void showEvent(QShowEvent *event) override;
+
 private:
     void restorePreferences();
     void fitWindowsToScreens();
@@ -53,4 +64,4 @@ private:
     QByteArray markerManagerGeometry_;
     QJsonObject settingsNavigation_;
 };
-}
+} // namespace swak

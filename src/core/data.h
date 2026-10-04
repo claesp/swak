@@ -1,18 +1,26 @@
 #pragma once
-#include "core/settings.h"
 #include "core/map_selection.h"
 #include "core/projection.h"
+#include "core/settings.h"
+
 #include <QColor>
 #include <QPainterPath>
 #include <QThreadPool>
 #include <QTimer>
+
 #include <atomic>
 #include <memory>
 
 class QPainter;
 namespace swak {
-struct DataShape {
-    enum class Kind { Point, Line, Polygon };
+struct DataShape
+{
+    enum class Kind
+    {
+        Point,
+        Line,
+        Polygon
+    };
     Kind kind = Kind::Point;
     QPainterPath path;
     QPointF point;
@@ -20,38 +28,57 @@ struct DataShape {
     QString description;
     QJsonObject properties;
 };
-struct DataDocument {
+struct DataDocument
+{
     QList<DataShape> shapes;
     QString error;
     int ignoredLinks = 0;
     int ignoredOverlays = 0;
 };
-class DataProvider {
+class DataProvider
+{
 public:
     virtual ~DataProvider() = default;
     virtual QString dataId() const = 0;
     virtual QString dataName() const = 0;
     virtual QList<QJsonObject> presets() const = 0;
-    virtual DataDocument decode(const QByteArray &bytes, const std::atomic_bool &cancelled) const = 0;
+    virtual DataDocument decode(const QByteArray &bytes,
+                                const std::atomic_bool &cancelled) const = 0;
 };
 inline constexpr qsizetype DataDownloadLimit = 8 * 1024 * 1024;
 inline constexpr qsizetype DataXmlLimit = 16 * 1024 * 1024;
 QList<SettingField> dataFields();
 QJsonObject dataDefaults();
 QString validateDataSource(const QJsonObject &source);
-class DataSources final : public QObject, public SettingsParticipant {
+class DataSources final : public QObject, public SettingsParticipant
+{
     Q_OBJECT
 public:
     explicit DataSources(const QList<QObject *> &plugins, QObject *parent = nullptr);
     ~DataSources() override;
-    QString preferenceId() const override { return QStringLiteral("org.swak.data"); }
-    QString settingsTitle() const override { return tr("Data providers"); }
+    QString preferenceId() const override
+    {
+        return QStringLiteral("org.swak.data");
+    }
+    QString settingsTitle() const override
+    {
+        return tr("Data providers");
+    }
     QList<SettingField> settingsFields() const override;
     QString validateSettings(const QJsonObject &values) const override;
-    QJsonObject savePreferences() const override { return values_; }
+    QJsonObject savePreferences() const override
+    {
+        return values_;
+    }
     void restorePreferences(const QJsonObject &values) override;
-    QJsonObject sources() const { return values_.value(QStringLiteral("sources")).toObject(); }
-    const QList<DataProvider *> &providers() const { return providers_; }
+    QJsonObject sources() const
+    {
+        return values_.value(QStringLiteral("sources")).toObject();
+    }
+    const QList<DataProvider *> &providers() const
+    {
+        return providers_;
+    }
     DataProvider *provider(const QJsonObject &source) const;
     QString put(const QString &id, const QJsonObject &source);
     void remove(const QString &id);
@@ -64,6 +91,7 @@ public:
 signals:
     void changed();
     void contentChanged();
+
 private:
     struct Feed;
     void reconcile();
@@ -78,5 +106,5 @@ private:
     bool stopping_ = false;
     int activeJobs_ = 0;
 };
-}
+} // namespace swak
 Q_DECLARE_INTERFACE(swak::DataProvider, "org.swak.DataProvider/1.0")

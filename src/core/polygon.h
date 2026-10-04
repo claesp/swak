@@ -1,7 +1,7 @@
 #pragma once
 #include <QJsonObject>
-#include <QPolygonF>
 #include <QLocale>
+#include <QPolygonF>
 namespace swak {
 constexpr int MaxPolygonVertices = 64;
 QPolygonF polygonVertices(const QJsonObject &geometry);
@@ -10,4 +10,4 @@ QString validatePolygon(const QPolygonF &points);
 QPointF polygonLabelPoint(const QPolygonF &points);
 double polygonArea(const QPolygonF &points);
 QString formatArea(double squareMeters, const QLocale &locale = QLocale());
-}
+} // namespace swak

@@ -59,7 +59,7 @@ Read the unexecuted lines and functions in the report. Add tests for reachable s
 
 Static analysis examines source without executing it. This mode uses Cppcheck 2.17 or later with the application compilation database and Qt library descriptions. It examines unused functions, warnings, style, performance, and portability. It requests exhaustive branch analysis and fails when Cppcheck reports a diagnostic. Source analysis can produce false alarms and miss faults.
 
-The runner replaces generated Qt `.moc` includes with empty files for source analysis. The compiler and runtime tests exercise that generated code. Cppcheck examines application sources, not tests or third-party headers. Compiler flags and application include paths remain in the analysis database. Each report retains that database for inspection.
+The runner replaces generated Qt `.moc` includes with empty files for source analysis. The compiler and runtime tests exercise that generated code. Cppcheck examines application and C++ development-tool sources, not tests or third-party headers. Compiler flags and application include paths remain in the analysis database. Each report retains that database for inspection.
 
 ```sh
 python3 tools/quality.py analyze
@@ -121,7 +121,7 @@ For an actual TAK Server test, build and run swak_tak_compat. Read [TAK compatib
 
 The simulation suite tests the separate CoT emulator. It covers deterministic routes, movement speed, stable identities, coordinate bounds, invalid configuration, TCP and UDP reception, TAK client mode, and interruption. The native GUI suite receives both teams and inspects the rendered map. Both suites run through the existing diagnostic modes.
 
-The standard source report covers application code. For the development emulator, also inspect tools/cot_emulator.cpp and tools/cot_simulation.cpp with the debug compilation database. Do not interpret unused functions from a partial source scan as dead application code. Read the latest handoff for emulator load results and remaining paths without tests.
+The standard source report covers application and C++ development-tool code. It includes tools/cot_emulator.cpp and tools/cot_simulation.cpp through the debug compilation database. Do not interpret unused functions from a partial source scan as dead application code. Read the latest handoff for emulator load results and remaining paths without tests.
 
 The workload now enables 128 trace identities. Each cycle adds 52 positions to one identity, then expires the source. This exercises bounded trace history, repeated clearing, and shutdown. Native tests inspect fading, the context action, preference restoration, TLS field dependencies, and explicit Information closure. Motion tests cover continuity, bounded prediction, and stale freeze.
 
@@ -132,3 +132,9 @@ Circle and Line tests cover two-point geometry, world bounds, locale units, cont
 Label tests cover native clicks outside marker symbols, inverted text colors, visible vector labels, hidden labels, and label collisions. Trace tests compare frozen images during updates and changed images after resume. Identity tests cover generated UID persistence, locked input, unlocking, relocking, and a reopened dialog.
 
 Menu tests cover locale ordering, direct plugin actions, provider toggles, and management action reuse. Native tests exercise wheel events at both overlay scroll limits. They inspect selected vector labels, read-only palettes, UID lock states, Team icon colors, and distinct OK and Apply icons.
+
+# Source style
+
+Read [Coding style](coding-style.md) for the project standard and formatter versions. Run python3 tools/quality.py style to report format differences without changing source. Run python3 tools/style.py --fix to apply the format. Review inserted braces and include changes before committing.
+
+The style pass covers first-party C++, Python, and CMake code. It excludes vendor code, generated files, and fixtures. The source-analysis pass also covers the C++ development tools. Formatter tests exercise file selection, version rejection, and command failure.

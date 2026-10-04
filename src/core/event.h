@@ -3,13 +3,15 @@
 #include <QByteArray>
 #include <QDateTime>
 #include <QString>
+
 #include <optional>
 
 namespace swak {
 inline constexpr qsizetype MaxMessageBytes = 16 * 1024;
 inline constexpr int MaxEvents = 4096;
 
-struct Event {
+struct Event
+{
     QString uid;
     QString type;
     QString how;
@@ -26,10 +28,11 @@ struct Event {
     double linearError = 9999999;
 };
 
-struct DecodeResult {
+struct DecodeResult
+{
     std::optional<Event> event;
     QString error;
 };
 
 QString eventError(const Event &event);
-}
+} // namespace swak

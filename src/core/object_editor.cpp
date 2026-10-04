@@ -1,264 +1,508 @@
 #include "core/object_editor.h"
-#include "core/marker_symbols.h"
+
 #include "core/marker_collections.h"
-#include <QGridLayout>
+#include "core/marker_symbols.h"
 #include "core/single_line_label.h"
-#include <QLineEdit>
-#include <QPlainTextEdit>
-#include <QTableWidget>
-#include <QHeaderView>
-#include <QVBoxLayout>
-#include <QPushButton>
-#include <QDialogButtonBox>
-#include <QSignalBlocker>
-#include <QStyledItemDelegate>
-#include <QHideEvent>
-#include <QKeyEvent>
+
+#include <QButtonGroup>
 #include <QCollator>
 #include <QComboBox>
-#include <QButtonGroup>
-#include <QToolButton>
+#include <QDialogButtonBox>
+#include <QGridLayout>
+#include <QHeaderView>
+#include <QHideEvent>
+#include <QKeyEvent>
+#include <QLineEdit>
 #include <QPainter>
+#include <QPlainTextEdit>
+#include <QPushButton>
+#include <QSignalBlocker>
+#include <QStyledItemDelegate>
+#include <QTableWidget>
+#include <QToolButton>
+#include <QVBoxLayout>
+
 #include <algorithm>
 namespace swak {
 namespace {
 QIcon symbolIcon(const QString &code, const QColor &color)
 {
-    QPixmap icon(20, 20); icon.fill(Qt::transparent);
-    QPainter painter(&icon); painter.setRenderHint(QPainter::Antialiasing);
+    QPixmap icon(20, 20);
+    icon.fill(Qt::transparent);
+    QPainter painter(&icon);
+    painter.setRenderHint(QPainter::Antialiasing);
     paintMarkerSymbol(painter, code, QPointF(10, 10), 7, color);
     painter.end();
     return QIcon(icon);
 }
-class PropertyDelegate final : public QStyledItemDelegate {
+class PropertyDelegate final : public QStyledItemDelegate
+{
 public:
     using QStyledItemDelegate::QStyledItemDelegate;
-    QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &, const QModelIndex &index) const override
+    QWidget *createEditor(QWidget *parent,
+                          const QStyleOptionViewItem &,
+                          const QModelIndex &index) const override
     {
-        auto *editor = new QLineEdit(parent); editor->setMaxLength(index.column() == 0 ? 64 : 256); return editor;
+        auto *editor = new QLineEdit(parent);
+        editor->setMaxLength(index.column() == 0 ? 64 : 256);
+        return editor;
     }
 };
-}
-ObjectEditor::ObjectEditor(UserObjects &objects, MarkerCollections &collections, QWidget *parent) : PaneContent(parent), objects_(objects), collections_(collections)
+} // namespace
+ObjectEditor::ObjectEditor(UserObjects &objects, MarkerCollections &collections, QWidget *parent)
+    : PaneContent(parent), objects_(objects), collections_(collections)
 {
     setObjectName(QStringLiteral("objectEditor"));
     auto *layout = new QVBoxLayout(this);
     layout->addWidget(new QLabel(tr("Title"), this));
-    title_ = new QLineEdit(this); title_->setObjectName(QStringLiteral("objectTitle")); title_->setAccessibleName(tr("Title"));
+    title_ = new QLineEdit(this);
+    title_->setObjectName(QStringLiteral("objectTitle"));
+    title_->setAccessibleName(tr("Title"));
     connect(title_, &QLineEdit::returnPressed, this, &ObjectEditor::apply);
-    title_->setMaxLength(128); title_->setPlaceholderText(tr("New Marker")); layout->addWidget(title_);
-    auto font = title_->font(); font.setPointSizeF(font.pointSizeF() > 0 ? font.pointSizeF() * 1.5 : 16); title_->setFont(font);
-    collectionLabel_ = new QLabel(tr("Collection"), this); layout->addWidget(collectionLabel_);
-    collection_ = new QComboBox(this); collection_->setObjectName(QStringLiteral("objectCollection")); collection_->setAccessibleName(tr("Collection")); layout->addWidget(collection_);
+    title_->setMaxLength(128);
+    title_->setPlaceholderText(tr("New Marker"));
+    layout->addWidget(title_);
+    auto font = title_->font();
+    font.setPointSizeF(font.pointSizeF() > 0 ? font.pointSizeF() * 1.5 : 16);
+    title_->setFont(font);
+    collectionLabel_ = new QLabel(tr("Collection"), this);
+    layout->addWidget(collectionLabel_);
+    collection_ = new QComboBox(this);
+    collection_->setObjectName(QStringLiteral("objectCollection"));
+    collection_->setAccessibleName(tr("Collection"));
+    layout->addWidget(collection_);
     layout->addWidget(new QLabel(tr("Type"), this));
-    type_ = new QComboBox(this); type_->setObjectName(QStringLiteral("objectType")); type_->setAccessibleName(tr("Type"));
-    type_->addItem(symbolIcon({}, QColor("#ffc857")), tr("Generic marker"), QString{}); layout->addWidget(type_);
+    type_ = new QComboBox(this);
+    type_->setObjectName(QStringLiteral("objectType"));
+    type_->setAccessibleName(tr("Type"));
+    type_->addItem(symbolIcon({}, QColor("#ffc857")), tr("Generic marker"), QString{});
+    layout->addWidget(type_);
     connect(type_, &QComboBox::currentIndexChanged, this, [this] {
         const auto code = type_->currentData().toString();
         const auto symbol = collections_.symbol(collection_->currentData().toString(), code);
         if (symbol) {
             color_ = symbol->color.name();
             colors_->setExclusive(false);
-            for (auto *button : colors_->buttons()) button->setChecked(button->property("markerColor").toString() == color_);
+            for (auto *button : colors_->buttons()) {
+                button->setChecked(button->property("markerColor").toString() == color_);
+            }
             colors_->setExclusive(true);
         }
-        lastCollection_ = collection_->currentData().toString(); lastSymbol_ = code;
+        lastCollection_ = collection_->currentData().toString();
+        lastSymbol_ = code;
         emit configurationChanged();
     });
     layout->addWidget(new QLabel(tr("Color"), this));
-    colors_ = new QButtonGroup(this); colors_->setExclusive(true);
-    colorLayout_ = new QGridLayout; colorLayout_->setSpacing(4); layout->addLayout(colorLayout_);
+    colors_ = new QButtonGroup(this);
+    colors_->setExclusive(true);
+    colorLayout_ = new QGridLayout;
+    colorLayout_->setSpacing(4);
+    layout->addLayout(colorLayout_);
     connect(collection_, &QComboBox::currentIndexChanged, this, [this] {
-        refreshTypes({}); refreshColors();
-        if (const auto symbol = collections_.symbol(collection_->currentData().toString(), type_->currentData().toString())) color_ = symbol->color.name();
-        refreshColors(); lastCollection_ = collection_->currentData().toString(); lastSymbol_ = type_->currentData().toString();
+        refreshTypes({});
+        refreshColors();
+        if (const auto symbol = collections_.symbol(collection_->currentData().toString(),
+                                                    type_->currentData().toString())) {
+            color_ = symbol->color.name();
+        }
+        refreshColors();
+        lastCollection_ = collection_->currentData().toString();
+        lastSymbol_ = type_->currentData().toString();
         emit configurationChanged();
     });
     connect(&collections_, &MarkerCollections::changed, this, [this] {
-        if (!draft_ || draft_->type != QStringLiteral("circle")) return;
-        const auto collection = collection_->currentData().toString(); const auto symbol = type_->currentData().toString();
-        refreshCollections(collection); refreshTypes(symbol); refreshColors();
+        if (!draft_ || draft_->type != QStringLiteral("circle")) {
+            return;
+        }
+        const auto collection = collection_->currentData().toString();
+        const auto symbol = type_->currentData().toString();
+        refreshCollections(collection);
+        refreshTypes(symbol);
+        refreshColors();
     });
     layout->addWidget(new QLabel(tr("Description"), this));
-    description_ = new QPlainTextEdit(this); description_->setObjectName(QStringLiteral("objectDescription")); description_->setAccessibleName(tr("Description"));
-    description_->setMaximumHeight(150); layout->addWidget(description_);
+    description_ = new QPlainTextEdit(this);
+    description_->setObjectName(QStringLiteral("objectDescription"));
+    description_->setAccessibleName(tr("Description"));
+    description_->setMaximumHeight(150);
+    layout->addWidget(description_);
     connect(description_, &QPlainTextEdit::textChanged, this, [this] {
-        if (description_->toPlainText().size() <= 2048) return;
-        const QSignalBlocker blocker(description_); description_->setPlainText(description_->toPlainText().left(2048));
+        if (description_->toPlainText().size() <= 2048) {
+            return;
+        }
+        const QSignalBlocker blocker(description_);
+        description_->setPlainText(description_->toPlainText().left(2048));
     });
-    properties_ = new QTableWidget(0, 2, this); properties_->setObjectName(QStringLiteral("objectProperties"));
-    properties_->setHorizontalHeaderLabels({tr("Property"), tr("Value")}); properties_->verticalHeader()->hide();
-    properties_->horizontalHeader()->setStretchLastSection(true); properties_->setItemDelegate(new PropertyDelegate(properties_)); layout->addWidget(properties_, 1);
+    properties_ = new QTableWidget(0, 2, this);
+    properties_->setObjectName(QStringLiteral("objectProperties"));
+    properties_->setHorizontalHeaderLabels({tr("Property"), tr("Value")});
+    properties_->verticalHeader()->hide();
+    properties_->horizontalHeader()->setStretchLastSection(true);
+    properties_->setItemDelegate(new PropertyDelegate(properties_));
+    layout->addWidget(properties_, 1);
     auto *actions = new QHBoxLayout;
-    auto *add = new QPushButton(tr("Add property"), this); add->setObjectName(QStringLiteral("addObjectProperty")); actions->addWidget(add);
-    auto *remove = new QPushButton(tr("Remove property"), this); actions->addWidget(remove); layout->addLayout(actions);
+    auto *add = new QPushButton(tr("Add property"), this);
+    add->setObjectName(QStringLiteral("addObjectProperty"));
+    actions->addWidget(add);
+    auto *remove = new QPushButton(tr("Remove property"), this);
+    actions->addWidget(remove);
+    layout->addLayout(actions);
     connect(add, &QPushButton::clicked, this, [this] {
-        if (properties_->rowCount() >= 32) return;
-        const int row = properties_->rowCount(); properties_->insertRow(row);
-        properties_->setItem(row, 0, new QTableWidgetItem); properties_->setItem(row, 1, new QTableWidgetItem);
-        properties_->setCurrentCell(row, 0); properties_->editItem(properties_->item(row, 0));
+        if (properties_->rowCount() >= 32) {
+            return;
+        }
+        const int row = properties_->rowCount();
+        properties_->insertRow(row);
+        properties_->setItem(row, 0, new QTableWidgetItem);
+        properties_->setItem(row, 1, new QTableWidgetItem);
+        properties_->setCurrentCell(row, 0);
+        properties_->editItem(properties_->item(row, 0));
     });
-    connect(remove, &QPushButton::clicked, this, [this] { if (properties_->currentRow() >= 0) properties_->removeRow(properties_->currentRow()); });
-    status_ = new SingleLineLabel(this); status_->setObjectName(QStringLiteral("objectEditorStatus")); layout->addWidget(status_);
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Apply | QDialogButtonBox::Cancel, this); layout->addWidget(buttons);
+    connect(remove, &QPushButton::clicked, this, [this] {
+        if (properties_->currentRow() >= 0) {
+            properties_->removeRow(properties_->currentRow());
+        }
+    });
+    status_ = new SingleLineLabel(this);
+    status_->setObjectName(QStringLiteral("objectEditorStatus"));
+    layout->addWidget(status_);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Apply | QDialogButtonBox::Cancel, this);
+    layout->addWidget(buttons);
     buttons->button(QDialogButtonBox::Apply)->setObjectName(QStringLiteral("applyObject"));
-    connect(buttons->button(QDialogButtonBox::Apply), &QPushButton::clicked, this, &ObjectEditor::apply);
-    connect(buttons, &QDialogButtonBox::rejected, this, [this] { cancel(); });
+    connect(buttons->button(QDialogButtonBox::Apply),
+            &QPushButton::clicked,
+            this,
+            &ObjectEditor::apply);
+    connect(buttons, &QDialogButtonBox::rejected, this, [this] {
+        cancel();
+    });
 }
 QJsonObject ObjectEditor::editorState() const
 {
-    return {{QStringLiteral("header"), QString::fromLatin1(properties_->horizontalHeader()->saveState().toBase64())},
-        {QStringLiteral("collection"), lastCollection_}, {QStringLiteral("symbol"), lastSymbol_}};
+    return {{QStringLiteral("header"),
+             QString::fromLatin1(properties_->horizontalHeader()->saveState().toBase64())},
+            {QStringLiteral("collection"), lastCollection_},
+            {QStringLiteral("symbol"), lastSymbol_}};
 }
 void ObjectEditor::restoreEditorState(const QJsonObject &values)
 {
-    lastCollection_ = preferenceText(values, QStringLiteral("collection"), CoreMarkerCollection, 64);
+    lastCollection_ =
+        preferenceText(values, QStringLiteral("collection"), CoreMarkerCollection, 64);
     lastSymbol_ = preferenceText(values, QStringLiteral("symbol"), {}, 64);
     const auto headerBytes = preferenceText(values, QStringLiteral("header"), {}, 16384).toLatin1();
-    if (!headerBytes.isEmpty()) properties_->horizontalHeader()->restoreState(QByteArray::fromBase64(headerBytes, QByteArray::AbortOnBase64DecodingErrors));
+    if (!headerBytes.isEmpty()) {
+        properties_->horizontalHeader()->restoreState(
+            QByteArray::fromBase64(headerBytes, QByteArray::AbortOnBase64DecodingErrors));
+    }
 }
 void ObjectEditor::edit(const UserObject &item)
 {
     draft_ = item;
     color_ = item.color;
     const bool marker = item.type == QStringLiteral("circle");
-    collection_->setVisible(marker); collectionLabel_->setVisible(marker);
-    title_->setPlaceholderText(marker ? tr("New Marker") : item.type == QStringLiteral("line") ? tr("New Line") : item.type == QStringLiteral("range-circle") ? tr("New Circle") : tr("New Area"));
-    if (marker) { refreshCollections(effectiveMarkerCollection(item.collection, item.symbol)); refreshTypes(item.symbol); }
-    else { const QSignalBlocker block(type_); type_->clear(); type_->addItem(item.type == QStringLiteral("line") ? tr("Line") : item.type == QStringLiteral("range-circle") ? tr("Circle") : tr("Area"), item.type); }
+    collection_->setVisible(marker);
+    collectionLabel_->setVisible(marker);
+    title_->setPlaceholderText(marker                                        ? tr("New Marker")
+                               : item.type == QStringLiteral("line")         ? tr("New Line")
+                               : item.type == QStringLiteral("range-circle") ? tr("New Circle")
+                                                                             : tr("New Area"));
+    if (marker) {
+        refreshCollections(effectiveMarkerCollection(item.collection, item.symbol));
+        refreshTypes(item.symbol);
+    } else {
+        const QSignalBlocker block(type_);
+        type_->clear();
+        type_->addItem(item.type == QStringLiteral("line")           ? tr("Line")
+                       : item.type == QStringLiteral("range-circle") ? tr("Circle")
+                                                                     : tr("Area"),
+                       item.type);
+    }
     refreshColors();
     title_->setText(objects_.find(item.id) ? item.title : QString{});
-    description_->setPlainText(item.description); properties_->setRowCount(0); status_->clear();
-    auto keys = item.properties.keys(); const QCollator collator;
-    std::sort(keys.begin(), keys.end(), [&](const auto &a, const auto &b) { return collator.compare(a, b) < 0; });
+    description_->setPlainText(item.description);
+    properties_->setRowCount(0);
+    status_->clear();
+    auto keys = item.properties.keys();
+    const QCollator collator;
+    std::sort(keys.begin(), keys.end(), [&](const auto &a, const auto &b) {
+        return collator.compare(a, b) < 0;
+    });
     for (const auto &key : keys) {
-        const int row = properties_->rowCount(); properties_->insertRow(row);
-        properties_->setItem(row, 0, new QTableWidgetItem(key)); properties_->setItem(row, 1, new QTableWidgetItem(item.properties.value(key).toString()));
+        const int row = properties_->rowCount();
+        properties_->insertRow(row);
+        properties_->setItem(row, 0, new QTableWidgetItem(key));
+        properties_->setItem(row, 1, new QTableWidgetItem(item.properties.value(key).toString()));
     }
-    emit visibilityRequested(true); title_->setFocus();
+    emit visibilityRequested(true);
+    title_->setFocus();
 }
 QString ObjectEditor::newCollection() const
 {
     const auto entries = collections_.collections();
-    const auto usable = [](const QJsonObject &value) { return value.value(QStringLiteral("enabled")).toBool() && MarkerCollections::validate(value).isEmpty(); };
-    if (usable(entries.value(lastCollection_).toObject())) return lastCollection_;
-    if (usable(entries.value(CoreMarkerCollection).toObject())) return CoreMarkerCollection;
-    for (auto it = entries.begin(); it != entries.end(); ++it) if (usable(it.value().toObject())) return it.key();
+    const auto usable = [](const QJsonObject &value) {
+        return value.value(QStringLiteral("enabled")).toBool() &&
+               MarkerCollections::validate(value).isEmpty();
+    };
+    if (usable(entries.value(lastCollection_).toObject())) {
+        return lastCollection_;
+    }
+    if (usable(entries.value(CoreMarkerCollection).toObject())) {
+        return CoreMarkerCollection;
+    }
+    for (auto it = entries.begin(); it != entries.end(); ++it) {
+        if (usable(it.value().toObject())) {
+            return it.key();
+        }
+    }
     return {};
 }
 QString ObjectEditor::newSymbol() const
 {
     const auto collection = newCollection();
-    if (collection == lastCollection_ && collections_.symbol(collection, lastSymbol_)) return lastSymbol_;
-    const auto symbols = collections_.collections().value(collection).toObject().value(QStringLiteral("symbols")).toArray();
-    return symbols.isEmpty() ? QString{} : symbols.first().toObject().value(QStringLiteral("id")).toString();
+    if (collection == lastCollection_ && collections_.symbol(collection, lastSymbol_)) {
+        return lastSymbol_;
+    }
+    const auto symbols = collections_.collections()
+                             .value(collection)
+                             .toObject()
+                             .value(QStringLiteral("symbols"))
+                             .toArray();
+    return symbols.isEmpty() ? QString{}
+                             : symbols.first().toObject().value(QStringLiteral("id")).toString();
 }
 void ObjectEditor::refreshCollections(const QString &selected)
 {
-    const QSignalBlocker block(collection_); collection_->clear();
-    const auto entries = collections_.collections(); auto ids = entries.keys(); const QCollator order;
+    const QSignalBlocker block(collection_);
+    collection_->clear();
+    const auto entries = collections_.collections();
+    auto ids = entries.keys();
+    const QCollator order;
     std::sort(ids.begin(), ids.end(), [&entries, &order](const auto &a, const auto &b) {
-        return order.compare(entries.value(a).toObject().value(QStringLiteral("name")).toString(), entries.value(b).toObject().value(QStringLiteral("name")).toString()) < 0;
+        return order.compare(entries.value(a).toObject().value(QStringLiteral("name")).toString(),
+                             entries.value(b).toObject().value(QStringLiteral("name")).toString()) <
+               0;
     });
     for (const auto &id : ids) {
         const auto value = entries.value(id).toObject();
-        const bool enabled = value.value(QStringLiteral("enabled")).toBool() && MarkerCollections::validate(value).isEmpty();
-        if (enabled || id == selected) collection_->addItem(value.value(QStringLiteral("name")).toString() + (enabled ? QString{} : tr(" (unavailable)")), id);
+        const bool enabled = value.value(QStringLiteral("enabled")).toBool() &&
+                             MarkerCollections::validate(value).isEmpty();
+        if (enabled || id == selected) {
+            collection_->addItem(value.value(QStringLiteral("name")).toString() +
+                                     (enabled ? QString{} : tr(" (unavailable)")),
+                                 id);
+        }
     }
-    if (collection_->findData(selected) < 0) collection_->addItem(tr("Unavailable collection (%1)").arg(selected), selected);
+    if (collection_->findData(selected) < 0) {
+        collection_->addItem(tr("Unavailable collection (%1)").arg(selected), selected);
+    }
     collection_->setCurrentIndex(collection_->findData(selected));
 }
 void ObjectEditor::refreshTypes(const QString &selected)
 {
-    const QSignalBlocker block(type_); type_->clear();
-    const auto definition = collections_.collections().value(collection_->currentData().toString()).toObject();
-    auto symbols = MarkerCollections::validate(definition).isEmpty() ? definition.value(QStringLiteral("symbols")).toArray().toVariantList() : QVariantList{};
+    const QSignalBlocker block(type_);
+    type_->clear();
+    const auto definition =
+        collections_.collections().value(collection_->currentData().toString()).toObject();
+    auto symbols = MarkerCollections::validate(definition).isEmpty()
+                       ? definition.value(QStringLiteral("symbols")).toArray().toVariantList()
+                       : QVariantList{};
     const QCollator order;
-    std::sort(symbols.begin(), symbols.end(), [&order](const auto &a, const auto &b) { return order.compare(a.toMap().value(QStringLiteral("name")).toString(), b.toMap().value(QStringLiteral("name")).toString()) < 0; });
+    std::sort(symbols.begin(), symbols.end(), [&order](const auto &a, const auto &b) {
+        return order.compare(a.toMap().value(QStringLiteral("name")).toString(),
+                             b.toMap().value(QStringLiteral("name")).toString()) < 0;
+    });
     for (const auto &value : symbols) {
-        const auto id = value.toMap().value(QStringLiteral("id")).toString(); const auto symbol = collections_.symbol(collection_->currentData().toString(), id);
-        if (!symbol) continue;
-        QPixmap icon(20, 20); icon.fill(Qt::transparent);
-        { QPainter painter(&icon); painter.setRenderHint(QPainter::Antialiasing); paintCollectionSymbol(painter, *symbol, {10, 10}, 7, symbol->color); }
+        const auto id = value.toMap().value(QStringLiteral("id")).toString();
+        const auto symbol = collections_.symbol(collection_->currentData().toString(), id);
+        if (!symbol) {
+            continue;
+        }
+        QPixmap icon(20, 20);
+        icon.fill(Qt::transparent);
+        {
+            QPainter painter(&icon);
+            painter.setRenderHint(QPainter::Antialiasing);
+            paintCollectionSymbol(painter, *symbol, {10, 10}, 7, symbol->color);
+        }
         type_->addItem(QIcon(icon), symbol->name, id);
     }
-    if (type_->findData(selected) < 0 && draft_ && draft_->symbol == selected && effectiveMarkerCollection(draft_->collection, draft_->symbol) == collection_->currentData().toString())
-        type_->addItem(symbolIcon({}, QColor(color_)), tr("Unavailable symbol (%1)").arg(selected), selected);
+    if (type_->findData(selected) < 0 && draft_ && draft_->symbol == selected &&
+        effectiveMarkerCollection(draft_->collection, draft_->symbol) ==
+            collection_->currentData().toString()) {
+        type_->addItem(
+            symbolIcon({}, QColor(color_)), tr("Unavailable symbol (%1)").arg(selected), selected);
+    }
     type_->setCurrentIndex(std::max(0, type_->findData(selected)));
 }
 void ObjectEditor::refreshColors()
 {
-    QStringList names{tr("Red"), tr("Orange"), tr("Yellow"), tr("Green"), tr("Cyan"), tr("Blue"), tr("Indigo"), tr("Magenta")};
-    QStringList values{QStringLiteral("#e53935"), QStringLiteral("#ffc857"), QStringLiteral("#f5e642"), QStringLiteral("#43a047"),
-        QStringLiteral("#00bcd4"), QStringLiteral("#1e88e5"), QStringLiteral("#5e35b1"), QStringLiteral("#d81b60")};
-    const auto definitions = collections_.collections(); auto ids = definitions.keys();
-    const auto current = collection_->currentData().toString(); ids.removeAll(current); ids.prepend(current);
+    QStringList names{tr("Red"),
+                      tr("Orange"),
+                      tr("Yellow"),
+                      tr("Green"),
+                      tr("Cyan"),
+                      tr("Blue"),
+                      tr("Indigo"),
+                      tr("Magenta")};
+    QStringList values{QStringLiteral("#e53935"),
+                       QStringLiteral("#ffc857"),
+                       QStringLiteral("#f5e642"),
+                       QStringLiteral("#43a047"),
+                       QStringLiteral("#00bcd4"),
+                       QStringLiteral("#1e88e5"),
+                       QStringLiteral("#5e35b1"),
+                       QStringLiteral("#d81b60")};
+    const auto definitions = collections_.collections();
+    auto ids = definitions.keys();
+    const auto current = collection_->currentData().toString();
+    ids.removeAll(current);
+    ids.prepend(current);
     for (const auto &id : ids) {
         const auto definition = definitions.value(id).toObject();
-        if (!MarkerCollections::validate(definition).isEmpty()) continue;
+        if (!MarkerCollections::validate(definition).isEmpty()) {
+            continue;
+        }
         for (const auto &entry : definition.value(QStringLiteral("symbols")).toArray()) {
-            const auto value = entry.toObject(); const auto color = value.value(QStringLiteral("color")).toString().toLower();
-            if (!values.contains(color) && values.size() < 76) { values.append(color); names.append(value.value(QStringLiteral("name")).toString()); }
+            const auto value = entry.toObject();
+            const auto color = value.value(QStringLiteral("color")).toString().toLower();
+            if (!values.contains(color) && values.size() < 76) {
+                values.append(color);
+                names.append(value.value(QStringLiteral("name")).toString());
+            }
         }
     }
-    if (QColor::isValidColorName(color_) && !values.contains(color_.toLower())) { values.append(color_.toLower()); names.append(tr("Saved color")); }
+    if (QColor::isValidColorName(color_) && !values.contains(color_.toLower())) {
+        values.append(color_.toLower());
+        names.append(tr("Saved color"));
+    }
     const auto buttons = colors_->buttons();
     bool same = buttons.size() == values.size();
-    for (qsizetype i = 0; same && i < values.size(); ++i) same = buttons.at(i)->property("markerColor").toString() == values.at(i);
+    for (qsizetype i = 0; same && i < values.size(); ++i) {
+        same = buttons.at(i)->property("markerColor").toString() == values.at(i);
+    }
     if (same) {
         colors_->setExclusive(false);
-        for (auto *button : buttons) button->setChecked(button->property("markerColor").toString().compare(color_, Qt::CaseInsensitive) == 0);
-        colors_->setExclusive(true); return;
+        for (auto *button : buttons) {
+            button->setChecked(
+                button->property("markerColor").toString().compare(color_, Qt::CaseInsensitive) ==
+                0);
+        }
+        colors_->setExclusive(true);
+        return;
     }
-    for (auto *button : buttons) delete button;
+    for (auto *button : buttons) {
+        delete button;
+    }
     for (qsizetype i = 0; i < values.size(); ++i) {
-        auto *button = new QToolButton(this); button->setObjectName(QStringLiteral("objectColor%1").arg(i));
-        button->setToolTip(QStringLiteral("<qt>%1</qt>").arg(names.at(i).toHtmlEscaped())); button->setAccessibleName(names.at(i)); button->setCheckable(true);
+        auto *button = new QToolButton(this);
+        button->setObjectName(QStringLiteral("objectColor%1").arg(i));
+        button->setToolTip(QStringLiteral("<qt>%1</qt>").arg(names.at(i).toHtmlEscaped()));
+        button->setAccessibleName(names.at(i));
+        button->setCheckable(true);
         button->setProperty("markerColor", values.at(i));
-        QPixmap icon(18, 18); icon.fill(QColor(values.at(i)));
-        { QPainter painter(&icon); painter.setPen(Qt::black); painter.drawRect(0, 0, 17, 17); }
-        button->setIcon(QIcon(icon)); button->setIconSize(QSize(18, 18)); button->setFixedSize(28, 28);
-        colors_->addButton(button); colorLayout_->addWidget(button, static_cast<int>(i / 12), static_cast<int>(i % 12));
+        QPixmap icon(18, 18);
+        icon.fill(QColor(values.at(i)));
+        {
+            QPainter painter(&icon);
+            painter.setPen(Qt::black);
+            painter.drawRect(0, 0, 17, 17);
+        }
+        button->setIcon(QIcon(icon));
+        button->setIconSize(QSize(18, 18));
+        button->setFixedSize(28, 28);
+        colors_->addButton(button);
+        colorLayout_->addWidget(button, static_cast<int>(i / 12), static_cast<int>(i % 12));
         button->setChecked(values.at(i).compare(color_, Qt::CaseInsensitive) == 0);
-        connect(button, &QToolButton::clicked, this, [this, button] { color_ = button->property("markerColor").toString(); if (draft_) draft_->color = color_; emit configurationChanged(); });
+        connect(button, &QToolButton::clicked, this, [this, button] {
+            color_ = button->property("markerColor").toString();
+            if (draft_) {
+                draft_->color = color_;
+            }
+            emit configurationChanged();
+        });
     }
 }
 bool ObjectEditor::setGeometry(const QJsonObject &geometry)
 {
-    if (!draft_) return false;
-    auto candidate = *draft_; candidate.geometry = geometry;
+    if (!draft_) {
+        return false;
+    }
+    auto candidate = *draft_;
+    candidate.geometry = geometry;
     const auto error = UserObjects::validate(candidate);
-    if (!error.isEmpty()) { reportError(error); return false; }
-    draft_->geometry = geometry; status_->clear(); emit configurationChanged(); return true;
+    if (!error.isEmpty()) {
+        reportError(error);
+        return false;
+    }
+    draft_->geometry = geometry;
+    status_->clear();
+    emit configurationChanged();
+    return true;
 }
-void ObjectEditor::reportError(const QString &message) { status_->setText(message); }
+void ObjectEditor::reportError(const QString &message)
+{
+    status_->setText(message);
+}
 bool ObjectEditor::cancel()
 {
-    if (!draft_) return false;
-    draft_.reset(); emit visibilityRequested(false); emit cancelled(); return true;
+    if (!draft_) {
+        return false;
+    }
+    draft_.reset();
+    emit visibilityRequested(false);
+    emit cancelled();
+    return true;
 }
-void ObjectEditor::hideEvent(QHideEvent *event) { PaneContent::hideEvent(event); cancel(); }
+void ObjectEditor::hideEvent(QHideEvent *event)
+{
+    PaneContent::hideEvent(event);
+    cancel();
+}
 void ObjectEditor::keyPressEvent(QKeyEvent *event)
 {
-    if (event->key() == Qt::Key_Escape && event->modifiers() == Qt::NoModifier && cancel()) { event->accept(); return; }
+    if (event->key() == Qt::Key_Escape && event->modifiers() == Qt::NoModifier && cancel()) {
+        event->accept();
+        return;
+    }
     PaneContent::keyPressEvent(event);
 }
 void ObjectEditor::apply()
 {
-    if (!draft_) return;
-    auto item = *draft_; item.title = title_->text().trimmed(); if (item.title.isEmpty()) item.title = item.type == QStringLiteral("polygon") ? tr("New Area") : item.type == QStringLiteral("line") ? tr("New Line") : item.type == QStringLiteral("range-circle") ? tr("New Circle") : tr("New Marker");
+    if (!draft_) {
+        return;
+    }
+    auto item = *draft_;
+    item.title = title_->text().trimmed();
+    if (item.title.isEmpty()) {
+        item.title = item.type == QStringLiteral("polygon")        ? tr("New Area")
+                     : item.type == QStringLiteral("line")         ? tr("New Line")
+                     : item.type == QStringLiteral("range-circle") ? tr("New Circle")
+                                                                   : tr("New Marker");
+    }
     if (item.type == QStringLiteral("circle")) {
-        item.symbol = type_->currentData().toString(); item.collection = collection_->currentData().toString();
+        item.symbol = type_->currentData().toString();
+        item.collection = collection_->currentData().toString();
     }
     item.color = color_;
-    item.description = description_->toPlainText(); item.properties = {};
+    item.description = description_->toPlainText();
+    item.properties = {};
     for (int row = 0; row < properties_->rowCount(); ++row) {
-        const auto *name = properties_->item(row, 0); const auto *value = properties_->item(row, 1);
+        const auto *name = properties_->item(row, 0);
+        const auto *value = properties_->item(row, 1);
         const auto key = name ? name->text().trimmed() : QString{};
-        if (key.isEmpty() || item.properties.contains(key)) { status_->setText(tr("Each property needs a unique name.")); return; }
+        if (key.isEmpty() || item.properties.contains(key)) {
+            status_->setText(tr("Each property needs a unique name."));
+            return;
+        }
         item.properties.insert(key, value ? value->text() : QString{});
     }
-    const auto error = objects_.put(item); if (!error.isEmpty()) { status_->setText(error); return; }
-    draft_.reset(); emit visibilityRequested(false); emit applied(item.id);
+    const auto error = objects_.put(item);
+    if (!error.isEmpty()) {
+        status_->setText(error);
+        return;
+    }
+    draft_.reset();
+    emit visibilityRequested(false);
+    emit applied(item.id);
 }
-}
+} // namespace swak
