@@ -296,3 +296,7 @@ SettingsWidgetProvider adds an optional createSettingsWidget method. The host us
 SettingsDialog, SettingsPage, and ProviderTable now live under src/core. The host and plugin widgets share these form and table implementations. Server edit forms use the same validation, alphabetical choice ordering, and single-line labels as other provider forms.
 
 Store adds acceptBatch for bounded groups of decoded events. It groups redraw and changed-row notifications. TrackMotion owns per-UID display state and animation preferences. Its changed signal requests a redraw without changing the event table. MapSelection::paint accepts an optional displayed point and opacity for a moving CoT selection outline.
+
+`SettingField::picker` adds optional CoT selection to a text field. `cotSetting` creates a bounded field for Type, How, Team, or Role. SettingsDialog keeps the text editor as the saved value and adds the shared selection button beside it. Custom values remain supported.
+
+`cotFieldEditor` supplies the same control for plugin forms. Its returned container owns the supplied line editor. The caller sets the editor name, accessible name, and maximum length before wrapping it. Picker dialogs belong to that editor and close when it is destroyed. Plugins must use these shared controls for editable CoT fields.

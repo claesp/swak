@@ -7,8 +7,8 @@ Identity::Identity(QObject *parent) : QObject(parent), values_{{QStringLiteral("
 QList<SettingField> Identity::settingsFields() const
 {
     return {textSetting(QStringLiteral("uid"), tr("UID"), 128), textSetting(QStringLiteral("callsign"), tr("Callsign"), 128),
-        textSetting(QStringLiteral("type"), tr("Type"), 128), textSetting(QStringLiteral("how"), tr("Location method"), 3),
-        textSetting(QStringLiteral("team"), tr("Team"), 64), textSetting(QStringLiteral("role"), tr("Role"), 64)};
+        cotSetting(QStringLiteral("type"), tr("Type"), CotField::Type), cotSetting(QStringLiteral("how"), tr("Location method"), CotField::How),
+        cotSetting(QStringLiteral("team"), tr("Team"), CotField::Team), cotSetting(QStringLiteral("role"), tr("Role"), CotField::Role)};
 }
 QString Identity::validateSettings(const QJsonObject &values) const
 {

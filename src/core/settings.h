@@ -1,5 +1,6 @@
 #pragma once
 #include "core/preferences.h"
+#include "core/cot_picker.h"
 #include <QJsonArray>
 #include <QStringList>
 #include <QtPlugin>
@@ -16,10 +17,12 @@ struct SettingField {
     int decimals = 0;
     QStringList choices;
     QJsonArray choiceValues;
+    CotField picker = CotField::None;
 };
 SettingField booleanSetting(QString path, QString label);
 SettingField numberSetting(QString path, QString label, double minimum, double maximum, int decimals = 0);
 SettingField textSetting(QString path, QString label, int maxLength);
+SettingField cotSetting(QString path, QString label, CotField picker);
 SettingField keySetting(QString path, QString label);
 SettingField choiceSetting(QString path, QString label, QStringList choices, QJsonArray values = {});
 

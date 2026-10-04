@@ -152,3 +152,5 @@ Selection and feed renderers transform world paths into screen coordinates befor
 The map collects object hits before it dispatches idle clicks. MapTools supplies plugin-owned hits through stable owner and object IDs. Data feeds, vector features, and CoT messages join the same chooser. A chosen local object returns to its plugin for selection or context actions. Active creation and corner editing retain event priority. Menu pages limit visible actions, and content changes cancel an open chooser.
 
 Read [CoT connections](servers.md) for server configuration, sender identity, LAN discovery, motion, and the development harness.
+
+Editable CoT fields use the shared cotFieldEditor control. Settings metadata selects the same picker through cotSetting. Identity and the generator share category data, input limits, locale sorting, and dialog ownership. Received CoT properties remain read-only.

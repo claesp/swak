@@ -59,3 +59,13 @@ The [example configuration](https://github.com/TAK-Product-Center/Server/blob/51
 The [streaming test client](https://github.com/TAK-Product-Center/Server/blob/5187abd46d827d37cfc5708805eced197a837e49/src/testing/load_test/pyTakStreamingCot.py) demonstrates TLS, CoT streams, and heartbeats. SWAK uses its own bounded XML frame reader. It handles quoted attributes, comments, and CDATA before the CoT decoder validates each complete document.
 
 This implementation does not provide TAK account enrollment, LDAP authentication, mission APIs, QUIC, federation, or binary-only CoT endpoints. The local harness tests protocol behavior without a full TAK Server deployment. A deployment test against a real TAK Server remains separate.
+
+# CoT field pickers
+
+Select beside Type opens a category tree. Object types contain affiliation, dimension, and common function branches. Location method contains human and machine branches. Team contains the 14 common TAK colors. Role contains Team Member, Team Lead, HQ, Sniper, Medic, Forward Observer, RTO, and K9. Lists use the system sorting order.
+
+The same controls appear in Identity, the generator, and their Settings sections. The generator saves its Location method, Team, and Role with its draft. Use sender identity restores all sender fields. Received messages remain read-only.
+
+The Type tree contains common categories, not the complete MIL-STD-2525 function catalog. Custom text remains available for other codes. Opening or canceling a picker preserves the existing value. OK applies only a value that passes the existing CoT field rules. The picker does not add missing detail extensions that a specialized type requires.
+
+The choices use protocol facts from ATAK commit 9f6893dd657feacc35ec5de03dad721c2e44170e. The [ATAK arrays](https://github.com/TAK-Product-Center/atak-civ/blob/9f6893dd657feacc35ec5de03dad721c2e44170e/atak/ATAK/app/src/main/res/values/arrays.xml) define common teams and roles. The [CoT hierarchy](https://github.com/TAK-Product-Center/atak-civ/blob/9f6893dd657feacc35ec5de03dad721c2e44170e/takcot/mitre/types.txt) describes type categories. The [base schema](https://github.com/TAK-Product-Center/atak-civ/blob/9f6893dd657feacc35ec5de03dad721c2e44170e/takcot/mitre/CoT%20Base-Event%20Schema%20%20(PUBLIC%20RELEASE).xsd) defines Location method categories. No source files or implementation code were copied.

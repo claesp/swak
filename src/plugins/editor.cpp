@@ -33,6 +33,9 @@ public:
         uid_ = textField(QStringLiteral("identity"), QUuid::createUuid().toString(QUuid::WithoutBraces));
         callsign_ = textField(QStringLiteral("callsign"), QStringLiteral("Local event"));
         type_ = textField(QStringLiteral("eventType"), QStringLiteral("a-u-G"));
+        how_ = textField(QStringLiteral("locationMethod"), QStringLiteral("h-e")); how_->setMaxLength(3);
+        team_ = textField(QStringLiteral("team"), {}); team_->setMaxLength(64);
+        role_ = textField(QStringLiteral("role"), {}); role_->setMaxLength(64);
         latitude_ = numberField(QStringLiteral("latitude"), -90, 90, 6);
         longitude_ = numberField(QStringLiteral("longitude"), -180, 180, 6);
         altitude_ = numberField(QStringLiteral("altitude"), -100000, 100000000, 1);
@@ -44,7 +47,12 @@ public:
         lifetime_->setSuffix(tr(" s"));
         form->addRow(tr("&Identity"), uid_);
         form->addRow(tr("&Callsign"), callsign_);
-        form->addRow(tr("Event &type"), type_);
+        type_->setAccessibleName(tr("Type")); how_->setAccessibleName(tr("Location method"));
+        team_->setAccessibleName(tr("Team")); role_->setAccessibleName(tr("Role"));
+        form->addRow(tr("Event &type"), cotFieldEditor(type_, CotField::Type));
+        form->addRow(tr("Location method"), cotFieldEditor(how_, CotField::How));
+        form->addRow(tr("Team"), cotFieldEditor(team_, CotField::Team));
+        form->addRow(tr("Role"), cotFieldEditor(role_, CotField::Role));
         form->addRow(tr("&Latitude (°)"), latitude_);
         form->addRow(tr("L&ongitude (°)"), longitude_);
         form->addRow(tr("&Altitude (m)"), altitude_);
@@ -108,7 +116,10 @@ public:
     {
         return {booleanSetting(QStringLiteral("send"), tr("Send generated CoT to connected servers and LAN peers")), textSetting(QStringLiteral("identity"), tr("Identity"), 128),
                 textSetting(QStringLiteral("callsign"), tr("Callsign"), 128),
-                textSetting(QStringLiteral("type"), tr("Type"), 128),
+                cotSetting(QStringLiteral("type"), tr("Type"), CotField::Type),
+                cotSetting(QStringLiteral("how"), tr("Location method"), CotField::How),
+                cotSetting(QStringLiteral("team"), tr("Team"), CotField::Team),
+                cotSetting(QStringLiteral("role"), tr("Role"), CotField::Role),
                 numberSetting(QStringLiteral("latitude"), tr("Latitude"), -90, 90, 6),
                 numberSetting(QStringLiteral("longitude"), tr("Longitude"), -180, 180, 6),
                 numberSetting(QStringLiteral("altitude"), tr("Altitude (meters)"), -100000, 100000000, 1),
@@ -119,7 +130,8 @@ public:
     QJsonObject savePreferences() const override
     {
         return {{QStringLiteral("send"), send_->isChecked()}, {QStringLiteral("identity"), uid_->text()}, {QStringLiteral("callsign"), callsign_->text()},
-                {QStringLiteral("type"), type_->text()}, {QStringLiteral("latitude"), latitude_->value()},
+                {QStringLiteral("type"), type_->text()}, {QStringLiteral("how"), how_->text()},
+                {QStringLiteral("team"), team_->text()}, {QStringLiteral("role"), role_->text()}, {QStringLiteral("latitude"), latitude_->value()},
                 {QStringLiteral("longitude"), longitude_->value()}, {QStringLiteral("altitude"), altitude_->value()},
                 {QStringLiteral("lifetime"), lifetime_->value()}, {QStringLiteral("importDirectory"), importDirectory_},
                 {QStringLiteral("exportDirectory"), exportDirectory_}};
@@ -130,6 +142,9 @@ public:
         uid_->setText(preferenceText(values, QStringLiteral("identity"), uid_->text(), 128));
         callsign_->setText(preferenceText(values, QStringLiteral("callsign"), callsign_->text(), 128));
         type_->setText(preferenceText(values, QStringLiteral("type"), type_->text(), 128));
+        how_->setText(preferenceText(values, QStringLiteral("how"), how_->text(), 3));
+        team_->setText(preferenceText(values, QStringLiteral("team"), team_->text(), 64));
+        role_->setText(preferenceText(values, QStringLiteral("role"), role_->text(), 64));
         latitude_->setValue(preferenceNumber(values, QStringLiteral("latitude"), 0, -90, 90));
         longitude_->setValue(preferenceNumber(values, QStringLiteral("longitude"), 0, -180, 180));
         altitude_->setValue(preferenceNumber(values, QStringLiteral("altitude"), 0, -100000, 100000000));
@@ -142,6 +157,7 @@ private:
     {
         if (!identity_) return;
         Event event; identity_->apply(event); uid_->setText(event.uid); callsign_->setText(event.callsign); type_->setText(event.type);
+        how_->setText(event.how); team_->setText(event.team); role_->setText(event.role);
     }
     void showStatus(const QString &message, Severity severity = Severity::Info)
     {
@@ -179,7 +195,7 @@ private:
         event.uid = uid_->text();
         event.callsign = callsign_->text();
         event.type = type_->text();
-        if (!identity_) event.how = QStringLiteral("h-e");
+        event.how = how_->text(); event.team = team_->text(); event.role = role_->text();
         event.latitude = latitude_->value();
         event.longitude = longitude_->value();
         event.altitude = altitude_->value();
@@ -231,6 +247,9 @@ private:
     QLineEdit *uid_;
     QLineEdit *callsign_;
     QLineEdit *type_;
+    QLineEdit *how_;
+    QLineEdit *team_;
+    QLineEdit *role_;
     QDoubleSpinBox *latitude_;
     QDoubleSpinBox *longitude_;
     QDoubleSpinBox *altitude_;

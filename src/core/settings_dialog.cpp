@@ -174,7 +174,7 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
                 label->setWordWrap(false);
                 label->setMinimumWidth(label->sizeHint().width());
                 label->setBuddy(editor);
-                form->addRow(label, editor);
+                form->addRow(label, field.picker != CotField::None && qobject_cast<QLineEdit *>(editor) ? cotFieldEditor(qobject_cast<QLineEdit *>(editor), field.picker) : editor);
             }
             editors.append(editor);
         }

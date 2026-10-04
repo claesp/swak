@@ -7,6 +7,12 @@ SettingField numberSetting(QString path, QString label, double minimum, double m
 { return {std::move(path), std::move(label), SettingField::Kind::Number, minimum, maximum, decimals, {}, {}}; }
 SettingField textSetting(QString path, QString label, int maxLength)
 { return {std::move(path), std::move(label), SettingField::Kind::Text, 0, static_cast<double>(maxLength), 0, {}, {}}; }
+SettingField cotSetting(QString path, QString label, CotField picker)
+{
+    auto field = textSetting(std::move(path), std::move(label), picker == CotField::How ? 3 : picker == CotField::Type ? 128 : 64);
+    field.picker = picker;
+    return field;
+}
 SettingField keySetting(QString path, QString label)
 { return {std::move(path), std::move(label), SettingField::Kind::Key, 0, 32, 0, {}, {}}; }
 SettingField choiceSetting(QString path, QString label, QStringList choices, QJsonArray values)

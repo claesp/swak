@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 4, 2026: Read “Servers, LAN peers, and CoT motion” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 4, 2026: Read “Shared CoT field pickers” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -871,3 +871,23 @@ Coverage passed nine suites, 74 native cases, and isolated LAN exchange in build
 The release build passed in build/servers-release.log. The final build with committed version metadata uses build/servers-release-final.log. Hardware graphics, native Wayland, Qt 6.4, physical two-machine LAN discovery, full TAK deployment, and two-hour qualification remain untested. Temporary toolchains under /tmp are local development tools, not portable project dependencies.
 
 The 60-second workload passed in build/quality/20261004-113738-soak-65951. It completed 1174 cycles with 13398016 bytes of peak memory growth. The maximum heartbeat gap was 41 milliseconds, and idle CPU time was 0.017 seconds. This short run does not replace two-hour qualification.
+
+## 2026-10-04: Shared CoT field pickers
+
+Type, Location method, Team, and Role now have shared Select buttons in Identity, the generator, and their Settings pages. Type uses a tree of object affiliations, dimensions, and common functions. Location method separates human and machine sources.
+
+Team supplies 14 common TAK colors. Role supplies eight common TAK roles. Lists use QCollator for system sorting. Custom text remains available, and cancellation preserves the current value.
+
+The generator now exposes and saves Location method, Team, and Role in its draft. Use sender identity restores all sender fields. Existing profiles without those draft fields retain their identity defaults. Received CoT properties remain read-only.
+
+The core adds cotFieldEditor and optional SettingField picker metadata. The editor MANIFEST advances to 0.6.0. No dependency or network operation was added.
+
+ATAK reference commit 9f6893dd657feacc35ec5de03dad721c2e44170e supplied protocol facts. The arrays, CoT hierarchy, and base schema links appear in servers.md. The Type catalog contains common branches, not every MIL-STD-2525 function. Custom codes retain the existing validation rules.
+
+Focused native tests passed at normal and 200 percent scaling in build/pickers-focused.log and build/pickers-hidpi.log. They cover known categories, invalid input, cancellation, custom values, locale sorting, parent destruction, generator XML, shared Settings controls, and profile restart. A native screenshot is build/atak-native/cot-type-picker.png. Source analysis passed in build/quality/20261004-115050-analyze-68233. Final diagnostic and release evidence follows below.
+
+Nine sanitizer suites passed in build/quality/20261004-115047-quick-68138. All 76 native cases passed in build/quality/20261004-115310-gui-69969. The GUI diagnostic still fails on the existing Mesa leak of 240732 bytes in 1073 allocations. No suppression hides this failure. The release build passed in build/pickers-release.log. The final build with committed metadata uses build/pickers-release-final.log.
+
+The 60-second workload passed in build/quality/20261004-115412-soak-70933. It completed 1194 cycles with 12644352 bytes of peak memory growth. The maximum heartbeat gap was 43 milliseconds, and idle CPU time was 0.022 seconds. This short run does not replace two-hour qualification. Hardware graphics, native Wayland, Qt 6.4, and expanded translated labels remain untested.
+
+Coverage passed nine suites and 76 GUI cases in build/quality/20261004-115549-coverage-71289. The new picker reached all 88 lines and all 11 functions. It reached 240 of 546 reported branches. Allocation failures, defensive branches, and other input combinations retain gaps. These results do not establish complete input coverage.

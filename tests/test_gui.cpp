@@ -1,3 +1,8 @@
+#include <QVBoxLayout>
+#include "core/cot_picker.h"
+#include <QTreeWidget>
+#include <QPointer>
+#include <QCollator>
 #include "core/servers.h"
 #include "core/identity.h"
 #include "core/cot.h"
@@ -2540,6 +2545,73 @@ private slots:
             swak::Window window(path, QPluginLoader::staticInstances());
             QCOMPARE(window.findChild<QLineEdit *>(QStringLiteral("callsign"))->text(), QStringLiteral("Keep draft"));
         }
+    }
+    void cotFieldPickers()
+    {
+        QWidget host; QVBoxLayout layout(&host);
+        auto *field = new QLineEdit(&host); field->setObjectName(QStringLiteral("value")); field->setAccessibleName(QStringLiteral("Type")); field->setMaxLength(128);
+        layout.addWidget(swak::cotFieldEditor(field, swak::CotField::Type)); host.show(); QVERIFY(QTest::qWaitForWindowExposed(&host));
+        auto *button = host.findChild<QPushButton *>(QStringLiteral("value/select")); QVERIFY(button);
+        field->setText(QStringLiteral("a-f-G-U-C-I-custom")); button->click();
+        auto *dialog = field->findChild<QDialog *>(); QVERIFY(dialog);
+        auto *value = dialog->findChild<QLineEdit *>(QStringLiteral("cotPickerValue")); QCOMPARE(value->text(), field->text());
+        value->setText(QStringLiteral("invalid code")); QVERIFY(!dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->isEnabled());
+        QTest::keyClick(dialog, Qt::Key_Escape); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QCOMPARE(field->text(), QStringLiteral("a-f-G-U-C-I-custom"));
+        field->setText(QStringLiteral("a-f-G-U")); button->click(); dialog = field->findChild<QDialog *>(); QVERIFY(dialog);
+        auto *tree = dialog->findChild<QTreeWidget *>(); QVERIFY(tree->currentItem()); QCOMPARE(tree->currentItem()->text(1), field->text());
+        auto matches = tree->findItems(QStringLiteral("a-h-G-E-V-C"), Qt::MatchExactly | Qt::MatchRecursive, 1); QCOMPARE(matches.size(), 1);
+        tree->setCurrentItem(matches.first());
+        QVERIFY(dialog->grab().save(QStringLiteral("cot-type-picker.png")));
+        dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+        QCOMPARE(field->text(), QStringLiteral("a-h-G-E-V-C")); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        for (const auto kind : {swak::CotField::How, swak::CotField::Team, swak::CotField::Role}) {
+            QWidget owner; auto *edit = new QLineEdit(&owner); edit->setMaxLength(kind == swak::CotField::How ? 3 : 64);
+            auto *container = swak::cotFieldEditor(edit, kind); container->findChild<QPushButton *>()->click();
+            auto *picker = edit->findChild<QDialog *>(); QVERIFY(picker); auto *list = picker->findChild<QTreeWidget *>();
+            if (kind == swak::CotField::How) {
+                const auto human = list->findItems(QStringLiteral("h"), Qt::MatchExactly, 1); QCOMPARE(human.size(), 1); list->setCurrentItem(human.first());
+                QVERIFY(!picker->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->isEnabled());
+                const auto gps = list->findItems(QStringLiteral("m-g"), Qt::MatchExactly | Qt::MatchRecursive, 1); QCOMPARE(gps.size(), 1); list->setCurrentItem(gps.first());
+            } else {
+                QCOMPARE(list->topLevelItemCount(), kind == swak::CotField::Team ? 14 : 8);
+                const QCollator collator;
+                for (int i = 1; i < list->topLevelItemCount(); ++i) QVERIFY(collator.compare(list->topLevelItem(i - 1)->text(0), list->topLevelItem(i)->text(0)) <= 0);
+                list->setCurrentItem(list->topLevelItem(0));
+            }
+            const auto selected = list->currentItem()->text(1);
+            picker->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click(); QCOMPARE(edit->text(), selected);
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            container->findChild<QPushButton *>()->click(); QPointer<QDialog> pending = edit->findChild<QDialog *>(); QVERIFY(pending);
+            delete container; QVERIFY(pending.isNull());
+        }
+    }
+    void cotPickerIntegration()
+    {
+        QTemporaryDir directory; const auto path = directory.filePath(QStringLiteral("pickers.json"));
+        {
+            swak::Window window(path, QPluginLoader::staticInstances());
+            window.show(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+            for (const auto *name : {"eventType", "locationMethod", "team", "role"}) QVERIFY(window.findChild<QPushButton *>(QString::fromLatin1(name) + QStringLiteral("/select")));
+            window.findChild<QLineEdit *>(QStringLiteral("locationMethod"))->setText(QStringLiteral("m-g"));
+            window.findChild<QLineEdit *>(QStringLiteral("team"))->setText(QStringLiteral("Dark Blue"));
+            window.findChild<QLineEdit *>(QStringLiteral("role"))->setText(QStringLiteral("Medic"));
+            window.findChild<QPushButton *>(QStringLiteral("generateEvent"))->click();
+            const auto decoded = swak::decodeCot(window.findChild<QPlainTextEdit *>(QStringLiteral("xmlPreview"))->toPlainText().toUtf8());
+            QVERIFY(decoded.event); QCOMPARE(decoded.event->how, QStringLiteral("m-g")); QCOMPARE(decoded.event->team, QStringLiteral("Dark Blue")); QCOMPARE(decoded.event->role, QStringLiteral("Medic"));
+            QTimer::singleShot(0, &window, [&] {
+                auto *settings = window.findChild<swak::SettingsDialog *>(); QVERIFY(settings);
+                for (const auto *page : {"org.swak.identity", "org.swak.editor"}) for (const auto *name : {"type", "how", "team", "role"})
+                    QVERIFY(settings->findChild<QPushButton *>(QString::fromLatin1(page) + '/' + QString::fromLatin1(name) + QStringLiteral("/select")));
+                settings->reject();
+            });
+            window.findChild<QAction *>(QStringLiteral("settingsAction"))->trigger();
+            QVERIFY(window.savePreferences());
+        }
+        swak::Window restored(path, QPluginLoader::staticInstances());
+        QCOMPARE(restored.findChild<QLineEdit *>(QStringLiteral("locationMethod"))->text(), QStringLiteral("m-g"));
+        QCOMPARE(restored.findChild<QLineEdit *>(QStringLiteral("team"))->text(), QStringLiteral("Dark Blue"));
+        QCOMPARE(restored.findChild<QLineEdit *>(QStringLiteral("role"))->text(), QStringLiteral("Medic"));
     }
     void cotAnimationRendering()
     {

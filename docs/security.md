@@ -134,3 +134,5 @@ LAN discovery is optional, IPv4-only, and restricted to the selected local subne
 LAN greetings do not provide cryptographic authentication. A device on the selected network can impersonate a discovery record or CoT UID. Do not use plaintext LAN mode on an untrusted network. Use a certificate-authenticated TAK Server for authenticated transport. Transport authentication does not establish the truth of a reported position.
 
 Animation keeps at most 8192 display records, including live and recently stale UIDs. It never changes authoritative event coordinates. Stale display records are read-only and cannot receive selection actions. Clear removes both live events and retained display records.
+
+CoT pickers use a fixed local catalog and make no network requests. Type and Location method retain their existing syntax and length limits. Team and Role retain the 64-character limit. Picker text remains plain text. Cancel changes no draft value. Each dialog belongs to its field, so closing the owning form also destroys the dialog.
