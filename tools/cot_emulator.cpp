@@ -28,7 +28,9 @@ QJsonObject readObject(const QString &path, QString &error)
     const auto file = readRegularFile(path, 16384);
     QJsonParseError parse; const auto document = QJsonDocument::fromJson(file.bytes, &parse);
     if (!file.error.isEmpty() || parse.error != QJsonParseError::NoError || !document.isObject()) {
-        error = QStringLiteral("Cannot read a JSON object from the configuration file."); return {};
+        error = !file.error.isEmpty() ? QStringLiteral("Cannot read the configuration file: %1").arg(file.error)
+            : parse.error != QJsonParseError::NoError ? QStringLiteral("Invalid configuration JSON at byte %1: %2").arg(parse.offset).arg(parse.errorString())
+            : QStringLiteral("The configuration must contain a JSON object."); return {};
     }
     return document.object();
 }
@@ -44,6 +46,7 @@ public:
                 auto *socket = server_.nextPendingConnection();
                 if (clients_.size() >= 8) { socket->abort(); socket->deleteLater(); continue; }
                 socket->setReadBufferSize(16384); clients_.insert(socket);
+                std::fprintf(stderr, "TCP client connected from [%s]:%u.\n", qPrintable(socket->peerAddress().toString()), socket->peerPort());
                 connect(socket, &QTcpSocket::disconnected, this, [this, socket] { clients_.remove(socket); socket->deleteLater(); });
             }
         });
@@ -63,12 +66,18 @@ public:
             const auto error = validateServer(source); if (!error.isEmpty()) return error;
             store_ = std::make_unique<Store>(); tak_ = std::make_unique<Servers>(*store_);
             if (const auto failure = tak_->put(QStringLiteral("emulator"), source); !failure.isEmpty()) return failure;
-        } else if (!udp && !server_.listen(address, port)) return QStringLiteral("Cannot listen on the requested TCP address and port.");
+        } else if (!udp && !server_.listen(address, port)) return QStringLiteral("Cannot listen on TCP [%1]:%2: %3. Use an available port and a local address.").arg(address.toString()).arg(port).arg(server_.errorString());
         if (tak_) connect(tak_.get(), &Servers::statusChanged, this, [this] {
             const auto state = tak_->statistics().value(QStringLiteral("emulator")).toObject().value(QStringLiteral("state")).toString();
             if (state != lastState_) { lastState_ = state; std::fprintf(stderr, "TAK connection: %s\n", qPrintable(state)); }
         });
         else std::fprintf(stderr, "%s %s:%u\n", udp ? "UDP destination" : "TCP listener", qPrintable(address.toString()), port);
+        if (!tak_ && !udp) {
+            const auto clientAddress = address == QHostAddress::Any || address == QHostAddress::AnyIPv4 ? QStringLiteral("127.0.0.1")
+                : address == QHostAddress::AnyIPv6 ? QStringLiteral("::1") : address.toString();
+            std::fprintf(stderr, "Waiting for SWAK. Select TCP CoT stream, host %s, port %u, and enable Connect. This listener does not use TLS.\n", qPrintable(clientAddress), port);
+            if (address.isLoopback()) std::fprintf(stderr, "Only clients on this computer can connect. For remote clients, bind with --address and this computer's LAN address.\n");
+        }
         clock_.start(); timer_.start(); return {};
     }
     void report() const
@@ -140,20 +149,23 @@ int main(int argc, char **argv)
     parser.process(app);
     if (parser.isSet("print-defaults")) { const auto bytes = QJsonDocument(simulation::defaults()).toJson(); std::fwrite(bytes.constData(), 1, static_cast<size_t>(bytes.size()), stdout); return 0; }
     QString error; QJsonObject values;
-    if (parser.isSet("scenario")) values = readObject(parser.value("scenario"), error);
+    if (parser.isSet("scenario")) { values = readObject(parser.value("scenario"), error); if (!error.isEmpty()) error.prepend(QStringLiteral("--scenario: ")); }
     for (const auto *name : {"frequency", "latitude", "longitude"}) if (parser.isSet(name)) {
         bool ok = false; const auto value = parser.value(name).toDouble(&ok);
-        if (!ok || !std::isfinite(value)) error = QStringLiteral("A numeric argument is invalid."); else values.insert(QLatin1String(name), value);
+        if (!ok || !std::isfinite(value)) error = QStringLiteral("--%1 must be a finite number.").arg(QLatin1String(name)); else values.insert(QLatin1String(name), value);
     }
     const auto session = parser.isSet("session") ? parser.value("session") : QStringLiteral("SIM-") + QUuid::createUuid().toString(QUuid::WithoutBraces);
     const auto scenario = simulation::load(values, session);
     bool portOk = false, durationOk = false; const int port = parser.value("port").toInt(&portOk), duration = parser.value("duration").toInt(&durationOk);
     QHostAddress address; const bool addressOk = address.setAddress(parser.value("address")) && !address.isMulticast() && address != QHostAddress::Broadcast;
-    if (!portOk || port < 1 || port > 65535 || !durationOk || duration < 0 || duration > 86400 || !addressOk ||
-        (parser.isSet("udp") && (address == QHostAddress::Any || address == QHostAddress::AnyIPv4 || address == QHostAddress::AnyIPv6))) error = QStringLiteral("A port, duration, or numeric address is invalid.");
+    if (!portOk || port < 1 || port > 65535) error = QStringLiteral("--port must be an integer from 1 to 65535.");
+    else if (!durationOk || duration < 0 || duration > 86400) error = QStringLiteral("--duration must be an integer from 0 to 86400 seconds.");
+    else if (!addressOk) error = QStringLiteral("--address must be a numeric IPv4 or IPv6 address. Multicast and broadcast are not supported.");
+    else if (parser.isSet("udp") && (address == QHostAddress::Any || address == QHostAddress::AnyIPv4 || address == QHostAddress::AnyIPv6))
+        error = QStringLiteral("--udp requires a destination address. A wildcard address cannot receive this traffic.");
     if (parser.isSet("tak-profile") && (parser.isSet("udp") || parser.isSet("address") || parser.isSet("port"))) error = QStringLiteral("Use either a TAK profile or a direct TCP/UDP configuration.");
     QJsonObject profile;
-    if (parser.isSet("tak-profile") && error.isEmpty()) { profile = readObject(parser.value("tak-profile"), error); if (profile.isEmpty()) error = QStringLiteral("The TAK profile is empty."); }
+    if (parser.isSet("tak-profile") && error.isEmpty()) { profile = readObject(parser.value("tak-profile"), error); if (error.isEmpty() && profile.isEmpty()) error = QStringLiteral("The TAK profile is empty."); if (!error.isEmpty()) error.prepend(QStringLiteral("--tak-profile: ")); }
     if (error.isEmpty()) error = scenario.error;
     if (!error.isEmpty()) { std::fprintf(stderr, "%s\n", qPrintable(error)); return 2; }
     Emulator emulator(scenario, app);

@@ -111,6 +111,8 @@ private slots:
         }
         QTcpServer occupied; QVERIFY(occupied.listen(QHostAddress::LocalHost, 0)); Process process;
         process.start(executable(), {"--port", QString::number(occupied.serverPort())}); QVERIFY(process.waitForFinished(3000)); QCOMPARE(process.exitCode(), 1);
+        const auto message = process.readAllStandardError(); QVERIFY(message.contains("Cannot listen on TCP [127.0.0.1]:"));
+        QVERIFY(message.contains(QByteArray::number(occupied.serverPort()))); QVERIFY(message.contains("available port"));
     }
 };
 QTEST_GUILESS_MAIN(SimulationTest)

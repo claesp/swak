@@ -1,5 +1,6 @@
 #pragma once
 #include <QWidget>
+class QPlainTextEdit;
 namespace swak {
 class Servers;
 class ProviderTable;
@@ -14,6 +15,6 @@ private:
     void edit(bool adding);
     Servers &servers_;
     ProviderTable *table_;
-    SingleLineLabel *status_;
+    QPlainTextEdit *status_;
 };
 }

@@ -157,6 +157,25 @@ private slots:
         qInfo("CoT load: 12000 messages in %lld ms, %d GUI heartbeat ticks", static_cast<long long>(elapsed.elapsed()), beats);
         servers.remove(QStringLiteral("load")); QVERIFY(QTest::qWaitFor([&] { return (socket->state()) == ( QAbstractSocket::UnconnectedState); }, 5000));
     }
+    void connectionDiagnostics()
+    {
+        QTcpServer reservation; QVERIFY(reservation.listen(QHostAddress::LocalHost, 0)); const auto port = reservation.serverPort(); reservation.close();
+        Store store; Servers servers(store); auto values = source(port); values.insert(QStringLiteral("retrySeconds"), 5);
+        QVERIFY(servers.put(QStringLiteral("refused"), values).isEmpty());
+        QVERIFY(QTest::qWaitFor([&] { return servers.status(QStringLiteral("refused")).contains(QStringLiteral("Connection refused")); }, 3000));
+        const auto message = servers.status(QStringLiteral("refused"));
+        QVERIFY(message.contains(QStringLiteral("TCP [127.0.0.1]:%1").arg(port))); QVERIFY(message.contains(QStringLiteral("Retry in 5 seconds")));
+        QVERIFY(message.contains(QStringLiteral("Start the server")));
+        QVERIFY(reservation.listen(QHostAddress::LocalHost, port)); servers.reconnect();
+        QVERIFY(QTest::qWaitFor([&] { return servers.status(QStringLiteral("refused")).contains(QStringLiteral("Connected")); }, 3000));
+        QVERIFY(!servers.status(QStringLiteral("refused")).contains(QStringLiteral("Connection refused")));
+        QTcpServer mismatch; QVERIFY(mismatch.listen(QHostAddress::LocalHost, 0));
+        values.insert(QStringLiteral("port"), mismatch.serverPort());
+        values.insert(QStringLiteral("protocol"), QStringLiteral("tls")); QVERIFY(servers.put(QStringLiteral("tls-mismatch"), values).isEmpty());
+        QVERIFY(QTest::qWaitFor([&] { return mismatch.hasPendingConnections(); }, 3000)); auto *plain = mismatch.nextPendingConnection(); plain->write("not TLS");
+        QVERIFY(QTest::qWaitFor([&] { return servers.status(QStringLiteral("tls-mismatch")).contains(QStringLiteral("TLS handshake failed")); }, 3000));
+        QVERIFY(servers.status(QStringLiteral("tls-mismatch")).contains(QStringLiteral("plain TCP")));
+    }
     void tlsCertificates()
     {
         qputenv("SWAK_COT_TEST_PASSWORD", "swak-test-only"); qputenv("SWAK_COT_TEST_WRONG", "wrong");

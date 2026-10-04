@@ -2680,6 +2680,7 @@ private slots:
         window.show(); window.activateWindow(); QVERIFY(QTest::qWaitForWindowExposed(&window));
         auto *servers = window.findChild<swak::Servers *>(); QVERIFY(servers);
         auto *list = window.findChild<QTableWidget *>(QStringLiteral("serverList")); QVERIFY(list); QCOMPARE(list->rowCount(), 0);
+        auto *details = window.findChild<QPlainTextEdit *>(QStringLiteral("serverStatus")); QVERIFY(details); QVERIFY(details->isReadOnly());
         bool emptyAdd = false;
         QTimer::singleShot(0, &window, [&] {
             auto *dialog = window.findChild<QDialog *>(QStringLiteral("serverEditor")); QVERIFY(dialog);
@@ -2725,6 +2726,12 @@ private slots:
         QVERIFY(sent.event); QCOMPARE(sent.event->uid, QStringLiteral("sender-test")); QCOMPARE(sent.event->team, QStringLiteral("Blue"));
         auto *browser = window.findChild<QWidget *>(QStringLiteral("serverBrowser")); QVERIFY(browser->grab().save(QStringLiteral("server-browser.png")));
         servers->remove(QStringLiteral("harness")); QCOMPARE(list->rowCount(), 0);
+        QTcpServer unused; QVERIFY(unused.listen(QHostAddress::LocalHost, 0)); const auto unusedPort = unused.serverPort(); unused.close();
+        source.insert(QStringLiteral("port"), unusedPort); QVERIFY(servers->put(QStringLiteral("missing"), source).isEmpty());
+        QVERIFY(QTest::qWaitFor([&] { return details->toPlainText().contains(QStringLiteral("Connection refused")); }, 3000));
+        QVERIFY(details->toPlainText().contains(QString::number(unusedPort))); details->selectAll(); details->copy();
+        QCOMPARE(QApplication::clipboard()->text(), details->toPlainText());
+        QVERIFY(browser->grab().save(QStringLiteral("server-connection-error.png")));
         QVERIFY(window.savePreferences());
     }
     void receiverRestarts()

@@ -71,3 +71,9 @@ The Type tree contains common categories, not the complete MIL-STD-2525 function
 The choices use protocol facts from ATAK commit 9f6893dd657feacc35ec5de03dad721c2e44170e. The [ATAK arrays](https://github.com/TAK-Product-Center/atak-civ/blob/9f6893dd657feacc35ec5de03dad721c2e44170e/atak/ATAK/app/src/main/res/values/arrays.xml) define common teams and roles. The [CoT hierarchy](https://github.com/TAK-Product-Center/atak-civ/blob/9f6893dd657feacc35ec5de03dad721c2e44170e/takcot/mitre/types.txt) describes type categories. The [base schema](https://github.com/TAK-Product-Center/atak-civ/blob/9f6893dd657feacc35ec5de03dad721c2e44170e/takcot/mitre/CoT%20Base-Event%20Schema%20%20(PUBLIC%20RELEASE).xsd) defines Location method categories. No source files or implementation code were copied.
 
 The [local TAK compatibility test](tak-compatibility.md) passed CoT XML exchange through official TAK Server 5.7-RELEASE-14. It covers TCP, PEM and PKCS12 mutual TLS, identity fields, position updates, reconnects, and certificate rejection. Other deployment features require separate tests.
+
+# Connection details
+
+The Servers pane shows full connection errors in a read-only text box. Select and copy the text when you report a failure. Errors include the protocol, address, port, cause, and retry delay. Connection refusal, host lookup failure, timeout, TLS failure, and UDP bind failure have separate messages.
+
+For the local simulator, use TCP CoT stream at 127.0.0.1:18087. Start the separate emulator first. Its default listener does not accept TLS. Read [CoT emulator](cot-emulator.md) for remote connections and startup errors.

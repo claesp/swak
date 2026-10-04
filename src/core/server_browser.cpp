@@ -4,6 +4,7 @@
 #include "core/settings_dialog.h"
 #include "core/single_line_label.h"
 #include <QPushButton>
+#include <QPlainTextEdit>
 #include <QVBoxLayout>
 #include <QCollator>
 #include <QSignalBlocker>
@@ -38,7 +39,8 @@ ServerBrowser::ServerBrowser(Servers &servers, QWidget *parent) : QWidget(parent
         dialog.setWindowTitle(tr("LAN peers")); dialog.exec();
     });
     layout->addLayout(row);
-    status_ = new SingleLineLabel(this); status_->setObjectName(QStringLiteral("serverStatus")); status_->setTextFormat(Qt::PlainText); layout->addWidget(status_);
+    status_ = new QPlainTextEdit(this); status_->setObjectName(QStringLiteral("serverStatus")); status_->setAccessibleName(tr("Connection details"));
+    status_->setReadOnly(true); status_->setMaximumHeight(110); layout->addWidget(status_);
     connect(table_, &QTableWidget::currentCellChanged, this, [this] { status(); });
     connect(table_, &QTableWidget::cellDoubleClicked, this, [this](int, int col) { if (col != 0) edit(false); });
     connect(&servers_, &Servers::changed, this, &ServerBrowser::refresh);
@@ -54,7 +56,7 @@ void ServerBrowser::refresh()
         const auto source = sources.value(id).toObject();
         auto *active = table_->append(id, source.value(QStringLiteral("name")).toString(), source.value(QStringLiteral("protocol")).toString() == QLatin1String("tls") ? tr("TLS") : source.value(QStringLiteral("protocol")).toString() == QLatin1String("stcp") ? tr("TCP") : source.value(QStringLiteral("protocol")).toString() == QLatin1String("udp") ? tr("UDP") : tr("Unavailable"),
             source.value(QStringLiteral("host")).toString() + QStringLiteral(":") + QString::number(source.value(QStringLiteral("port")).toInt()), source.value(QStringLiteral("enabled")).toBool(), validateServer(source).isEmpty());
-        connect(active, &QAbstractButton::clicked, this, [this, id](bool enabled) { QTimer::singleShot(0, this, [this, id, enabled] { auto source = servers_.sources().value(id).toObject(); if (source.isEmpty()) return; source.insert(QStringLiteral("enabled"), enabled); const auto error = servers_.put(id, source); if (!error.isEmpty()) status_->setText(error); }); });
+        connect(active, &QAbstractButton::clicked, this, [this, id](bool enabled) { QTimer::singleShot(0, this, [this, id, enabled] { auto source = servers_.sources().value(id).toObject(); if (source.isEmpty()) return; source.insert(QStringLiteral("enabled"), enabled); const auto error = servers_.put(id, source); if (!error.isEmpty()) status_->setPlainText(error); }); });
     }
     table_->selectId(selected); if (table_->currentRow() < 0 && table_->rowCount()) table_->setCurrentCell(0, 1); status();
 }
@@ -63,12 +65,13 @@ void ServerBrowser::status()
     QStringList peers;
     const auto stats = servers_.statistics();
     for (auto it = stats.begin(); it != stats.end(); ++it) if (it.key().startsWith(QLatin1String("LAN/"))) peers.append(it.key().mid(4) + QStringLiteral(": ") + it.value().toObject().value(QStringLiteral("state")).toString());
-    status_->setText((table_->selectedId().isEmpty() ? QString{} : servers_.status(table_->selectedId()) + QStringLiteral(" ")) + stats.value(QStringLiteral("lan")).toString(tr("LAN discovery inactive")) + tr(". Peers: %1.").arg(peers.size()));
+    const auto text = (table_->selectedId().isEmpty() ? QString{} : servers_.status(table_->selectedId()) + QStringLiteral(" ")) + stats.value(QStringLiteral("lan")).toString(tr("LAN discovery inactive")) + tr(". Peers: %1.").arg(peers.size());
+    if (status_->toPlainText() != text) status_->setPlainText(text);
     status_->setToolTip(peers.join(QLatin1Char('\n')).toHtmlEscaped());
 }
 void ServerBrowser::edit(bool adding)
 {
-    if (adding && servers_.sources().size() >= 16) { status_->setText(tr("The server limit is 16.")); return; }
+    if (adding && servers_.sources().size() >= 16) { status_->setPlainText(tr("The server limit is 16.")); return; }
     if (!adding && table_->selectedId().isEmpty()) return;
     const auto id = adding ? QUuid::createUuid().toString(QUuid::WithoutBraces) : table_->selectedId(); QString error;
     SettingsDialog dialog({{id, tr("CoT server"), serverFields(), adding ? serverDefaults() : servers_.sources().value(id).toObject(), validateServer,

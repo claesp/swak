@@ -155,8 +155,13 @@ private:
         if (s.tcp) { auto *socket = s.tcp.release(); socket->disconnect(this); socket->abort(); socket->deleteLater(); }
         if (s.udp) { s.udp->close(); s.udp.reset(); }
         s.ready = false; s.stream.reset(); s.partial = 0; s.greeting.clear(); s.greeted = false;
-        s.next = clock_.elapsed() + std::min(60000, s.source.value(QStringLiteral("retrySeconds")).toInt(5) * 1000 * (1 << std::min(s.failures++, 3)));
-        state(s, text, Severity::Warning);
+        const int delay = std::min(60000, s.source.value(QStringLiteral("retrySeconds")).toInt(5) * 1000 * (1 << std::min(s.failures, 3)));
+        s.failures = std::min(s.failures + 1, 3);
+        s.next = clock_.elapsed() + delay;
+        const auto protocol = s.source.value(QStringLiteral("protocol")).toString();
+        const auto label = protocol == QLatin1String("stcp") ? QStringLiteral("TCP") : protocol.toUpper();
+        state(s, tr("%1 [%2]:%3: %4 Retry in %5 seconds.").arg(label, s.source.value(QStringLiteral("host")).toString())
+            .arg(s.source.value(QStringLiteral("port")).toInt()).arg(text).arg(delay / 1000), Severity::Warning);
     }
     bool tls(QSslSocket &socket, const QJsonObject &source)
     {
@@ -195,8 +200,25 @@ private:
     void attach(Session &s)
     {
         s.tcp->setReadBufferSize(64 * 1024); s.tcp->setSocketOption(QAbstractSocket::KeepAliveOption, 1);
-        connect(s.tcp.get(), &QTcpSocket::errorOccurred, this, [this, &s] { fail(s, tr("Connection failed. Retry scheduled.")); });
-        connect(s.tcp.get(), &QTcpSocket::disconnected, this, [this, &s] { fail(s, tr("Disconnected. Retry scheduled.")); });
+        connect(s.tcp.get(), &QTcpSocket::errorOccurred, this, [this, &s](QAbstractSocket::SocketError error) {
+            QString detail;
+            switch (error) {
+            case QAbstractSocket::ConnectionRefusedError:
+                detail = tr("Connection refused. Start the server and make sure that its address and port match this connection."); break;
+            case QAbstractSocket::HostNotFoundError:
+                detail = tr("Host name not found. Correct the host name or use its numeric address."); break;
+            case QAbstractSocket::SocketTimeoutError:
+                detail = tr("Connection timed out. Make sure that the server is reachable and the firewall allows this port."); break;
+            case QAbstractSocket::RemoteHostClosedError:
+                detail = tr("The server closed the connection. Make sure that the protocol matches the server."); break;
+            case QAbstractSocket::SslHandshakeFailedError:
+                detail = tr("TLS handshake failed. Make sure that the server supports TLS and accepts the client certificate. The default emulator uses plain TCP."); break;
+            default:
+                detail = tr("Socket error %1: %2").arg(static_cast<int>(error)).arg(s.tcp->errorString().left(256)); break;
+            }
+            fail(s, detail);
+        });
+        connect(s.tcp.get(), &QTcpSocket::disconnected, this, [this, &s] { fail(s, tr("The server closed the connection. Make sure that the protocol matches the server.")); });
     }
     void connected(Session &s)
     {
@@ -208,16 +230,16 @@ private:
         s.started = clock_.elapsed();
         if (s.source.value(QStringLiteral("protocol")) == QLatin1String("udp")) {
             s.udp = std::make_unique<QUdpSocket>();
-            if (!s.udp->bind(QHostAddress(s.source.value(QStringLiteral("host")).toString()), static_cast<quint16>(s.source.value(QStringLiteral("port")).toInt()), QUdpSocket::DontShareAddress)) { fail(s, tr("Cannot bind UDP input. Retry scheduled.")); return; }
+            if (!s.udp->bind(QHostAddress(s.source.value(QStringLiteral("host")).toString()), static_cast<quint16>(s.source.value(QStringLiteral("port")).toInt()), QUdpSocket::DontShareAddress)) { fail(s, tr("Cannot bind UDP input: %1. Use an available port and an address assigned to this computer.").arg(s.udp->errorString().left(256))); return; }
             s.udp->setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption, 256 * 1024); s.ready = true; state(s, tr("Listening")); return;
         }
         const bool encrypted = s.source.value(QStringLiteral("protocol")) == QLatin1String("tls");
         if (encrypted) {
             auto socket = std::make_unique<QSslSocket>();
-            if (!tls(*socket, s.source)) { fail(s, tr("TLS credentials are unavailable or invalid.")); return; }
+            if (!tls(*socket, s.source)) { fail(s, tr("TLS credentials are unavailable or invalid. Make sure that the CA, client certificate, private key, and password configuration are readable and valid.")); return; }
             auto *ssl = socket.get(); s.tcp = std::move(socket); attach(s);
             connect(ssl, &QSslSocket::encrypted, this, [this, &s] { connected(s); });
-            connect(ssl, &QSslSocket::sslErrors, this, [this, &s](const QList<QSslError> &) { fail(s, tr("TLS certificate validation failed.")); });
+            connect(ssl, &QSslSocket::sslErrors, this, [this, &s](const QList<QSslError> &errors) { fail(s, tr("TLS certificate validation failed: %1. Use a trusted certificate that matches the host.").arg(errors.isEmpty() ? tr("Unknown certificate error") : errors.first().errorString().left(256))); });
             state(s, tr("Connecting")); ssl->connectToHostEncrypted(s.source.value(QStringLiteral("host")).toString(), static_cast<quint16>(s.source.value(QStringLiteral("port")).toInt()));
         } else {
             s.tcp = std::make_unique<QTcpSocket>();
@@ -351,7 +373,7 @@ private:
             if (cursor_ >= count) cursor_ = 0;
             auto &s = *sessions_[cursor_++]; const auto now = clock_.elapsed();
             if (!s.tcp && !s.udp && now >= s.next) start(s);
-            if (s.tcp && !s.ready && now - s.started > s.source.value(QStringLiteral("timeoutSeconds")).toInt(15) * 1000) fail(s, tr("Connection timed out."));
+            if (s.tcp && !s.ready && now - s.started > s.source.value(QStringLiteral("timeoutSeconds")).toInt(15) * 1000) fail(s, tr("Connection timed out after %1 seconds. Make sure that the address, port, protocol, and firewall rules match the server.").arg(s.source.value(QStringLiteral("timeoutSeconds")).toInt(15)));
             receive(s);
         }
         if (clock_.elapsed() - lastPublish_ >= 500) { publish(); lastPublish_ = clock_.elapsed(); }

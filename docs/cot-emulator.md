@@ -112,3 +112,13 @@ ctest --preset debug -R simulation
 ```
 
 Read [Development diagnostics](quality.md) for sanitizer runs. Read [TAK compatibility](tak-compatibility.md) for the separate test against an actual TAK Server.
+
+# Connection failures
+
+Start the emulator before you connect SWAK. The terminal must show TCP listener and Waiting for SWAK. In SWAK, select TCP CoT stream, enter host 127.0.0.1 and port 18087, then enable Connect. The default emulator does not accept TLS. An ordinary TAK server can require TLS instead.
+
+If the terminal reports that the port is unavailable, stop the other listener or choose another port with --port. Enter the same port in SWAK. If SWAK reports Connection refused, make sure that the emulator remains active at that address and port. If TLS fails against the default emulator, change the SWAK protocol to TCP CoT stream.
+
+The default loopback address only accepts clients on the same computer. For a remote client, bind the emulator to its host's LAN address with --address. Enter that LAN address in SWAK. Make sure that the host firewall permits the chosen TCP port.
+
+The Servers pane shows the protocol, endpoint, reason, and retry delay for failures. Its Connection details box supports selection and copying. Certificate errors identify the failed trust test without printing certificates, private keys, or passwords. Application text logging stays disabled until you enable it.

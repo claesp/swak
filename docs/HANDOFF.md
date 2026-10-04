@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 4, 2026: Read “Separate CoT emulator” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 4, 2026: Read “Connection error details” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -930,3 +930,21 @@ A 60-second TCP load test generated 119999 messages for 100 units at 20 updates 
 The release rebuild passed in build/emulator-release.log. The final rebuild after the commit uses build/emulator-release-final.log.
 
 The 60-second sanitizer workload passed in build/quality/20261004-151927-soak-83451. It completed 1171 cycles with 13365248 bytes of peak memory growth. The maximum heartbeat gap was 39 milliseconds. Idle CPU time was 0.016 seconds.
+
+## 2026-10-04: Connection error details
+
+The user reported an unhelpful connection failure while trying the emulator. A local inspection found no process listening on the default TCP port 18087. The user's exact address and protocol remain unknown. That observation does not establish every cause of the reported failure.
+
+Server failures now include protocol, address, port, cause, and retry delay. Refusal, failed host lookup, timeout, remote closure, TLS handshake failure, certificate rejection, and UDP bind failure have distinct guidance. Retry counters saturate instead of growing without a bound. Text logging remains opt-in through the shared logger. Messages exclude certificate bodies, private keys, and passwords.
+
+The Servers pane now shows errors in a read-only text box. Users can select and copy the entire message. The simulator prints the required TCP connection configuration and explains loopback binding. Startup failures include the endpoint and socket reason. Invalid CLI arguments identify the flag. JSON errors identify the input role and parsing offset.
+
+Regression tests exercise refusal, retry recovery, TLS against a plaintext listener, readable error details, copying, and port collisions. The native screenshot is build/atak-native/server-connection-error.png. The focused native test passed with Qt 6.8.2 in build/connection-focused.log.
+
+Ten sanitizer suites passed in build/quality/20261004-153339-quick-86600. Source analysis passed in build/quality/20261004-153340-analyze-3. Later evidence below covers final diagnostics and release output. DNS failures and firewall timeouts retain environment-dependent test gaps. Hardware graphics, native Wayland, and two-hour operation remain unqualified.
+
+All 77 native cases passed in build/quality/20261004-153533-gui-88141. The GUI diagnostic still fails on the existing Mesa leak of 240732 bytes in 1073 allocations. Coverage passed ten suites and all native cases in build/quality/20261004-153628-coverage-88483. The separate emulator source scan passed in build/connection-tool-analysis.log. No suppression hides the graphics leak.
+
+The release rebuild passed in build/connection-release.log. The final build after the commit uses build/connection-release-final.log.
+
+The 60-second sanitizer workload passed in build/quality/20261004-153801-soak-89214. It completed 1174 cycles with 13434880 bytes of peak memory growth. The maximum heartbeat gap was 47 milliseconds. Idle CPU time was 0.019 seconds. The final simulator sanitizer suite passed in build/connection-final-simulation.log. This short run does not replace two-hour qualification.
