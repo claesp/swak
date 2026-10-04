@@ -1057,3 +1057,13 @@ Final coverage passed ten suites and all 84 native cases in build/quality/202610
 The release build passed in build/label-release.log. The final rebuild after the commit uses build/label-release-final.log.
 
 All 84 native sanitizer cases passed in build/quality/20261004-193004-gui-132121. The diagnostic still reports the existing Mesa leak of 240732 bytes in 1073 allocations. No suppression hides this leak. The run used Qt 6.8.2 and Xvfb with software OpenGL.
+
+## 2026-10-04: Reboot checkpoint
+
+The user confirmed that the outdated debug executable caused the apparent toolbar grouping error. Both debug and release executables now include functional commit 06a152b3458f. The debug rebuild passed in build/grouping-debug-sync.log. The native grouping regression passed in build/grouping-verify.log. The final release rebuild passed in build/label-release-final.log. No requested implementation work remains pending.
+
+The toolbar order is Map provider, Clear messages, Marker, Area, Circle, Line, and Distance. Separators group Marker through Line together and place Distance in its own section. Labels support selection and invert colors when selected. Space freezes displayed positions and traces while reception continues. Identity generates its initial UID and requires the lock button before editing it.
+
+The working tree was clean before this checkpoint. Commit this checkpoint as documentation only. Its commit follows the functional revision embedded in both executables. No background development task needs to resume after reboot.
+
+This session used temporary tools under /tmp/swak-toolchain/root/usr and /tmp/swak-quality-tools/root/usr. A reboot can remove them. Inspect the local toolchain before the next build. Follow docs/build.md and docs/quality.md if those paths no longer exist. Do not assume that temporary tools are portable to another machine.
