@@ -192,6 +192,25 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
                 connect(choice, &QComboBox::currentIndexChanged, editors.at(i), refresh); refresh();
             }
         }
+        for (auto *form : forms) {
+            if (!form || page.defaults.isEmpty()) continue;
+            auto *reset = new QPushButton(tr("Restore section defaults"), form->parentWidget());
+            reset->setObjectName(page.id + QStringLiteral("/restoreDefaults"));
+            form->addRow(reset);
+            connect(reset, &QPushButton::clicked, this, [page, editors, form] {
+                for (qsizetype i = 0; i < page.fields.size(); ++i) {
+                    auto *editor = editors.at(i);
+                    if (!form->parentWidget()->isAncestorOf(editor)) continue;
+                    const auto value = settingValue(page.defaults, page.fields.at(i).path);
+                    if (value.isUndefined()) continue;
+                    if (auto *box = qobject_cast<QCheckBox *>(editor)) box->setChecked(value.toBool());
+                    else if (auto *number = qobject_cast<QDoubleSpinBox *>(editor)) number->setValue(value.toDouble());
+                    else if (auto *key = qobject_cast<QKeySequenceEdit *>(editor)) key->setKeySequence(QKeySequence::fromString(value.toString(), QKeySequence::PortableText));
+                    else if (auto *text = qobject_cast<QLineEdit *>(editor)) text->setText(value.toString());
+                    else if (auto *choice = qobject_cast<QComboBox *>(editor)) choice->setCurrentIndex(choice->findData(value.toVariant()));
+                }
+            });
+        }
         editors_.append(editors);
     }
     for (auto *sections : lists) if (sections) sections->setCurrentRow(0);

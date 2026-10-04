@@ -1,4 +1,5 @@
 #pragma once
+#include "core/settings_dialog.h"
 #include "core/store.h"
 #include "core/preferences.h"
 #include <QMainWindow>
@@ -29,6 +30,8 @@ private:
     void restorePreferences();
     void fitWindowsToScreens();
     void openSettings();
+    QList<SettingsPage> settingsPages();
+    QHash<QString, QJsonObject> settingsDefaults_;
     QList<PreferenceParticipant *> participants() const;
     QList<QObject *> plugins_;
     Store store_;

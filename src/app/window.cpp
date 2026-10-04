@@ -431,6 +431,10 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     preferencesStatus_->setWordWrap(true);
     preferencesStatus_->setMaximumWidth(420);
     statusBar()->addPermanentWidget(preferencesStatus_);
+    saveTimer_.setInterval(750);
+    for (const auto &page : settingsPages()) settingsDefaults_.insert(page.id, page.values);
+    settingsDefaults_.insert(QStringLiteral("logging"), {{QStringLiteral("enabled"), false}, {QStringLiteral("severity"), 2},
+        {QStringLiteral("urgency"), 0}, {QStringLiteral("rate"), 20}, {QStringLiteral("qt"), true}, {QStringLiteral("prefix"), QString{}}});
     restorePreferences();
     connect(mapSources, &MapSources::changed, this, [this, mapSources] {
         savePreferences();
@@ -575,7 +579,7 @@ QList<PreferenceParticipant *> Window::participants() const
     for (auto *object : findChildren<QObject *>()) append(object);
     return result;
 }
-void Window::openSettings()
+QList<SettingsPage> Window::settingsPages()
 {
     QList<SettingsPage> pages;
     pages.append({QStringLiteral("logging"), tr("Logging"), {
@@ -661,7 +665,12 @@ void Window::openSettings()
                 fitWindowsToScreens();
             }, true});
     }
-    SettingsDialog dialog(std::move(pages), [this] {
+    for (auto &page : pages) page.defaults = settingsDefaults_.value(page.id);
+    return pages;
+}
+void Window::openSettings()
+{
+    SettingsDialog dialog(settingsPages(), [this] {
         return savePreferences() ? QString{} : preferences_.error();
     }, this);
     dialog.restoreNavigation(settingsNavigation_);

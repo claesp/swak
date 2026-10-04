@@ -2221,6 +2221,38 @@ private slots:
         reopened.restoreNavigation(dialog.navigation());
         QCOMPARE(reopened.navigation(), dialog.navigation());
     }
+    void resetTraceSettings()
+    {
+        QTemporaryDir directory; const auto path = directory.filePath(QStringLiteral("trace-reset.json"));
+        {
+            swak::Window window(path, QPluginLoader::staticInstances());
+            auto *settings = dynamic_cast<swak::SettingsParticipant *>(window.findChild<QObject *>(QStringLiteral("traceTool"))); QVERIFY(settings);
+            auto values = settings->savePreferences(); values.insert(QStringLiteral("positions"), 10); values.insert(QStringLiteral("opacity"), 0.35);
+            values.insert(QStringLiteral("targets"), QJsonArray{QJsonObject{{QStringLiteral("owner"), QStringLiteral("org.swak.events")}, {QStringLiteral("id"), QStringLiteral("retained")}}});
+            settings->restorePreferences(values);
+            for (const bool apply : {false, true}) {
+                QTimer::singleShot(0, &window, [&] {
+                    auto *dialog = window.findChild<swak::SettingsDialog *>(); QVERIFY(dialog);
+                    dialog->restoreNavigation({{QStringLiteral("settingsSections"), QStringLiteral("org.swak.trace")}});
+                    auto *count = dialog->findChild<QDoubleSpinBox *>(QStringLiteral("org.swak.trace/positions")); QVERIFY(count); QCOMPARE(count->value(), 10.0);
+                    auto *reset = dialog->findChild<QPushButton *>(QStringLiteral("org.swak.trace/restoreDefaults")); QVERIFY(reset); reset->click();
+                    QCOMPARE(count->value(), 50.0);
+                    QCOMPARE(dialog->findChild<QDoubleSpinBox *>(QStringLiteral("org.swak.trace/opacity"))->value(), 0.7);
+                    QCOMPARE(settings->savePreferences().value(QStringLiteral("positions")).toInt(), 10);
+                    QVERIFY(dialog->grab().save(QStringLiteral("trace-reset.png")));
+                    dialog->findChild<QDialogButtonBox *>(QStringLiteral("settingsButtons"))->button(apply ? QDialogButtonBox::Ok : QDialogButtonBox::Cancel)->click();
+                });
+                window.findChild<QAction *>(QStringLiteral("settingsAction"))->trigger();
+                QCOMPARE(settings->savePreferences().value(QStringLiteral("positions")).toInt(), apply ? 50 : 10);
+                QCOMPARE(settings->savePreferences().value(QStringLiteral("targets")).toArray().size(), 1);
+            }
+        }
+        swak::Window restored(path, QPluginLoader::staticInstances());
+        auto *settings = dynamic_cast<swak::SettingsParticipant *>(restored.findChild<QObject *>(QStringLiteral("traceTool"))); QVERIFY(settings);
+        QCOMPARE(settings->savePreferences().value(QStringLiteral("positions")).toInt(), 50);
+        QCOMPARE(settings->savePreferences().value(QStringLiteral("opacity")).toDouble(), 0.7);
+        QCOMPARE(settings->savePreferences().value(QStringLiteral("targets")).toArray().size(), 1);
+    }
     void settingsPluginExtension()
     {
         QTemporaryDir directory;

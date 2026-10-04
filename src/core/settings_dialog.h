@@ -15,6 +15,7 @@ struct SettingsPage {
     std::function<void(const QJsonObject &)> apply;
     bool paneCustomization = false;
     std::function<QWidget *(QWidget *)> createContent = {};
+    QJsonObject defaults = {};
 };
 class SettingsDialog final : public QDialog {
     Q_OBJECT

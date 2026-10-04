@@ -291,3 +291,9 @@ Right-click a CoT or local marker and select Trace. The checked action starts a 
 A trace retains at most 50 positions. The default opacity is 70 percent. Older segments appear more faintly, with a minimum of one-quarter of the configured opacity. File > Settings > Trace controls the position count, opacity, and line width. At most 128 markers can have tracing enabled. Tracing choices survive restart. Position histories last only for the session and clear when the source marker disappears. Imported map features without stable marker identities do not offer Trace.
 
 Close Information with its top-right button to clear selection. Incoming updates cannot reopen it until you select another object. In Servers, use the Active column to control connections. The server editor does not repeat that checkbox. TLS credential fields remain gray until you select TLS.
+
+# Restore configuration defaults
+
+Open File > Settings and select a standard configuration section. Select Restore section defaults. Select Apply or OK to save the default values. Select Cancel to discard the staged reset. A reset affects only the fields in that section and tab. Provider management tables keep their existing add, edit, and delete controls.
+
+For Trace, the defaults are 50 positions, 0.70 maximum opacity, and 1.5 pixels of line width. The reset preserves traced marker identities and current histories within the restored limit. Older saved profiles can contain ten positions and 0.35 opacity.

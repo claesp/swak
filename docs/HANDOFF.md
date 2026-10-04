@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 4, 2026: Read “Trace visibility and black map labels” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 4, 2026: Read “Restore section defaults” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -985,3 +985,14 @@ CoT, area, data, and vector map labels use black text. Area labels use a pale tr
 The first sanitizer run rejected an incompatible manifest schema value and failed two core cases. The manifest now retains the supported schema. The plugin stores its migration version inside its own preferences. Source analysis passed in build/quality/20261004-163310-analyze-3. All 78 native GUI cases passed in build/quality/20261004-163426-gui-101809. The native diagnostic still reports the existing Mesa leak of 240732 bytes in 1073 allocations. No suppression hides it. Native images confirm black area text and the stronger trace.
 
 The corrected core sanitizer suite passed all 47 cases in build/visibility-core-final.log. The other nine sanitizer suites passed in build/quality/20261004-163309-quick-101128. Coverage passed all ten suites and 78 GUI cases in build/quality/20261004-163615-coverage-102462. The 60-second workload passed in build/quality/20261004-163459-soak-102137. It completed 1113 cycles with 15192064 bytes of peak memory growth and a maximum heartbeat gap of 67 milliseconds. Two-hour operation and hardware graphics remain unqualified. The release build passed in build/visibility-release.log. The final rebuild after the commit uses build/visibility-release-final.log.
+
+
+## 2026-10-04: Restore section defaults
+
+The user reported saved Trace values of ten positions and 0.35 opacity. The previous source review established shared runtime values, but it did not inspect the user profile. Standard Settings sections now offer Restore section defaults. The host captures initial field values before preference restoration. The dialog stages default field values until Apply or OK. Cancel discards them. Hidden fields, traced identities, and provider records remain intact. Custom provider management tables do not expose a generic reset.
+
+The GUI regression exercises reset, cancellation, application, preserved trace identities, and restart. Plugin guidance describes the startup default contract and SettingsPage.defaults.
+
+Ten sanitizer suites passed in build/quality/20261004-165620-quick-105479. Source analysis passed in build/quality/20261004-165621-analyze-3. All 79 native GUI cases passed in build/quality/20261004-165752-gui-106139. The GUI diagnostic still reports the existing Mesa leak of 240732 bytes in 1073 allocations. The inspected trace-reset.png image shows the reset control and default values. The new regression directly exercises numeric reset fields. Boolean, text, key, and choice reset branches retain direct test gaps.
+
+Coverage passed ten suites and 79 GUI cases in build/quality/20261004-165943-coverage-106697. The 60-second workload passed in build/quality/20261004-165829-soak-106556. It completed 1131 cycles with 17117184 bytes of peak memory growth and a maximum heartbeat gap of 46 milliseconds. Idle CPU time was 0.019 seconds. Two-hour operation and hardware graphics remain unqualified. The release build passed in build/reset-release.log. The final rebuild after the commit uses build/reset-release-final.log.

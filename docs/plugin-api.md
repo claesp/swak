@@ -315,3 +315,7 @@ SettingField supports enabledBy and enabledValue. A field names a choice field i
 Store::eventAccepted emits each accepted authoritative Event on the GUI thread, including events inside a batch. A receiver must copy any data that it retains. Trace uses this signal so a batch cannot hide intermediate accepted positions. Store::changed still marks the completed batch for drawing and disappearance handling.
 
 MapTool::itemsChanged marks changed local object membership or properties. MapTools forwards it separately from drawing updates. Object chooser menus use this signal to cancel stale choices. Continuous trace repainting does not close menus.
+
+# Restoring section defaults
+
+The host captures standard SettingsPage values before it loads saved preferences. Plugins must expose their startup defaults through savePreferences at that point. SettingsPage.defaults carries this snapshot to the shared dialog. Restore section defaults updates only the fields in the current section and tab. Apply and OK use the existing validation and save callbacks. Cancel discards staged values. Hidden fields and plugin records remain intact. Custom management widgets keep their own actions and do not receive a generic reset button.
