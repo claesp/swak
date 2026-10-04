@@ -25,13 +25,14 @@ public:
 signals:
     void changed();
 private:
-    struct Motion { Event event; QPointF from, to; qint64 start = 0, stale = -1; bool teleport = false; double initialOpacity = 1; };
+    struct Motion { Event event; QPointF from, to; qint64 start = 0, stale = -1; bool teleport = false; double initialOpacity = 1; QPointF velocity = {}; qint64 horizon = 0; };
     VisualEvent visual(const Motion &motion, qint64 now) const;
     void advance();
     QHash<QString, Motion> records_;
     QElapsedTimer clock_;
     QTimer timer_;
     int duration_ = 600;
+    int prediction_ = 3000;
     double threshold_ = 100;
     int staleSeconds_ = 10;
     int fade_ = 600;

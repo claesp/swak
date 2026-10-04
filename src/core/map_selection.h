@@ -1,6 +1,8 @@
 #pragma once
 #include "core/projection.h"
 #include <QObject>
+#include <QEvent>
+#include <QPointer>
 #include <QWidget>
 #include <QJsonObject>
 #include <QPainterPath>
@@ -46,8 +48,15 @@ class PaneContent : public QWidget {
     Q_OBJECT
 public:
     using QWidget::QWidget;
+    void watchPane(QWidget *pane) { pane_ = pane; pane->installEventFilter(this); }
+    virtual void paneClosed() {}
+protected:
+    bool eventFilter(QObject *object, QEvent *event) override { if (object == pane_ && event->type() == QEvent::Close) paneClosed(); return QWidget::eventFilter(object, event); }
+public:
     virtual Qt::DockWidgetArea preferredDockArea() const { return Qt::BottomDockWidgetArea; }
 signals:
     void visibilityRequested(bool visible);
+private:
+    QPointer<QWidget> pane_;
 };
 }

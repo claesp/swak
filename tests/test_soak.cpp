@@ -1,4 +1,6 @@
 #include "core/servers.h"
+#include "core/map_tools.h"
+#include <QMenu>
 #include "core/vector_tiles.h"
 #include "vector_fixture.h"
 #include "core/activity.h"
@@ -78,6 +80,13 @@ private slots:
         ActivityModel activity;
         MapSources maps({});
         PluginServices services{store, activity, maps};
+        MapTools mapTools; QMenu traceMenu; services.mapTools = &mapTools; services.objects = &localObjects;
+        for (auto *plugin : QPluginLoader::staticInstances()) if (auto *map = qobject_cast<MapExtension *>(plugin); map && map->mapId() == QStringLiteral("org.swak.trace"))
+            qobject_cast<MenuPlugin *>(plugin)->populateMenu(services, traceMenu);
+        auto *trace = dynamic_cast<SettingsParticipant *>(traceMenu.findChild<QObject *>(QStringLiteral("traceTool"))); QVERIFY(trace);
+        QJsonArray traced;
+        for (int i = 0; i < 128; ++i) traced.append(QJsonObject{{QStringLiteral("owner"), QStringLiteral("org.swak.events")}, {QStringLiteral("id"), QStringLiteral("item-%1").arg(i)}});
+        trace->restorePreferences({{QStringLiteral("targets"), traced}});
         Event event;
         event.type = QStringLiteral("a-f-G");
         event.how = QStringLiteral("h-e");
@@ -143,6 +152,12 @@ private slots:
             QTest::qWait(40);
             QVERIFY2(store.rowCount() > 0, "The receiver made no progress.");
             store.select(event.uid);
+            auto tracedEvent = event;
+            for (const auto &received : store.events()) if (received.uid == event.uid) tracedEvent = received;
+            for (int sample = 0; sample < 12; ++sample) {
+                tracedEvent.longitude = static_cast<double>(sample) * 0.0001;
+                QVERIFY(store.accept(tracedEvent).isEmpty());
+            }
             // Valid mutations can extend the expiry time.
             auto latestStale = event.stale;
             for (const auto &received : store.events()) latestStale = qMax(latestStale, received.stale);

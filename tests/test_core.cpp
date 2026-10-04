@@ -1,4 +1,6 @@
 #include "core/servers.h"
+#include "core/map_tools.h"
+#include <QMenu>
 #include "core/marker_symbols.h"
 #include "core/marker_collections.h"
 #include <QJsonDocument>
@@ -52,6 +54,47 @@ private:
         return event;
     }
 private slots:
+    void traceLimits()
+    {
+        Store store; ActivityModel activity; MapSources maps(QPluginLoader::staticInstances()); MapTools tools; UserObjects objects;
+        PluginServices services{store, activity, maps}; services.mapTools = &tools; services.objects = &objects;
+        QMenu main;
+        for (auto *plugin : builtInPlugins()) if (auto *map = qobject_cast<MapExtension *>(plugin); map && map->mapId() == QStringLiteral("org.swak.trace"))
+            qobject_cast<MenuPlugin *>(plugin)->populateMenu(services, main);
+        auto *tool = dynamic_cast<MapTool *>(main.findChild<QObject *>(QStringLiteral("traceTool"))); QVERIFY(tool);
+        auto *settings = dynamic_cast<SettingsParticipant *>(tool); QVERIFY(settings);
+        for (int i = 0; i < 129; ++i) {
+            MapItem item; item.owner = QStringLiteral("org.swak.markers"); item.id = QString::number(i);
+            QMenu menu; tools.populateContextMenu(item, menu); auto *action = menu.findChild<QAction *>(QStringLiteral("traceMarker")); QVERIFY(action);
+            QCOMPARE(action->isEnabled(), i < 128); if (action->isEnabled()) action->trigger();
+        }
+        auto values = settings->savePreferences(); QCOMPARE(values.value(QStringLiteral("targets")).toArray().size(), 128);
+        values.insert(QStringLiteral("positions"), 1000); values.insert(QStringLiteral("opacity"), -1);
+        settings->restorePreferences(values); QCOMPARE(settings->savePreferences().value(QStringLiteral("positions")).toInt(), 10);
+        QVERIFY(settings->savePreferences().value(QStringLiteral("opacity")).toDouble() > 0);
+        main.findChild<QAction *>(QStringLiteral("clearTraces"))->trigger(); QCOMPARE(settings->savePreferences().value(QStringLiteral("targets")).toArray().size(), 0);
+        settings->restorePreferences(values); QCOMPARE(settings->savePreferences().value(QStringLiteral("targets")).toArray().size(), 128);
+        MapItem area; area.kind = MapItem::Kind::Polygon; area.owner = QStringLiteral("org.swak.markers"); QMenu excluded;
+        tools.populateContextMenu(area, excluded); QVERIFY(excluded.isEmpty());
+        main.findChild<QAction *>(QStringLiteral("clearTraces"))->trigger();
+        UserObject marker; marker.id = QStringLiteral("local-trace"); marker.type = QStringLiteral("circle"); marker.title = QStringLiteral("Moving local marker");
+        marker.geometry = {{QStringLiteral("x"), 0.5}, {QStringLiteral("y"), 0.5}}; QVERIFY(objects.put(marker).isEmpty());
+        MapItem point; point.owner = QStringLiteral("org.swak.markers"); point.id = marker.id;
+        QMenu local; tools.populateContextMenu(point, local); local.findChild<QAction *>(QStringLiteral("traceMarker"))->trigger();
+        for (int i = 1; i <= 12; ++i) { marker.geometry.insert(QStringLiteral("x"), 0.5 + i * 0.00003); QVERIFY(objects.put(marker).isEmpty()); }
+        QImage image(1000, 100, QImage::Format_ARGB32_Premultiplied); image.fill(Qt::transparent);
+        const Viewport view{QSizeF(1000, 100), QPointF(0.5, 0.5), 12};
+        { QPainter painter(&image); tools.paint(painter, view); }
+        QVERIFY(image.pixelColor(850, 50).alpha() > 0); QVERIFY(image.pixelColor(850, 50).red() > image.pixelColor(850, 50).blue());
+        QCOMPARE(image.pixelColor(510, 50).alpha(), 0);
+        objects.remove(marker.id); image.fill(Qt::transparent); { QPainter painter(&image); tools.paint(painter, view); }
+        QCOMPARE(image.pixelColor(850, 50).alpha(), 0);
+        marker.id = QStringLiteral("date-line"); marker.geometry.insert(QStringLiteral("x"), 0.99999); QVERIFY(objects.put(marker).isEmpty()); point.id = marker.id;
+        QMenu crossing; tools.populateContextMenu(point, crossing); crossing.findChild<QAction *>(QStringLiteral("traceMarker"))->trigger();
+        marker.geometry.insert(QStringLiteral("x"), 0.00001); QVERIFY(objects.put(marker).isEmpty());
+        image.fill(Qt::transparent); { QPainter painter(&image); tools.paint(painter, Viewport{QSizeF(1000, 100), QPointF(0, 0.5), 12}); }
+        QVERIFY(image.pixelColor(500, 50).alpha() > 0); QCOMPARE(image.pixelColor(850, 50).alpha(), 0);
+    }
     void markerCollections()
     {
         MarkerCollections collections(QPluginLoader::staticInstances());
@@ -308,7 +351,7 @@ private slots:
 
     void pluginManifests()
     {
-        QCOMPARE(builtInPlugins().size(), 16);
+        QCOMPARE(builtInPlugins().size(), 17);
         for (const auto &entry : QPluginLoader::staticPlugins()) {
             if (entry.metaData().value(QStringLiteral("IID")).toString() != QStringLiteral("org.swak.Plugin/2.0")) continue;
             const auto manifest = entry.metaData().value(QStringLiteral("MetaData")).toObject();

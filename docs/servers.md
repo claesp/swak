@@ -77,3 +77,5 @@ The [local TAK compatibility test](tak-compatibility.md) passed CoT XML exchange
 The Servers pane shows full connection errors in a read-only text box. Select and copy the text when you report a failure. Errors include the protocol, address, port, cause, and retry delay. Connection refusal, host lookup failure, timeout, TLS failure, and UDP bind failure have separate messages.
 
 For the local simulator, use TCP CoT stream at 127.0.0.1:18087. Start the separate emulator first. Its default listener does not accept TLS. Read [CoT emulator](cot-emulator.md) for remote connections and startup errors.
+
+The Active column controls server connections. The editor preserves that state and does not show a second Connect checkbox. Select TLS to enable the certificate, private key, and password fields. TCP and UDP keep those fields disabled without removing stored credentials.

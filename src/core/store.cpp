@@ -62,6 +62,7 @@ QString Store::accept(const Event &event, const QDateTime &now)
         endInsertRows();
     }
     motion_->update(event);
+    emit eventAccepted(event);
     if (!batching_) emit changed();
     return {};
 }

@@ -62,12 +62,16 @@ QJsonObject serverDefaults()
 }
 QList<SettingField> serverFields()
 {
-    return {textSetting(QStringLiteral("name"), tr("Name"), 128), textSetting(QStringLiteral("host"), tr("Host or local bind address"), 253),
+    QList<SettingField> fields{textSetting(QStringLiteral("name"), tr("Name"), 128), textSetting(QStringLiteral("host"), tr("Host or local bind address"), 253),
         choiceSetting(QStringLiteral("protocol"), tr("Protocol"), {tr("TLS CoT stream"), tr("TCP CoT stream"), tr("UDP input")}, {QStringLiteral("tls"), QStringLiteral("stcp"), QStringLiteral("udp")}),
-        numberSetting(QStringLiteral("port"), tr("Port"), 1, 65535), booleanSetting(QStringLiteral("enabled"), tr("Connect")),
+        numberSetting(QStringLiteral("port"), tr("Port"), 1, 65535),
         textSetting(QStringLiteral("ca"), tr("CA certificate (PEM)"), 4096), textSetting(QStringLiteral("certificate"), tr("Client certificate (PEM or PKCS12)"), 4096),
         textSetting(QStringLiteral("key"), tr("Private key (PEM, for PEM certificate)"), 4096), textSetting(QStringLiteral("passwordEnv"), tr("Password environment variable"), 128),
         numberSetting(QStringLiteral("retrySeconds"), tr("Retry interval (seconds)"), 1, 60), numberSetting(QStringLiteral("timeoutSeconds"), tr("Connection and frame timeout (seconds)"), 2, 120)};
+    for (auto &field : fields) if (QStringList{QStringLiteral("ca"), QStringLiteral("certificate"), QStringLiteral("key"), QStringLiteral("passwordEnv")}.contains(field.path)) {
+        field.enabledBy = QStringLiteral("protocol"); field.enabledValue = QStringLiteral("tls");
+    }
+    return fields;
 }
 QString validateServer(const QJsonObject &v)
 {

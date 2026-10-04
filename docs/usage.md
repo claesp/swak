@@ -279,3 +279,15 @@ Older profiles migrate the default W/A/S/D pan keys to arrow keys and the defaul
 # Servers, Identity, and CoT animation
 
 Tools > Servers manages simultaneous TLS and TCP connections and local UDP inputs. File > Identity configures sender defaults for the generator. File > Settings > CoT animation controls movement, teleport fades, and gray retention after expiration. Read [CoT connections](servers.md) for certificates, optional LAN peers, transmission controls, and harness commands.
+
+# Marker motion and traces
+
+CoT display motion estimates velocity from successive timestamped positions. It predicts for at most two update intervals and the configured prediction limit. The display corrects incoming positions smoothly. It slows prediction to a stop when updates cease. Stale markers stay stationary during their gray fade. Large jumps retain the teleport effect.
+
+In File > Settings > CoT animation, set Prediction limit to zero to disable prediction. The default limit is 3000 milliseconds. Movement duration controls correction toward new positions. Coordinates in Information remain the received coordinates. Prediction changes only the display. Duplicate timestamps, extreme projected speeds, and teleport updates do not produce a velocity estimate.
+
+Right-click a CoT or local marker and select Trace. The checked action starts a history of distinct received or saved positions. Select Trace again to stop and remove that history. Tools > Plugins > Trace > Clear traces removes all histories and tracing choices.
+
+A trace retains at most ten positions. Older segments appear more faintly. File > Settings > Trace controls the position count, opacity, and line width. At most 128 markers can have tracing enabled. Tracing choices survive restart. Position histories last only for the session and clear when the source marker disappears. Imported map features without stable marker identities do not offer Trace.
+
+Close Information with its top-right button to clear selection. Incoming updates cannot reopen it until you select another object. In Servers, use the Active column to control connections. The server editor does not repeat that checkbox. TLS credential fields remain gray until you select TLS.

@@ -154,3 +154,7 @@ The map collects object hits before it dispatches idle clicks. MapTools supplies
 Read [CoT connections](servers.md) for server configuration, sender identity, LAN discovery, motion, and the development harness.
 
 Editable CoT fields use the shared cotFieldEditor control. Settings metadata selects the same picker through cotSetting. Identity and the generator share category data, input limits, locale sorting, and dialog ownership. Received CoT properties remain read-only.
+
+The Trace map tool stores at most ten authoritative positions for each of 128 selected CoT or local markers. It receives accepted events through Store::eventAccepted. It draws bounded paths through MapTools and adds context actions through the shared contribution hook. Its menu owns the helper and its configuration.
+
+TrackMotion estimates display velocity from increasing sender timestamps. Prediction uses at most two update intervals and a configured time limit. The estimate rejects extreme projected speeds. A correction term preserves position continuity when messages arrive. Prediction slows before its limit and stops on expiry. Authoritative coordinates and trace history remain unchanged.

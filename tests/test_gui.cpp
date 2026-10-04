@@ -2642,6 +2642,56 @@ private slots:
         QVERIFY(QTest::qWaitFor([&] { return motion->snapshot().isEmpty(); }, 2000));
         QVERIFY(window.savePreferences());
     }
+    void serverFormAndTrace()
+    {
+        auto values = swak::serverDefaults(); values.insert(QStringLiteral("enabled"), true);
+        values.insert(QStringLiteral("protocol"), QStringLiteral("stcp")); values.insert(QStringLiteral("ca"), QStringLiteral("retained.pem"));
+        swak::SettingsDialog dialog({{QStringLiteral("server"), QStringLiteral("Server"), swak::serverFields(), values, {}, {}}}, [] { return QString{}; }, nullptr, true);
+        QVERIFY(!dialog.findChild<QCheckBox *>(QStringLiteral("server/enabled")));
+        auto *protocol = dialog.findChild<QComboBox *>(QStringLiteral("server/protocol")); QVERIFY(protocol);
+        auto *ca = dialog.findChild<QLineEdit *>(QStringLiteral("server/ca")); QVERIFY(ca); QVERIFY(!ca->isEnabled());
+        protocol->setCurrentIndex(protocol->findData(QStringLiteral("tls"))); QVERIFY(ca->isEnabled());
+        protocol->setCurrentIndex(protocol->findData(QStringLiteral("udp"))); QVERIFY(!ca->isEnabled()); QCOMPARE(ca->text(), QStringLiteral("retained.pem"));
+        protocol->setCurrentIndex(protocol->findData(QStringLiteral("stcp"))); dialog.show(); QVERIFY(QTest::qWaitForWindowExposed(&dialog));
+        QVERIFY(dialog.grab().save(QStringLiteral("server-tcp-fields.png"))); dialog.hide();
+        QTemporaryDir directory; swak::Window window(directory.filePath(QStringLiteral("trace.json")), QPluginLoader::staticInstances());
+        window.show(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *trace = dynamic_cast<swak::MapTool *>(window.findChild<QObject *>(QStringLiteral("traceTool"))); QVERIFY(trace);
+        auto *settings = dynamic_cast<swak::SettingsParticipant *>(trace); QVERIFY(settings);
+        auto *selection = window.findChild<swak::MapSelection *>(); auto *dock = window.findChild<QDockWidget *>(QStringLiteral("org.swak.information.pane"));
+        swak::Event event; event.uid = QStringLiteral("traced"); event.type = QStringLiteral("a-f-G-U"); event.how = QStringLiteral("m-s");
+        event.time = event.start = QDateTime::currentDateTimeUtc(); event.stale = event.time.addSecs(120);
+        QVERIFY(window.store().accept(event).isEmpty());
+        swak::MapItem item; item.owner = QStringLiteral("org.swak.events"); item.id = event.uid; item.label = QStringLiteral("Trace test"); item.point = swak::project(0, 0);
+        selection->select(item); window.store().select(event.uid); QVERIFY(dock->isVisible());
+        QDialog unrelated(&window); unrelated.show(); unrelated.close(); QVERIFY(selection->item());
+        dock->close();
+        QVERIFY(!selection->item()); QVERIFY(window.store().selected().isEmpty());
+        event.longitude = 0.001; event.time = event.time.addMSecs(100); QVERIFY(window.store().accept(event).isEmpty()); QVERIFY(!dock->isVisible());
+        auto *map = window.findChild<QOpenGLWidget *>(); QVERIFY(map);
+        auto *mapSettings = dynamic_cast<swak::SettingsParticipant *>(map); auto mapValues = mapSettings->savePreferences();
+        mapValues.insert(QStringLiteral("centerX"), 0.5); mapValues.insert(QStringLiteral("centerY"), 0.5); mapValues.insert(QStringLiteral("zoom"), 12); mapSettings->restorePreferences(mapValues);
+        bool offered = false;
+        QTimer::singleShot(0, &window, [&] {
+            auto *popup = qobject_cast<QMenu *>(QApplication::activePopupWidget()); QVERIFY(popup);
+            auto *entry = popup->findChild<QAction *>(QStringLiteral("traceMarker")); QVERIFY(entry); offered = true; entry->trigger(); popup->close();
+        });
+        const auto center = map->rect().center(); QContextMenuEvent context(QContextMenuEvent::Mouse, center, map->mapToGlobal(center)); QApplication::sendEvent(map, &context); QVERIFY(offered);
+        QMenu menu; trace->populateContextMenu(item, menu); auto *action = menu.findChild<QAction *>(QStringLiteral("traceMarker")); QVERIFY(action); QVERIFY(action->isChecked());
+        QCOMPARE(settings->savePreferences().value(QStringLiteral("targets")).toArray().size(), 1);
+        QList<swak::Event> batch;
+        for (int i = 1; i <= 12; ++i) { event.longitude = i * 0.01; event.time = event.time.addMSecs(100); batch.append(event); }
+        window.store().acceptBatch(batch);
+        const swak::Viewport view{QSizeF(600, 200), swak::project(0, 0.06), 12};
+        QImage image(600, 200, QImage::Format_ARGB32_Premultiplied); image.fill(Qt::transparent);
+        { QPainter painter(&image); trace->paint(painter, view); }
+        const auto older = view.screen(0, 0.035).toPoint(); const auto newer = view.screen(0, 0.115).toPoint();
+        QVERIFY(image.pixelColor(newer).alpha() > image.pixelColor(older).alpha());
+        QVERIFY(image.pixelColor(newer).alpha() > 0); QCOMPARE(image.pixelColor(view.screen(0, 0.015).toPoint()).alpha(), 0);
+        QVERIFY(image.save(QStringLiteral("marker-trace.png")));
+        action->trigger(); QCOMPARE(settings->savePreferences().value(QStringLiteral("targets")).toArray().size(), 0);
+        image.fill(Qt::transparent); { QPainter painter(&image); trace->paint(painter, view); } QCOMPARE(image.pixelColor(newer).alpha(), 0);
+    }
     void emulatorMap()
     {
         QTemporaryDir directory; swak::Window window(directory.filePath(QStringLiteral("emulator-ui.json")), QPluginLoader::staticInstances());

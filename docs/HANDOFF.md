@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 4, 2026: Read “Connection error details” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 4, 2026: Read “Server forms, Information closure, prediction, and traces” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -948,3 +948,27 @@ All 77 native cases passed in build/quality/20261004-153533-gui-88141. The GUI d
 The release rebuild passed in build/connection-release.log. The final build after the commit uses build/connection-release-final.log.
 
 The 60-second sanitizer workload passed in build/quality/20261004-153801-soak-89214. It completed 1174 cycles with 13434880 bytes of peak memory growth. The maximum heartbeat gap was 47 milliseconds. Idle CPU time was 0.019 seconds. The final simulator sanitizer suite passed in build/connection-final-simulation.log. This short run does not replace two-hour qualification.
+
+## 2026-10-04: Server forms, Information closure, prediction, and traces
+
+The server form no longer duplicates the Active column with a Connect checkbox. It preserves the active state from the provider record. Shared conditional field metadata disables TLS credential editors and labels for TCP and UDP. Stored credentials remain intact.
+
+Information reopened because live CoT refreshes retained selection and requested pane visibility. An explicit dock close now invokes PaneContent::paneClosed and clears both selection models. The callback applies only to the watched dock. Closing other dialogs and switching tabs do not clear selection.
+
+TrackMotion now predicts display movement from successive sender timestamps. It preserves position continuity with a smooth correction term. Prediction lasts at most two sample intervals and the configured 3000 millisecond default limit. It slows before that limit. Invalid intervals, excessive projected speed, and teleports do not produce predictions. Stale markers freeze during fading. Setting the prediction limit to zero restores interpolation without prediction.
+
+TracePlugin implements the menu and map-tool roles with a MANIFEST. Right-click CoT or local markers to toggle Trace. Each trail keeps at most ten distinct authoritative positions and fades older segments. Limits are 128 enabled marker identities and ten points per identity. Trace count and opacity use the shared Settings interface. Enabled identities survive restart. Session history clears when the source marker disappears. Features without stable marker identities do not offer Trace.
+
+MapTool::populateContextMenu lets plugins contribute actions without replacing marker editing commands. Store::eventAccepted exposes individual accepted positions inside batches. PaneContent and SettingField gained shared hooks described in plugin-api.md. The host still uses static plugin API version 2. No external dependency was added.
+
+Focused motion and native tests passed before the full diagnostics. Tests cover stable rendering, bounded prediction, stale freeze, disabled prediction, TLS editor state, explicit pane closure, trace fading, the ten-position limit, the 128-target limit, preference restoration, and stopping traces. Large traffic with tracing on every marker, extended packet loss, and two-hour operation retain qualification gaps. Further diagnostic and release evidence follows below.
+
+The first full GUI run exposed a chooser that stayed open after local object deletion. MapTools now separates object changes from repaint requests. The focused overlap and trace tests pass in build/trace-menu-focused.log. All 78 native cases then passed in build/quality/20261004-160845-gui-97183. The diagnostic still reports the existing Mesa leak of 240732 bytes in 1073 allocations. No suppression hides it.
+
+Ten sanitizer suites passed in build/quality/20261004-160128-quick-92904. Final source analysis passed in build/quality/20261004-161038-analyze-3. Native images are build/atak-native/server-tcp-fields.png and build/atak-native/marker-trace.png. The short workload now enables 128 trace identities and repeatedly fills and clears their histories.
+
+Coverage passed ten suites and 78 GUI cases in build/quality/20261004-161037-coverage-97953. Trace reached 90 of 93 lines and all 26 functions before the additional local-marker test. Motion reached 96 of 102 lines and all ten functions. Branch coverage remains incomplete. The final local-marker test also exercises color, removal cleanup, and date-line wrapping.
+
+The 60-second sanitizer workload passed in build/quality/20261004-161301-soak-98792. It completed 1173 cycles with 16867328 bytes of peak memory growth. The maximum heartbeat gap was 52 milliseconds. Idle CPU time was 0.024 seconds. This short run does not establish two-hour stability.
+
+The final core trace test passed under sanitizers in build/trace-core-sanitize-final.log. Both focused native cases passed in build/trace-gui-focused-final.log. That native process still reports the same Mesa leak. Qt 6.8.2 supplied the native test environment. The release rebuild after the commit uses build/trace-release-final.log.

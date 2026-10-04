@@ -18,6 +18,8 @@ struct SettingField {
     QStringList choices;
     QJsonArray choiceValues;
     CotField picker = CotField::None;
+    QString enabledBy = {};
+    QJsonValue enabledValue = {};
 };
 SettingField booleanSetting(QString path, QString label);
 SettingField numberSetting(QString path, QString label, double minimum, double maximum, int decimals = 0);

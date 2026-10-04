@@ -67,13 +67,14 @@ private:
 };
 class MarkerTool final : public MapTool {
 public:
-    MarkerTool(PluginServices &services, MarkerEditor &editor) : MapTool(&editor), objects_(*services.objects), selection_(*services.selection), store_(services.store), editor_(editor), collections_(*services.collections)
+    MarkerTool(PluginServices &services, MarkerEditor &editor) : MapTool(&editor), objects_(*services.objects), selection_(*services.selection), store_(services.store), editor_(editor), collections_(*services.collections), tools_(services.mapTools)
     {
         connect(&collections_, &MarkerCollections::changed, this, [this] {
             if (selection_.item() && selection_.item()->owner == owner()) select(selection_.item()->id);
             emit changed();
         });
         connect(&objects_, &UserObjects::changed, this, [this] {
+            emit itemsChanged();
             if (selection_.item() && selection_.item()->owner == owner()) {
                 const auto id = selection_.item()->id;
                 if (objects_.find(id)) select(id); else selection_.clear();
@@ -192,6 +193,7 @@ public:
             moving_ = *item; mode_ = Mode::Moving; selection_.clear(); map.setCursor(Qt::CrossCursor); emit changed();
         });
         connect(remove, &QAction::triggered, this, [this, id] { objects_.remove(id); });
+        if (tools_) tools_->populateContextMenu(item, menu);
         menu.exec(context.globalPos()); return true;
     }
     QList<MapItem> itemsAt(const Viewport &view, QPointF pointer) const override
@@ -263,6 +265,7 @@ private:
     Store &store_;
     MarkerEditor &editor_;
     MarkerCollections &collections_;
+    MapTools *tools_;
 };
 }
 class MarkerPlugin final : public QObject, public Plugin, public PanePlugin, public MapExtension, public MarkerCollectionProvider {

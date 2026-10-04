@@ -10,6 +10,7 @@ void MapTools::add(MapTool *tool)
     connect(tool, &QObject::destroyed, this, [this] {
         tools_.removeIf([](const auto &entry) { return entry.isNull(); }); emit changed();
     });
+    connect(tool, &MapTool::itemsChanged, this, &MapTools::itemsChanged);
     connect(tool, &MapTool::overlayChanged, this, &MapTools::overlayChanged);
     emit changed();
 }
@@ -60,6 +61,11 @@ QString MapTools::statusText() const
 bool MapTools::dismiss()
 {
     return std::any_of(tools_.cbegin(), tools_.cend(), [](const auto &tool) { return tool && tool->dismiss(); });
+}
+void MapTools::populateContextMenu(const MapItem &item, QMenu &menu)
+{
+    const auto snapshot = tools_;
+    for (const auto &tool : snapshot) if (tool) tool->populateContextMenu(item, menu);
 }
 bool MapTools::cancel()
 {

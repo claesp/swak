@@ -499,7 +499,7 @@ protected:
             const auto &message = visual.event;
             const auto screen = (visual.world - view_.center) * view_.scale() + QPointF(view_.size.width() / 2, view_.size.height() / 2);
             if (visual.expired || visual.opacity < 0.15 || message.start > now || message.stale <= now || QLineF(screen, position).length() >= 14) continue;
-            MapItem item; item.label = message.callsign.isEmpty() ? message.uid : message.callsign; item.type = message.type;
+            MapItem item; item.owner = QStringLiteral("org.swak.events"); item.label = message.callsign.isEmpty() ? message.uid : message.callsign; item.type = message.type;
             item.point = project(message.latitude, message.longitude); item.color = Qt::white;
             item.symbol = markerSymbolForCot(message.type);
             item.properties = {{QStringLiteral("UID"), message.uid}, {QStringLiteral("How"), message.how},
@@ -515,8 +515,9 @@ protected:
     }
     void closeOnContentChange(QMenu &menu)
     {
-        connect(&store_, &Store::changed, &menu, &QMenu::close);
-        if (tools_) connect(tools_, &MapTools::changed, &menu, &QMenu::close);
+        connect(&store_, &QAbstractItemModel::rowsRemoved, &menu, &QMenu::close);
+        connect(&store_, &QAbstractItemModel::modelReset, &menu, &QMenu::close);
+        if (tools_) connect(tools_, &MapTools::itemsChanged, &menu, &QMenu::close);
         if (dataSources_) connect(dataSources_, &DataSources::contentChanged, &menu, &QMenu::close);
         if (sources_) connect(sources_, &MapSources::changed, &menu, &QMenu::close);
     }
@@ -567,7 +568,7 @@ protected:
         } else if (event.type() == QEvent::ContextMenu) {
             QMenu menu(this); menu.setObjectName(QStringLiteral("mapItemContextMenu"));
             auto *information = menu.addAction(tr("Information")); information->setObjectName(QStringLiteral("mapItemInformation"));
-            closeOnContentChange(menu);
+            if (tools_) tools_->populateContextMenu(hit.item, menu);
             if (hit.source == QStringLiteral("vector")) {
                 menu.setObjectName(QStringLiteral("mapContextMenu")); information->setObjectName(QStringLiteral("mapInformation"));
                 information->setText(tr("Map information"));

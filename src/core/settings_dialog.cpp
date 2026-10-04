@@ -110,6 +110,7 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
             return forms.at(target);
         };
         QList<QWidget *> editors;
+        QList<QWidget *> labels;
         if (page.fields.isEmpty()) {
             auto *form = formFor(group);
             auto *content = form->parentWidget();
@@ -167,16 +168,29 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
             editor->setObjectName(page.id + '/' + field.path);
             editor->setAccessibleName(field.label);
             editor->setProperty("initialSettingValue", editorValue(editor).toVariant());
+            QWidget *fieldLabel = editor;
             if (field.kind == SettingField::Kind::Boolean) form->addRow(editor);
             else {
                 auto *label = new QLabel(field.label, content);
                 label->setTextFormat(Qt::PlainText);
                 label->setWordWrap(false);
                 label->setMinimumWidth(label->sizeHint().width());
-                label->setBuddy(editor);
+                label->setBuddy(editor); fieldLabel = label;
                 form->addRow(label, field.picker != CotField::None && qobject_cast<QLineEdit *>(editor) ? cotFieldEditor(qobject_cast<QLineEdit *>(editor), field.picker) : editor);
             }
-            editors.append(editor);
+            editors.append(editor); labels.append(fieldLabel);
+        }
+        for (qsizetype i = 0; i < page.fields.size(); ++i) {
+            const auto &field = page.fields.at(i);
+            if (field.enabledBy.isEmpty()) continue;
+            for (qsizetype j = 0; j < page.fields.size(); ++j) if (page.fields.at(j).path == field.enabledBy) {
+                auto *choice = qobject_cast<QComboBox *>(editors.at(j)); if (!choice) continue;
+                const auto refresh = [choice, editor = editors.at(i), label = labels.at(i), value = field.enabledValue] {
+                    const bool enabled = QJsonValue::fromVariant(choice->currentData()) == value;
+                    editor->setEnabled(enabled); label->setEnabled(enabled);
+                };
+                connect(choice, &QComboBox::currentIndexChanged, editors.at(i), refresh); refresh();
+            }
         }
         editors_.append(editors);
     }

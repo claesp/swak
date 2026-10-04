@@ -191,6 +191,21 @@ private slots:
         v.insert(QStringLiteral("passwordEnv"), QStringLiteral("SWAK_COT_TEST_WRONG")); QVERIFY(servers.put(QStringLiteral("tls"), v).isEmpty()); QVERIFY(QTest::qWaitFor([&] { return servers.status(QStringLiteral("tls")).contains(QStringLiteral("credentials")); }, 5000));
         v.insert(QStringLiteral("certificate"), QStringLiteral("/missing/client.p12")); QVERIFY(servers.put(QStringLiteral("tls"), v).isEmpty()); QVERIFY(QTest::qWaitFor([&] { return servers.status(QStringLiteral("tls")).contains(QStringLiteral("credentials")); }, 5000));
     }
+    void predictiveMotion()
+    {
+        TrackMotion motion; auto event = sampleEvent(); motion.update(event, 1000);
+        event.longitude = 0.001; event.time = event.time.addSecs(1); motion.update(event, 2000);
+        const auto a = motion.snapshot(2600).first().world;
+        const auto b = motion.snapshot(2900).first().world; QVERIFY(b.x() > a.x());
+        const auto before = motion.snapshot(3000).first().world;
+        event.longitude = 0.002; event.time = event.time.addSecs(1); motion.update(event, 3000);
+        QCOMPARE(motion.snapshot(3000).first().world, before);
+        QVERIFY(motion.snapshot(3600).first().world.x() > before.x());
+        QCOMPARE(motion.snapshot(6000).first().world, motion.snapshot(7000).first().world);
+        motion.expire(event.uid, 7000); QCOMPARE(motion.snapshot(7200).first().world, motion.snapshot(7300).first().world);
+        auto values = motion.savePreferences(); values.insert(QStringLiteral("predictionMs"), 0); motion.restorePreferences(values);
+        QCOMPARE(motion.savePreferences().value(QStringLiteral("predictionMs")).toInt(), 0);
+    }
     void motion()
     {
         TrackMotion motion; auto e = sampleEvent(); motion.update(e, 1000); e.longitude = 0.5; motion.update(e, 2000);

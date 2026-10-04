@@ -27,6 +27,7 @@ public:
     // cppcheck-suppress returnByReference
     QString selected() const { return selected_; }
 signals:
+    void eventAccepted(const swak::Event &event);
     void changed();
     void selectionChanged();
 private:

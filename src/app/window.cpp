@@ -190,11 +190,13 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         dock->setWidget(container);
         addDockWidget(area, dock);
         panels_->track(dock);
-        if (auto *pane = dynamic_cast<PaneContent *>(content))
+        if (auto *pane = dynamic_cast<PaneContent *>(content)) {
+            pane->watchPane(dock);
             connect(pane, &PaneContent::visibilityRequested, dock, [dock](bool visible) {
                 dock->setVisible(visible);
                 if (visible) dock->raise();
             });
+        }
         return dock;
     };
     QList<QDockWidget *> sideDocks;

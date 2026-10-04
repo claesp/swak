@@ -75,7 +75,7 @@ public:
         if (!tak_ && !udp) {
             const auto clientAddress = address == QHostAddress::Any || address == QHostAddress::AnyIPv4 ? QStringLiteral("127.0.0.1")
                 : address == QHostAddress::AnyIPv6 ? QStringLiteral("::1") : address.toString();
-            std::fprintf(stderr, "Waiting for SWAK. Select TCP CoT stream, host %s, port %u, and enable Connect. This listener does not use TLS.\n", qPrintable(clientAddress), port);
+            std::fprintf(stderr, "Waiting for SWAK. Select TCP CoT stream, host %s, port %u, and enable the Active checkbox in Servers. This listener does not use TLS.\n", qPrintable(clientAddress), port);
             if (address.isLoopback()) std::fprintf(stderr, "Only clients on this computer can connect. For remote clients, bind with --address and this computer's LAN address.\n");
         }
         clock_.start(); timer_.start(); return {};

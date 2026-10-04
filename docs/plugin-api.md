@@ -1,6 +1,6 @@
 # Plugin API
 
-This review covers all sixteen built-in plugins. Every plugin implements `Plugin` and uses the shared contracts in `src/core/`. The common API version is 2. No plugin depends on a concrete application window class.
+This review covers all seventeen built-in plugins. Every plugin implements `Plugin` and uses the shared contracts in `src/core/`. The common API version is 2. No plugin depends on a concrete application window class.
 
 The application links plugins into the executable. Qt embeds each `src/plugins/<plugin>/MANIFEST` file through `Q_PLUGIN_METADATA`. The common metadata identifier is `org.swak.Plugin/2.0`. The application does not load external plugin binaries or search plugin directories.
 
@@ -55,6 +55,7 @@ The host owns pane placement, visibility actions, and layout persistence. Plugin
 | `src/plugins/servers` | Servers | Source |
 | `src/plugins/activity` | Events | Pane and menu |
 | `src/plugins/information` | Information | Pane |
+| `src/plugins/trace` | Trace | Menu and map tool |
 | `src/plugins/markers` | Markers | Pane, map tool, and Core collection |
 | `src/plugins/polygons` | Areas | Pane and map tool |
 | `src/plugins/milstd2525` | MILSTD2525 | Marker collection |
@@ -188,7 +189,7 @@ The view updates its status widget on the interface thread. It must use a guarde
 
 `UserObject` separates identity, type, title, description, text properties, geometry, and color. Color uses the seven-character `#RRGGBB` format. Older records without color use orange (`#ffc857`). `UserObjects` owns committed records and portable preferences. Geometry is a bounded JSON object. The circle type uses normalized Mercator coordinates named `x` and `y`. Unknown object types retain their bounded records for future tools. New geometry types can reuse the metadata editor and deletion commands.
 
-`ObjectEditor` works on a copy of a record. Apply validates the whole copy before it writes through `UserObjects::put`. Cancellation drops that copy. `MapSelection` carries an owner identifier and object identifier for editable selections. Imported selections leave these fields empty. The regular Information pane remains read-only. It asks `MapTools::deleteSelection` to handle deletion, without knowing the owning plugin.
+`ObjectEditor` works on a copy of a record. Apply validates the whole copy before it writes through `UserObjects::put`. Cancellation drops that copy. `MapSelection` carries an owner identifier and object identifier for editable selections. CoT selections use owner org.swak.events and their UID. Imported map features without stable identities leave these fields empty. The regular Information pane remains read-only. It asks `MapTools::deleteSelection` to handle deletion, without knowing the owning plugin.
 
 A `MapTool` receives map input events, a viewport, and the map widget. Returning true consumes the event. The map paints registered tools after imported layers and before selection outlines. Each tool receives a saved painter state. `changed` requests another frame. `cancel` stops a pending operation. Tools must reject events outside their scope and avoid changing committed state during previews.
 
@@ -300,3 +301,17 @@ Store adds acceptBatch for bounded groups of decoded events. It groups redraw an
 `SettingField::picker` adds optional CoT selection to a text field. `cotSetting` creates a bounded field for Type, How, Team, or Role. SettingsDialog keeps the text editor as the saved value and adds the shared selection button beside it. Custom values remain supported.
 
 `cotFieldEditor` supplies the same control for plugin forms. Its returned container owns the supplied line editor. The caller sets the editor name, accessible name, and maximum length before wrapping it. Picker dialogs belong to that editor and close when it is destroyed. Plugins must use these shared controls for editable CoT fields.
+
+# Trace and shared interaction hooks
+
+MapTool::populateContextMenu receives the selected MapItem and its menu. Tools can add actions without replacing the owning plugin's commands. MapTools calls each registered tool. Actions must retain stable identifiers and use a QObject receiver with a suitable lifetime. Live position updates keep object menus open. Removed CoT rows and map-source changes still close affected chooser menus.
+
+TracePlugin uses the existing menu and map-tool roles. Its MANIFEST declares org.swak.trace. The menu owns its TraceTool, which registers through PluginServices::mapTools. The helper uses Store and UserObjects to record authoritative positions. It does not record predicted display positions. It exposes configuration through SettingsParticipant and draws through MapTool::paint.
+
+PaneContent::watchPane attaches the host dock to the content. PaneContent::paneClosed receives an explicit close event from that dock. The default method does nothing. Information clears both map selection and CoT selection. Child dialogs and tab changes do not count as pane closure.
+
+SettingField supports enabledBy and enabledValue. A field names a choice field in the same configuration page and its required value. SettingsDialog disables the editor and label when the value differs. Disabled fields retain their values. The Servers form uses this for TLS credentials. These additions retain plugin API version 2 because this build links and rebuilds all native plugins together.
+
+Store::eventAccepted emits each accepted authoritative Event on the GUI thread, including events inside a batch. A receiver must copy any data that it retains. Trace uses this signal so a batch cannot hide intermediate accepted positions. Store::changed still marks the completed batch for drawing and disappearance handling.
+
+MapTool::itemsChanged marks changed local object membership or properties. MapTools forwards it separately from drawing updates. Object chooser menus use this signal to cancel stale choices. Continuous trace repainting does not close menus.

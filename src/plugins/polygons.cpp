@@ -75,6 +75,7 @@ public:
             emit changed(); emit overlayChanged();
         });
         connect(&objects_, &UserObjects::changed, this, [this] {
+            emit itemsChanged();
             if (selection_.item() && selection_.item()->owner == owner()) {
                 const auto id = selection_.item()->id; if (objects_.find(id)) select(id); else selection_.clear();
             }
@@ -176,6 +177,7 @@ public:
             const auto item = objects_.find(id); if (item) { selection_.clear(); editor_.edit(*item); editingVertices_ = true; emit changed(); }
         });
         connect(remove, &QAction::triggered, this, [this, id] { objects_.remove(id); });
+        tools_.populateContextMenu(item, menu);
         menu.exec(context.globalPos()); return true;
     }
     QList<MapItem> itemsAt(const Viewport &view, QPointF pointer) const override

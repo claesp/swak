@@ -3,7 +3,7 @@
   "id": "org.swak.udp",
   "name": "Servers",
   "description": "Receive and exchange bounded CoT XML over TLS, TCP, UDP, and optional LAN peers.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "apiVersion": 2,
   "entryPoint": "ServersPlugin",
   "linkage": "static",

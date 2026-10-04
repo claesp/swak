@@ -5,6 +5,7 @@
 #include <QPointer>
 #include <QWidget>
 class QPainter;
+class QMenu;
 namespace swak {
 class MapTool : public QObject {
     Q_OBJECT
@@ -19,12 +20,14 @@ public:
     virtual bool interactionActive() const { return false; }
     virtual QList<MapItem> itemsAt(const Viewport &, QPointF) const { return {}; }
     virtual bool interact(const MapItem &, QEvent &, QWidget &) { return false; }
+    virtual void populateContextMenu(const MapItem &, QMenu &) {}
     virtual bool cancel() = 0;
     virtual bool dismiss() { return cancel(); }
     virtual bool deleteSelection() { return false; }
 signals:
     void activationRequested();
     void changed();
+    void itemsChanged();
     void overlayChanged();
 };
 class MapTools final : public QObject {
@@ -39,12 +42,14 @@ public:
     bool coordinateGridActive() const;
     QList<MapItem> itemsAt(const Viewport &view, QPointF position) const;
     bool interact(const MapItem &item, QEvent &event, QWidget &map);
+    void populateContextMenu(const MapItem &item, QMenu &menu);
     bool cancel();
     bool dismiss();
     bool deleteSelection();
 signals:
     void activationRequested(swak::MapTool *tool);
     void changed();
+    void itemsChanged();
     void overlayChanged();
 private:
     QList<QPointer<MapTool>> tools_;

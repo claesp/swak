@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "org.swak.trace",
+  "name": "Trace",
+  "description": "Record bounded movement trails for CoT and local markers.",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entryPoint": "TracePlugin",
+  "linkage": "static",
+  "platforms": [
+    "linux"
+  ],
+  "qtMajor": 6,
+  "qtMinimum": "6.4.0",
+  "interfaces": [
+    "menu",
+    "map-tool"
+  ],
+  "requires": [],
+  "permissions": [],
+  "settingsSchemaVersion": 1
+}

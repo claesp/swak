@@ -87,6 +87,7 @@ public:
             emit visibilityRequested(item.has_value());
         });
     }
+    void paneClosed() override { if (selection_) selection_->clear(); store_.select({}); }
     Qt::DockWidgetArea preferredDockArea() const override { return Qt::RightDockWidgetArea; }
     QString preferenceId() const override { return QStringLiteral("org.swak.information"); }
     QString settingsTitle() const override { return tr("Information"); }
@@ -107,7 +108,8 @@ public:
 protected:
     bool eventFilter(QObject *object, QEvent *event) override
     {
-        if (event->type() != QEvent::KeyPress || QApplication::activeModalWidget() || QApplication::activePopupWidget()) return false;
+        if (event->type() != QEvent::KeyPress) return PaneContent::eventFilter(object, event);
+        if (QApplication::activeModalWidget() || QApplication::activePopupWidget()) return false;
         auto *widget = qobject_cast<QWidget *>(object);
         bool inPane = false;
         while (widget && widget != owner_) { inPane = inPane || widget == this; widget = widget->parentWidget(); }
