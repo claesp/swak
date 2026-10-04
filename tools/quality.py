@@ -88,12 +88,17 @@ def main():
     parser.add_argument('--jobs', type=int, default=2)
     parser.add_argument('--qt-prefix', help='Optional Qt installation prefix.')
     parser.add_argument('--gui', action='store_true', help='Include native rendering in coverage or soak mode.')
+    parser.add_argument('--lan', action='store_true', help='Include isolated LAN integration in quick or coverage mode.')
     args = parser.parse_args()
+    if args.lan and args.mode not in ('quick', 'coverage'):
+        parser.error('--lan applies to quick or coverage mode.')
     if args.gui and args.mode not in ('coverage', 'soak'):
         parser.error('--gui applies to coverage or soak mode.')
     if not 1 <= args.seconds <= 86400 or not 1 <= args.jobs <= 64:
         parser.error('Seconds must be 1..86400. Jobs must be 1..64.')
     required = ['cmake', 'ninja']
+    if args.lan:
+        required += ['unshare', 'ip']
     if args.mode == 'coverage':
         required += ['gcov']
     if args.mode == 'analyze':
@@ -148,6 +153,8 @@ def main():
                     data.unlink()
             if args.mode in ('quick', 'coverage'):
                 run(['ctest', '--test-dir', build, '--output-on-failure', '--timeout', '60'], report / 'tests.log', 240, env)
+            if args.lan:
+                run([sys.executable, ROOT / 'tools/test_lan.py', '--executable', build / 'swak_server_tests'], report / 'lan.log', 40, env)
             if args.mode == 'soak':
                 command = [build / 'swak_soak_tests']
                 if args.gui:

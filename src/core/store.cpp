@@ -2,7 +2,7 @@
 #include <QLocale>
 
 namespace swak {
-Store::Store(QObject *parent) : QAbstractTableModel(parent)
+Store::Store(QObject *parent) : QAbstractTableModel(parent), motion_(new TrackMotion(this))
 {
     expiry_.setInterval(1000);
     connect(&expiry_, &QTimer::timeout, this, [this] {
@@ -51,7 +51,8 @@ QString Store::accept(const Event &event, const QDateTime &now)
         const int row = found.value();
         if (event.time < events_.at(row).time) return tr("A newer event already exists for this identity.");
         events_[row] = event;
-        emit dataChanged(QAbstractTableModel::index(row, 0), QAbstractTableModel::index(row, 4));
+        if (batching_) { firstChanged_ = std::min(firstChanged_, row); lastChanged_ = std::max(lastChanged_, row); }
+        else emit dataChanged(QAbstractTableModel::index(row, 0), QAbstractTableModel::index(row, 4));
     } else {
         if (events_.size() >= MaxEvents) return tr("The event limit is full. Clear events or wait for them to expire.");
         const int row = rowCount();
@@ -60,8 +61,18 @@ QString Store::accept(const Event &event, const QDateTime &now)
         rows_.insert(event.uid, row);
         endInsertRows();
     }
-    emit changed();
+    motion_->update(event);
+    if (!batching_) emit changed();
     return {};
+}
+void Store::acceptBatch(const QList<Event> &events)
+{
+    batching_ = true; firstChanged_ = MaxEvents; lastChanged_ = -1;
+    const auto now = QDateTime::currentDateTimeUtc();
+    for (const auto &event : events) accept(event, now);
+    batching_ = false;
+    if (lastChanged_ >= firstChanged_) emit dataChanged(QAbstractTableModel::index(firstChanged_, 0), QAbstractTableModel::index(lastChanged_, 4));
+    if (!events.isEmpty()) emit changed();
 }
 void Store::expire(const QDateTime &now)
 {
@@ -71,6 +82,7 @@ void Store::expire(const QDateTime &now)
     bool removed = false;
     for (int row = rowCount() - 1; row >= 0; --row) {
         if (events_.at(row).stale > now) continue;
+        motion_->expire(events_.at(row).uid);
         beginRemoveRows({}, row, row);
         rows_.remove(events_.at(row).uid);
         events_.removeAt(row);
@@ -85,6 +97,7 @@ void Store::expire(const QDateTime &now)
 }
 void Store::clear()
 {
+    motion_->clear();
     beginResetModel();
     events_.clear();
     rows_.clear();

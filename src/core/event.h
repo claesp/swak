@@ -14,6 +14,8 @@ struct Event {
     QString type;
     QString how;
     QString callsign;
+    QString team;
+    QString role;
     QDateTime time;
     QDateTime start;
     QDateTime stale;

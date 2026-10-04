@@ -95,3 +95,22 @@ The marker regression measures map paint events during 20 pointer moves. It perm
 The workload also creates polygon records, calculates their area, deletes them, and cycles through undo and redo. Polygon tests cover geometry limits, crossing edges, invalid edits, locale units, menu activation, and restart. Native tests compare preview opacity and inspect the OpenGL frame.
 
 Selection rendering tests compare OpenGL stroke coverage with a screen-coordinate reference at zoom levels 2, 12, and 19. They cover solid polygons, dashed polygons, lines, and downloaded KML geometry. Summed pixel intensity allows small raster and OpenGL antialiasing differences. These tests also run at 200 percent display scaling during focused regression runs.
+
+
+# CoT connection diagnostics
+
+The servers suite adds local TCP and TLS harnesses. It tests XML fragmentation, malformed messages, multiple connections, timeout recovery, and burst traffic. It also tests certificate rejection, PEM and encrypted PKCS12 authentication, LAN discovery validation, and deterministic animation states. The full native suite receives, draws, selects, and transmits CoT through the server browser.
+
+Use tools/cot_harness.py for manual and sustained traffic. Read [CoT connections](servers.md) for commands and transport configuration. The script uses only the Python standard library and stays outside the release installation. Public test credentials must never protect a real deployment.
+
+A full TAK Server deployment and two physical LAN peers require separate integration tests. An isolated namespace test does not establish physical-network discovery or firewall behavior. It also does not establish interoperability across all authenticated TAK configurations.
+
+Linux hosts with unprivileged user and network namespaces can run an isolated two-peer test. It creates a temporary dummy interface inside the namespace. It does not change host interfaces or firewall rules. The test exchanges CoT in both directions and disables one peer.
+
+```sh
+python3 tools/test_lan.py --executable build/debug/swak_server_tests
+python3 tools/quality.py quick --lan
+python3 tools/quality.py coverage --gui --lan
+```
+
+The LAN test requires `unshare` and `ip`. A host policy that disables namespaces makes this diagnostic fail. The standard servers suite skips this integration case unless the isolated harness enables it.

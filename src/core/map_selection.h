@@ -36,7 +36,7 @@ public:
     const std::optional<MapItem> &item() const { return item_; }
     void select(MapItem selected) { item_ = std::move(selected); emit changed(); }
     void clear() { if (item_) { item_.reset(); emit changed(); } }
-    void paint(QPainter &painter, const Viewport &view) const;
+    void paint(QPainter &painter, const Viewport &view, std::optional<QPointF> point = {}, double opacity = 1) const;
 signals:
     void changed();
 private:

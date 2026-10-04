@@ -130,9 +130,10 @@ public:
         const auto now = QDateTime::currentDateTimeUtc();
         const QRectF visible(QPointF(0, 0), view.size);
         int labels = 0;
-        for (const auto &event : store.events()) {
-            if (event.start > now || event.stale <= now) continue;
-            const QPointF point = view.screen(event.latitude, event.longitude);
+        for (const auto &visual : store.motion().snapshot()) {
+            const auto &event = visual.event;
+            if (event.start > now) continue;
+            const QPointF point = (visual.world - view.center) * view.scale() + QPointF(view.size.width() / 2, view.size.height() / 2);
             if (!visible.adjusted(-12, -12, 12, 12).contains(point)) continue;
             const bool selected = event.uid == store.selected();
             const auto symbol = markerSymbolForCot(event.type);
@@ -141,11 +142,17 @@ public:
             const auto &symbols = markerSymbols();
             const auto found = std::find_if(symbols.cbegin(), symbols.cend(), [&symbol](const auto &entry) { return entry.code == symbol; });
             if (found != symbols.cend()) color = found->color;
+            const auto gray = qGray(color.rgb());
+            color.setRed(qRound(color.red() * (1 - visual.gray) + gray * visual.gray));
+            color.setGreen(qRound(color.green() * (1 - visual.gray) + gray * visual.gray));
+            color.setBlue(qRound(color.blue() * (1 - visual.gray) + gray * visual.gray));
+            painter.save(); painter.setOpacity(visual.opacity);
             paintMarkerSymbol(painter, symbol, point, selected ? 8 : 6, color, selected);
             if (selected || labels++ < 100) {
-                painter.setPen(QColor("#ffffff"));
+                painter.setPen(visual.expired ? QColor("#aaaaaa") : QColor("#ffffff"));
                 painter.drawText(point + QPointF(12, -8), (event.callsign.isEmpty() ? event.uid : event.callsign).left(32));
             }
+            painter.restore();
         }
     }
     QWidget *create(PluginServices &services, const Codec &, QWidget *parent) override

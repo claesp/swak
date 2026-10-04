@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "id": "org.swak.udp",
-  "name": "UDP receiver",
-  "description": "Receive bounded CoT datagrams from a local UDP socket.",
-  "version": "0.1.0",
+  "name": "Servers",
+  "description": "Receive and exchange bounded CoT XML over TLS, TCP, UDP, and optional LAN peers.",
+  "version": "0.2.0",
   "apiVersion": 2,
-  "entryPoint": "UdpPlugin",
+  "entryPoint": "ServersPlugin",
   "linkage": "static",
   "platforms": [
     "linux"
@@ -19,7 +19,10 @@
     "codec"
   ],
   "permissions": [
-    "network-udp"
+    "network-udp",
+    "network-tcp",
+    "network-tls",
+    "user-selected-files"
   ],
   "settingsSchemaVersion": 1
 }

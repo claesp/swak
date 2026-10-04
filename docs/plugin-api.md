@@ -52,7 +52,7 @@ The host owns pane placement, visibility actions, and layout persistence. Plugin
 | `src/plugins/map` | OpenGL map | View and toolbar |
 | `src/plugins/tracks` | CoT Messages | Map layer, tool, menu, and toolbar |
 | `src/plugins/editor` | CoT Event Generator | Tool |
-| `src/plugins/udp` | UDP receiver | Source |
+| `src/plugins/servers` | Servers | Source |
 | `src/plugins/activity` | Events | Pane and menu |
 | `src/plugins/information` | Information | Pane |
 | `src/plugins/markers` | Markers | Pane, map tool, and Core collection |
@@ -284,3 +284,15 @@ The host opens a chooser when more than one object matches. Menu rows show a lab
 
 
 `MapItem::icon` optionally supplies a chooser icon. The marker tool uses `collectionIcon` to preserve its actual symbol and color. The host uses shared UI icons for area and point fallbacks. `uiIcon` provides the application command icons. Plugins must use these factories for matching commands. The icon engine uses Qt vector paths and the active palette. No runtime icon theme or SVG parser is required.
+
+# Server services and reusable forms
+
+PluginServices now supplies optional Identity and Servers pointers. The host owns these per-window services. Source plugins use the server service for connection management. The generator uses Identity for defaults and Servers for explicit transmission. The CoT codec and connection worker share the same stateless XML decoder. Its parser state is local to each call.
+
+SourcePlugin adds an optional paneId method. A stable pane identifier preserves saved layout when a source receives a new name. The Servers plugin retains the previous UDP identifiers for migration. Its MANIFEST adds network-tcp and network-tls permissions. The catalog recognizes those permissions alongside network-udp and user-selected-files.
+
+SettingsWidgetProvider adds an optional createSettingsWidget method. The host uses that widget for a custom Settings section. Servers uses this interface for its table and management controls. The widget must use its supplied parent and must not outlive its provider. Server edits update the service immediately, like map and data provider edits.
+
+SettingsDialog, SettingsPage, and ProviderTable now live under src/core. The host and plugin widgets share these form and table implementations. Server edit forms use the same validation, alphabetical choice ordering, and single-line labels as other provider forms.
+
+Store adds acceptBatch for bounded groups of decoded events. It groups redraw and changed-row notifications. TrackMotion owns per-UID display state and animation preferences. Its changed signal requests a redraw without changing the event table. MapSelection::paint accepts an optional displayed point and opacity for a moving CoT selection outline.

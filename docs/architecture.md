@@ -15,15 +15,15 @@ The extension levels are:
 - `MenuPlugin` adds commands under Tools > Plugins.
 - `ToolbarPlugin` adds icon actions to the main toolbar.
 
-The CoT plugin implements `Codec`. The UDP plugin implements `SourcePlugin`. The OpenGL map plugin implements `ViewPlugin`.
+The CoT plugin implements `Codec`. The Servers plugin implements `SourcePlugin`. The OpenGL map plugin implements `ViewPlugin`.
 
 The basemap plugin draws the plain green background at order zero. The tracks plugin draws events at order 100 and also provides the event table. The editor plugin provides generation, file import, XML preview, and export.
 
 The map uses `QOpenGLWidget` and the Qt OpenGL paint engine. Each layer receives a saved painter state and logical screen coordinates. Qt handles the conversion to physical pixels on scaled displays.
 
-All application state lives on the GUI thread, which processes interface events. The receiver polls its nonblocking socket every 25 milliseconds while active. Each poll handles at most 32 datagrams and starts no further datagram after four milliseconds.
+The GUI thread owns models and widgets. One worker thread owns all CoT sockets and stream parsers. Its active timer runs every five milliseconds. Each pass starts no further receive operation after four milliseconds. Round-robin scheduling shares work across connections.
 
-Parsing remains on the GUI thread because each message contains at most 16 KiB. The application batches screen updates through the Qt event loop. Labels stop after 100 visible events, except for the selected event.
+The worker parses messages of at most 16 KiB. A locked mailbox holds at most 2048 distinct UIDs and replaces queued older updates. The GUI drains at most 512 events every 33 milliseconds. Labels stop after 100 visible events, except for the selected event. TrackMotion maintains display positions separately from authoritative event coordinates.
 
 # Add a plugin
 
@@ -150,3 +150,5 @@ The Areas plugin creates a separate tool and reuses ObjectEditor for metadata an
 Selection and feed renderers transform world paths into screen coordinates before Qt draws their strokes. They do not apply the map zoom to the painter. This avoids oversized OpenGL strokes at high zoom and keeps widths consistent with display scaling.
 
 The map collects object hits before it dispatches idle clicks. MapTools supplies plugin-owned hits through stable owner and object IDs. Data feeds, vector features, and CoT messages join the same chooser. A chosen local object returns to its plugin for selection or context actions. Active creation and corner editing retain event priority. Menu pages limit visible actions, and content changes cancel an open chooser.
+
+Read [CoT connections](servers.md) for server configuration, sender identity, LAN discovery, motion, and the development harness.

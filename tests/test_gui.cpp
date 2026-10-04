@@ -1,3 +1,8 @@
+#include "core/servers.h"
+#include "core/identity.h"
+#include "core/cot.h"
+#include <QTcpServer>
+#include <QTcpSocket>
 #include "core/ui_icons.h"
 #include "core/activity.h"
 #include "core/maps.h"
@@ -18,7 +23,7 @@
 #include <QDesktopServices>
 #include "swak/version.h"
 #include "core/logging.h"
-#include "app/settings_dialog.h"
+#include "core/settings_dialog.h"
 #include <QDialogButtonBox>
 #include <QFileDialog>
 #include <QCheckBox>
@@ -734,13 +739,13 @@ private slots:
         QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, QPoint(40, 40));
         QVERIFY(!selection->item()); QVERIFY(!dock->isVisible());
         window.findChild<QPushButton *>(QStringLiteral("generateEvent"))->click();
-        chooseMapObject(map, QStringLiteral("Local event"));
+        chooseMapObject(map, QStringLiteral("SWAK"));
         QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
-        QVERIFY(selection->item()); QCOMPARE(selection->item()->label, QStringLiteral("Local event"));
+        QVERIFY(selection->item()); QCOMPARE(selection->item()->label, QStringLiteral("SWAK"));
         QVERIFY(selection->item()->properties.contains(QStringLiteral("UID")));
         QTest::keyClick(map, Qt::Key_Escape);
         QVERIFY(!selection->item()); QVERIFY(window.store().selected().isEmpty()); QVERIFY(!dock->isVisible());
-        chooseMapObject(map, QStringLiteral("Local event"));
+        chooseMapObject(map, QStringLiteral("SWAK"));
         QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center()); QVERIFY(selection->item());
         window.store().clear(); QVERIFY(!selection->item());
         withObjectContext(map, QStringLiteral("Station"), [](QMenu *menu) {
@@ -945,9 +950,9 @@ private slots:
             manager->findChild<QPushButton *>(QStringLiteral("editMarkerCollection"))->click();
             QCOMPARE(collections->collections().value(collectionId).toObject().value(QStringLiteral("description")).toString(), QStringLiteral("Portable symbols"));
             auto *toggle = manager->findChild<QAbstractButton *>(QStringLiteral("activeProvider/") + collectionId); QVERIFY(toggle); toggle->click();
-            QTRY_VERIFY(!collections->collections().value(collectionId).toObject().value(QStringLiteral("enabled")).toBool());
+            QVERIFY(QTest::qWaitFor([&] { return !collections->collections().value(collectionId).toObject().value(QStringLiteral("enabled")).toBool(); }, 5000));
             toggle = manager->findChild<QAbstractButton *>(QStringLiteral("activeProvider/") + collectionId); toggle->click();
-            QTRY_VERIFY(collections->collections().value(collectionId).toObject().value(QStringLiteral("enabled")).toBool());
+            QVERIFY(QTest::qWaitFor([&] { return collections->collections().value(collectionId).toObject().value(QStringLiteral("enabled")).toBool(); }, 5000));
             QTimer::singleShot(0, manager, [&] {
                 auto *dialog = manager->findChild<QDialog *>(QStringLiteral("editMarkerCollectionDialog")); QVERIFY(dialog); dialog->reject();
             });
@@ -2320,7 +2325,7 @@ private slots:
                 }
                 auto *buttons = dialog->findChild<QDialogButtonBox *>();
                 auto *identity = dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.editor/identity"));
-                auto *address = dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.udp/address"));
+                auto *address = dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.identity/how"));
                 auto *enabled = dialog->findChild<QCheckBox *>(QStringLiteral("logging/enabled"));
                 auto *severity = dialog->findChild<QComboBox *>(QStringLiteral("logging/severity"));
                 auto *interval = dialog->findChild<QDoubleSpinBox *>(QStringLiteral("application/saveInterval"));
@@ -2330,12 +2335,12 @@ private slots:
                     dialog->reject(); QFAIL("A settings field is missing."); return;
                 }
                 identity->setText(QStringLiteral("configured"));
-                address->setText(QStringLiteral("invalid-address"));
+                address->setText(QStringLiteral("!"));
                 buttons->button(QDialogButtonBox::Apply)->click();
                 if (window.findChild<QLineEdit *>(QStringLiteral("identity"))->text() != initial) {
                     dialog->reject(); QFAIL("An invalid page allowed partial application."); return;
                 }
-                address->setText(QStringLiteral("127.0.0.1"));
+                address->setText(QStringLiteral("h-e"));
                 enabled->setChecked(true);
                 severity->setCurrentIndex(severity->findData(3));
                 interval->setValue(2000);
@@ -2418,8 +2423,7 @@ private slots:
             window.findChild<QLineEdit *>(QStringLiteral("callsign"))->setText(QStringLiteral("Saved callsign"));
             window.findChild<QDoubleSpinBox *>(QStringLiteral("latitude"))->setValue(12.345);
             window.findChild<QSpinBox *>(QStringLiteral("lifetime"))->setValue(1200);
-            window.findChild<QLineEdit *>(QStringLiteral("bindAddress"))->setText(QStringLiteral("::1"));
-            window.findChild<QSpinBox *>(QStringLiteral("bindPort"))->setValue(17001);
+            window.findChild<swak::Servers *>()->restorePreferences({{QStringLiteral("address"), QStringLiteral("::1")}, {QStringLiteral("port"), 17001}});
             auto *table = window.findChild<QTableView *>(QStringLiteral("eventsTable"));
             table->horizontalHeader()->resizeSection(0, 240);
             table->horizontalHeader()->moveSection(3, 0);
@@ -2444,8 +2448,8 @@ private slots:
             QCOMPARE(window.findChild<QLineEdit *>(QStringLiteral("callsign"))->text(), QStringLiteral("Saved callsign"));
             QCOMPARE(window.findChild<QDoubleSpinBox *>(QStringLiteral("latitude"))->value(), 12.345);
             QCOMPARE(window.findChild<QSpinBox *>(QStringLiteral("lifetime"))->value(), 1200);
-            QCOMPARE(window.findChild<QLineEdit *>(QStringLiteral("bindAddress"))->text(), QStringLiteral("::1"));
-            QCOMPARE(window.findChild<QSpinBox *>(QStringLiteral("bindPort"))->value(), 17001);
+            QCOMPARE(window.findChild<swak::Servers *>()->sources().value(QStringLiteral("legacy-udp")).toObject().value(QStringLiteral("host")).toString(), QStringLiteral("::1"));
+            QCOMPARE(window.findChild<swak::Servers *>()->sources().value(QStringLiteral("legacy-udp")).toObject().value(QStringLiteral("port")).toInt(), 17001);
             auto *table = window.findChild<QTableView *>(QStringLiteral("eventsTable"));
             QCOMPARE(table->horizontalHeader()->sectionSize(0), 240);
             QCOMPARE(table->horizontalHeader()->logicalIndex(0), 3);
@@ -2472,7 +2476,7 @@ private slots:
             receiver->setFloating(true);
             receiver->resize(480, 310);
             receiver->move(170, 140);
-            window.findChild<QSpinBox *>(QStringLiteral("bindPort"))->setValue(17654);
+            window.findChild<swak::Servers *>()->restorePreferences({{QStringLiteral("port"), 17654}});
             window.close();
         }
         {
@@ -2485,7 +2489,7 @@ private slots:
             swak::Window window(path, available);
             window.show();
             QVERIFY(QTest::qWaitForWindowExposed(&window));
-            QVERIFY(!window.findChild<QWidget *>(QStringLiteral("bindPort")));
+            QVERIFY(!window.findChild<swak::Servers *>());
             window.findChild<QLineEdit *>(QStringLiteral("callsign"))->setText(QStringLiteral("Changed without receiver"));
             window.close();
         }
@@ -2496,7 +2500,7 @@ private slots:
             auto *receiver = window.findChild<QDockWidget *>(QStringLiteral("org.swak.udp.pane"));
             QVERIFY(receiver->isFloating());
             QCOMPARE(receiver->size(), QSize(480, 310));
-            QCOMPARE(window.findChild<QSpinBox *>(QStringLiteral("bindPort"))->value(), 17654);
+            QCOMPARE(window.findChild<swak::Servers *>()->sources().value(QStringLiteral("legacy-udp")).toObject().value(QStringLiteral("port")).toInt(), 17654);
             QCOMPARE(window.findChild<QLineEdit *>(QStringLiteral("callsign"))->text(), QStringLiteral("Changed without receiver"));
             window.close();
         }
@@ -2537,45 +2541,101 @@ private slots:
             QCOMPARE(window.findChild<QLineEdit *>(QStringLiteral("callsign"))->text(), QStringLiteral("Keep draft"));
         }
     }
+    void cotAnimationRendering()
+    {
+        QTemporaryDir directory; swak::Window window(directory.filePath(QStringLiteral("motion.json")), QPluginLoader::staticInstances());
+        window.show(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+        for (auto *dock : window.findChildren<QDockWidget *>()) dock->hide();
+        auto *map = window.findChild<QOpenGLWidget *>(); auto *settings = dynamic_cast<swak::SettingsParticipant *>(map);
+        auto values = settings->savePreferences(); values.insert(QStringLiteral("zoom"), 8); values.insert(QStringLiteral("centerX"), 0.5); values.insert(QStringLiteral("centerY"), 0.5); settings->restorePreferences(values);
+        auto *motion = window.findChild<swak::TrackMotion *>(); QVERIFY(motion);
+        motion->restorePreferences({{QStringLiteral("duration"), 1000}, {QStringLiteral("fade"), 100}, {QStringLiteral("teleportKm"), 100}, {QStringLiteral("staleSeconds"), 1}});
+        swak::Event event; event.uid = QStringLiteral("moving"); event.type = QStringLiteral("a-f-G-U"); event.how = QStringLiteral("m-g");
+        event.time = event.start = QDateTime::currentDateTimeUtc(); event.stale = event.time.addSecs(120);
+        QVERIFY(window.store().accept(event).isEmpty()); event.longitude = 0.5; QVERIFY(window.store().accept(event).isEmpty());
+        QVERIFY(QTest::qWaitFor([&] { const auto x = motion->snapshot().first().world.x(); return x > 0.5003 && x < 0.501; }, 800));
+        const auto visual = motion->snapshot().first(); const auto logical = (visual.world - QPointF(0.5, 0.5)) * 65536 + QPointF(map->width() / 2.0, map->height() / 2.0);
+        const auto image = map->grabFramebuffer(); const auto pixel = (logical * map->devicePixelRatioF()).toPoint();
+        int blue = 0;
+        for (int y = pixel.y() - 12; y <= pixel.y() + 12; ++y) for (int x = pixel.x() - 12; x <= pixel.x() + 12; ++x) { const auto color = image.pixelColor(x, y); if (color.blue() > 120 && color.blue() > color.red()) ++blue; }
+        QVERIFY(blue >= 5);
+        QVERIFY(QTest::qWaitFor([&] { return motion->snapshot().first().world == swak::project(event.latitude, event.longitude); }, 1500));
+        window.store().expire(event.stale.addSecs(1)); QCOMPARE(window.store().rowCount(), 0);
+        QVERIFY(QTest::qWaitFor([&] { return motion->snapshot().first().gray == 1; }, 500));
+        const auto gray = map->grabFramebuffer(); QVERIFY(gray.save(QStringLiteral("cot-stale-gray.png")));
+        const auto target = ((swak::project(event.latitude, event.longitude) - QPointF(0.5, 0.5)) * 65536 + QPointF(map->width() / 2.0, map->height() / 2.0)) * map->devicePixelRatioF();
+        const auto color = gray.pixelColor(target.toPoint()); QVERIFY(qAbs(color.red() - color.blue()) < 20); QVERIFY(color.lightness() > 65);
+        QVERIFY(QTest::qWaitFor([&] { return motion->snapshot().isEmpty(); }, 2000));
+        QVERIFY(window.savePreferences());
+    }
+    void serverBrowserAndIdentity()
+    {
+        QTemporaryDir directory; swak::Window window(directory.filePath(QStringLiteral("servers-ui.json")), QPluginLoader::staticInstances());
+        window.show(); window.activateWindow(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *servers = window.findChild<swak::Servers *>(); QVERIFY(servers);
+        auto *list = window.findChild<QTableWidget *>(QStringLiteral("serverList")); QVERIFY(list); QCOMPARE(list->rowCount(), 0);
+        bool emptyAdd = false;
+        QTimer::singleShot(0, &window, [&] {
+            auto *dialog = window.findChild<QDialog *>(QStringLiteral("serverEditor")); QVERIFY(dialog);
+            for (auto *field : dialog->findChildren<QLineEdit *>()) if (field->objectName().endsWith(QStringLiteral("/name"))) { emptyAdd = field->text().isEmpty(); }
+            dialog->reject();
+        });
+        window.findChild<QPushButton *>(QStringLiteral("addServer"))->click(); QVERIFY(emptyAdd); QCOMPARE(list->rowCount(), 0);
+        QTimer::singleShot(0, &window, [&] {
+            auto *dialog = window.findChild<QDialog *>(QStringLiteral("identityDialog")); QVERIFY(dialog);
+            dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.identity/uid"))->setText(QStringLiteral("sender-test"));
+            dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.identity/callsign"))->setText(QStringLiteral("Test Sender"));
+            dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.identity/team"))->setText(QStringLiteral("Blue"));
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+        });
+        window.findChild<QAction *>(QStringLiteral("identityAction"))->trigger();
+        QCOMPARE(window.findChild<QLineEdit *>(QStringLiteral("identity"))->text(), QStringLiteral("sender-test"));
+        QCOMPARE(window.findChild<QLineEdit *>(QStringLiteral("callsign"))->text(), QStringLiteral("Test Sender"));
+        QTcpServer harness; QVERIFY(harness.listen(QHostAddress::LocalHost, 0));
+        auto source = swak::serverDefaults(); source.insert(QStringLiteral("name"), QStringLiteral("Harness")); source.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
+        source.insert(QStringLiteral("protocol"), QStringLiteral("stcp")); source.insert(QStringLiteral("port"), harness.serverPort()); source.insert(QStringLiteral("enabled"), true);
+        QVERIFY(servers->put(QStringLiteral("harness"), source).isEmpty()); QCOMPARE(list->rowCount(), 1);
+        QVERIFY(QTest::qWaitFor([&] { return harness.hasPendingConnections(); }, 2000)); auto *socket = harness.nextPendingConnection();
+        auto *map = window.findChild<QOpenGLWidget *>(); QVERIFY(map);
+        for (auto *dock : window.findChildren<QDockWidget *>()) dock->hide();
+        auto *mapSettings = dynamic_cast<swak::SettingsParticipant *>(map); auto settings = mapSettings->savePreferences();
+        settings.insert(QStringLiteral("zoom"), 8); settings.insert(QStringLiteral("centerX"), 0.5); settings.insert(QStringLiteral("centerY"), 0.5); mapSettings->restorePreferences(settings);
+        swak::Event event; event.uid = QStringLiteral("remote"); event.type = QStringLiteral("a-f-G-U"); event.how = QStringLiteral("m-g"); event.callsign = QStringLiteral("Received contact");
+        event.time = event.start = QDateTime::currentDateTimeUtc(); event.stale = event.time.addSecs(120);
+        const auto before = map->grabFramebuffer(); socket->write(swak::encodeCot(event));
+        QVERIFY(QTest::qWaitFor([&] { return window.store().rowCount() == 1; }, 2000));
+        QSignalSpy frames(map, &QOpenGLWidget::frameSwapped); map->update(); QVERIFY(frames.wait(2000));
+        const auto after = map->grabFramebuffer(); QVERIFY(after != before); QVERIFY(after.save(QStringLiteral("server-cot-map.png")));
+        int markerPixels = 0; const auto imageCenter = after.rect().center();
+        for (int y = imageCenter.y() - 12; y <= imageCenter.y() + 12; ++y) for (int x = imageCenter.x() - 12; x <= imageCenter.x() + 12; ++x) {
+            const auto color = after.pixelColor(x, y); if (color.blue() > 120 && color.blue() > color.red()) ++markerPixels;
+        }
+        QVERIFY2(markerPixels >= 5, "The received CoT symbol is absent from the OpenGL frame.");
+        const auto center = map->rect().center(); QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, center);
+        auto *selection = window.findChild<swak::MapSelection *>(); QVERIFY(selection->item()); QCOMPARE(selection->item()->id, event.uid);
+        QVERIFY(QTest::qWaitFor([&] { return servers->status(QStringLiteral("harness")).contains(QStringLiteral("Connected")); }, 2000));
+        window.findChild<QCheckBox *>(QStringLiteral("sendGenerated"))->setChecked(true); window.findChild<QPushButton *>(QStringLiteral("generateEvent"))->click();
+        QVERIFY(QTest::qWaitFor([&] { return socket->bytesAvailable() > 0; }, 2000)); const auto sent = swak::decodeCot(socket->readAll());
+        QVERIFY(sent.event); QCOMPARE(sent.event->uid, QStringLiteral("sender-test")); QCOMPARE(sent.event->team, QStringLiteral("Blue"));
+        auto *browser = window.findChild<QWidget *>(QStringLiteral("serverBrowser")); QVERIFY(browser->grab().save(QStringLiteral("server-browser.png")));
+        servers->remove(QStringLiteral("harness")); QCOMPARE(list->rowCount(), 0);
+        QVERIFY(window.savePreferences());
+    }
     void receiverRestarts()
     {
-        QTemporaryDir directory;
-        const QString path = directory.filePath(QStringLiteral("preferences.json"));
-        QUdpSocket reservation;
-        QVERIFY(reservation.bind(QHostAddress::LocalHost, 0));
-        const quint16 port = reservation.localPort();
-        reservation.close();
+        QTemporaryDir directory; const auto path = directory.filePath(QStringLiteral("servers.json"));
+        QUdpSocket reservation; QVERIFY(reservation.bind(QHostAddress::LocalHost, 0)); const auto port = reservation.localPort(); reservation.close();
         for (int cycle = 0; cycle < 2; ++cycle) {
-            swak::Window window(path, QPluginLoader::staticInstances());
-            window.show();
-            QVERIFY(QTest::qWaitForWindowExposed(&window));
-            auto *portField = window.findChild<QSpinBox *>(QStringLiteral("bindPort"));
-            if (cycle == 0) {
-                portField->setValue(port);
-                window.findChild<QPushButton *>(QStringLiteral("receiverToggle"))->click();
-            }
-            QCOMPARE(portField->value(), static_cast<int>(port));
-            QVERIFY(!portField->isEnabled());
-            QVERIFY(!reservation.bind(QHostAddress::LocalHost, port));
-            window.close();
+            swak::Window window(path, QPluginLoader::staticInstances()); auto *servers = window.findChild<swak::Servers *>(); QVERIFY(servers);
+            if (!cycle) servers->restorePreferences({{QStringLiteral("address"), QStringLiteral("127.0.0.1")}, {QStringLiteral("port"), port}, {QStringLiteral("running"), true}});
+            QVERIFY(QTest::qWaitFor([&] { return servers->status(QStringLiteral("legacy-udp")).contains(QStringLiteral("Listening")); }, 5000)); QVERIFY(!reservation.bind(QHostAddress::LocalHost, port));
+            QVERIFY(window.savePreferences());
         }
         QVERIFY(reservation.bind(QHostAddress::LocalHost, port));
-        {
-            swak::Window window(path, QPluginLoader::staticInstances());
-            QVERIFY(window.findChild<QSpinBox *>(QStringLiteral("bindPort"))->isEnabled());
-            QVERIFY(window.savePreferences());
-        }
+        { swak::Window window(path, QPluginLoader::staticInstances()); auto *servers = window.findChild<swak::Servers *>(); QVERIFY(QTest::qWaitFor([&] { return servers->status(QStringLiteral("legacy-udp")).contains(QStringLiteral("Cannot bind")); }, 5000)); QVERIFY(window.savePreferences()); }
         reservation.close();
-        {
-            swak::Window window(path, QPluginLoader::staticInstances());
-            QVERIFY(!window.findChild<QSpinBox *>(QStringLiteral("bindPort"))->isEnabled());
-            window.findChild<QPushButton *>(QStringLiteral("receiverToggle"))->click();
-            QVERIFY(window.savePreferences());
-        }
-        {
-            swak::Window window(path, QPluginLoader::staticInstances());
-            QVERIFY(window.findChild<QSpinBox *>(QStringLiteral("bindPort"))->isEnabled());
-        }
+        { swak::Window window(path, QPluginLoader::staticInstances()); auto *servers = window.findChild<swak::Servers *>(); QVERIFY(QTest::qWaitFor([&] { return servers->status(QStringLiteral("legacy-udp")).contains(QStringLiteral("Listening")); }, 5000)); servers->remove(QStringLiteral("legacy-udp")); QVERIFY(window.savePreferences()); }
+        { swak::Window window(path, QPluginLoader::staticInstances()); QVERIFY(window.findChild<swak::Servers *>()->sources().isEmpty()); }
     }
     void invalidPreferenceValues()
     {
@@ -2596,7 +2656,7 @@ private slots:
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         QCOMPARE(window.findChild<QDoubleSpinBox *>(QStringLiteral("latitude"))->value(), 0.0);
         QCOMPARE(window.findChild<QSpinBox *>(QStringLiteral("lifetime"))->value(), 300);
-        QCOMPARE(window.findChild<QSpinBox *>(QStringLiteral("bindPort"))->value(), 6969);
+        QCOMPARE(window.findChild<swak::Servers *>()->sources().value(QStringLiteral("legacy-udp")).toObject().value(QStringLiteral("port")).toInt(), 6969);
         const auto values = dynamic_cast<swak::PreferenceParticipant *>(window.findChild<QOpenGLWidget *>(QStringLiteral("map")))->savePreferences();
         QCOMPARE(values.value(QStringLiteral("zoom")).toDouble(), std::ceil(std::log2(std::max(window.findChild<QOpenGLWidget *>()->width(), window.findChild<QOpenGLWidget *>()->height()) / 256.0)));
         QCOMPARE(values.value(QStringLiteral("centerX")).toDouble(), 0.5);

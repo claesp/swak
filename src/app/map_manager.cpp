@@ -1,7 +1,7 @@
 #include "app/map_manager.h"
 #include "core/logging.h"
-#include "app/settings_dialog.h"
-#include "app/provider_table.h"
+#include "core/settings_dialog.h"
+#include "core/provider_table.h"
 #include <QTimer>
 #include <QLabel>
 #include "core/single_line_label.h"

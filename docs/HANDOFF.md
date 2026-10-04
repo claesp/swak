@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 4, 2026: Read “Undo history availability” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 4, 2026: Read “Servers, LAN peers, and CoT motion” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -849,3 +849,25 @@ All 72 GUI cases passed in `build/quality/20261004-082158-gui-49054`. The GUI sa
 Coverage passed eight suites and 72 GUI cases in `build/quality/20261004-082347-coverage-49911`. UserObjects reached all 93 lines and all 18 functions. Its branch coverage remains 274 of 526 reported branches. This task adds no application branches. Allocation failures, native Wayland, hardware graphics, and two-hour qualification remain untested.
 
 The 60-second workload passed in `build/quality/20261004-082506-soak-50533`. It completed 1183 cycles with 13606912 bytes of peak memory growth. The maximum heartbeat gap was 37 milliseconds, and idle CPU time was 0.007 seconds. The release build passed in `build/undo-release.log`. The final build with committed version metadata uses `build/undo-release-final.log`.
+
+## 2026-10-04: Servers, LAN peers, and CoT motion
+
+The Servers browser replaces the UDP receiver. It supports multiple TLS, TCP, and UDP inputs through one network worker thread. Bounded mailboxes join repeated UID updates before the GUI receives them. TLS requires certificate validation and supports PEM and PKCS12 credentials. The legacy component and pane identifiers remain stable for saved profiles. File > Identity supplies sender fields to the generator. Transmission requires the explicit generator checkbox. Received messages are not forwarded.
+
+Optional LAN discovery uses UDP port 17421 and direct TCP connections on a selected local IPv4 subnet. Each connection compares a SWAK-COT/1 greeting with recent discovery data. This mode uses plaintext without peer authentication. It remains disabled by default. Read servers.md for protocol details, resource limits, and the development harness.
+
+Matching CoT UIDs move from the current displayed position over a fixed duration. Longer distances produce higher speeds. Large jumps fade out and then fade in. Stale symbols fade to gray, remain briefly, then fade away. File > Settings > CoT animation controls all four limits. Defaults are 600 milliseconds for movement, 100 kilometers for teleport, 600 milliseconds for fades, and 10 seconds for gray retention. Selection and hit detection follow displayed positions. Motion records remain bounded, and the animation timer stops when idle.
+
+SettingsDialog and ProviderTable moved into the shared core. PluginServices adds Identity and Servers. SourcePlugin adds paneId. SettingsWidgetProvider supplies custom Settings content. TrackMotion supplies visual CoT state independently of authoritative event positions. Plugin contracts and affected MANIFEST versions were updated. No runtime dependency was added.
+
+TAK Server reference commit 5187abd46d827d37cfc5708805eced197a837e49 defines the reviewed XML-first protocol. No implementation files were copied. SWAK does not request binary negotiation. Full TAK deployment, enrollment, mission APIs, QUIC, and binary-only endpoints remain outside the tested transport scope.
+
+Nine sanitizer suites and the isolated LAN exchange test passed in build/quality/20261004-112721-quick-62659. Source analysis passed in build/quality/20261004-112950-analyze-3. The tests cover fragmentation, hostile XML, concurrent connections, reconnects, trust failures, PEM and PKCS12 client authentication, load, motion, and expiration. A debug load test received 12000 messages in about 403 milliseconds with 39 GUI heartbeat ticks. The namespace test exercises discovery, bidirectional CoT exchange, and shutdown without changing the host network.
+
+All 74 native GUI cases passed in build/quality/20261004-112948-gui-63312. LeakSanitizer still reports the existing Mesa leak of 240732 bytes in 1073 allocations. The GUI diagnostic remains failed without suppression. Focused server and animation cases also passed at 200 percent scaling in build/servers-hidpi.log. Native screenshots and pixel assertions cover received symbols, movement, and gray stale symbols.
+
+Coverage passed nine suites, 74 native cases, and isolated LAN exchange in build/quality/20261004-113058-coverage-63692. The stream reader reached 40 of 41 lines. LAN protocol validation reached all 13 lines. Servers reached 317 of 324 lines. TrackMotion reached 78 of 84 lines. Unexecuted paths include periodic heartbeat writes, peer expiration callbacks, some form actions, and motion-capacity eviction. Allocation failures and defensive branches also retain gaps. Line coverage does not establish complete input coverage.
+
+The release build passed in build/servers-release.log. The final build with committed version metadata uses build/servers-release-final.log. Hardware graphics, native Wayland, Qt 6.4, physical two-machine LAN discovery, full TAK deployment, and two-hour qualification remain untested. Temporary toolchains under /tmp are local development tools, not portable project dependencies.
+
+The 60-second workload passed in build/quality/20261004-113738-soak-65951. It completed 1174 cycles with 13398016 bytes of peak memory growth. The maximum heartbeat gap was 41 milliseconds, and idle CPU time was 0.017 seconds. This short run does not replace two-hour qualification.

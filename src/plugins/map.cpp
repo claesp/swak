@@ -108,8 +108,20 @@ public:
                 QDesktopServices::openUrl(url);
         });
         std::sort(layers_.begin(), layers_.end(), [](const auto *a, const auto *b) { return a->order() < b->order(); });
+        connect(&store_.motion(), &TrackMotion::changed, this, [this] { update(); });
         connect(&store_, &Store::changed, this, [this] {
-            if (selection_ && selectedSource_ == QStringLiteral("cot")) selection_->clear();
+            if (selection_ && selectedSource_ == QStringLiteral("cot") && selection_->item()) {
+                auto item = *selection_->item();
+                const auto &events = store_.events();
+                const auto found = std::find_if(events.cbegin(), events.cend(), [&item](const Event &event) { return event.uid == item.id; });
+                if (found == events.cend()) selection_->clear();
+                else {
+                    item.point = project(found->latitude, found->longitude); item.label = found->callsign.isEmpty() ? found->uid : found->callsign;
+                    item.properties.insert(QStringLiteral("Latitude"), found->latitude); item.properties.insert(QStringLiteral("Longitude"), found->longitude);
+                    item.properties.insert(QStringLiteral("Time"), found->time.toString(Qt::ISODateWithMs)); item.properties.insert(QStringLiteral("Stale"), found->stale.toString(Qt::ISODateWithMs));
+                    selection_->select(std::move(item));
+                }
+            }
             update();
         });
         connect(&store_, &Store::selectionChanged, this, [this] {
@@ -335,7 +347,13 @@ protected:
         if (!tilesPainted) paintBase();
         if (overlay_) overlay_->update();
         if (tools_) tools_->paint(painter, view_);
-        if (selection_) selection_->paint(painter, view_);
+        if (selection_) {
+            if (selectedSource_ == QStringLiteral("cot") && selection_->item()) {
+                const auto visuals = store_.motion().snapshot();
+                const auto found = std::find_if(visuals.cbegin(), visuals.cend(), [this](const auto &visual) { return visual.event.uid == selection_->item()->id && !visual.expired; });
+                if (found != visuals.cend()) selection_->paint(painter, view_, found->world, found->opacity);
+            } else selection_->paint(painter, view_);
+        }
         const auto source = sources_ ? sources_->activeSource() : QJsonObject{};
         painter.setPen(QColor("#c7d7e5"));
         updateStatus();
@@ -477,8 +495,10 @@ protected:
         QList<Hit> hits;
         if (tools_) for (const auto &item : tools_->itemsAt(view_, position)) hits.append({item, QStringLiteral("local")});
         const auto now = QDateTime::currentDateTimeUtc();
-        for (const auto &message : store_.events()) {
-            if (message.start > now || message.stale <= now || QLineF(view_.screen(message.latitude, message.longitude), position).length() >= 14) continue;
+        for (const auto &visual : store_.motion().snapshot()) {
+            const auto &message = visual.event;
+            const auto screen = (visual.world - view_.center) * view_.scale() + QPointF(view_.size.width() / 2, view_.size.height() / 2);
+            if (visual.expired || visual.opacity < 0.15 || message.start > now || message.stale <= now || QLineF(screen, position).length() >= 14) continue;
             MapItem item; item.label = message.callsign.isEmpty() ? message.uid : message.callsign; item.type = message.type;
             item.point = project(message.latitude, message.longitude); item.color = Qt::white;
             item.symbol = markerSymbolForCot(message.type);

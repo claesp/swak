@@ -3,7 +3,7 @@
   "id": "org.swak.cot",
   "name": "Cursor-on-Target XML",
   "description": "Decode and encode bounded CoT XML messages.",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "apiVersion": 2,
   "entryPoint": "CotPlugin",
   "linkage": "static",

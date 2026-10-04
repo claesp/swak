@@ -22,3 +22,8 @@ The application includes six SVG assets from [Lucide 0.468.0](https://github.com
 The checked-in Qt paths are generated from those SVG assets. FontTools 4.55.3 is a development-only converter. Normal builds and releases do not need it. This conversion avoids a new runtime SVG library and preserves vector scaling. Run `python3 tools/generate_icons.py` with that FontTools version available to regenerate the paths. The script reads only the bundled assets and performs no downloads.
 
 Application branding, marker symbols, and color swatches retain their own meanings. The shared command set covers Clear, Marker, Area, Map, Edit, and Move.
+
+
+## CoT transport and diagnostics
+
+CoT connections use the existing Qt Network and Core libraries. TLS and PKCS12 support use the Qt TLS backend installed on the host. This change adds no runtime dependency or copied TAK Server implementation. The CoT and LAN harnesses use the Python standard library. Isolated LAN tests also use the development tools unshare and ip. None of these harnesses are installed with the application.

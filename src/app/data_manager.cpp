@@ -1,7 +1,7 @@
 #include "app/data_manager.h"
-#include "app/settings_dialog.h"
+#include "core/settings_dialog.h"
 #include "core/logging.h"
-#include "app/provider_table.h"
+#include "core/provider_table.h"
 #include <QLabel>
 #include "core/single_line_label.h"
 #include <QPushButton>

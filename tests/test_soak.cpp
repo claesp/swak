@@ -1,3 +1,4 @@
+#include "core/servers.h"
 #include "core/vector_tiles.h"
 #include "vector_fixture.h"
 #include "core/activity.h"
@@ -91,16 +92,11 @@ private slots:
         QVERIFY(!store.accept(event).isEmpty());
         store.clear();
         auto receiver = std::unique_ptr<QWidget>(source->create(services, *codec, nullptr));
-        auto *port = receiver->findChild<QSpinBox *>(QStringLiteral("bindPort"));
-        auto *toggle = receiver->findChild<QPushButton *>(QStringLiteral("receiverToggle"));
-        QVERIFY(port && toggle);
-        QUdpSocket sender;
-        QVERIFY(sender.bind(QHostAddress::LocalHost, 0));
-        const auto targetPort = sender.localPort();
-        sender.close();
-        port->setValue(targetPort);
-        toggle->click();
-        QVERIFY(!port->isEnabled());
+        auto *servers = receiver->findChild<swak::Servers *>(); QVERIFY(servers);
+        QUdpSocket sender; QVERIFY(sender.bind(QHostAddress::LocalHost, 0)); const auto targetPort = sender.localPort(); sender.close();
+        auto sourceValue = swak::serverDefaults(); sourceValue.insert(QStringLiteral("name"), QStringLiteral("Soak")); sourceValue.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
+        sourceValue.insert(QStringLiteral("protocol"), QStringLiteral("udp")); sourceValue.insert(QStringLiteral("port"), targetPort); sourceValue.insert(QStringLiteral("enabled"), true);
+        QVERIFY(servers->put(QStringLiteral("soak"), sourceValue).isEmpty()); QVERIFY(QTest::qWaitFor([&] { return servers->status(QStringLiteral("soak")).contains(QStringLiteral("Listening")); }, 5000));
         qint64 maxGap = 0;
         QElapsedTimer heartbeat;
         heartbeat.start();
@@ -182,8 +178,7 @@ private slots:
         QTest::qWait(1000);
         const double idleCpu = static_cast<double>(std::clock() - cpuStart) / CLOCKS_PER_SEC;
         QVERIFY2(idleCpu < 0.5, "The idle receiver consumed at least half of one CPU core.");
-        toggle->click();
-        QVERIFY(port->isEnabled());
+        servers->remove(QStringLiteral("soak"));
         receiver.reset();
         sender.close();
         QVERIFY(sender.bind(QHostAddress::LocalHost, targetPort));

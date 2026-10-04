@@ -4,6 +4,7 @@
 #include <QStringList>
 #include <QtPlugin>
 
+class QWidget;
 namespace swak {
 struct SettingField {
     enum class Kind { Boolean, Number, Text, Choice, Key };
@@ -27,6 +28,11 @@ public:
     virtual QString settingsTitle() const = 0;
     virtual QList<SettingField> settingsFields() const = 0;
     virtual QString validateSettings(const QJsonObject &) const { return {}; }
+};
+class SettingsWidgetProvider {
+public:
+    virtual ~SettingsWidgetProvider() = default;
+    virtual QWidget *createSettingsWidget(QWidget *parent) = 0;
 };
 QJsonValue settingValue(const QJsonValue &root, const QString &path);
 QJsonValue withSettingValue(QJsonValue root, const QString &path, const QJsonValue &value);

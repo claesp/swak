@@ -19,6 +19,8 @@ class MapSelection;
 class MapTools;
 class UserObjects;
 class MarkerCollections;
+class Identity;
+class Servers;
 struct PluginServices {
     Store &store;
     ActivityModel &activity;
@@ -28,6 +30,8 @@ struct PluginServices {
     MapTools *mapTools = nullptr;
     UserObjects *objects = nullptr;
     MarkerCollections *collections = nullptr;
+    Identity *identity = nullptr;
+    Servers *servers = nullptr;
 };
 class Plugin {
 public:
@@ -88,6 +92,7 @@ public:
 };
 class SourcePlugin {
 public:
+    virtual QString paneId() const { return {}; }
     virtual ~SourcePlugin() = default;
     virtual QString name() const = 0;
     virtual QWidget *create(PluginServices &services, const Codec &codec, QWidget *parent) = 0;

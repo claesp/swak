@@ -44,6 +44,8 @@ private:
     bool shown_ = false;
     QByteArray settingsGeometry_;
     QByteArray mapManagerGeometry_;
+    QByteArray identityGeometry_;
+    QByteArray serversGeometry_;
     QByteArray dataManagerGeometry_;
     QByteArray markerManagerGeometry_;
     QJsonObject settingsNavigation_;

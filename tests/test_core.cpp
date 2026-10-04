@@ -1,3 +1,4 @@
+#include "core/servers.h"
 #include "core/marker_symbols.h"
 #include "core/marker_collections.h"
 #include <QJsonDocument>
@@ -510,77 +511,29 @@ private slots:
     }
     void receiverSummaryRecovery()
     {
-        Store store;
-        ActivityModel activity;
-        MapSources maps({});
-        PluginServices services{store, activity, maps};
-        QUdpSocket sender;
-        QVERIFY(sender.bind(QHostAddress::LocalHost, 0));
-        const auto port = sender.localPort();
-        sender.close();
-        auto receiver = std::unique_ptr<QWidget>(source_->create(services, *codec_, nullptr));
-        receiver->findChild<QSpinBox *>(QStringLiteral("bindPort"))->setValue(port);
-        receiver->findChild<QPushButton *>(QStringLiteral("receiverToggle"))->click();
-        activity.clear();
+        Store store; Servers servers(store); QUdpSocket sender;
+        QVERIFY(sender.bind(QHostAddress::LocalHost, 0)); const auto port = sender.localPort(); sender.close();
+        auto source = serverDefaults(); source.insert(QStringLiteral("name"), QStringLiteral("Local")); source.insert(QStringLiteral("protocol"), QStringLiteral("udp"));
+        source.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1")); source.insert(QStringLiteral("port"), port); source.insert(QStringLiteral("enabled"), true);
+        QVERIFY(servers.put(QStringLiteral("test"), source).isEmpty()); QVERIFY(QTest::qWaitFor([&] { return servers.status(QStringLiteral("test")).contains(QStringLiteral("Listening")); }, 5000));
         sender.writeDatagram("bad", QHostAddress::LocalHost, port);
-        QVERIFY(QTest::qWaitFor([&] { return activity.rowCount() >= 1; }, 2000));
-        QCOMPARE(activity.index(activity.rowCount() - 1, 1).data(ActivityModel::SortRole).toInt(), static_cast<int>(Severity::Warning));
-        activity.clear();
-        QTimer traffic;
-        traffic.setInterval(30);
-        connect(&traffic, &QTimer::timeout, &traffic, [&] { sender.writeDatagram(codec_->encode(sample()), QHostAddress::LocalHost, port); });
-        traffic.start();
-        QVERIFY(QTest::qWaitFor([&] { return activity.rowCount() >= 1; }, 2000));
-        QCOMPARE(activity.index(0, 1).data(ActivityModel::SortRole).toInt(), static_cast<int>(Severity::Info));
-        QVERIFY(activity.rowCount() <= 2);
-        QVERIFY(store.rowCount() > 0);
+        QVERIFY(QTest::qWaitFor([&] { return (servers.statistics().value(QStringLiteral("test")).toObject().value(QStringLiteral("rejected")).toInt()) == ( 1); }, 5000));
+        sender.writeDatagram(codec_->encode(sample()), QHostAddress::LocalHost, port); QVERIFY(QTest::qWaitFor([&] { return (store.rowCount()) == ( 1); }, 5000));
     }
     void receiverLifecycle()
     {
-        Store store;
-        QUdpSocket reservation;
-        QVERIFY(reservation.bind(QHostAddress::LocalHost, 0));
-        const quint16 port = reservation.localPort();
-        ActivityModel activity;
-        MapSources maps({});
-        PluginServices services{store, activity, maps};
-        auto receiver = std::unique_ptr<QWidget>(source_->create(services, *codec_, nullptr));
-        auto *portField = receiver->findChild<QSpinBox *>(QStringLiteral("bindPort"));
-        auto *toggle = receiver->findChild<QPushButton *>(QStringLiteral("receiverToggle"));
-        auto *address = receiver->findChild<QLineEdit *>(QStringLiteral("bindAddress"));
-        QVERIFY(portField && toggle && address);
-        portField->setValue(port);
-        toggle->click();
-        QVERIFY(portField->isEnabled());
-        reservation.close();
-        address->setText(QStringLiteral("not-an-address"));
-        toggle->click();
-        QVERIFY(portField->isEnabled());
-        address->setText(QStringLiteral("127.0.0.1"));
-        toggle->click();
-        QVERIFY(!portField->isEnabled());
-        QUdpSocket sender;
-        const auto data = codec_->encode(sample());
-        QSignalSpy arrivals(&store, &Store::changed);
-        QCOMPARE(sender.writeDatagram(data, QHostAddress::LocalHost, port), data.size());
-        QVERIFY(arrivals.wait(2000));
-        QCOMPARE(arrivals.count(), 1);
-        QCOMPARE(store.rowCount(), 1);
+        Store store; QUdpSocket reservation; QVERIFY(reservation.bind(QHostAddress::LocalHost, 0)); const auto port = reservation.localPort();
+        auto servers = std::make_unique<Servers>(store);
+        auto source = serverDefaults(); source.insert(QStringLiteral("name"), QStringLiteral("Local")); source.insert(QStringLiteral("protocol"), QStringLiteral("udp"));
+        source.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1")); source.insert(QStringLiteral("port"), port); source.insert(QStringLiteral("enabled"), true);
+        QVERIFY(servers->put(QStringLiteral("test"), source).isEmpty()); QVERIFY(QTest::qWaitFor([&] { return servers->status(QStringLiteral("test")).contains(QStringLiteral("Cannot bind")); }, 5000));
+        reservation.close(); servers->reconnect(); QVERIFY(QTest::qWaitFor([&] { return servers->status(QStringLiteral("test")).contains(QStringLiteral("Listening")); }, 5000));
+        QUdpSocket sender; sender.writeDatagram(codec_->encode(sample()), QHostAddress::LocalHost, port); QVERIFY(QTest::qWaitFor([&] { return (store.rowCount()) == ( 1); }, 5000));
         sender.writeDatagram(QByteArray(MaxMessageBytes + 1, 'x'), QHostAddress::LocalHost, port);
-        auto next = sample();
-        next.uid = QStringLiteral("test-2");
-        sender.writeDatagram(codec_->encode(next), QHostAddress::LocalHost, port);
-        QVERIFY(arrivals.wait(2000));
-        QCOMPARE(store.rowCount(), 2);
-        toggle->click();
-        QVERIFY(portField->isEnabled());
-        QVERIFY(reservation.bind(QHostAddress::LocalHost, port));
-        reservation.close();
-        toggle->click();
-        QVERIFY(!portField->isEnabled());
-        receiver.reset();
-        QVERIFY(reservation.bind(QHostAddress::LocalHost, port));
+        auto next = sample(); next.uid = QStringLiteral("test-2"); sender.writeDatagram(codec_->encode(next), QHostAddress::LocalHost, port); QVERIFY(QTest::qWaitFor([&] { return (store.rowCount()) == ( 2); }, 5000));
+        servers.reset(); QVERIFY(reservation.bind(QHostAddress::LocalHost, port));
     }
+
 };
 QTEST_MAIN(CoreTest)
 #include "test_core.moc"

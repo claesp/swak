@@ -1,3 +1,6 @@
+#include "core/identity.h"
+#include "core/servers.h"
+#include <QCheckBox>
 #include "core/logging.h"
 #include "core/interfaces.h"
 #include <algorithm>
@@ -23,7 +26,7 @@
 namespace swak {
 class Editor final : public QWidget, public SettingsParticipant {
 public:
-    Editor(Store &store, const Codec &codec, QWidget *parent) : QWidget(parent), store_(store), codec_(codec)
+    Editor(Store &store, const Codec &codec, Identity *identity, Servers *servers, QWidget *parent) : QWidget(parent), store_(store), codec_(codec), identity_(identity), servers_(servers)
     {
         auto *layout = new QVBoxLayout(this);
         auto *form = new QFormLayout;
@@ -54,6 +57,13 @@ public:
         actions->addWidget(generate);
         actions->addWidget(newIdentity);
         layout->addLayout(actions);
+        send_ = new QCheckBox(tr("Send generated CoT to connected servers and LAN peers"), this);
+        send_->setObjectName(QStringLiteral("sendGenerated")); send_->setEnabled(servers_ != nullptr); layout->addWidget(send_);
+        auto *useIdentity = new QPushButton(tr("Use sender identity"), this); useIdentity->setObjectName(QStringLiteral("useSenderIdentity"));
+        useIdentity->setEnabled(identity_ != nullptr); layout->addWidget(useIdentity);
+        connect(useIdentity, &QPushButton::clicked, this, [this] { useSenderIdentity(); });
+        if (identity_) { useSenderIdentity(); connect(identity_, &Identity::changed, this, [this] { useSenderIdentity(); }); }
+
         auto *previewLabel = new QLabel(tr("CoT &XML preview"), this);
         preview_ = new QPlainTextEdit(this);
         preview_->setObjectName(QStringLiteral("xmlPreview"));
@@ -96,7 +106,7 @@ public:
     QString settingsTitle() const override { return tr("CoT Event Generator"); }
     QList<SettingField> settingsFields() const override
     {
-        return {textSetting(QStringLiteral("identity"), tr("Identity"), 128),
+        return {booleanSetting(QStringLiteral("send"), tr("Send generated CoT to connected servers and LAN peers")), textSetting(QStringLiteral("identity"), tr("Identity"), 128),
                 textSetting(QStringLiteral("callsign"), tr("Callsign"), 128),
                 textSetting(QStringLiteral("type"), tr("Type"), 128),
                 numberSetting(QStringLiteral("latitude"), tr("Latitude"), -90, 90, 6),
@@ -108,7 +118,7 @@ public:
     }
     QJsonObject savePreferences() const override
     {
-        return {{QStringLiteral("identity"), uid_->text()}, {QStringLiteral("callsign"), callsign_->text()},
+        return {{QStringLiteral("send"), send_->isChecked()}, {QStringLiteral("identity"), uid_->text()}, {QStringLiteral("callsign"), callsign_->text()},
                 {QStringLiteral("type"), type_->text()}, {QStringLiteral("latitude"), latitude_->value()},
                 {QStringLiteral("longitude"), longitude_->value()}, {QStringLiteral("altitude"), altitude_->value()},
                 {QStringLiteral("lifetime"), lifetime_->value()}, {QStringLiteral("importDirectory"), importDirectory_},
@@ -116,6 +126,7 @@ public:
     }
     void restorePreferences(const QJsonObject &values) override
     {
+        send_->setChecked(values.value(QStringLiteral("send")).toBool(false));
         uid_->setText(preferenceText(values, QStringLiteral("identity"), uid_->text(), 128));
         callsign_->setText(preferenceText(values, QStringLiteral("callsign"), callsign_->text(), 128));
         type_->setText(preferenceText(values, QStringLiteral("type"), type_->text(), 128));
@@ -127,6 +138,11 @@ public:
         exportDirectory_ = preferenceText(values, QStringLiteral("exportDirectory"), {}, 4096);
     }
 private:
+    void useSenderIdentity()
+    {
+        if (!identity_) return;
+        Event event; identity_->apply(event); uid_->setText(event.uid); callsign_->setText(event.callsign); type_->setText(event.type);
+    }
     void showStatus(const QString &message, Severity severity = Severity::Info)
     {
         status_->setText(message);
@@ -159,10 +175,11 @@ private:
     void generateEvent()
     {
         Event event;
+        if (identity_) identity_->apply(event);
         event.uid = uid_->text();
         event.callsign = callsign_->text();
         event.type = type_->text();
-        event.how = QStringLiteral("h-e");
+        if (!identity_) event.how = QStringLiteral("h-e");
         event.latitude = latitude_->value();
         event.longitude = longitude_->value();
         event.altitude = altitude_->value();
@@ -173,7 +190,11 @@ private:
         if (!error.isEmpty()) { showStatus(error, Severity::Error); return; }
         showEvent(event);
         store_.select(event.uid);
-        showStatus(tr("The event is on the map. Export the XML to save it."));
+        if (send_->isChecked() && servers_) {
+            const auto sendError = servers_->send(event);
+            showStatus(sendError.isEmpty() ? tr("The event is on the map and queued for connected peers and servers.") : sendError,
+                sendError.isEmpty() ? Severity::Info : Severity::Warning);
+        } else showStatus(tr("The event is on the map. Export the XML to save it."));
     }
     void importFile()
     {
@@ -204,6 +225,9 @@ private:
     }
     Store &store_;
     const Codec &codec_;
+    Identity *identity_;
+    Servers *servers_;
+    QCheckBox *send_;
     QLineEdit *uid_;
     QLineEdit *callsign_;
     QLineEdit *type_;
@@ -224,7 +248,7 @@ class EditorPlugin final : public QObject, public Plugin, public ToolPlugin {
     Q_INTERFACES(swak::Plugin swak::ToolPlugin)
 public:
     QString name() const override { return tr("CoT Event Generator"); }
-    QWidget *create(PluginServices &services, const Codec &codec, QWidget *parent) override { return new Editor(services.store, codec, parent); }
+    QWidget *create(PluginServices &services, const Codec &codec, QWidget *parent) override { return new Editor(services.store, codec, services.identity, services.servers, parent); }
 };
 }
 #include "editor.moc"

@@ -18,7 +18,8 @@ QString eventError(const Event &event)
     static const QRegularExpression typePattern(QStringLiteral("\\A[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*(?:;[^;]*)?\\z"));
     static const QRegularExpression howPattern(QStringLiteral("\\A[A-Za-z0-9_]-[A-Za-z0-9_]\\z"));
     if (!safeText(event.uid, 128) || !safeText(event.type, 128) ||
-        !safeText(event.how, 3) || (!event.callsign.isEmpty() && !safeText(event.callsign, 128)))
+        !safeText(event.how, 3) || (!event.callsign.isEmpty() && !safeText(event.callsign, 128)) ||
+        (!event.team.isEmpty() && !safeText(event.team, 64)) || (!event.role.isEmpty() && !safeText(event.role, 64)))
         return tr("An event text field is empty, too long, or contains unsupported characters.");
     if (!typePattern.match(event.type).hasMatch() || !howPattern.match(event.how).hasMatch())
         return tr("The event type or location method is invalid.");

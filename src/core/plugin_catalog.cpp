@@ -71,7 +71,7 @@ QString validatePluginManifest(const QJsonObject &manifest, QObject *instance)
     const auto requirements = manifest.value(QStringLiteral("requires")).toArray();
     const bool needsCodec = qobject_cast<ToolPlugin *>(instance) || qobject_cast<SourcePlugin *>(instance);
     if (requirements != (needsCodec ? QJsonArray{QStringLiteral("codec")} : QJsonArray{})) return QStringLiteral("Plugin requirements do not match its interfaces.");
-    const QSet<QString> permissions{QStringLiteral("network-udp"), QStringLiteral("network-https"), QStringLiteral("disk-cache"),
+    const QSet<QString> permissions{QStringLiteral("network-udp"), QStringLiteral("network-tcp"), QStringLiteral("network-tls"), QStringLiteral("network-https"), QStringLiteral("disk-cache"),
         QStringLiteral("clipboard-write"), QStringLiteral("browser-links"), QStringLiteral("user-selected-files")};
     QSet<QString> seen;
     for (const auto &permission : manifest.value(QStringLiteral("permissions")).toArray()) {

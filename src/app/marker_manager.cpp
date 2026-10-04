@@ -1,5 +1,5 @@
 #include "app/marker_manager.h"
-#include "app/provider_table.h"
+#include "core/provider_table.h"
 #include "core/single_line_label.h"
 #include "core/logging.h"
 #include <QVBoxLayout>

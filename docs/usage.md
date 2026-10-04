@@ -4,13 +4,13 @@ A fresh profile starts with an empty map and no receiver socket. Later launches 
 
 Tools > Plugins restores hidden docks, which are movable tool panels. Select a plugin checkbox to show or hide its pane. A checked box means that the pane is open. Hover over its name, or press Right, to open its command submenu. Return or Space also toggles the selected pane. Close the pane to hide it.
 
-CoT Messages, CoT Event Generator, UDP receiver, and Plugins each have an independent dock. The three tool docks start as tabs beside the map. Drag a dock title or tab to detach that pane.
+CoT Messages, CoT Event Generator, Servers, and Plugins each have an independent dock. The three tool docks start as tabs beside the map. Drag a dock title or tab to detach that pane.
 
 Each detached pane has a resize handle in its lower-right corner. Close a pane to hide it. Use File > Quit to close the application.
 
 Use Tools > Plugins > CoT Messages > Clear to remove all current events and clear the selection. Plugins add their commands under Tools > Plugins.
 
-The top toolbar groups plugin icons under each plugin name. Its Clear button performs the same action as the CoT Messages menu command. Point to an icon to read its tooltip. Use View > Show main toolbar to hide or show the toolbar. The application saves this choice across restarts.
+The top toolbar groups plugin icons with separators. Its Clear button performs the same action as the CoT Messages menu command. Point to an icon to read its tooltip. Use View > Show main toolbar to hide or show the toolbar. The application saves this choice across restarts.
 
 Use Help > About to read the application version and general information.
 
@@ -22,9 +22,9 @@ To create a local event, use this sequence:
 
 The identity names one tracked object. Reusing an identity replaces its stored event when the new timestamp is equal or newer. Select New identity before creating another object.
 
-Latitude and longitude use degrees on WGS 84. Altitude is height above the WGS 84 reference surface, in meters. Generated events use `h-e`, which indicates a human estimate.
+Latitude and longitude use degrees on WGS 84. Altitude is height above the WGS 84 reference surface, in meters. The default location method is `h-e`, which indicates a human estimate. File > Identity can change that default.
 
-The editor generates `a-u-G` events by default. Map markers use blue for `a-f` types, red for `a-h` types, and yellow for other types. These circles do not implement a military symbol standard.
+The sender identity supplies the default event type, initially `a-f-G-U`. CoT map symbols use the supported military-symbol subset and affiliation colors.
 
 Select a table row or map marker to focus that event. The XML preview then shows that event. Selection changes the preview but keeps the editor fields unchanged.
 
@@ -34,23 +34,17 @@ The map uses Web Mercator, a rectangular map projection. It clips positions near
 
 # Receive and save events
 
-UDP carries separate network messages called datagrams. Each datagram must contain one UTF-8 CoT XML event. The receiver does not authenticate senders or encrypt messages.
+Open Tools > Servers to add TLS or TCP stream connections. Enable each required connection with its Active checkbox. The application can receive from multiple servers at once. Read [CoT connections](servers.md) for certificates and optional serverless LAN peers.
 
-To receive events, use this sequence:
+For a UDP input, select UDP input in its edit form. Enter a numeric local address and port. Each datagram must contain one UTF-8 CoT XML event. UDP does not authenticate senders or encrypt messages.
 
-1. Open the UDP receiver pane from Tools > Plugins.
-2. Enter a numeric local address and port.
-3. Select Start receiver.
-
-The initial address, `127.0.0.1`, accepts traffic only from the local computer. An active receiver resumes on the next launch. Select Stop receiver before closing if reception must stay disabled. Bind a specific network interface only on a protected network. Binding `0.0.0.0` exposes the receiver on every IPv4 interface.
-
-Select Stop receiver to close the socket. Closing the window also closes the socket. The panel shows accepted and rejected message counts and the latest rejection reason.
+A UDP bind address of `127.0.0.1` accepts local traffic only. Binding `0.0.0.0` accepts traffic on every IPv4 interface. Clear Active to close the input. The browser retains the startup choice and reports received, rejected, and dropped messages.
 
 Select Import XML to read one event from a regular file. Select Export XML to save the current preview. Canceling either file dialog leaves the current data unchanged.
 
 The preview contains supported fields only. Unknown detail fields are discarded during import and are absent from exported XML. The application retains no original message archive.
 
-Expired events disappear within approximately one second. Events with a future start time appear on the map when that time arrives. The table includes these pending events before their start time.
+Expired events leave the live table within approximately one second. Their map symbols fade to gray before removal, according to CoT animation configuration. Events with a future start time appear on the map when that time arrives. The table includes these pending events before their start time.
 
 The application stores up to 4096 identities in memory. Closing the application discards those events. Export any required events before closing the window.
 
@@ -90,7 +84,7 @@ A preferences error appears in the status bar. If a file is invalid or uses an u
 
 Only one running instance can write a given profile. A second instance reports the conflict and uses defaults without saving. Different profile paths support independent instances.
 
-If a saved receiver cannot bind its endpoint, the receiver pane reports the error. Its requested running state remains saved for the next launch. Select Stop receiver to cancel that request.
+If a saved input cannot bind its endpoint, Servers reports the error and retries. Its active state remains saved. Clear its Active checkbox to stop retries.
 
 # Settings
 
@@ -280,3 +274,8 @@ For object commands, right-click the overlap and choose an object first. Its con
 The main toolbar uses icons and separators. Hover over a button to read its command and shortcut. Marker and Area buttons show their active state. Click an active mode button again to stop it. The globe button opens the map provider list. Its tooltip names the current provider. Clear CoT Messages uses the trash icon.
 
 Older profiles migrate the default W/A/S/D pan keys to arrow keys and the default P area key to A. Other custom keys remain unchanged. File > Settings > Keybindings can change these assignments. Saved geometry still uses the polygon type internally.
+
+
+# Servers, Identity, and CoT animation
+
+Tools > Servers manages simultaneous TLS and TCP connections and local UDP inputs. File > Identity configures sender defaults for the generator. File > Settings > CoT animation controls movement, teleport fades, and gray retention after expiration. Read [CoT connections](servers.md) for certificates, optional LAN peers, transmission controls, and harness commands.

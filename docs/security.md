@@ -11,7 +11,7 @@ The application applies these input limits:
 - The store contains at most 4096 event identities.
 - Events expire no later than seven days after reception.
 
-The parser rejects document type declarations, entity references, processing instructions, null bytes, and unsupported encodings. It rejects duplicate point, detail, and contact elements. Unknown elements are accepted only within bounded detail content and are then discarded.
+The parser rejects document type declarations, entity references, processing instructions, null bytes, and unsupported encodings. It rejects duplicate point, detail, contact, and group elements. Unknown elements are accepted only within bounded detail content and are then discarded.
 
 Text fields exclude control, format, and surrogate characters. This restriction excludes supplementary Unicode characters, including many emoji. The interface presents external text as plain text. The attribution link escapes all source text before it creates HTML. User actions can open HTTP or HTTPS license links through the default browser. Links with credentials or other schemes cannot open.
 
@@ -23,11 +23,11 @@ Expired events and older updates are rejected. Equal timestamps can replace an e
 
 File import opens files without waiting for pipe writers and then inspects the open descriptor. It accepts regular files only and reads at most the message limit plus one byte. Export uses `QSaveFile` to replace the destination after a complete write.
 
-The receiver starts after an explicit interface action or restoration of a saved running state. Its default binding accepts local traffic only. The bounded polling loop limits work per interface cycle, and the operating system drops traffic when its socket queue fills.
+Connections start after an explicit interface action or restoration of a saved active state. A new profile contains no active connection. The worker limits receive work. The operating system drops UDP traffic when its socket queue fills.
 
 The application creates no persistent event cache and writes no message logs. Preferences include editor drafts, file directories, and the receiver address. Treat the preferences file as private data. Remote map requests require a selected provider and enabled online maps. The application does not run shell commands or load external application plugins. Qt still loads its system platform and graphics plugins as part of normal startup.
 
-Use a trusted Qt installation and graphics driver. Native libraries and graphics drivers share the application process. This version does not provide a process sandbox, encrypted transport, or sender authentication.
+Use a trusted Qt installation and graphics driver. Native libraries and graphics drivers share the application process. This version does not provide a process sandbox. TLS authenticates the remote server and supports client certificates. Plaintext TCP, UDP, and LAN modes do not authenticate senders.
 
 # Development rules
 
@@ -117,3 +117,20 @@ The shared model accepts at most 64 corners per polygon. Coordinates must be fin
 Corner moves and deletion modify the editor draft only. Apply validates the full object before storage. Invalid moves retain the previous draft geometry. Escape discards the move preview. Tool changes, pane closure, and window shutdown discard unfinished geometry. The polygon tool adds no workers, timers, file access, or network access.
 
 Area calculations use bounded numerical integration on a sphere. They do not provide an ellipsoidal survey measurement. Geometry validation uses floating-point comparisons and rejects near-zero projected areas below a fixed threshold. It does not claim exact arithmetic for nearly coincident edges.
+
+
+# CoT servers and LAN peers
+
+One worker thread owns the CoT network sockets and parsers. It accepts at most 16 configured servers and 16 LAN peers. Each stream holds at most 64 KiB in the Qt receive buffer and 16 KiB in its XML frame reader. Each receive operation reads at most 16 KiB. Each processing pass stops after four milliseconds before starting more receive work. A bounded receive operation can finish after that deadline. Each UDP operation handles at most 32 datagrams.
+
+A shared mailbox holds at most 2048 distinct event UIDs. Newer queued messages replace older messages with the same UID. A full mailbox rejects additional UIDs and increments the drop count. The GUI drains at most 512 messages per pass. Outgoing work holds at most 32 messages. Each socket has a 256 KiB output limit. These limits provide bounded overload behavior, not lossless delivery under unlimited traffic.
+
+TLS requires version 1.2 or later and validates the peer certificate and host. Private authorities and client certificates use bounded regular-file reads. Each credential file contains at most 64 KiB. Certificate passwords use dedicated environment variables with at most 1024 bytes. Profiles contain paths and variable names, not private keys or passwords. TLS failures do not fall back to plaintext.
+
+The stream reader recognizes XML lexical boundaries across arbitrary socket reads. The shared CoT decoder then validates the complete document. Framing failures and oversized frames close the affected connection. An incomplete frame has an absolute timeout even if a peer keeps sending small fragments. A complete but invalid CoT document increments the rejection count. Other connections continue to receive data.
+
+LAN discovery is optional, IPv4-only, and restricted to the selected local subnet. Discovery messages contain at most 512 bytes. A tick handles at most 16 discovery datagrams and 16 accepted connections. Peer records expire after 20 seconds. Greetings contain at most 47 bytes before a newline and must match recent discovery. Broadcast packets use an IP time-to-live of one. Discovery does not change firewall rules.
+
+LAN greetings do not provide cryptographic authentication. A device on the selected network can impersonate a discovery record or CoT UID. Do not use plaintext LAN mode on an untrusted network. Use a certificate-authenticated TAK Server for authenticated transport. Transport authentication does not establish the truth of a reported position.
+
+Animation keeps at most 8192 display records, including live and recently stale UIDs. It never changes authoritative event coordinates. Stale display records are read-only and cannot receive selection actions. Clear removes both live events and retained display records.

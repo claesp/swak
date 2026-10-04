@@ -1,3 +1,6 @@
+#include "core/identity.h"
+#include "core/servers.h"
+#include "core/server_browser.h"
 #include "app/window.h"
 #include "app/map_panels.h"
 #include "core/map_tools.h"
@@ -10,7 +13,7 @@
 #include "core/logging.h"
 #include "core/activity.h"
 #include "core/map_selection.h"
-#include "app/settings_dialog.h"
+#include "core/settings_dialog.h"
 #include <QAction>
 #include <QToolBar>
 #include <QMessageBox>
@@ -95,7 +98,7 @@ void mergeValues(QJsonObject &target, const QJsonObject &source)
 }
 }
 Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, QWidget *parent)
-    : QMainWindow(parent), plugins_(plugins), preferences_(preferencesPath)
+    : QMainWindow(parent), plugins_(plugins), store_(this), preferences_(preferencesPath)
 {
     auto *activity = new ActivityModel(this);
     configureLogging(preferences_.document().value(QStringLiteral("logging")).toObject());
@@ -121,7 +124,10 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     auto *mapTools = new MapTools(this);
     auto *objects = new UserObjects(this);
     auto *collections = new MarkerCollections(plugins, this);
-    PluginServices services{store_, *activity, *mapSources, dataSources, selection, mapTools, objects, collections};
+    auto *identity = new Identity(this);
+    Servers *servers = nullptr;
+    if (codec && std::any_of(plugins.begin(), plugins.end(), [](QObject *plugin) { return qobject_cast<SourcePlugin *>(plugin); })) servers = new Servers(store_, this);
+    PluginServices services{store_, *activity, *mapSources, dataSources, selection, mapTools, objects, collections, identity, servers};
     if (view) {
         setCentralWidget(view->create(services, layers, this));
     } else {
@@ -138,6 +144,16 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     settings->setObjectName(QStringLiteral("settingsAction"));
     settings->setShortcut(QKeySequence::Preferences);
     connect(settings, &QAction::triggered, this, &Window::openSettings);
+    auto *identityAction = fileMenu->addAction(tr("Identity"));
+    identityAction->setObjectName(QStringLiteral("identityAction"));
+    connect(identityAction, &QAction::triggered, this, [this, identity] {
+        SettingsDialog dialog({{identity->preferenceId(), identity->settingsTitle(), identity->settingsFields(), identity->savePreferences(),
+            [identity](const QJsonObject &v) { return identity->validateSettings(v); }, [identity](const QJsonObject &v) { identity->restorePreferences(v); }}},
+            [this] { return savePreferences() ? QString{} : preferences_.error(); }, this, true);
+        dialog.setObjectName(QStringLiteral("identityDialog")); dialog.setWindowTitle(tr("Identity"));
+        if (!identityGeometry_.isEmpty()) dialog.restoreGeometry(identityGeometry_);
+        dialog.exec(); identityGeometry_ = dialog.saveGeometry(); savePreferences();
+    });
     fileMenu->addSeparator();
     auto *quit = fileMenu->addAction(tr("&Quit"));
     quit->setObjectName(QStringLiteral("quitAction"));
@@ -203,7 +219,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     for (auto *plugin : plugins) {
         if (auto *source = qobject_cast<SourcePlugin *>(plugin); source && codec) {
             auto *dock = createDock(source->name(),
-                QString::fromLatin1(plugin->metaObject()->className()) + QStringLiteral("Dock"),
+                source->paneId().isEmpty() ? QString::fromLatin1(plugin->metaObject()->className()) + QStringLiteral("Dock") : source->paneId(),
                 source->create(services, *codec, this), Qt::RightDockWidgetArea);
             sideDocks.append(dock);
             pluginDocks.insert(plugin, dock);
@@ -251,6 +267,18 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     });
     auto *toolsMenu = menuBar()->addMenu(tr("&Tools"));
     toolsMenu->setObjectName(QStringLiteral("toolsMenu"));
+    if (servers) {
+        auto *manageServers = toolsMenu->addAction(tr("Servers")); manageServers->setObjectName(QStringLiteral("serversAction"));
+        connect(manageServers, &QAction::triggered, this, [this, servers] {
+            SettingsDialog dialog({{servers->preferenceId(), servers->settingsTitle(), {}, {}, {}, {}, false,
+                [servers](QWidget *owner) { return servers->createSettingsWidget(owner); }}},
+                [this] { return savePreferences() ? QString{} : preferences_.error(); }, this, true);
+            dialog.setWindowTitle(tr("Servers"));
+            if (!serversGeometry_.isEmpty()) dialog.restoreGeometry(serversGeometry_);
+            dialog.exec(); serversGeometry_ = dialog.saveGeometry(); savePreferences();
+        });
+        connect(servers, &Servers::changed, this, [this] { QTimer::singleShot(0, this, [this] { savePreferences(); }); });
+    }
     auto *manageMaps = toolsMenu->addAction(tr("Map Providers"));
     manageMaps->setObjectName(QStringLiteral("mapProvidersAction"));
     connect(manageMaps, &QAction::triggered, this, [this, mapSources] {
@@ -420,6 +448,8 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     saveTimer_.setInterval(preferenceInteger(application, QStringLiteral("saveInterval"), 750, 250, 60000));
     settingsGeometry_ = geometryBytes(application, QStringLiteral("settingsGeometry"));
     mapManagerGeometry_ = geometryBytes(application, QStringLiteral("mapManagerGeometry"));
+    identityGeometry_ = geometryBytes(application, QStringLiteral("identityGeometry"));
+    serversGeometry_ = geometryBytes(application, QStringLiteral("serversGeometry"));
     dataManagerGeometry_ = geometryBytes(application, QStringLiteral("dataManagerGeometry"));
     markerManagerGeometry_ = geometryBytes(application, QStringLiteral("markerManagerGeometry"));
     settingsNavigation_ = application.value(QStringLiteral("settingsNavigation")).toObject();
@@ -440,6 +470,7 @@ Window::~Window()
     const auto docks = findChildren<QDockWidget *>();
     for (auto *dock : docks) delete dock;
     delete takeCentralWidget();
+    delete findChild<Servers *>();
 }
 void Window::restorePreferences()
 {
@@ -508,6 +539,8 @@ bool Window::savePreferences()
     application.insert(QStringLiteral("saveInterval"), saveTimer_.interval());
     application.insert(QStringLiteral("settingsGeometry"), QString::fromLatin1(settingsGeometry_.toBase64()));
     application.insert(QStringLiteral("settingsNavigation"), settingsNavigation_);
+    application.insert(QStringLiteral("identityGeometry"), QString::fromLatin1(identityGeometry_.toBase64()));
+    application.insert(QStringLiteral("serversGeometry"), QString::fromLatin1(serversGeometry_.toBase64()));
     application.insert(QStringLiteral("mapManagerGeometry"), QString::fromLatin1(mapManagerGeometry_.toBase64()));
     if (auto *dialog = findChild<DataManager *>(); dialog && dialog->isWindow()) dataManagerGeometry_ = dialog->saveGeometry();
     application.insert(QStringLiteral("dataManagerGeometry"), QString::fromLatin1(dataManagerGeometry_.toBase64()));
@@ -582,6 +615,10 @@ void Window::openSettings()
             pages.append({collections->preferenceId(), collections->settingsTitle(), {}, {}, {}, {}, false,
                 [this, collections](QWidget *parent) { return new MarkerManager(*collections, parent,
                     [this] { return savePreferences() ? QString{} : preferences_.error(); }, true); }});
+        } else if (auto *custom = dynamic_cast<SettingsWidgetProvider *>(participant)) {
+            auto *provider = dynamic_cast<SettingsParticipant *>(participant);
+            pages.append({participant->preferenceId(), provider ? provider->settingsTitle() : participant->preferenceId(), {}, {}, {}, {}, false,
+                [custom](QWidget *parent) { return custom->createSettingsWidget(parent); }});
         } else if (auto *provider = dynamic_cast<SettingsParticipant *>(participant)) {
             pages.append({provider->preferenceId(), provider->settingsTitle(), provider->settingsFields(), provider->savePreferences(),
                 [provider](const QJsonObject &values) { return provider->validateSettings(values); },
