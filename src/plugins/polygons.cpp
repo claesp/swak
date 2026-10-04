@@ -4,6 +4,7 @@
 #include "core/map_label.h"
 #include "core/map_tools.h"
 #include "core/maps.h"
+#include "core/measure.h"
 #include "core/menu_order.h"
 #include "core/object_editor.h"
 #include "core/polygon.h"
@@ -446,6 +447,9 @@ public:
             polygon.append(pointer);
             draw(painter, polygon, QColor("#1e88e5"));
             dots(painter, screenPolygon(points_, view), QColor("#1e88e5"));
+            auto measured = points_;
+            measured.append(worldPoint(pointer, view));
+            lengthLabels(painter, measured, view);
         } else if (editor_.draft() && editingVertices_) {
             auto polygon = screenPolygon(polygonVertices(editor_.draft()->geometry), view);
             if (moving_ >= 0) {
@@ -453,6 +457,11 @@ public:
                 draw(painter, polygon, QColor(editor_.draft()->color), editor_.draft()->restricted);
             }
             dots(painter, polygon, QColor(editor_.draft()->color));
+            auto measured = polygonVertices(editor_.draft()->geometry);
+            if (moving_ >= 0) {
+                measured[moving_] = worldPoint(pointer, view);
+            }
+            lengthLabels(painter, measured, view);
         }
         if (drawing_ || moving_ >= 0) {
             painter.setRenderHint(QPainter::Antialiasing, false);
@@ -463,6 +472,23 @@ public:
     }
 
 private:
+    static void lengthLabels(QPainter &painter, const QPolygonF &points, const Viewport &view)
+    {
+        const auto count = points.size();
+        if (count < 2) {
+            return;
+        }
+        const auto segments = count == 2 ? 1 : count;
+        for (qsizetype i = 0; i < segments; ++i) {
+            const auto &a = points[i], &b = points[(i + 1) % count];
+            const auto start = screenPoint(a, view), end = screenPoint(b, view);
+            if (QLineF(start, end).length() < 1) {
+                continue;
+            }
+            paintMapLabel(
+                painter, (start + end) / 2 + QPointF(4, -8), formatDistance(groundDistance(a, b)));
+        }
+    }
     static QString owner()
     {
         return QStringLiteral("org.swak.polygons");

@@ -17,10 +17,10 @@
 namespace swak {
 namespace {
 constexpr int MaxPredictions = 128;
-constexpr std::array<int, 3> Minutes{1, 10, 30};
-QString endpointId(const QString &uid, int minutes)
+constexpr std::array<int, 3> Seconds{30, 60, 300};
+QString endpointId(const QString &uid, int seconds)
 {
-    return uid + '/' + QString::number(minutes);
+    return uid + '/' + QString::number(seconds);
 }
 class PredictTool final : public MapTool, public SettingsParticipant
 {
@@ -142,7 +142,8 @@ public:
         action->setEnabled(action->isChecked() || records_.size() < MaxPredictions);
         action->setToolTip(
             action->isEnabled()
-                ? tr("Estimate positions at 1, 10, and 30 minutes from recent CoT history.")
+                ? tr("Estimate positions at 30 seconds, 1 minute, and 5 minutes from recent CoT "
+                     "history.")
                 : tr("The prediction limit is 128 objects. Stop another prediction first."));
         connect(action, &QAction::triggered, this, [this, uid = item.id](bool active) {
             if (!active) {
@@ -191,9 +192,9 @@ public:
                                qRound(base.blue() * (1 - source.gray) + gray * source.gray));
             auto previous = source.world;
             double previousOpacity = 1;
-            for (qsizetype index = 0; index < static_cast<qsizetype>(Minutes.size()); ++index) {
+            for (qsizetype index = 0; index < static_cast<qsizetype>(Seconds.size()); ++index) {
                 const auto found = ends.constFind(
-                    endpointId(source.event.uid, Minutes.at(static_cast<size_t>(index))));
+                    endpointId(source.event.uid, Seconds.at(static_cast<size_t>(index))));
                 if (found == ends.cend()) {
                     break;
                 }
@@ -209,8 +210,15 @@ public:
                 for (int wrap = -1; wrap <= 1; ++wrap) {
                     const auto offset = origin + QPointF(wrap * scale, 0);
                     const auto end = target * scale + offset;
-                    painter.setPen(QPen(color, width_, Qt::DashLine, Qt::RoundCap));
+                    const bool terminal = index == static_cast<qsizetype>(Seconds.size()) - 1;
+                    painter.setPen(
+                        QPen(color, width_, Qt::DashLine, terminal ? Qt::FlatCap : Qt::RoundCap));
                     painter.drawLine(previous * scale + offset, end);
+                    if (terminal && length > .001) {
+                        // End the final dash at the final tick without a gap or overhang.
+                        painter.setPen(QPen(color, width_, Qt::SolidLine, Qt::FlatCap));
+                        painter.drawLine(end - delta / length * std::min(length, width_ * 2), end);
+                    }
                     painter.setPen(QPen(color, width_, Qt::SolidLine, Qt::RoundCap));
                     painter.drawLine(end - tick, end + tick);
                 }
@@ -234,14 +242,14 @@ private:
     }
     void discard(const QString &uid)
     {
-        for (const auto minutes : Minutes) {
-            endpoints_.remove(endpointId(uid, minutes));
+        for (const auto seconds : Seconds) {
+            endpoints_.remove(endpointId(uid, seconds));
         }
     }
     void expire(const QString &uid)
     {
-        for (const auto minutes : Minutes) {
-            endpoints_.expire(endpointId(uid, minutes));
+        for (const auto seconds : Seconds) {
+            endpoints_.expire(endpointId(uid, seconds));
         }
     }
     void update(const Event &event)
@@ -257,14 +265,14 @@ private:
         found->append(event,
                       motionSettings_.value(QStringLiteral("teleportKm")).toDouble(100),
                       historySeconds_);
-        for (const auto minutes : Minutes) {
-            const auto target = found->forecast(minutes * 60);
+        for (const auto seconds : Seconds) {
+            const auto target = found->forecast(seconds);
             if (!target) {
                 expire(event.uid);
                 break;
             }
             auto endpoint = event;
-            endpoint.uid = endpointId(event.uid, minutes);
+            endpoint.uid = endpointId(event.uid, seconds);
             const auto coordinate = unproject(*target);
             endpoint.latitude = coordinate.y();
             endpoint.longitude = coordinate.x();

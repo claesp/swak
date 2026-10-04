@@ -146,6 +146,12 @@ public:
             connect(action, &QAction::toggled, this, qOverload<>(&MapWidget::update));
             return action;
         };
+        gridVisibility_ = decorationAction(tr("Grid"), QStringLiteral("mapGridAction"));
+        connect(gridVisibility_, &QAction::triggered, grids_, &GridTypes::setVisible);
+        connect(grids_, &GridTypes::changed, this, [this] {
+            gridVisibility_->setChecked(!grids_->selected().isEmpty());
+            gridVisibility_->setEnabled(!grids_->entries().isEmpty());
+        });
         scaleLegend_ = decorationAction(tr("Map scale"), QStringLiteral("mapScaleAction"));
         zoomIndicator_ = decorationAction(tr("Map zoom level"), QStringLiteral("mapZoomAction"));
         navigationLock_ = new QAction(tr("Lock"), this);
@@ -351,7 +357,7 @@ public:
 
     QList<QAction *> viewActions() const
     {
-        return {scaleLegend_, zoomIndicator_};
+        return {gridVisibility_, scaleLegend_, zoomIndicator_};
     }
     QAction *navigationLockAction() const
     {
@@ -1347,7 +1353,7 @@ private:
     DataSources *dataSources_ = nullptr;
     QList<MapLayer *> layers_;
     QAction *navigationLock_;
-    QAction *scaleLegend_, *zoomIndicator_;
+    QAction *gridVisibility_, *scaleLegend_, *zoomIndicator_;
     GridTypes *grids_;
     Viewport view_;
     QPointF cursor_;

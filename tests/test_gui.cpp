@@ -316,6 +316,8 @@ private slots:
         QCOMPARE(restored.savePreferences(), saved);
         restored.remove("custom");
         QVERIFY(restored.selected().isEmpty());
+        restored.setVisible(true);
+        QCOMPARE(restored.selected(), QStringLiteral("geographic"));
         restored.restorePreferences(
             {{"types", QJsonObject{{"bad", invalid}}}, {"selected", "bad"}});
         QVERIFY(restored.entries().isEmpty());
@@ -474,6 +476,16 @@ private slots:
                 providerWidgets.append(toolbar->widgetForAction(action));
             }
             QCOMPARE(providerWidgets, (QList<QWidget *>{mapButton, serverButton, dataButton}));
+            auto *gridAction = window.findChild<QAction *>(QStringLiteral("mapGridAction"));
+            auto *grids = window.findChild<swak::GridTypes *>();
+            QVERIFY(gridAction && grids && gridAction->isChecked());
+            grids->select(QStringLiteral("utm"));
+            gridAction->trigger();
+            QVERIFY(grids->selected().isEmpty());
+            QVERIFY(!gridAction->isChecked());
+            gridAction->trigger();
+            QCOMPARE(grids->selected(), QStringLiteral("utm"));
+            gridAction->trigger();
             auto *scale = window.findChild<QAction *>(QStringLiteral("mapScaleAction"));
             auto *zoom = window.findChild<QAction *>(QStringLiteral("mapZoomAction"));
             QVERIFY(scale->isChecked() && zoom->isChecked());
@@ -491,6 +503,22 @@ private slots:
             QVERIFY(window.savePreferences());
         }
         swak::Window restored(path, QPluginLoader::staticInstances());
+        auto *gridAction = restored.findChild<QAction *>(QStringLiteral("mapGridAction"));
+        auto *grids = restored.findChild<swak::GridTypes *>();
+        QVERIFY(gridAction && grids && !gridAction->isChecked());
+        gridAction->trigger();
+        QCOMPARE(grids->selected(), QStringLiteral("utm"));
+        for (const auto &id : grids->entries().keys()) {
+            grids->remove(id);
+        }
+        QVERIFY(!gridAction->isEnabled());
+        QVERIFY(!gridAction->isChecked());
+        grids->setVisible(true);
+        QVERIFY(grids->selected().isEmpty());
+        QVERIFY(grids->put(QStringLiteral("only"), swak::GridTypes::defaults("mgrs")).isEmpty());
+        QVERIFY(gridAction->isEnabled());
+        gridAction->trigger();
+        QCOMPARE(grids->selected(), QStringLiteral("only"));
         QVERIFY(!restored.findChild<QAction *>(QStringLiteral("mapScaleAction"))->isChecked());
         QVERIFY(!restored.findChild<QAction *>(QStringLiteral("mapZoomAction"))->isChecked());
     }
@@ -3675,6 +3703,31 @@ private slots:
                 QCOMPARE(map->cursor().shape(), Qt::CrossCursor);
                 click({180, 180});
                 motion({260, 180});
+                if (key == Qt::Key_C) {
+                    const auto locale = QLocale();
+                    const auto preview = [&](const QLocale &units) {
+                        QLocale::setDefault(units);
+                        QImage frame(map->size(), QImage::Format_ARGB32_Premultiplied);
+                        frame.fill(Qt::transparent);
+                        QPainter painter(&frame);
+                        tools->paintOverlay(painter, {map->size(), {.5, .5}, 8}, {260, 180});
+                        return frame;
+                    };
+                    const auto metric = preview(QLocale(QLocale::Swedish, QLocale::Sweden));
+                    const auto imperial = preview(QLocale(QLocale::English, QLocale::UnitedStates));
+                    QLocale::setDefault(locale);
+                    QVERIFY(metric != imperial);
+                    int white = 0;
+                    for (int y = 140; y < 178; ++y) {
+                        for (int x = 220; x < 400; ++x) {
+                            const auto color = metric.pixelColor(x, y);
+                            white += color.alpha() > 0 && color.red() > 240 &&
+                                     color.green() > 240 && color.blue() > 240;
+                        }
+                    }
+                    QVERIFY(white > 0);
+                    QVERIFY(metric.save(QStringLiteral("circle-radius-preview.png")));
+                }
                 click({260, 180});
                 QVERIFY(editor->draft());
                 const bool circle = key == Qt::Key_C;
@@ -3938,6 +3991,17 @@ private slots:
             QCOMPARE(shade.alpha(), 77);
             QVERIFY(shade.blue() > shade.red());
             QCOMPARE(overlay.pixelColor(20, c.y()).alpha(), 128);
+            for (const QRect region : {QRect(200, 110, 90, 25), QRect(300, 190, 90, 25)}) {
+                int white = 0;
+                for (int y = region.top(); y <= region.bottom(); ++y) {
+                    for (int x = region.left(); x <= region.right(); ++x) {
+                        const auto color = overlay.pixelColor(x, y);
+                        white += color.alpha() > 0 && color.red() > 240 && color.green() > 240 &&
+                                 color.blue() > 240;
+                    }
+                }
+                QVERIFY(white > 0);
+            }
             QVERIFY(overlay.save(QStringLiteral("polygon-preview.png")));
             click(c);
             click(d);
@@ -5016,6 +5080,23 @@ private slots:
             QVERIFY(window.store().accept(event).isEmpty());
             const auto forecast = image();
             QVERIFY(forecast != empty);
+            // This straight track travels 0.03 degrees in five minutes.
+            const swak::Viewport forecastView{QSizeF(1000, 400), swak::project(0, .03), 12};
+            const auto terminal = forecastView.screen(0, event.longitude + .03);
+            for (const auto &[seconds, halfTick] :
+                 {std::pair{30, 7}, std::pair{60, 5}, std::pair{300, 3}}) {
+                const auto tick = forecastView.screen(0, event.longitude + seconds * .0001);
+                bool visible = false;
+                for (int x = qFloor(tick.x()) - 1; x <= qCeil(tick.x()) + 1; ++x) {
+                    visible = visible || forecast.pixelColor(x, 201 - halfTick).alpha() > 0;
+                }
+                QVERIFY2(visible,
+                         qPrintable(QStringLiteral("Missing tick at %1 seconds").arg(seconds)));
+            }
+            QVERIFY(forecast.pixelColor(qFloor(terminal.x()) - 2, 200).alpha() > 0);
+            for (int x = qCeil(terminal.x()) + 2; x < forecast.width(); ++x) {
+                QVERIFY(forecast.pixelColor(x, 200).alpha() == 0);
+            }
             QVERIFY(forecast.save(QStringLiteral("prediction-lines.png")));
             QVERIFY(map->grabFramebuffer().save(QStringLiteral("prediction-map.png")));
             window.store().motion().setPaused(true);
@@ -6440,7 +6521,7 @@ private slots:
         auto *fileMenu = window.findChild<QMenu *>(QStringLiteral("fileMenu"));
         auto *quit = window.findChild<QAction *>(QStringLiteral("quitAction"));
         QVERIFY(viewMenu && fileMenu && quit);
-        QCOMPARE(viewMenu->actions().size(), 4);
+        QCOMPARE(viewMenu->actions().size(), 5);
         QVERIFY(viewMenu->actions().contains(
             window.findChild<QToolBar *>(QStringLiteral("mainToolbar"))->toggleViewAction()));
         for (int repeat = 0; repeat < 5; ++repeat) {

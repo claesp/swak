@@ -260,6 +260,8 @@ Click inside a saved polygon to open Information. The selected area has a white 
 
 Escape during a corner move restores its previous position in the draft. Escape again cancels the edit. Apply saves all corner and metadata changes together. Delete or Backspace removes the selected polygon. Edit > Undo or Ctrl+Z restores a deleted polygon.
 
+Area previews label each edge with its length. Labels update for the live edge and the closing edge. They also appear during vertex editing. Distances use the operating system unit system.
+
 A toggles Area mode. M switches to marker creation. A tool switch discards an unfinished shape or edit. File > Settings > Keybindings contains the area shortcut. The Areas section controls corner size, outline width, fill opacity, and guide opacity.
 
 Information formats area with the system locale and measurement system. Metric locales use m² below 1000 m² and km² from that threshold. Imperial locales use ft², acres, and mi² as the area increases. Area uses a spherical Earth radius of 6371008.8 meters and integrates along the straight map edges. It is an estimate, not an ellipsoidal survey measurement. The shape follows the displayed world and does not wrap across the date line.
@@ -312,7 +314,7 @@ Information describes CoT Type and How with names from the shared selector catal
 
 Click an object label to select its object. Selected labels invert their foreground and background colors. Overlapping labels use the same object chooser as overlapping symbols.
 
-With the map focused, press C to start Circle. Click the center. Move the pointer to set the radius. Click again to open the object editor. Enter the title, description, color, and properties. Select Apply to save the circle. Circle uses the fill opacity from File > Settings > Areas.
+With the map focused, press C to start Circle. Click the center. Move the pointer to set the radius. The preview shows the current radius in local units. Click again to open the object editor. Enter the title, description, color, and properties. Select Apply to save the circle. Circle uses the fill opacity from File > Settings > Areas.
 
 Press D to start Distance. Click the first point. Move the pointer to read the distance. Click the second point to finish. The measurement stays for ten seconds, then fades for one second and disappears. Measurements are temporary and do not survive restart. The tool retains at most 64 measurements.
 
@@ -355,7 +357,9 @@ Toolbar icons and label text retain their size. Geographic circles, areas, lines
 
 To enable a forecast, right-click a CoT object and select Predict. You can also use Predict in the Information pane. Select the same control again to stop the forecast. Tools > Plugins > Predict > Clear predictions stops all forecasts.
 
-Predict collects recent CoT positions for each enabled object. After two distinct message times, it draws connected dashed segments through the 1, 10, and 30 minute forecasts. Perpendicular marks identify each endpoint. The marks decrease in length from 1 to 30 minutes. The latest movement supplies the current speed and heading. With three positions, the estimate also accounts for acceleration and heading change. These trends decay over time to avoid indefinite acceleration or circling. They do not account for roads, terrain, planned routes, or future turns. A stationary object produces overlapping endpoints.
+Predict collects recent CoT positions for each enabled object. After two distinct message times, it draws connected dashed segments through the 30-second, 1-minute, and 5-minute forecasts. Perpendicular marks identify each endpoint. The marks decrease in length from 30 seconds to 5 minutes. The line ends at the final tick.
+
+The latest movement supplies the current speed and heading. With three positions, the estimate also accounts for acceleration and heading change. These trends decay over time to avoid indefinite acceleration or circling. They do not account for roads, terrain, planned routes, or future turns. A stationary object produces overlapping endpoints.
 
 File > Settings > Predict controls the history window, line width, and opacity. The default history window is five minutes, with at most 50 samples per object. The latest three positions determine movement trends. The plugin supports at most 128 enabled objects. Enabled identities survive restart, but received history does not.
 
@@ -384,6 +388,8 @@ The main view appears in the Map tab. Its keyboard, mouse, overlay, and lock con
 The faded indicator at the left center shows the supported zoom levels. A longer tick marks the current level. View > Map scale and View > Map zoom level control visibility. Both choices survive restart.
 
 Open File > Settings > General > Grid Types to manage coordinate grids. Longitude/latitude is the default selection. UTM and MGRS are also available. Select a radio button to activate a type. Select No grid to hide all types.
+
+View > Grid also hides or shows the grid. Showing it restores the last selected type. Both the hidden state and the remembered type survive restart. The menu item is disabled when no grid types remain.
 
 Select Add to create a named type. Select a row before Edit or Delete .... Each type stores its coordinate system, color, opacity, target spacing, line width, and angle-label format. The angle format applies to longitude/latitude grids. Edits apply immediately after the editor accepts them. Delete requires confirmation. A deleted active type leaves the grid hidden.
 

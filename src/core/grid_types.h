@@ -30,6 +30,7 @@ public:
     QString put(const QString &id, const QJsonObject &value);
     void remove(const QString &id);
     void select(const QString &id);
+    void setVisible(bool visible);
     void migrate(const QJsonObject &mapValues);
     void paint(QPainter &painter, const Viewport &view) const;
     const QJsonObject &entries() const
@@ -46,6 +47,7 @@ signals:
 private:
     QJsonObject entries_;
     QString selected_ = QStringLiteral("geographic");
+    QString lastSelected_ = QStringLiteral("geographic");
     bool restored_ = false;
 };
 QString gridCoordinate(double latitude, double longitude, const QString &system, int precision = 3);

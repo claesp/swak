@@ -527,6 +527,11 @@ public:
             const QPolygonF points{*first_, point};
             draw(painter, points, shapeType(mode_), QColor("#1e88e5"), {}, view);
             dots(painter, points, QColor("#1e88e5"), view);
+            if (mode_ == ShapeMode::Circle) {
+                paintMapLabel(painter,
+                              (screen(*first_, view) + screen(point, view)) / 2 + QPointF(4, -8),
+                              tr("Radius: %1").arg(formatDistance(groundDistance(*first_, point))));
+            }
         }
         if (moving_) {
             draw(painter,

@@ -1232,3 +1232,27 @@ Coverage passes ten suites and 94 native cases in build/quality/20261004-230425-
 Remaining new gaps include no-row editing, the full-catalog editor error, defensive conversion errors, and collapsed or degenerate scale paths. Some reported lines represent expression bookkeeping. Existing gaps include client-key errors, startup rejection logging, and cache paths. Source analysis reports no unused first-party function. It passes in build/quality/20261004-230905-analyze-79. Final style evidence uses build/mapview-quality-style-final.log.
 
 The final release build passes without compiler warnings in build/mapview-release-final.log. The commit is followed by release and debug builds with logs build/mapview-release-committed.log and build/mapview-debug-committed.log. The executable is build/release/swak. Hardware graphics, native Wayland, all locale/theme combinations, and two-hour desktop operation remain unqualified. This task rebuilds a development release, not a qualified production release.
+
+## 2026-10-04: Prediction ticks, grid visibility, and measurements
+
+Predict now draws endpoints at 30 seconds, 1 minute, and 5 minutes. The second segment starts at the first endpoint. The third segment starts at the second endpoint. Tick lengths remain 14, 10, and 6 logical pixels. The line stops at the five-minute tick. Its final dash uses a flat cap and a short solid connection to avoid a gap at the tick.
+
+The tooltip and current manuals use the new intervals. Predict has manifest version 0.1.2. The regression test measures all three tick positions for a known straight track. It also makes sure that the final segment reaches the last tick and that no line continues beyond it.
+
+View > Grid now hides or shows the selected coordinate grid. The checkable action follows changes from Grid Types. Showing the grid restores its last selection. The lastSelected preference preserves that choice across restart. A removed type falls back to longitude/latitude or another remaining type. An empty catalog disables the action.
+
+The map manifest is version 0.5.6. Native tests cover toggling, restoration, and an empty catalog.
+
+Circle placement now labels the current radius before the second click. Area placement labels fixed, live, and closing segments. Area vertex editing also shows segment lengths. Both use groundDistance, formatDistance, and paintMapLabel, like Line and Distance. Saved object titles retain their normal appearance.
+
+Shapes has manifest version 0.1.2. Areas has manifest version 0.3.5. Native tests inspect preview text and compare Circle previews under metric and imperial locales.
+
+Focused native tests pass in build/predict-grid-shapes-focus.log. Final source analysis passes in build/quality/20261004-232811-analyze-64. Style passes in build/quality/20261004-233004-style-4. The release build passes without compiler warnings in build/predict-grid-shapes-release.log.
+
+The quick sanitizer mode passes ten suites in build/quality/20261004-231859-quick-70342. The 60-second workload passes in build/quality/20261004-232135-soak-71974. It completes 998 cycles with 17096704 bytes of peak memory growth. Its maximum heartbeat gap is 53 milliseconds. Idle CPU time is 0.024 seconds. Final native sanitizer tests pass all 94 cases in build/quality/20261004-232807-gui-73935.
+
+The native sanitizer runner still exits with status 23 for the known Mesa leak of 240732 bytes in 1073 allocations. The leak remains unsuppressed. The tick regression allows one pixel for raster rounding. Hardware graphics, native Wayland, all locale combinations, and two-hour operation remain unqualified.
+
+Final coverage passes ten suites and all 94 native cases in build/quality/20261004-232914-coverage-74664. It reaches 12216 of 13169 lines, 1195 of 1266 functions, and 17669 of 33764 branches. Every GridTypes and Predict function runs. The new Area measurement helper also runs. Remaining measurement gaps include empty and subpixel segment guards. Existing shape cancellation, missing-target, editor-limit, and conversion-error gaps remain.
+
+Focused native tests pass at 200 percent display scaling in build/predict-grid-shapes-hidpi.log. Preview screenshots are under build/predict-grid-shapes-native. The commit is followed by release and debug builds in build/predict-grid-shapes-release-committed.log and build/predict-grid-shapes-debug-committed.log. The executable remains build/release/swak. Tests use Qt 6.8.2 and GCC 14.2. No dependency changes in this task.

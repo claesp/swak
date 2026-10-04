@@ -98,7 +98,7 @@ QString GridTypes::validate(const QJsonObject &value)
 }
 QJsonObject GridTypes::savePreferences() const
 {
-    return {{"types", entries_}, {"selected", selected_}};
+    return {{"types", entries_}, {"selected", selected_}, {"lastSelected", lastSelected_}};
 }
 void GridTypes::restorePreferences(const QJsonObject &values)
 {
@@ -117,6 +117,11 @@ void GridTypes::restorePreferences(const QJsonObject &values)
     selected_ = values.value("selected").toString(QStringLiteral("geographic"));
     if (!entries_.contains(selected_)) {
         selected_.clear();
+    }
+    lastSelected_ = values.value("lastSelected")
+                        .toString(selected_.isEmpty() ? QStringLiteral("geographic") : selected_);
+    if (!entries_.contains(lastSelected_)) {
+        lastSelected_.clear();
     }
     emit changed();
 }
@@ -147,7 +152,20 @@ void GridTypes::select(const QString &id)
 {
     restored_ = true;
     selected_ = entries_.contains(id) ? id : QString{};
+    if (!selected_.isEmpty()) {
+        lastSelected_ = selected_;
+    }
     emit changed();
+}
+void GridTypes::setVisible(bool visible)
+{
+    if (!visible || entries_.isEmpty()) {
+        select({});
+        return;
+    }
+    select(entries_.contains(lastSelected_)  ? lastSelected_
+           : entries_.contains("geographic") ? QStringLiteral("geographic")
+                                             : entries_.begin().key());
 }
 void GridTypes::migrate(const QJsonObject &mapValues)
 {
