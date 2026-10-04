@@ -35,6 +35,7 @@ public:
     void update(const Event &event, qint64 now = -1);
     void expire(const QString &uid, qint64 now = -1);
     void clear();
+    void remove(const QString &uid);
     bool paused() const
     {
         return paused_;

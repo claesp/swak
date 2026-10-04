@@ -465,11 +465,13 @@ void DataSources::paint(QPainter &painter, const Viewport &view, const MapItem *
                 const QPointF offset = origin - view.center * scale + QPointF(wrap * scale, 0);
                 const QPointF point = shape.point * scale + offset;
                 if (shape.kind == DataShape::Kind::Point) {
-                    if (!screen.adjusted(-20, -20, 20, 20).contains(point)) {
+                    const double radius =
+                        view.markerSize(source.value(QStringLiteral("pointSize")).toDouble());
+                    if (!screen.adjusted(-radius - 2, -radius - 2, radius + 2, radius + 2)
+                             .contains(point)) {
                         continue;
                     }
                     painter.setBrush(color);
-                    const double radius = source.value(QStringLiteral("pointSize")).toDouble();
                     painter.drawEllipse(point, radius, radius);
                 } else {
                     const auto bounds = shape.path.boundingRect();
@@ -494,7 +496,11 @@ void DataSources::paint(QPainter &painter, const Viewport &view, const MapItem *
                     screen.contains(point) && !shape.name.isEmpty()) {
                     paintMapLabel(
                         painter,
-                        point + QPointF(8, -8),
+                        point + (shape.kind == DataShape::Kind::Point
+                                     ? view.markerOffset(
+                                           QPointF(8, -8),
+                                           source.value(QStringLiteral("pointSize")).toDouble())
+                                     : QPointF(8, -8)),
                         shape.name,
                         selected && selected->owner == QStringLiteral("org.swak.data/") + id &&
                             selected->id ==
@@ -539,7 +545,14 @@ QList<MapItem> DataSources::itemsAt(const Viewport &view, QPointF position) cons
                 if (!screen.contains(point)) {
                     continue;
                 }
-                const auto bounds = mapLabelBounds(metrics, point + QPointF(8, -8), shape.name);
+                const auto bounds = mapLabelBounds(
+                    metrics,
+                    point + (shape.kind == DataShape::Kind::Point
+                                 ? view.markerOffset(
+                                       QPointF(8, -8),
+                                       feed->source.value(QStringLiteral("pointSize")).toDouble())
+                                 : QPointF(8, -8)),
+                    shape.name);
                 labelBounds.insert(&shape, bounds);
                 ++labels;
             }
@@ -565,7 +578,7 @@ QList<MapItem> DataSources::itemsAt(const Viewport &view, QPointF position) cons
                     });
                 if (shape->kind == DataShape::Kind::Point) {
                     hit = hit || std::hypot(point.x() - position.x(), point.y() - position.y()) <=
-                                     std::max(8.0, radius + 3);
+                                     std::max(8.0, view.markerSize(radius) + 3);
 
                 } else {
                     const auto bounds = shape->path.boundingRect();

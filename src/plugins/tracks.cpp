@@ -200,7 +200,12 @@ public:
             }
             const QPointF point = (visual.world - view.center) * view.scale() +
                                   QPointF(view.size.width() / 2, view.size.height() / 2);
-            if (!visible.adjusted(-12, -12, 12, 12).contains(point)) {
+            if (!visible
+                     .adjusted(-view.markerSize(12),
+                               -view.markerSize(12),
+                               view.markerSize(12),
+                               view.markerSize(12))
+                     .contains(point)) {
                 continue;
             }
             const bool selected = event.uid == store.selected();
@@ -222,10 +227,11 @@ public:
             color.setBlue(qRound(color.blue() * (1 - visual.gray) + gray * visual.gray));
             painter.save();
             painter.setOpacity(visual.opacity);
-            paintMarkerSymbol(painter, symbol, point, selected ? 8 : 6, color, selected);
+            paintMarkerSymbol(
+                painter, symbol, point, view.markerSize(6) + (selected ? 2 : 0), color, selected);
             if (selected || labels++ < 100) {
                 paintMapLabel(painter,
-                              point + QPointF(16, -8),
+                              point + view.markerOffset(QPointF(16, -8), 6),
                               (event.callsign.isEmpty() ? event.uid : event.callsign).left(32),
                               selected);
             }

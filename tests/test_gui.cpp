@@ -3419,6 +3419,109 @@ private slots:
         QCOMPARE(objects->items().size(), 1);
         QCOMPARE(objects->items().first().type, QStringLiteral("line"));
     }
+    void restrictedArea()
+    {
+        QTemporaryDir directory;
+        const auto profile = directory.filePath(QStringLiteral("restricted-area.json"));
+        QString id = QStringLiteral("restricted-area");
+        {
+            swak::Window window(profile, QPluginLoader::staticInstances());
+            window.show();
+            QVERIFY(QTest::qWaitForWindowExposed(&window));
+            auto *objects = window.findChild<swak::UserObjects *>();
+            auto *editor = window.findChild<swak::ObjectEditor *>(QStringLiteral("polygonEditor"));
+            auto *selection = window.findChild<swak::MapSelection *>();
+            auto *tools = window.findChild<swak::MapTools *>();
+            auto *map = window.findChild<QOpenGLWidget *>();
+            swak::UserObject area;
+            area.id = id;
+            area.type = QStringLiteral("polygon");
+            area.title = QStringLiteral("Restricted area");
+            area.color = QStringLiteral("#1e88e5");
+            area.geometry =
+                swak::polygonGeometry(QPolygonF{{.4, .4}, {.6, .4}, {.6, .6}, {.4, .6}});
+            QVERIFY(objects->put(area).isEmpty());
+            const auto image = [&] {
+                QImage result(400, 400, QImage::Format_ARGB32_Premultiplied);
+                result.fill(Qt::transparent);
+                QPainter painter(&result);
+                tools->paint(painter, swak::Viewport{QSizeF(400, 400), QPointF(.5, .5), 2});
+                return result;
+            };
+            const auto plain = image();
+            editor->edit(area);
+            auto *restricted = editor->findChild<QCheckBox *>(QStringLiteral("objectRestricted"));
+            QVERIFY(restricted && restricted->isVisible());
+            QVERIFY(!restricted->isChecked());
+            restricted->click();
+            QVERIFY(editor->draft()->restricted);
+            QVERIFY(!objects->find(id)->restricted);
+            const auto preview = image();
+            int stripe = 0, fill = 0;
+            for (int y = 120; y < 160; ++y) {
+                for (int x = 120; x < 160; ++x) {
+                    const auto alpha = preview.pixelColor(x, y).alpha();
+                    stripe += alpha > 200;
+                    fill += alpha == 77;
+                }
+            }
+            QVERIFY(stripe > 100 && fill > 100);
+            QCOMPARE(preview.pixelColor(30, 30).alpha(), 0);
+            editor->cancel();
+            QCOMPARE(image(), plain);
+            editor->edit(area);
+            restricted->click();
+            editor->findChild<QPushButton *>(QStringLiteral("applyObject"))->click();
+            QVERIFY(objects->find(id)->restricted);
+            selection->clear();
+            const auto saved = image();
+            QVERIFY(saved != plain);
+            QVERIFY(saved.save(QStringLiteral("restricted-area.png")));
+            auto *settings = dynamic_cast<swak::SettingsParticipant *>(map);
+            auto values = settings->savePreferences();
+            values.insert(QStringLiteral("centerX"), .5);
+            values.insert(QStringLiteral("centerY"), .5);
+            values.insert(QStringLiteral("zoom"), 3);
+            settings->restorePreferences(values);
+            QVERIFY(map->grabFramebuffer().save(QStringLiteral("restricted-area-map.png")));
+            objects->remove(id);
+            objects->undoStack().undo();
+            QVERIFY(objects->find(id)->restricted);
+            editor->edit(*objects->find(id));
+            QVERIFY(restricted->isChecked());
+            auto vertices = swak::polygonVertices(editor->draft()->geometry);
+            vertices[0].rx() += .01;
+            QVERIFY(editor->setGeometry(swak::polygonGeometry(vertices)));
+            QVERIFY(editor->draft()->restricted);
+            restricted->click();
+            editor->cancel();
+            QVERIFY(objects->find(id)->restricted);
+            QVERIFY(window.savePreferences());
+        }
+        swak::Window restored(profile, QPluginLoader::staticInstances());
+        auto *objects = restored.findChild<swak::UserObjects *>();
+        QVERIFY(objects->find(id)->restricted);
+        auto *editor = restored.findChild<swak::ObjectEditor *>(QStringLiteral("polygonEditor"));
+        editor->edit(*objects->find(id));
+        auto *restricted = editor->findChild<QCheckBox *>(QStringLiteral("objectRestricted"));
+        QVERIFY(restricted->isChecked());
+        restricted->click();
+        editor->findChild<QPushButton *>(QStringLiteral("applyObject"))->click();
+        QVERIFY(!objects->find(id)->restricted);
+        auto old = objects->find(id)->json();
+        old.remove(QStringLiteral("restricted"));
+        QVERIFY(!swak::UserObject::fromJson(old).restricted);
+        old.insert(QStringLiteral("restricted"), QStringLiteral("true"));
+        QVERIFY(!swak::UserObject::fromJson(old).restricted);
+        auto *markerEditor =
+            restored.findChild<swak::ObjectEditor *>(QStringLiteral("objectEditor"));
+        auto marker = *objects->find(id);
+        marker.type = QStringLiteral("circle");
+        marker.geometry = {{QStringLiteral("x"), .5}, {QStringLiteral("y"), .5}};
+        markerEditor->edit(marker);
+        QVERIFY(
+            markerEditor->findChild<QCheckBox *>(QStringLiteral("objectRestricted"))->isHidden());
+    }
     void polygonWorkflow()
     {
         QTemporaryDir directory;
@@ -4393,6 +4496,235 @@ private slots:
         item.owner = QStringLiteral("org.swak.polygons");
         selection->select(item);
         QVERIFY(!window.findChild<QCheckBox *>(QStringLiteral("information/traceMarker")));
+    }
+    void scaledMarkerInteraction()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("scaled-points.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *map = window.findChild<QOpenGLWidget *>();
+        auto *settings = dynamic_cast<swak::SettingsParticipant *>(map);
+        auto values = settings->savePreferences();
+        values.insert(QStringLiteral("centerX"), .5);
+        values.insert(QStringLiteral("centerY"), .5);
+        values.insert(QStringLiteral("zoom"), 12);
+        auto *objects = window.findChild<swak::UserObjects *>();
+        auto *selection = window.findChild<swak::MapSelection *>();
+        swak::UserObject marker;
+        marker.id = QStringLiteral("scaled-local");
+        marker.type = QStringLiteral("circle");
+        marker.title = QStringLiteral("Scaled local marker");
+        marker.geometry = {{QStringLiteral("x"), .5}, {QStringLiteral("y"), .5}};
+        QVERIFY(objects->put(marker).isEmpty());
+        const QPoint center(map->width() / 2, map->height() / 2);
+        for (const int percent : {50, 100, 200}) {
+            values.insert(QStringLiteral("markerScale"), percent);
+            settings->restorePreferences(values);
+            selection->clear();
+            QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, center + QPoint(0, 15));
+            QCOMPARE(selection->item().has_value(), percent == 200);
+            QVERIFY(map->grabFramebuffer().save(QStringLiteral("marker-size-%1.png").arg(percent)));
+        }
+        objects->remove(marker.id);
+        selection->clear();
+        swak::Event event;
+        event.uid = QStringLiteral("scaled-cot");
+        event.callsign = QStringLiteral("Scaled CoT marker");
+        event.type = QStringLiteral("a-f-G-U");
+        event.how = QStringLiteral("m-s");
+        event.time = event.start = QDateTime::currentDateTimeUtc();
+        event.stale = event.time.addSecs(60);
+        QVERIFY(window.store().accept(event).isEmpty());
+        for (const int percent : {50, 100, 200}) {
+            values.insert(QStringLiteral("markerScale"), percent);
+            settings->restorePreferences(values);
+            selection->clear();
+            QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, center + QPoint(0, 20));
+            QCOMPARE(selection->item().has_value(), percent == 200);
+        }
+    }
+    void markerScaleSettings()
+    {
+        QTemporaryDir directory;
+        const auto path = directory.filePath(QStringLiteral("marker-scale.json"));
+        {
+            swak::Window window(path, QPluginLoader::staticInstances());
+            window.show();
+            QVERIFY(QTest::qWaitForWindowExposed(&window));
+            auto *map = window.findChild<QOpenGLWidget *>();
+            auto *settings = dynamic_cast<swak::SettingsParticipant *>(map);
+            QVERIFY(settings);
+            QCOMPARE(settings->savePreferences().value(QStringLiteral("markerScale")).toInt(), 100);
+            const auto toolbarSize = window.findChild<QToolBar *>()->iconSize();
+            for (const bool apply : {false, true}) {
+                QTimer::singleShot(0, &window, [&] {
+                    auto *dialog = window.findChild<swak::SettingsDialog *>();
+                    QVERIFY(dialog);
+                    dialog->restoreNavigation(
+                        {{QStringLiteral("settingsSections"), QStringLiteral("org.swak.map")}});
+                    auto *combo =
+                        dialog->findChild<QComboBox *>(QStringLiteral("org.swak.map/markerScale"));
+                    QVERIFY(combo);
+                    QCOMPARE(combo->count(), 6);
+                    for (const int percent : {50, 75, 100, 125, 150, 200}) {
+                        QVERIFY(combo->findData(percent) >= 0);
+                    }
+                    combo->setCurrentIndex(combo->findData(200));
+                    QVERIFY(dialog->grab().save(QStringLiteral("marker-scale-settings.png")));
+                    dialog->findChild<QDialogButtonBox *>(QStringLiteral("settingsButtons"))
+                        ->button(apply ? QDialogButtonBox::Ok : QDialogButtonBox::Cancel)
+                        ->click();
+                });
+                window.findChild<QAction *>(QStringLiteral("settingsAction"))->trigger();
+                QCOMPARE(settings->savePreferences().value(QStringLiteral("markerScale")).toInt(),
+                         apply ? 200 : 100);
+            }
+            QCOMPARE(window.findChild<QToolBar *>()->iconSize(), toolbarSize);
+            QVERIFY(window.savePreferences());
+        }
+        swak::Window restored(path, QPluginLoader::staticInstances());
+        auto *settings =
+            dynamic_cast<swak::SettingsParticipant *>(restored.findChild<QOpenGLWidget *>());
+        QVERIFY(settings);
+        QCOMPARE(settings->savePreferences().value(QStringLiteral("markerScale")).toInt(), 200);
+        auto values = settings->savePreferences();
+        values.insert(QStringLiteral("markerScale"), 9999);
+        settings->restorePreferences(values);
+        QCOMPARE(settings->savePreferences().value(QStringLiteral("markerScale")).toInt(), 100);
+    }
+    void informationPredict()
+    {
+        QTemporaryDir directory;
+        const auto path = directory.filePath(QStringLiteral("predict.json"));
+        {
+            swak::Window window(path, QPluginLoader::staticInstances());
+            window.show();
+            QVERIFY(QTest::qWaitForWindowExposed(&window));
+            auto *tool = dynamic_cast<swak::MapTool *>(
+                window.findChild<QObject *>(QStringLiteral("predictTool")));
+            auto *settings = dynamic_cast<swak::SettingsParticipant *>(tool);
+            QVERIFY(tool && settings);
+            QCOMPARE(window.findChildren<swak::TrackMotion *>().size(), 1);
+            auto *map = window.findChild<QOpenGLWidget *>();
+            auto *mapSettings = dynamic_cast<swak::SettingsParticipant *>(map);
+            auto mapValues = mapSettings->savePreferences();
+            mapValues.insert(QStringLiteral("centerX"), swak::project(0, .03).x());
+            mapValues.insert(QStringLiteral("centerY"), .5);
+            mapValues.insert(QStringLiteral("zoom"), 12);
+            mapSettings->restorePreferences(mapValues);
+            auto animation = window.store().motion().savePreferences();
+            animation.insert(QStringLiteral("duration"), 0);
+            window.store().motion().restorePreferences(animation);
+            swak::Event event;
+            event.uid = QStringLiteral("forecast-unit");
+            event.callsign = QStringLiteral("Predicted unit");
+            event.type = QStringLiteral("a-f-G-U");
+            event.how = QStringLiteral("m-s");
+            event.time = event.start = QDateTime::currentDateTimeUtc().addSecs(-60);
+            event.stale = event.time.addSecs(600);
+            QVERIFY(window.store().accept(event).isEmpty());
+            swak::MapItem item;
+            item.owner = QStringLiteral("org.swak.events");
+            item.id = event.uid;
+            item.label = event.callsign;
+            window.findChild<swak::MapSelection *>()->select(item);
+            auto *box = window.findChild<QCheckBox *>(QStringLiteral("information/predictMarker"));
+            QVERIFY(box && !box->isChecked());
+            box->click();
+            const auto image = [&] {
+                QImage result(1000, 400, QImage::Format_ARGB32_Premultiplied);
+                result.fill(Qt::transparent);
+                QPainter painter(&result);
+                tool->paint(painter, swak::Viewport{QSizeF(1000, 400), swak::project(0, .03), 12});
+                return result;
+            };
+            const auto empty = image();
+            event.time = event.time.addSecs(1);
+            event.longitude = .0001;
+            QVERIFY(window.store().accept(event).isEmpty());
+            const auto forecast = image();
+            QVERIFY(forecast != empty);
+            QVERIFY(forecast.save(QStringLiteral("prediction-lines.png")));
+            QVERIFY(map->grabFramebuffer().save(QStringLiteral("prediction-map.png")));
+            window.store().motion().setPaused(true);
+            event.time = event.time.addSecs(1);
+            event.latitude = .0001;
+            QVERIFY(window.store().accept(event).isEmpty());
+            QCOMPARE(image(), forecast);
+            window.store().motion().setPaused(false);
+            QVERIFY(image() != forecast);
+            animation.insert(QStringLiteral("duration"), 200);
+            animation.insert(QStringLiteral("fade"), 400);
+            animation.insert(QStringLiteral("teleportKm"), .1);
+            window.store().motion().restorePreferences(animation);
+            const auto alpha = [](const QImage &frame) {
+                qint64 sum = 0;
+                for (int y = 0; y < frame.height(); ++y) {
+                    for (int x = 0; x < frame.width(); ++x) {
+                        sum += frame.pixelColor(x, y).alpha();
+                    }
+                }
+                return sum;
+            };
+            const auto initialAlpha = alpha(image());
+            event.time = event.time.addSecs(1);
+            event.latitude += .0001;
+            QVERIFY(window.store().accept(event).isEmpty());
+            QVERIFY(QTest::qWaitFor(
+                [&] {
+                    return alpha(image()) < initialAlpha / 3;
+                },
+                500));
+            QVERIFY(QTest::qWaitFor(
+                [&] {
+                    return alpha(image()) > initialAlpha / 2;
+                },
+                1000));
+            window.store().expire(event.stale.addSecs(1));
+            QVERIFY(!image().isNull());
+            window.store().clear();
+            QCOMPARE(image(), empty);
+            QVERIFY(window.store().accept(event).isEmpty());
+            QCOMPARE(image(), empty);
+            event.time = event.time.addSecs(1);
+            QVERIFY(window.store().accept(event).isEmpty());
+            const auto stationary = image();
+            int occupiedRows = 0;
+            for (int y = 0; y < stationary.height(); ++y) {
+                bool painted = false;
+                for (int x = 0; x < stationary.width(); ++x) {
+                    painted = painted || stationary.pixelColor(x, y).alpha() > 0;
+                }
+                occupiedRows += painted;
+            }
+            QVERIFY(occupiedRows > 40);
+            QMenu menu;
+            tool->populateContextMenu(item, menu);
+            auto *action = menu.findChild<QAction *>(QStringLiteral("predictMarker"));
+            QVERIFY(action && action->isChecked());
+            action->trigger();
+            QCOMPARE(image(), empty);
+            QVERIFY(
+                settings->savePreferences().value(QStringLiteral("targets")).toArray().isEmpty());
+            QMenu enable;
+            tool->populateContextMenu(item, enable);
+            enable.findChild<QAction *>(QStringLiteral("predictMarker"))->trigger();
+            QCOMPARE(settings->savePreferences().value(QStringLiteral("targets")).toArray().size(),
+                     1);
+            item.owner = QStringLiteral("org.swak.markers");
+            window.findChild<swak::MapSelection *>()->select(item);
+            QVERIFY(!window.findChild<QCheckBox *>(QStringLiteral("information/predictMarker")));
+            QVERIFY(window.savePreferences());
+        }
+        swak::Window restored(path, QPluginLoader::staticInstances());
+        auto *settings = dynamic_cast<swak::SettingsParticipant *>(
+            restored.findChild<QObject *>(QStringLiteral("predictTool")));
+        QVERIFY(settings);
+        QCOMPARE(settings->savePreferences().value(QStringLiteral("targets")).toArray().size(), 1);
+        restored.findChild<QAction *>(QStringLiteral("clearPredictions"))->trigger();
+        QVERIFY(settings->savePreferences().value(QStringLiteral("targets")).toArray().isEmpty());
     }
     void resetTraceSettings()
     {

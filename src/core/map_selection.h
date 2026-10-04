@@ -37,6 +37,7 @@ struct MapItem
     QPainterPath path;
     QColor color;
     double radius = 6;
+    bool scaleIcon = true;
     double lineWidth = 2;
     QString symbol = {};
     QPainterPath markerOutline;

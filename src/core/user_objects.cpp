@@ -54,15 +54,19 @@ bool boundedGeometry(const QJsonValue &value, int depth = 0)
 } // namespace
 QJsonObject UserObject::json() const
 {
-    return {{QStringLiteral("id"), id},
-            {QStringLiteral("type"), type},
-            {QStringLiteral("title"), title},
-            {QStringLiteral("description"), description},
-            {QStringLiteral("properties"), properties},
-            {QStringLiteral("geometry"), geometry},
-            {QStringLiteral("color"), color},
-            {QStringLiteral("symbol"), symbol},
-            {QStringLiteral("collection"), collection}};
+    QJsonObject result{{QStringLiteral("id"), id},
+                       {QStringLiteral("type"), type},
+                       {QStringLiteral("title"), title},
+                       {QStringLiteral("description"), description},
+                       {QStringLiteral("properties"), properties},
+                       {QStringLiteral("geometry"), geometry},
+                       {QStringLiteral("color"), color},
+                       {QStringLiteral("symbol"), symbol},
+                       {QStringLiteral("collection"), collection}};
+    if (restricted) {
+        result.insert(QStringLiteral("restricted"), true);
+    }
+    return result;
 }
 UserObject UserObject::fromJson(const QJsonObject &v)
 {
@@ -77,7 +81,8 @@ UserObject UserObject::fromJson(const QJsonObject &v)
         v.value(QStringLiteral("symbol"))
             .toString(v.contains(QStringLiteral("symbol")) ? QStringLiteral("!") : QString{}),
         v.value(QStringLiteral("collection"))
-            .toString(v.contains(QStringLiteral("collection")) ? QStringLiteral("!") : QString{})};
+            .toString(v.contains(QStringLiteral("collection")) ? QStringLiteral("!") : QString{}),
+        v.value(QStringLiteral("restricted")).toBool(false)};
 }
 class DeleteObject final : public QUndoCommand
 {

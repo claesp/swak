@@ -9,6 +9,7 @@
 #include "core/measure.h"
 #include "core/plugin_catalog.h"
 #include "core/polygon.h"
+#include "core/prediction.h"
 #include "core/projection.h"
 #include "core/servers.h"
 #include "core/store.h"
@@ -58,6 +59,231 @@ private:
         return event;
     }
 private slots:
+    void predictionHistory()
+    {
+        PredictionHistory history;
+        QVERIFY(!history.forecast(60));
+        auto event = sample();
+        event.latitude = 0;
+        event.longitude = 0;
+        const auto start = event.time;
+        const double step = 10.0 / 6371000 * 180 / 3.141592653589793;
+        for (int i = 0; i < 100; ++i) {
+            event.time = start.addSecs(i);
+            event.longitude = step * i;
+            history.append(event, 100);
+        }
+        QCOMPARE(history.size(), 50);
+        for (const int seconds : {60, 600, 1800}) {
+            const auto forecast = history.forecast(seconds);
+            QVERIFY(forecast);
+            const auto distance =
+                groundDistance(project(event.latitude, event.longitude), *forecast);
+            QVERIFY2(std::abs(distance - seconds * 10) < 0.1,
+                     qPrintable(QString::number(distance)));
+        }
+        QVERIFY(!history.forecast(-1));
+        QVERIFY(!history.forecast(1801));
+        const auto before = history.forecast(60);
+        history.append(event, 100);
+        event.time = start;
+        history.append(event, 100);
+        QCOMPARE(history.forecast(60), before);
+        event.time = start.addSecs(100);
+        event.latitude = std::numeric_limits<double>::quiet_NaN();
+        history.append(event, 100);
+        QCOMPARE(history.forecast(60), before);
+        event.latitude = 0;
+        event.longitude = 90;
+        history.append(event, 100);
+        QCOMPARE(history.size(), 1);
+        QVERIFY(!history.forecast(60));
+        event.time = event.time.addSecs(1);
+        history.append(event, 100);
+        QCOMPARE(history.forecast(1800).value(), project(0, 90));
+        event.longitude = 90.001;
+        history.append(event, 100);
+        QCOMPARE(history.size(), 1);
+        QVERIFY(!history.forecast(60));
+        event.time = event.time.addMSecs(10);
+        history.append(event, 100);
+        QCOMPARE(history.size(), 1);
+        history.append(event, 0);
+        history.append(event, std::numeric_limits<double>::infinity());
+        auto invalid = event;
+        invalid.time = {};
+        history.append(invalid, 100);
+        invalid = event;
+        invalid.latitude = 91;
+        history.append(invalid, 100);
+        invalid = event;
+        invalid.longitude = 181;
+        history.append(invalid, 100);
+        QCOMPARE(history.size(), 1);
+        event.time = event.time.addSecs(601);
+        history.append(event, 100);
+        QCOMPARE(history.size(), 1);
+        PredictionHistory crossing;
+        event.longitude = 179.999;
+        crossing.append(event, 100);
+        event.time = event.time.addSecs(1);
+        event.longitude = -179.999;
+        crossing.append(event, 100);
+        const auto future = crossing.forecast(60);
+        QVERIFY(future);
+        QVERIFY(std::abs(unproject(*future).x() - (-179.879)) < 0.001);
+        PredictionHistory pole;
+        event.latitude = 84.99;
+        event.longitude = 20;
+        pole.append(event, 100);
+        event.time = event.time.addSecs(1);
+        event.latitude = 85;
+        pole.append(event, 100);
+        QVERIFY(!pole.forecast(60)); // Reject a speed above the bounded estimate.
+        event.time = event.time.addSecs(20);
+        event.latitude = 85.001;
+        pole.append(event, 100);
+        QVERIFY(pole.forecast(1800));
+        QVERIFY(std::isfinite(pole.forecast(1800)->y()));
+        PredictionHistory window;
+        for (int i = 0; i < 30; ++i) {
+            event.time = start.addSecs(i);
+            event.longitude = step * i;
+            window.append(event, 100, 10);
+        }
+        QCOMPARE(window.size(), 11);
+        PredictionHistory fastSouth;
+        for (int i = 0; i < 50; ++i) {
+            event.time = start.addSecs(i * 10);
+            event.longitude = 0;
+            event.latitude = 60 - 999 * 10 * i / 6371000.0 * 180 / 3.141592653589793;
+            fastSouth.append(event, 100, 600);
+        }
+        QCOMPARE(fastSouth.size(), 50);
+        QVERIFY(!fastSouth.forecast(1800));
+    }
+    void markerScaling()
+    {
+        Viewport view{QSizeF(400, 400), QPointF(.5, .5), 2};
+        MapItem item;
+        item.point = view.center;
+        item.radius = 12;
+        MapSelection selection;
+        for (const int percent : {50, 75, 100, 125, 150, 200}) {
+            view.markerScalePercent = percent;
+            QCOMPARE(view.markerSize(12), 12.0 * percent / 100);
+            for (const bool scale : {false, true}) {
+                item.scaleIcon = scale;
+                selection.select(item);
+                QImage image(400, 400, QImage::Format_RGB32);
+                image.fill(Qt::black);
+                QPainter painter(&image);
+                selection.paint(painter, view);
+                painter.end();
+                const int radius = qRound((scale ? 12.0 * percent / 100 : 12) + 2);
+                QCOMPARE(image.pixelColor(200 + radius, 200), QColor(Qt::white));
+                QCOMPARE(image.pixelColor(200 + radius + 3, 200), QColor(Qt::black));
+            }
+        }
+        view.markerScalePercent = 9999;
+        QCOMPARE(view.markerSize(12), 12.0);
+    }
+    void removeMotion()
+    {
+        TrackMotion motion;
+        auto event = sample();
+        motion.update(event);
+        QCOMPARE(motion.snapshot().size(), 1);
+        motion.setPaused(true);
+        motion.remove(event.uid);
+        QCOMPARE(motion.snapshot().size(), 1);
+        motion.setPaused(false);
+        QVERIFY(motion.snapshot().isEmpty());
+        motion.remove(event.uid);
+        motion.update(event);
+        motion.remove(event.uid);
+        QVERIFY(motion.snapshot().isEmpty());
+    }
+    void predictionLimits()
+    {
+        Store store;
+        ActivityModel activity;
+        MapSources maps({});
+        MapTools tools;
+        PluginServices services{store, activity, maps};
+        services.mapTools = &tools;
+        QMenu main;
+        for (auto *plugin : builtInPlugins()) {
+            if (auto *map = qobject_cast<MapExtension *>(plugin);
+                map && map->mapId() == QStringLiteral("org.swak.predict")) {
+                QCOMPARE(map->mapName(), QStringLiteral("Predict"));
+                auto missing = services;
+                missing.mapTools = nullptr;
+                QMenu absent;
+                qobject_cast<MenuPlugin *>(plugin)->populateMenu(missing, absent);
+                QVERIFY(absent.isEmpty());
+                qobject_cast<MenuPlugin *>(plugin)->populateMenu(services, main);
+            }
+        }
+        auto *tool =
+            dynamic_cast<MapTool *>(main.findChild<QObject *>(QStringLiteral("predictTool")));
+        QVERIFY(tool);
+        auto *settings = dynamic_cast<SettingsParticipant *>(tool);
+        QVERIFY(settings);
+        QWidget map;
+        QEvent event(QEvent::User);
+        QVERIFY(!tool->handle(event, {}, map));
+        QVERIFY(!tool->cancel());
+        for (int i = 0; i < 129; ++i) {
+            MapItem item;
+            item.owner = QStringLiteral("org.swak.events");
+            item.id = QString::number(i);
+            QMenu menu;
+            tool->populateContextMenu(item, menu);
+            auto *action = menu.findChild<QAction *>(QStringLiteral("predictMarker"));
+            QVERIFY(action);
+            QCOMPARE(action->isEnabled(), i < 128);
+            if (action->isEnabled()) {
+                action->trigger();
+            }
+        }
+        QCOMPARE(settings->savePreferences().value(QStringLiteral("targets")).toArray().size(),
+                 128);
+        auto values = settings->savePreferences();
+        values.insert(QStringLiteral("opacity"), -1);
+        values.insert(QStringLiteral("width"), 1000);
+        values.insert(QStringLiteral("historySeconds"), -1);
+        settings->restorePreferences(values);
+        QCOMPARE(settings->savePreferences().value(QStringLiteral("opacity")).toDouble(), .75);
+        QCOMPARE(settings->savePreferences().value(QStringLiteral("width")).toDouble(), 1.5);
+        QCOMPARE(settings->savePreferences().value(QStringLiteral("historySeconds")).toInt(), 300);
+        QJsonArray invalid{
+            true, 12, QString(129, 'a'), QString(), QStringLiteral("ok"), QStringLiteral("ok")};
+        settings->restorePreferences({{QStringLiteral("targets"), invalid}});
+        QCOMPARE(settings->savePreferences().value(QStringLiteral("targets")).toArray().size(), 1);
+        auto source = sample();
+        source.uid = QStringLiteral("not-enabled");
+        QVERIFY(store.accept(source).isEmpty());
+        source.uid = QStringLiteral("ok");
+        source.start = source.time.addSecs(30);
+        QVERIFY(store.accept(source).isEmpty());
+        QImage image(100, 100, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        const auto empty = image.copy();
+        {
+            QPainter painter(&image);
+            tool->paint(painter, Viewport{QSizeF(100, 100), QPointF(.5, .5), 2});
+        }
+        QCOMPARE(image, empty);
+        MapItem area;
+        area.owner = QStringLiteral("org.swak.events");
+        area.kind = MapItem::Kind::Polygon;
+        QMenu menu;
+        tool->populateContextMenu(area, menu);
+        QVERIFY(menu.isEmpty());
+        main.findChild<QAction *>(QStringLiteral("clearPredictions"))->trigger();
+        QVERIFY(settings->savePreferences().value(QStringLiteral("targets")).toArray().isEmpty());
+    }
     void traceLimits()
     {
         Store store;
@@ -736,7 +962,7 @@ private slots:
 
     void pluginManifests()
     {
-        QCOMPARE(builtInPlugins().size(), 18);
+        QCOMPARE(builtInPlugins().size(), 19);
         for (const auto &entry : QPluginLoader::staticPlugins()) {
             if (entry.metaData().value(QStringLiteral("IID")).toString() !=
                 QStringLiteral("org.swak.Plugin/2.0")) {

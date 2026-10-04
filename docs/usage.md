@@ -346,3 +346,21 @@ Identity shows Type, Location method, and Team descriptions with their original 
 Selected vector labels use white text on a black background. The selection highlight does not cover the label background.
 
 The Plugins pane lists built-in plugins in a sortable table. Select a row to read its full manifest below the table. A manifest describes the plugin version, purpose, interfaces, requirements, permissions, and supported platform. These fields are read-only.
+
+# Marker size and predictions
+
+Open File > Settings > Map to change Marker icon scale. The choices are 50%, 75%, 100%, 125%, 150%, and 200%. The default is 100%. Apply changes the map immediately and saves the value for later sessions. The setting scales local markers, CoT symbols, and points from Data Providers. Click targets, label positions, and selection outlines follow the new size.
+
+Toolbar icons and label text retain their size. Geographic circles, areas, lines, and the map provider imagery retain their dimensions. Qt still applies the system display scale.
+
+To enable a forecast, right-click a CoT object and select Predict. You can also use Predict in the Information pane. Select the same control again to stop the forecast. Tools > Plugins > Predict > Clear predictions stops all forecasts.
+
+Predict collects recent CoT positions for each enabled object. After two distinct message times, it draws dashed lines to labeled positions at 1, 10, and 30 minutes. These estimates assume that the recent direction and speed continue. They do not account for roads, terrain, planned routes, or future turns. A stationary object produces overlapping endpoints.
+
+File > Settings > Predict controls the history window, line width, and opacity. The default history window is five minutes, with at most 50 samples per object. A shorter window responds faster to turns. The plugin supports at most 128 enabled objects. Enabled identities survive restart, but received history does not.
+
+CoT animation controls forecast movement and fades. Long moves cover more distance within the same animation duration. Moves above the teleport threshold fade between positions. Forecast lines follow the displayed object position and fade with stale objects. Space freezes both objects and forecasts while message reception continues. Resume shows the latest positions immediately.
+
+Large source jumps, gaps beyond the history window, and speeds above 1000 meters per second reset the estimate. A changed position with the same timestamp also resets it. The plugin waits for new history before it produces another forecast. It ignores older timestamps and samples less than 50 milliseconds apart. Coordinates beyond the map latitude limit use the map boundary.
+
+To mark an Area as restricted, enable Restricted in its editor and select Apply. The area keeps its faded color and adds diagonal lines at 45 degrees. The preview changes immediately. Cancel discards the change. The flag survives editing, deletion followed by Undo, and restart. New areas start with Restricted disabled.

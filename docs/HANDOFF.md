@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 4, 2026: Read “Project coding style and repository review” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 4, 2026: Read “Marker scaling, Predict, and restricted areas” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -1147,3 +1147,32 @@ The full rebuild exposed four shadowed callback locals in the server browser and
 All 86 final native sanitizer cases passed in build/quality/20261004-205727-gui-33221. The same Mesa leak remains. Final coverage passed ten suites and all 86 native cases in build/quality/20261004-205814-coverage-33819. It reached 11225 of 12172 lines, 1106 of 1178 functions, and 16161 of 31042 branches.
 
 Coverage gaps include invalid client-key files, startup manifest rejection logging, and some vector-cache eviction paths. Some missing lines are compiler instrumentation at lambda closing braces. No new unused function was reported by source analysis. This is not proof that all dead code or defects are absent. The final token comparison accounts for the four reviewed local renames in build/style-token-review-final.log.
+
+
+## 2026-10-04: Marker scaling, Predict, and restricted areas
+
+File > Settings > Map now offers Marker icon scale at 50%, 75%, 100%, 125%, 150%, and 200%. The default is 100%. The value persists and applies to local markers, CoT symbols, and Data Provider points. Label anchors, click targets, and selection outlines follow the symbol radius. Toolbar icons, label fonts, geographic geometry, and basemap symbols retain their dimensions.
+
+Viewport supplies markerSize and markerOffset for shared scaling. MapItem.radius stays unscaled. Basemap feature selections set scaleIcon to false. The map manifest advances to 0.5.3. No runtime dependency changes.
+
+Predict is the nineteenth built-in plugin. Its manifest identifies org.swak.predict at version 0.1.0. Enable it from a CoT context menu or the Information pane, beside Trace. The shared interaction API supplies both controls. Tools > Plugins > Predict contains Clear predictions. The Predict configuration page exposes history duration, width, and opacity.
+
+The predictor fits velocity to at most 50 recent positions per enabled CoT identity. It keeps at most 128 enabled identities. It unwraps longitude and computes endpoints at 1, 10, and 30 minutes along the estimated great-circle direction. It resets after long gaps, excessive speed, or large source jumps. Equal timestamps with different positions also reset history. Received history stays in memory and does not survive restart. Enabled identities persist.
+
+A private TrackMotion member animates the forecast endpoints with the existing CoT movement, teleport, and fade configuration. Its QObject has no parent because it must not become a second configuration participant. TrackMotion::remove bounds retained endpoint records when targets change. Paused snapshots remain frozen until resume. Source snapshots supply the line origin and stale appearance. No prediction changes authoritative events or outgoing messages.
+
+Area editors now expose Restricted. This optional boolean belongs to UserObject, separate from geometry. Qt BDiagPattern adds diagonal lines above the normal faded fill. Draft preview, cancellation, Apply, vertex edits, Undo, and profile restoration retain the expected flag. Other object editors hide the control. Missing or invalid JSON values default to false. The Areas manifest advances to 0.3.3.
+
+Focused native tests passed for all three changes in build/predict-gui-final-focused.log. The screenshots show scaled marker selection, the Settings field, three forecast endpoints, and restricted fill. The first broad sanitizer run passed ten suites and 89 native cases before the Area addition. The native diagnostic still reports the existing Mesa leak: 240732 bytes in 1073 allocations. Leak detection remains enabled.
+
+The 60-second workload passed in build/quality/20261004-215112-soak-42287. It completed 934 cycles with 16928768 bytes of peak memory growth. The largest heartbeat gap was 125 milliseconds. Idle CPU time was 0.021 seconds. The workload includes 128 enabled predictions and timestamped position bursts.
+
+Hardware graphics, native Wayland, two-hour desktop operation, all locale/theme combinations, and forecast accuracy against real routes remain unqualified. The estimate assumes continued recent motion. It does not model roads, terrain, or planned turns. Defensive arithmetic guards include branches that accepted bounded histories cannot normally reach.
+
+The final sanitizer suites passed in build/quality/20261004-215650-quick-45162. All 90 final native cases passed in build/quality/20261004-215822-gui-45701. That diagnostic still exits with status 23 for the same unsuppressed Mesa leak. Focused native tests also passed at 200% display scaling in build/predict-gui-hidpi.log. Inspected screenshots are under build/predict-native.
+
+Final source style passed in build/quality/20261004-215839-style-3. Source analysis passed in build/quality/20261004-215420-analyze-18. The release build passed in build/predict-release.log without compiler warnings. Final builds after the commit use build/predict-release-committed.log and build/predict-debug-committed.log. These runs use Qt 6.8.2 and GCC 14.2.
+
+Final coverage passed ten suites and 90 native cases in build/quality/20261004-215903-coverage-46102. Additional targeted tests then covered future-dated sources, unselected sources, missing map services, and the fitted-speed limit. Those tests passed in debug, sanitizer, and coverage builds. Their logs use build/predict-gap-*.log. The first sandboxed sanitizer retry could not inspect process memory. The retry outside that restriction passed with leak detection enabled.
+
+The refreshed coverage report reaches 11587 of 12530 lines, 1144 of 1216 functions, and 16568 of 31694 branches. Every Predict function ran. Remaining Predictor lines include the unreachable zero-variance defense and compiler bookkeeping for multiline expressions. Existing application gaps include client-key errors, startup rejection logging, and some cache and editor branches. Source analysis reported no unused first-party function.

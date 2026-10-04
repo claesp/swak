@@ -64,6 +64,7 @@ add_library(
     src/core/measure.cpp
     src/core/measure.h
     src/core/lan_protocol.cpp
+    src/core/prediction.cpp
     src/core/track_motion.cpp
     src/core/settings_dialog.cpp
     src/core/server_browser.cpp
@@ -147,6 +148,7 @@ swak_plugin(swak_cot src/plugins/cot.cpp)
 swak_plugin(swak_map src/plugins/map.cpp Qt6::OpenGLWidgets)
 swak_plugin(swak_basemap src/plugins/basemap.cpp)
 swak_plugin(swak_trace src/plugins/trace.cpp)
+swak_plugin(swak_predict src/plugins/predict.cpp)
 swak_plugin(swak_shapes src/plugins/shapes.cpp)
 swak_plugin(swak_tracks src/plugins/tracks.cpp)
 swak_plugin(swak_servers src/plugins/servers.cpp Qt6::Network)
@@ -171,6 +173,7 @@ target_link_libraries(
     swak
     PRIVATE swak_shapes
             swak_trace
+            swak_predict
             swak_milstd2525
             swak_polygons
             swak_markers
@@ -238,6 +241,7 @@ if(BUILD_TESTING)
         swak_map_tests
         PRIVATE swak_shapes
                 swak_trace
+                swak_predict
                 swak_milstd2525
                 swak_polygons
                 swak_markers
@@ -263,6 +267,7 @@ if(BUILD_TESTING)
         swak_tests
         PRIVATE swak_shapes
                 swak_trace
+                swak_predict
                 swak_milstd2525
                 swak_polygons
                 swak_markers
@@ -314,6 +319,7 @@ if(BUILD_TESTING)
         swak_soak_tests
         PRIVATE swak_shapes
                 swak_trace
+                swak_predict
                 swak_milstd2525
                 swak_polygons
                 swak_markers
@@ -358,6 +364,7 @@ if(BUILD_TESTING)
         swak_gui_tests
         PRIVATE swak_shapes
                 swak_trace
+                swak_predict
                 swak_milstd2525
                 swak_polygons
                 swak_markers

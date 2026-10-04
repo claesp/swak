@@ -16,6 +16,24 @@ QPointF unproject(QPointF point)
     return {point.x() * 360 - 180,
             std::atan(std::sinh(std::numbers::pi * (1 - 2 * point.y()))) * 180 / std::numbers::pi};
 }
+double Viewport::markerSize(double baseSize) const
+{
+    switch (markerScalePercent) {
+    case 50:
+    case 75:
+    case 100:
+    case 125:
+    case 150:
+    case 200:
+        return baseSize * markerScalePercent / 100.0;
+    default:
+        return baseSize;
+    }
+}
+QPointF Viewport::markerOffset(QPointF offset, double radius) const
+{
+    return offset + QPointF(markerSize(radius) - radius, 0);
+}
 double Viewport::scale() const
 {
     return 256 * std::exp2(zoom);

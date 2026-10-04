@@ -138,3 +138,9 @@ Menu tests cover locale ordering, direct plugin actions, provider toggles, and m
 Read [Coding style](coding-style.md) for the project standard and formatter versions. Run python3 tools/quality.py style to report format differences without changing source. Run python3 tools/style.py --fix to apply the format. Review inserted braces and include changes before committing.
 
 The style pass covers first-party C++, Python, and CMake code. It excludes vendor code, generated files, and fixtures. The source-analysis pass also covers the C++ development tools. Formatter tests exercise file selection, version rejection, and command failure.
+
+Marker scaling tests exercise all six percentages, point drawing, hit targets, selection outlines, saved values, and canceled edits. Native tests cover local markers and CoT symbols. Data tests cover imported points. Basemap selection keeps its original radius.
+
+Predict tests cover known speeds, stationary positions, date-line crossing, high latitudes, invalid input, equal timestamps, bounded history, and enabled-target limits. Native tests exercise both activation controls, endpoint teleport fades, pause, resume, stale sources, clear, and restart. The workload enables 128 forecast targets and repeatedly feeds timestamped positions. Forecast accuracy against real routes remains unqualified.
+
+Restricted Area tests cover fill and stripes, draft preview, cancellation, Apply, Undo, saved profiles, and absent or invalid legacy fields. Native screenshots cover the OpenGL pattern. Other object editors hide the checkbox.

@@ -136,3 +136,9 @@ LAN greetings do not provide cryptographic authentication. A device on the selec
 Animation keeps at most 8192 display records, including live and recently stale UIDs. It never changes authoritative event coordinates. Stale display records are read-only and cannot receive selection actions. Clear removes both live events and retained display records.
 
 CoT pickers use a fixed local catalog and make no network requests. Type and Location method retain their existing syntax and length limits. Team and Role retain the 64-character limit. Picker text remains plain text. Cancel changes no draft value. Each dialog belongs to its field, so closing the owning form also destroys the dialog.
+
+# Position forecasts
+
+Predict retains at most 128 selected CoT identities and 50 samples per identity. It examines at most 128 saved target entries during restoration. Coordinates and timestamps must be valid before they enter the history. Forecast work uses three fixed horizons and bounded loops. No forecast data is transmitted or written to a separate file.
+
+The model resets after excessive speed, a large source jump, or a long gap. These bounds prevent extreme estimates but do not establish that received positions are true. Saved targets contain identities only. The plugin uses existing GUI-thread signals and animation timers. It adds no network access, worker threads, or external dependency.

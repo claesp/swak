@@ -5,6 +5,7 @@
 #include "core/single_line_label.h"
 
 #include <QButtonGroup>
+#include <QCheckBox>
 #include <QCollator>
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -120,6 +121,17 @@ ObjectEditor::ObjectEditor(UserObjects &objects, MarkerCollections &collections,
         refreshTypes(symbol);
         refreshColors();
     });
+    restricted_ = new QCheckBox(tr("Restricted"), this);
+    restricted_->setObjectName(QStringLiteral("objectRestricted"));
+    restricted_->setToolTip(tr("Add diagonal lines to the area fill."));
+    restricted_->hide();
+    layout->addWidget(restricted_);
+    connect(restricted_, &QCheckBox::toggled, this, [this](bool checked) {
+        if (draft_ && draft_->type == QStringLiteral("polygon")) {
+            draft_->restricted = checked;
+            emit configurationChanged();
+        }
+    });
     layout->addWidget(new QLabel(tr("Description"), this));
     description_ = new QPlainTextEdit(this);
     description_->setObjectName(QStringLiteral("objectDescription"));
@@ -200,6 +212,11 @@ void ObjectEditor::edit(const UserObject &item)
     draft_ = item;
     color_ = item.color;
     const bool marker = item.type == QStringLiteral("circle");
+    restricted_->setVisible(item.type == QStringLiteral("polygon"));
+    {
+        const QSignalBlocker block(restricted_);
+        restricted_->setChecked(item.restricted);
+    }
     collection_->setVisible(marker);
     collectionLabel_->setVisible(marker);
     title_->setPlaceholderText(marker                                        ? tr("New Marker")

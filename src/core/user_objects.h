@@ -20,6 +20,7 @@ struct UserObject
     QString color = QStringLiteral("#ffc857");
     QString symbol = {};
     QString collection = {};
+    bool restricted = false;
     QJsonObject json() const;
     static UserObject fromJson(const QJsonObject &value);
 };

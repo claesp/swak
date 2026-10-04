@@ -398,9 +398,11 @@ public:
             if (record.type != QStringLiteral("circle")) {
                 continue;
             }
-            if (QLineF(screen(location(record), view), pointer).length() > editor_.radius() + 5 &&
+            if (QLineF(screen(location(record), view), pointer).length() >
+                    std::max(8.0, view.markerSize(editor_.radius()) + 5) &&
                 !mapLabelBounds(QFontMetrics(QGuiApplication::font()),
-                                screen(location(record), view) + QPointF(16, -8),
+                                screen(location(record), view) +
+                                    view.markerOffset(QPointF(16, -8), editor_.radius()),
                                 record.title)
                      .contains(pointer)) {
                 continue;
@@ -428,11 +430,11 @@ public:
                 continue;
             }
             painter.setBrush(QColor(item.color));
-            paint(painter, item, screen(location(item), view));
+            paint(painter, item, screen(location(item), view), view);
         }
         if (editor_.draft() && !objects_.find(editor_.draft()->id)) {
             painter.setBrush(QColor(editor_.draft()->color));
-            paint(painter, *editor_.draft(), screen(location(*editor_.draft()), view));
+            paint(painter, *editor_.draft(), screen(location(*editor_.draft()), view), view);
         }
     }
     void paintOverlay(QPainter &painter, const Viewport &view, QPointF pointer) const override
@@ -442,7 +444,7 @@ public:
         if (mode_ != Mode::Idle) {
             if (mode_ == Mode::Moving) {
                 painter.setBrush(QColor(moving_.color));
-                paint(painter, moving_, pointer);
+                paint(painter, moving_, pointer, view);
             }
             painter.setRenderHint(QPainter::Antialiasing, false);
             painter.setPen(QPen(QColor(0, 0, 0, qRound(editor_.guideOpacity() * 255)), 1));
@@ -466,15 +468,17 @@ private:
     {
         return QStringLiteral("org.swak.markers");
     }
-    void paint(QPainter &painter, const UserObject &item, QPointF point) const
+    void paint(QPainter &painter, const UserObject &item, QPointF point, const Viewport &view) const
     {
         if (const auto symbol = collections_.symbol(item.collection, item.symbol)) {
-            paintCollectionSymbol(painter, *symbol, point, editor_.radius(), QColor(item.color));
+            paintCollectionSymbol(
+                painter, *symbol, point, view.markerSize(editor_.radius()), QColor(item.color));
         } else {
-            paintMarkerSymbol(painter, {}, point, editor_.radius(), QColor(item.color));
+            paintMarkerSymbol(
+                painter, {}, point, view.markerSize(editor_.radius()), QColor(item.color));
         }
         paintMapLabel(painter,
-                      point + QPointF(16, -8),
+                      point + view.markerOffset(QPointF(16, -8), editor_.radius()),
                       item.title,
                       selection_.item() && selection_.item()->owner == owner() &&
                           selection_.item()->id == item.id);

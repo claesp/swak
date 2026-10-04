@@ -113,19 +113,26 @@ private slots:
         services.objects = &localObjects;
         for (auto *plugin : QPluginLoader::staticInstances()) {
             if (auto *map = qobject_cast<MapExtension *>(plugin);
-                map && map->mapId() == QStringLiteral("org.swak.trace")) {
+                map && (map->mapId() == QStringLiteral("org.swak.trace") ||
+                        map->mapId() == QStringLiteral("org.swak.predict"))) {
                 qobject_cast<MenuPlugin *>(plugin)->populateMenu(services, traceMenu);
             }
         }
         auto *trace = dynamic_cast<SettingsParticipant *>(
             traceMenu.findChild<QObject *>(QStringLiteral("traceTool")));
         QVERIFY(trace);
+        auto *predict = dynamic_cast<SettingsParticipant *>(
+            traceMenu.findChild<QObject *>(QStringLiteral("predictTool")));
+        QVERIFY(predict);
+        QJsonArray predicted;
         QJsonArray traced;
         for (int i = 0; i < 128; ++i) {
+            predicted.append(QStringLiteral("item-%1").arg(i));
             traced.append(QJsonObject{{QStringLiteral("owner"), QStringLiteral("org.swak.events")},
                                       {QStringLiteral("id"), QStringLiteral("item-%1").arg(i)}});
         }
         trace->restorePreferences({{QStringLiteral("targets"), traced}});
+        predict->restorePreferences({{QStringLiteral("targets"), predicted}});
         Event event;
         event.type = QStringLiteral("a-f-G");
         event.how = QStringLiteral("h-e");
@@ -230,6 +237,7 @@ private slots:
                 }
             }
             for (int sample = 0; sample < 52; ++sample) {
+                tracedEvent.time = tracedEvent.time.addMSecs(100);
                 tracedEvent.longitude = static_cast<double>(sample) * 0.0001;
                 QVERIFY(store.accept(tracedEvent).isEmpty());
             }

@@ -253,6 +253,16 @@ void TrackMotion::setPaused(bool paused)
         timer_.start();
     }
 }
+void TrackMotion::remove(const QString &uid)
+{
+    if (records_.remove(uid) == 0) {
+        return;
+    }
+    if (records_.isEmpty()) {
+        timer_.stop();
+    }
+    emit changed();
+}
 void TrackMotion::clear()
 {
     frozen_.clear();

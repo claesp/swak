@@ -28,12 +28,14 @@ void MapSelection::paint(QPainter &painter,
             painter.setBrush(Qt::NoBrush);
             painter.setPen(QPen(Qt::white, 3));
             const auto center = point.value_or(selected.point) * scale + offset;
+            const double radius =
+                (selected.scaleIcon ? view.markerSize(selected.radius) : selected.radius) + 2;
             if (selected.markerOutline.isEmpty()) {
-                painter.drawPath(markerFrame(selected.symbol, center, selected.radius + 2));
+                painter.drawPath(markerFrame(selected.symbol, center, radius));
             } else {
                 QTransform transform;
                 transform.translate(center.x(), center.y());
-                transform.scale(selected.radius + 2, selected.radius + 2);
+                transform.scale(radius, radius);
                 painter.drawPath(transform.map(selected.markerOutline));
             }
         } else {

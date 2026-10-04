@@ -8,6 +8,7 @@ class QPlainTextEdit;
 class QTableWidget;
 class QLabel;
 class QComboBox;
+class QCheckBox;
 class QButtonGroup;
 class QGridLayout;
 namespace swak {
@@ -59,6 +60,7 @@ private:
     QGridLayout *colorLayout_;
     QButtonGroup *colors_;
     QString color_;
+    QCheckBox *restricted_;
     QPlainTextEdit *description_;
     QTableWidget *properties_;
     QLabel *status_;

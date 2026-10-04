@@ -1,6 +1,6 @@
 # Plugin API
 
-This review covers all eighteen built-in plugins. Every plugin implements `Plugin` and uses the shared contracts in `src/core/`. The common API version is 2. No plugin depends on a concrete application window class.
+This review covers all nineteen built-in plugins. Every plugin implements `Plugin` and uses the shared contracts in `src/core/`. The common API version is 2. No plugin depends on a concrete application window class.
 
 The application links plugins into the executable. Qt embeds each `src/plugins/<plugin>/MANIFEST` file through `Q_PLUGIN_METADATA`. The common metadata identifier is `org.swak.Plugin/2.0`. The application does not load external plugin binaries or search plugin directories.
 
@@ -56,6 +56,7 @@ The host owns pane placement, visibility actions, and layout persistence. Plugin
 | `src/plugins/activity` | Events | Pane and menu |
 | `src/plugins/information` | Information | Pane |
 | `src/plugins/trace` | Trace | Menu and map tool |
+| `src/plugins/predict` | Predict | Menu and map tool |
 | `src/plugins/shapes` | Circle and line tools | Pane, menu, toolbar, and map tool |
 | `src/plugins/markers` | Markers | Pane, map tool, and Core collection |
 | `src/plugins/polygons` | Areas | Pane and map tool |
@@ -357,3 +358,21 @@ SettingField::describeCode displays CoT descriptions while retaining the raw cod
 MapPanels consumes unhandled wheel events at the overlay boundary. Child controls receive wheel events first. The map filter also rejects wheel events over the visible overlay mask. Floating panes remain separate windows.
 
 The plugin catalog exposes pluginManifest for accepted built-in instances. It returns validated embedded metadata or an empty object for unknown instances. The Plugins pane shows each accepted plugin once. Selection shows every manifest field as read-only plain text. No plugin interface version changes.
+
+# Marker scaling and Predict
+
+Viewport carries markerScalePercent with a default of 100. Its markerSize helper accepts the six supported percentages and otherwise uses 100%. Marker layers must use that helper for symbol radii and hit targets. markerOffset adjusts a label anchor by the changed radius. Label fonts and line widths remain in logical screen pixels.
+
+MapItem.radius stores the unscaled symbol radius. MapSelection applies the viewport scale when MapItem.scaleIcon is true. Basemap features set scaleIcon to false because their symbols belong to the tile renderer. Geographic geometry does not use the icon scale. These additions retain API version 2 because all static plugins rebuild together.
+
+PredictPlugin uses MenuPlugin, MapExtension, MapTool, and SettingsParticipant. Its MANIFEST declares org.swak.predict. Its context and Information actions share the same implementation through the existing MapTool hooks. The menu owns the tool. No window-specific code or new dependency is required.
+
+PredictionHistory fits a constant velocity to bounded recent positions and unwraps longitude before the fit. It converts that velocity to ground speed and bearing at the latest latitude. Each forecast follows a great-circle direction for its requested duration. The model accepts horizons through 1800 seconds. It does not use the animation estimate as input.
+
+PredictTool listens to Store::eventAccepted and keeps history only for enabled CoT identities. It uses a private TrackMotion instance for forecast endpoints. That member has no QObject parent because it is not a separate configuration participant. It inherits movement duration, teleport distance, and fade duration from the store animation. Its short movement extrapolation is disabled because the endpoints already represent forecasts.
+
+The source TrackMotion snapshot supplies the line origin, stale color, and opacity. pauseChanged freezes the private animation too. Resume snaps both engines to their latest positions. Predict records do not alter Store events, object selection, or outgoing messages.
+
+TrackMotion::remove discards a live animation record without a fade. A paused snapshot remains visible until resume. Predict uses this method for removed targets and new history after an expired source. Explicit target removal also removes that target from painting immediately.
+
+UserObject.restricted stores the Area restriction flag. JSON uses the optional restricted boolean and defaults to false when the field is absent or invalid. ObjectEditor exposes the control only for polygon records and emits configurationChanged for draft previews. The Area renderer adds Qt BDiagPattern in screen coordinates above the existing fill. Editing vertices retains the flag because it is separate from geometry.

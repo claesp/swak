@@ -209,6 +209,18 @@ private slots:
             selection.paint(painter, Viewport{QSizeF(1024, 512), QPointF(0.5, 0.5), 0});
         }
         QCOMPARE(canvas.pixelColor(512 + qRound(hit->radius + 2), 256), QColor(Qt::white));
+        for (const int percent : {50, 75, 100, 125, 150, 200}) {
+            const Viewport scaled{QSizeF(1024, 512), QPointF(.5, .5), 0, percent};
+            canvas.fill(Qt::black);
+            {
+                QPainter painter(&canvas);
+                feeds.paint(painter, scaled);
+            }
+            const double radius = hit->radius * percent / 100.0;
+            QVERIFY(canvas.pixelColor(512, 256 + qFloor(radius - 1)) != QColor(Qt::black));
+            QVERIFY(itemAt(scaled, QPointF(512, 256 + radius)));
+            QVERIFY(!itemAt(scaled, QPointF(512, 256 + std::max(8.0, radius + 3) + 2)));
+        }
         MapItem route;
         route.kind = MapItem::Kind::Line;
         route.color = QColor(20, 40, 60);

@@ -24,3 +24,5 @@ Q_IMPORT_PLUGIN(PolygonPlugin)
 
 Q_IMPORT_PLUGIN(TracePlugin)
 Q_IMPORT_PLUGIN(ShapesPlugin)
+
+Q_IMPORT_PLUGIN(PredictPlugin)

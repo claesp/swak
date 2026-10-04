@@ -861,6 +861,7 @@ QList<MapItem> TileRenderer::itemsAt(QPointF position) const
             item.path = world.map(feature.path);
             item.color = feature.color;
             item.radius = source_.value(QStringLiteral("pointRadius")).toDouble(3);
+            item.scaleIcon = false;
             item.lineWidth = source_.value(QStringLiteral("lineWidth")).toDouble(1.5);
             result.append(std::move(item));
         }

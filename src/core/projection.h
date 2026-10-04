@@ -8,6 +8,9 @@ struct Viewport
     QSizeF size;
     QPointF center{0.5, 0.5};
     double zoom = 1;
+    int markerScalePercent = 100;
+    double markerSize(double baseSize) const;
+    QPointF markerOffset(QPointF offset, double radius) const;
     QPointF screen(double latitude, double longitude) const;
     QPointF coordinate(QPointF screenPoint) const;
     double scale() const;

@@ -331,6 +331,15 @@ public:
             numberSetting(QStringLiteral("centerY"), tr("Vertical center (0–1)"), 0, 1, 6),
             numberSetting(
                 QStringLiteral("zoom"), tr("Zoom"), zoomLimits().first, zoomLimits().second),
+            choiceSetting(QStringLiteral("markerScale"),
+                          tr("Marker icon scale"),
+                          {QStringLiteral("50%"),
+                           QStringLiteral("75%"),
+                           QStringLiteral("100%"),
+                           QStringLiteral("125%"),
+                           QStringLiteral("150%"),
+                           QStringLiteral("200%")},
+                          {50, 75, 100, 125, 150, 200}),
             keySetting(QStringLiteral("pauseMarkersKey"), tr("Pause or resume CoT positions")),
             keySetting(QStringLiteral("panNorthKey"), tr("Pan north")),
             keySetting(QStringLiteral("panWestKey"), tr("Pan west")),
@@ -388,6 +397,7 @@ public:
             {QStringLiteral("centerX"), view_.center.x()},
             {QStringLiteral("centerY"), view_.center.y()},
             {QStringLiteral("zoom"), view_.zoom},
+            {QStringLiteral("markerScale"), view_.markerScalePercent},
             {QStringLiteral("tileCacheMiB"), tileCacheMiB_},
             {QStringLiteral("diskCacheMiB"), diskCacheMiB_},
             {QStringLiteral("opacity"), opacity_},
@@ -413,6 +423,8 @@ public:
     void restorePreferences(const QJsonObject &values) override
     {
         stopPanning();
+        view_.markerScalePercent = values.value(QStringLiteral("markerScale")).toInt(100);
+        view_.markerScalePercent = qRound(view_.markerSize(100));
         keys_ = readKeys(values).value_or(DefaultKeys);
         panSpeed_ = preferenceNumber(values, QStringLiteral("panSpeed"), 300, 30, 2000);
         wheelZoom_ = values.value(QStringLiteral("wheelZoom")).toBool(true);
@@ -779,17 +791,24 @@ protected:
             if (message.start > now) {
                 continue;
             }
-            const bool visible =
-                QRectF(QPointF{}, view_.size).adjusted(-12, -12, 12, 12).contains(screen);
+            const bool visible = QRectF(QPointF{}, view_.size)
+                                     .adjusted(-view_.markerSize(12),
+                                               -view_.markerSize(12),
+                                               view_.markerSize(12),
+                                               view_.markerSize(12))
+                                     .contains(screen);
             const bool labelVisible =
                 visible && (message.uid == store_.selected() || labels++ < 100);
             const auto label =
                 (message.callsign.isEmpty() ? message.uid : message.callsign).left(32);
             const bool labelHit =
-                labelVisible &&
-                mapLabelBounds(fontMetrics(), screen + QPointF(16, -8), label).contains(position);
+                labelVisible && mapLabelBounds(fontMetrics(),
+                                               screen + view_.markerOffset(QPointF(16, -8), 6),
+                                               label)
+                                    .contains(position);
             if (visual.expired || visual.opacity < 0.15 || message.stale <= now ||
-                (QLineF(screen, position).length() >= 14 && !labelHit)) {
+                (QLineF(screen, position).length() >= std::max(8.0, view_.markerSize(14)) &&
+                 !labelHit)) {
                 continue;
             }
             MapItem item;

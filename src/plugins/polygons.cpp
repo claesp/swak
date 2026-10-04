@@ -416,7 +416,7 @@ public:
                 continue;
             }
             const auto points = polygonVertices(item.geometry);
-            draw(painter, screenPolygon(points, view), QColor(item.color));
+            draw(painter, screenPolygon(points, view), QColor(item.color), item.restricted);
             const auto text = painter.fontMetrics().elidedText(item.title, Qt::ElideRight, 240);
             const auto baseline = screenPoint(polygonLabelPoint(points), view) +
                                   QPointF(-painter.fontMetrics().horizontalAdvance(text) / 2.0,
@@ -430,7 +430,8 @@ public:
         if (editor_.draft() && moving_ < 0) {
             draw(painter,
                  screenPolygon(polygonVertices(editor_.draft()->geometry), view),
-                 QColor(editor_.draft()->color));
+                 QColor(editor_.draft()->color),
+                 editor_.draft()->restricted);
         }
     }
     void paintOverlay(QPainter &painter, const Viewport &view, QPointF pointer) const override
@@ -444,7 +445,7 @@ public:
             auto polygon = screenPolygon(polygonVertices(editor_.draft()->geometry), view);
             if (moving_ >= 0) {
                 polygon[moving_] = pointer;
-                draw(painter, polygon, QColor(editor_.draft()->color));
+                draw(painter, polygon, QColor(editor_.draft()->color), editor_.draft()->restricted);
             }
             dots(painter, polygon, QColor(editor_.draft()->color));
         }
@@ -497,7 +498,10 @@ private:
         editor_.edit(item);
         emit changed();
     }
-    void draw(QPainter &painter, const QPolygonF &points, const QColor &color) const
+    void draw(QPainter &painter,
+              const QPolygonF &points,
+              const QColor &color,
+              bool restricted = false) const
     {
         auto fill = color;
         fill.setAlpha(qRound(editor_.fillOpacity * 255));
@@ -505,6 +509,11 @@ private:
         painter.setBrush(points.size() >= 3 ? QBrush(fill) : Qt::NoBrush);
         if (points.size() >= 3) {
             painter.drawPolygon(points);
+            if (restricted) {
+                painter.setPen(Qt::NoPen);
+                painter.setBrush(QBrush(color, Qt::BDiagPattern));
+                painter.drawPolygon(points);
+            }
         } else {
             painter.drawPolyline(points);
         }
