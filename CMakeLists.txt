@@ -41,7 +41,7 @@ if(SWAK_COVERAGE)
     target_link_options(swak_build INTERFACE --coverage)
 endif()
 
-add_library(swak_core STATIC src/core/polygon.cpp src/core/polygon.h src/core/map_auth.cpp src/core/marker_collections.cpp src/core/marker_collections.h src/core/milstd2525_symbols.cpp src/core/marker_symbols.cpp src/core/marker_symbols.h src/core/map_grid.cpp src/core/map_grid.h src/core/object_editor.cpp src/core/object_editor.h src/core/user_objects.cpp src/core/user_objects.h src/core/map_tools.cpp src/core/map_tools.h src/core/map_selection.cpp src/core/map_selection.h src/core/vector_tiles.cpp src/core/vector_tiles.h src/core/data.cpp src/core/data.h src/core/event.cpp src/core/event.h src/core/files.cpp src/core/files.h src/core/interfaces.h src/core/single_line_label.h
+add_library(swak_core STATIC src/core/ui_icons.cpp src/core/ui_icons.h src/core/polygon.cpp src/core/polygon.h src/core/map_auth.cpp src/core/marker_collections.cpp src/core/marker_collections.h src/core/milstd2525_symbols.cpp src/core/marker_symbols.cpp src/core/marker_symbols.h src/core/map_grid.cpp src/core/map_grid.h src/core/object_editor.cpp src/core/object_editor.h src/core/user_objects.cpp src/core/user_objects.h src/core/map_tools.cpp src/core/map_tools.h src/core/map_selection.cpp src/core/map_selection.h src/core/vector_tiles.cpp src/core/vector_tiles.h src/core/data.cpp src/core/data.h src/core/event.cpp src/core/event.h src/core/files.cpp src/core/files.h src/core/interfaces.h src/core/single_line_label.h
     src/core/plugin_catalog.cpp src/core/plugin_catalog.h src/core/activity.cpp src/core/activity.h src/core/store.cpp src/core/store.h src/core/projection.cpp src/core/projection.h src/core/preferences.cpp src/core/preferences.h src/core/settings.cpp src/core/settings.h src/core/maps.cpp src/core/maps.h src/core/tiles.cpp src/core/tiles.h src/core/logging.cpp src/core/logging.h)
 target_include_directories(swak_core PUBLIC src)
 target_link_libraries(swak_core PUBLIC swak_build LibArchive::LibArchive Qt6::Widgets Qt6::Network Qt6::Concurrent)
@@ -114,3 +114,5 @@ if(BUILD_TESTING)
     add_executable(swak_gui_tests tests/test_gui.cpp src/app/window.cpp src/app/window.h src/app/map_panels.cpp src/app/map_panels.h src/app/settings_dialog.cpp src/app/settings_dialog.h src/app/map_manager.cpp src/app/map_manager.h src/app/data_manager.cpp src/app/data_manager.h src/app/marker_manager.cpp src/app/marker_manager.h src/app/plugins.cpp)
     target_link_libraries(swak_gui_tests PRIVATE swak_milstd2525 swak_polygons swak_markers swak_information swak_mvt swak_kml swak_activity swak_cot swak_map swak_basemap swak_tracks swak_udp swak_editor swak_xyz swak_wmts swak_wms Qt6::Test Qt6::Network Qt6::OpenGLWidgets)
 endif()
+
+install(FILES third_party/lucide/LICENSE third_party/lucide/LICENSE.Feather DESTINATION ${CMAKE_INSTALL_DOCDIR}/lucide)

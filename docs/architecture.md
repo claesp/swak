@@ -102,7 +102,7 @@ The CoT Messages plugin adds Clear and connects it directly to the window event 
 
 # Toolbar and About
 
-`ToolbarPlugin` is an optional interface with identifier `org.swak.Toolbar/3.0`. The host labels each section with `name()` and separates adjacent sections. It calls `populateToolbar(PluginServices &, QToolBar &, QMenu *)` once for each window. It supplies the main toolbar and the same plugin menu, or null when the plugin has no menu interface. The host calls the menu provider first. A toolbar provider can reuse its menu actions or create actions owned by the toolbar.
+`ToolbarPlugin` is an optional interface with identifier `org.swak.Toolbar/3.0`. The host separates adjacent sections and uses icon-only buttons. Action tooltips provide command names. It calls `populateToolbar(PluginServices &, QToolBar &, QMenu *)` once for each window. It supplies the main toolbar and the same plugin menu, or null when the plugin has no menu interface. The host calls the menu provider first. A toolbar provider can reuse its menu actions or create actions owned by the toolbar.
 
 Use translated action text, a tooltip, and an icon with a fallback. Connect callbacks with a QObject context that owns their state. Do not retain toolbar or menu pointers in static plugin objects. The CoT Messages plugin shares its Clear action across both surfaces. Shared actions keep their text, enabled state, and behavior consistent.
 
@@ -145,7 +145,7 @@ MapSources keeps session credentials outside its profile document. Providers def
 
 Pane plugins can supply a primary action in place of their menu toggle. Map tools request activation through MapTools, and the map view supplies its widget. The Marker command uses this shared path without host code that identifies the marker plugin.
 
-The Polygons plugin creates a separate tool and reuses ObjectEditor for metadata and colors. Shared polygon helpers handle bounded geometry, interior labels, area estimates, and locale formatting. UserObjects validates polygon records before storage. MapTools prioritizes active gestures and separates one-step dismissal from full cancellation.
+The Areas plugin creates a separate tool and reuses ObjectEditor for metadata and colors. Shared polygon helpers handle bounded geometry, interior labels, area estimates, and locale formatting. UserObjects validates polygon records before storage. MapTools prioritizes active gestures and separates one-step dismissal from full cancellation.
 
 Selection and feed renderers transform world paths into screen coordinates before Qt draws their strokes. They do not apply the map zoom to the painter. This avoids oversized OpenGL strokes at high zoom and keeps widths consistent with display scaling.
 

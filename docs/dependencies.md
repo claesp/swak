@@ -13,3 +13,12 @@ Qt and libarchive remain system dependencies. Read the build manual for their re
 Marker collections also use the existing system libarchive dependency. The shared collection service reads ZIP, TAR, and gzip-compressed TAR, and writes ZIP or compressed TAR. It enables no external decompression programs and extracts no files. The additional archive use avoids a separate ZIP implementation or dependency. Read [Marker collections](marker-collections.md) for the one-file format and resource limits.
 
 Local polygon tools add no external dependency. Qt paints and stores the geometry. The application calculates a spherical area estimate internally. [Turf area documentation](https://turfjs.org/docs/api/area) informed the review of geographic area conventions. No Turf code or package is included.
+
+
+## Command icons
+
+The application includes six SVG assets from [Lucide 0.468.0](https://github.com/lucide-icons/lucide/tree/0.468.0/icons). Lucide provides a consistent 24-unit grid with two-unit strokes. The included license covers Lucide and identifies Feather-derived icons. The source assets and notices are under `third_party/lucide`. Installation includes the notices.
+
+The checked-in Qt paths are generated from those SVG assets. FontTools 4.55.3 is a development-only converter. Normal builds and releases do not need it. This conversion avoids a new runtime SVG library and preserves vector scaling. Run `python3 tools/generate_icons.py` with that FontTools version available to regenerate the paths. The script reads only the bundled assets and performs no downloads.
+
+Application branding, marker symbols, and color swatches retain their own meanings. The shared command set covers Clear, Marker, Area, Map, Edit, and Move.

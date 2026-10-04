@@ -1,3 +1,4 @@
+#include "core/ui_icons.h"
 #include "core/activity.h"
 #include "core/maps.h"
 #include "core/tiles.h"
@@ -1291,11 +1292,14 @@ private slots:
             QTest::keyClick(map, Qt::Key_Equal); QCOMPARE(zoom(), 5);
             QTest::keyClick(map, Qt::Key_Minus); QCOMPARE(zoom(), 4);
             const auto center = [&] { const auto v = settings->savePreferences(); return QPointF(v.value(QStringLiteral("centerX")).toDouble(), v.value(QStringLiteral("centerY")).toDouble()); };
-            const auto origin = center();
-            QTest::keyClick(map, Qt::Key_Left); QVERIFY(center().x() < origin.x());
-            QTest::keyClick(map, Qt::Key_Right); QCOMPARE(center(), origin);
-            QTest::keyClick(map, Qt::Key_Up); QVERIFY(center().y() < origin.y());
-            QTest::keyClick(map, Qt::Key_Down); QCOMPARE(center(), origin);
+            for (const auto key : {Qt::Key_Left, Qt::Key_Right, Qt::Key_Up, Qt::Key_Down}) {
+                const auto origin = center(); QTest::keyPress(map, key);
+                QVERIFY(QTest::qWaitFor([&] { return center() != origin; }, 1000)); QTest::keyRelease(map, key);
+                if (key == Qt::Key_Left) QVERIFY(center().x() < origin.x());
+                if (key == Qt::Key_Right) QVERIFY(center().x() > origin.x());
+                if (key == Qt::Key_Up) QVERIFY(center().y() < origin.y());
+                if (key == Qt::Key_Down) QVERIFY(center().y() > origin.y());
+            }
             QTest::keyClick(map, Qt::Key_E, Qt::ControlModifier); QCOMPARE(zoom(), 4);
             auto *selection = window.findChild<swak::MapSelection *>(); QVERIFY(selection);
             auto *pane = window.findChild<QWidget *>(QStringLiteral("informationPane"));
@@ -1366,37 +1370,37 @@ private slots:
             const auto zoom = [&] { return settings->savePreferences().value(QStringLiteral("zoom")).toDouble(); };
             const auto origin = center();
             QElapsedTimer clock; clock.start();
-            QTest::keyPress(map, Qt::Key_W);
+            QTest::keyPress(map, Qt::Key_Up);
             QTest::qWait(240);
-            QKeyEvent repeat(QEvent::KeyPress, Qt::Key_W, Qt::NoModifier, QStringLiteral("w"), true);
+            QKeyEvent repeat(QEvent::KeyPress, Qt::Key_Up, Qt::NoModifier, QStringLiteral("w"), true);
             QApplication::sendEvent(map, &repeat);
-            QKeyEvent repeatRelease(QEvent::KeyRelease, Qt::Key_W, Qt::NoModifier, QStringLiteral("w"), true);
+            QKeyEvent repeatRelease(QEvent::KeyRelease, Qt::Key_Up, Qt::NoModifier, QStringLiteral("w"), true);
             QApplication::sendEvent(map, &repeatRelease);
             QTest::qWait(240);
-            QTest::keyRelease(map, Qt::Key_W);
+            QTest::keyRelease(map, Qt::Key_Up);
             const double pixels = (origin.y() - center().y()) * 4096;
             const double expected = static_cast<double>(clock.elapsed()) * 0.32;
             QVERIFY(pixels > expected * 0.65 && pixels < expected * 1.2);
             QCOMPARE(center().x(), origin.x());
             auto stopped = center(); QTest::qWait(80); QCOMPARE(center(), stopped);
-            for (const auto key : {Qt::Key_A, Qt::Key_S, Qt::Key_D}) {
+            for (const auto key : {Qt::Key_Left, Qt::Key_Down, Qt::Key_Right}) {
                 const auto before = center(); QTest::keyPress(map, key);
                 QVERIFY(QTest::qWaitFor([&] { return center() != before; }, 1000));
                 QTest::keyRelease(map, key);
-                if (key == Qt::Key_A) QVERIFY(center().x() < before.x());
-                if (key == Qt::Key_S) QVERIFY(center().y() > before.y());
-                if (key == Qt::Key_D) QVERIFY(center().x() > before.x());
+                if (key == Qt::Key_Left) QVERIFY(center().x() < before.x());
+                if (key == Qt::Key_Down) QVERIFY(center().y() > before.y());
+                if (key == Qt::Key_Right) QVERIFY(center().x() > before.x());
             }
-            QTest::keyPress(map, Qt::Key_W); QTest::keyPress(map, Qt::Key_S);
+            QTest::keyPress(map, Qt::Key_Up); QTest::keyPress(map, Qt::Key_Down);
             stopped = center(); QTest::qWait(80); QCOMPARE(center(), stopped);
-            QTest::keyRelease(map, Qt::Key_W); QTest::keyRelease(map, Qt::Key_S);
-            QTest::keyPress(map, Qt::Key_D);
+            QTest::keyRelease(map, Qt::Key_Up); QTest::keyRelease(map, Qt::Key_Down);
+            QTest::keyPress(map, Qt::Key_Right);
             auto *editorPane = window.findChild<QDockWidget *>(QStringLiteral("org.swak.editor.pane")); QVERIFY(editorPane);
             editorPane->show(); editorPane->raise();
             auto *editor = editorPane->findChild<QLineEdit *>(); QVERIFY(editor); editor->setFocus();
             QVERIFY(QTest::qWaitFor([&] { return !map->hasFocus(); }));
             stopped = center(); QTest::qWait(80); QCOMPARE(center(), stopped);
-            QTest::keyRelease(map, Qt::Key_D);
+            QTest::keyRelease(map, Qt::Key_Right);
             values.insert(QStringLiteral("panNorthKey"), QStringLiteral("I"));
             values.insert(QStringLiteral("panWestKey"), QStringLiteral("J"));
             values.insert(QStringLiteral("panSouthKey"), QStringLiteral("K"));
@@ -1506,7 +1510,7 @@ private slots:
         const auto click = [&](QPointF point) {
             QMouseEvent event(QEvent::MouseButtonRelease, point, point, Qt::LeftButton, Qt::NoButton, Qt::NoModifier); tool->handle(event, view, *map);
         };
-        QTest::keyClick(map, Qt::Key_O); QCOMPARE(tools->statusText(), QStringLiteral("P"));
+        QTest::keyClick(map, Qt::Key_O); QCOMPARE(tools->statusText(), QStringLiteral("A"));
         click({400, 200}); click({400, 200}); QVERIFY(!editor->draft());
         tools->cancel();
         for (int repeat = 0; repeat < 4; ++repeat) {
@@ -1525,7 +1529,7 @@ private slots:
         }
         tool->activate(*map); click({100, 100}); click({300, 300}); click({100, 300}); click({300, 100});
         QKeyEvent complete(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier); QVERIFY(tool->handle(complete, view, *map));
-        QVERIFY(!editor->draft()); QCOMPARE(tools->statusText(), QStringLiteral("P"));
+        QVERIFY(!editor->draft()); QCOMPARE(tools->statusText(), QStringLiteral("A"));
         tools->cancel(); QVERIFY(!tools->coordinateGridActive());
         QVERIFY(window.findChild<swak::UserObjects *>()->items().isEmpty());
     }
@@ -1556,6 +1560,8 @@ private slots:
         }
         QTimer::singleShot(0, map, [map] {
             auto *menu = map->findChild<QMenu *>(QStringLiteral("mapObjectChooser")); QVERIFY(menu);
+            QCOMPARE(menu->actions().size(), 4); QVERIFY(menu->toolTipsVisible());
+            for (auto *action : menu->actions()) { QVERIFY(!action->isSeparator()); QVERIFY(!action->icon().isNull()); QVERIFY(action->text().startsWith(QStringLiteral("First ")) || action->text().startsWith(QStringLiteral("Second "))); QVERIFY(!action->text().contains('(')); }
             QVERIFY(menu->grab().save(QStringLiteral("overlap-chooser.png"))); menu->close();
         });
         QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, point);
@@ -1622,9 +1628,9 @@ private slots:
                 QMouseEvent event(QEvent::MouseMove, QPointF(point), QPointF(map->mapToGlobal(point)), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
                 QApplication::sendEvent(map, &event);
             };
-            QTest::keyClick(map, Qt::Key_P); QCOMPARE(tools->statusText(), QStringLiteral("P")); QCOMPARE(map->cursor().shape(), Qt::CrossCursor);
+            QTest::keyClick(map, Qt::Key_A); QCOMPARE(tools->statusText(), QStringLiteral("A")); QCOMPARE(map->cursor().shape(), Qt::CrossCursor);
             QTest::keyClick(map, Qt::Key_M); QCOMPARE(tools->statusText(), QStringLiteral("M"));
-            QTest::keyClick(map, Qt::Key_P); QCOMPARE(tools->statusText(), QStringLiteral("P"));
+            QTest::keyClick(map, Qt::Key_A); QCOMPARE(tools->statusText(), QStringLiteral("A"));
             click(a); QCOMPARE(map->cursor().shape(), Qt::CrossCursor); click(b); motion(c);
             QImage overlay(map->size(), QImage::Format_ARGB32_Premultiplied); overlay.fill(Qt::transparent);
             const auto savedView = dynamic_cast<swak::PreferenceParticipant *>(map)->savePreferences();
@@ -1636,7 +1642,7 @@ private slots:
             click(c); click(d); click(a); QVERIFY(editor->draft()); QVERIFY(editor->isVisible()); QVERIFY(tools->statusText().isEmpty());
             QCOMPARE(swak::polygonVertices(editor->draft()->geometry).size(), 4);
             QVERIFY(!editor->findChild<QComboBox *>(QStringLiteral("objectCollection"))->isVisible());
-            QCOMPARE(editor->findChild<QComboBox *>(QStringLiteral("objectType"))->currentText(), QStringLiteral("Polygon"));
+            QCOMPARE(editor->findChild<QComboBox *>(QStringLiteral("objectType"))->currentText(), QStringLiteral("Area"));
             auto *title = editor->findChild<QLineEdit *>(QStringLiteral("objectTitle")); title->setText(QStringLiteral("Test area"));
             editor->findChild<QPlainTextEdit *>(QStringLiteral("objectDescription"))->setPlainText(QStringLiteral("Area description"));
             editor->findChild<QToolButton *>(QStringLiteral("objectColor3"))->click();
@@ -1677,8 +1683,8 @@ private slots:
             { QPainter painter(&overlay); tools->paintOverlay(painter, view, middle); }
             QCOMPARE(overlay.pixelColor(a), QColor(editor->draft()->color));
             QVERIFY(overlay.save(QStringLiteral("polygon-corner-color.png")));
-            context(a, QStringLiteral("movePolygonVertex")); QCOMPARE(tools->statusText(), QStringLiteral("P")); motion(b); click(b);
-            QCOMPARE(editor->draft()->geometry, original); QCOMPARE(tools->statusText(), QStringLiteral("P"));
+            context(a, QStringLiteral("movePolygonVertex")); QCOMPARE(tools->statusText(), QStringLiteral("A")); motion(b); click(b);
+            QCOMPARE(editor->draft()->geometry, original); QCOMPARE(tools->statusText(), QStringLiteral("A"));
             QTest::keyClick(map, Qt::Key_Escape); QVERIFY(editor->draft()); QVERIFY(tools->statusText().isEmpty());
             context(a, QStringLiteral("movePolygonVertex")); click(QPoint(80, 120)); QVERIFY(editor->draft()->geometry != original);
             QCOMPARE(objects->find(id)->geometry, original);
@@ -1695,8 +1701,8 @@ private slots:
             QVERIFY(editor->draft()); QCOMPARE(swak::polygonVertices(editor->draft()->geometry).size(), 3);
             QTest::keyClick(editor, Qt::Key_Escape); QCOMPARE(objects->items().size(), 1);
             action->trigger(); click(a); click(b); motion(QPoint(200, 140)); QTest::keyClick(map, Qt::Key_Return);
-            QVERIFY(!editor->draft()); QCOMPARE(tools->statusText(), QStringLiteral("P"));
-            QTest::keyClick(map, Qt::Key_P); QVERIFY(tools->statusText().isEmpty());
+            QVERIFY(!editor->draft()); QCOMPARE(tools->statusText(), QStringLiteral("A"));
+            QTest::keyClick(map, Qt::Key_A); QVERIFY(tools->statusText().isEmpty());
             action->trigger(); click(a); QTest::keyClick(map, Qt::Key_Return); QVERIFY(!editor->draft());
             QTest::keyClick(map, Qt::Key_Escape); QVERIFY(tools->statusText().isEmpty());
             click(QPoint(500, 100)); QVERIFY(!selection->item());
@@ -1869,6 +1875,60 @@ private slots:
         QCOMPARE(saved.value(QStringLiteral("centerX")).toDouble(), expectedX);
         QCOMPARE(saved.value(QStringLiteral("diskCacheMiB")).toInt(), 256);
     }
+    void compactToolbarAndKeys()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("compact.json")), QPluginLoader::staticInstances());
+        window.show(); window.activateWindow(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *toolbar = window.findChild<QToolBar *>(QStringLiteral("mainToolbar")); QVERIFY(toolbar);
+        auto *map = window.findChild<QOpenGLWidget *>(); QVERIFY(map);
+        auto *tools = window.findChild<swak::MapTools *>(); QVERIFY(tools);
+        auto *marker = window.findChild<QAction *>(QStringLiteral("markerModeAction"));
+        auto *area = window.findChild<QAction *>(QStringLiteral("polygonModeAction")); QVERIFY(marker && area);
+        QVERIFY(toolbar->actions().contains(marker)); QVERIFY(toolbar->actions().contains(area));
+        QVERIFY(!marker->icon().isNull()); QVERIFY(!area->icon().isNull()); QCOMPARE(area->text(), QStringLiteral("Area"));
+        QVERIFY(!toolbar->findChild<QLabel *>(QStringLiteral("toolbarPluginLabel")));
+        QCOMPARE(toolbar->toolButtonStyle(), Qt::ToolButtonIconOnly);
+        auto *markerButton = qobject_cast<QToolButton *>(toolbar->widgetForAction(marker)); QVERIFY(markerButton);
+        QTest::mouseClick(markerButton, Qt::LeftButton); QCOMPARE(tools->statusText(), QStringLiteral("M")); QVERIFY(marker->isChecked());
+        auto *areaButton = qobject_cast<QToolButton *>(toolbar->widgetForAction(area)); QVERIFY(areaButton);
+        QTest::mouseClick(areaButton, Qt::LeftButton); QCOMPARE(tools->statusText(), QStringLiteral("A")); QVERIFY(area->isChecked()); QVERIFY(!marker->isChecked());
+        QTest::mouseClick(areaButton, Qt::LeftButton); QVERIFY(tools->statusText().isEmpty()); QVERIFY(!area->isChecked());
+        QTest::keyClick(map, Qt::Key_A); QCOMPARE(tools->statusText(), QStringLiteral("A"));
+        QTest::keyClick(map, Qt::Key_A); QVERIFY(tools->statusText().isEmpty());
+        auto *navigation = dynamic_cast<swak::SettingsParticipant *>(map); QVERIFY(navigation);
+        navigation->restorePreferences({{QStringLiteral("panNorthKey"), QStringLiteral("W")}, {QStringLiteral("panWestKey"), QStringLiteral("A")}, {QStringLiteral("panSouthKey"), QStringLiteral("S")}, {QStringLiteral("panEastKey"), QStringLiteral("D")}, {QStringLiteral("stepWestKey"), QStringLiteral("Left")}});
+        const auto keys = navigation->savePreferences();
+        QCOMPARE(keys.value(QStringLiteral("panNorthKey")).toString(), QStringLiteral("Up")); QCOMPARE(keys.value(QStringLiteral("panWestKey")).toString(), QStringLiteral("Left"));
+        QCOMPARE(keys.value(QStringLiteral("panSouthKey")).toString(), QStringLiteral("Down")); QCOMPARE(keys.value(QStringLiteral("panEastKey")).toString(), QStringLiteral("Right"));
+        QVERIFY(keys.value(QStringLiteral("stepWestKey")).toString().isEmpty());
+        auto *editor = window.findChild<swak::ObjectEditor *>(QStringLiteral("polygonEditor"));
+        auto *settings = dynamic_cast<swak::SettingsParticipant *>(editor); QVERIFY(settings);
+        settings->restorePreferences({{QStringLiteral("createKey"), QStringLiteral("P")}});
+        QCOMPARE(settings->savePreferences().value(QStringLiteral("createKey")).toString(), QStringLiteral("A"));
+        settings->restorePreferences({{QStringLiteral("createKey"), QStringLiteral("B")}});
+        QCOMPARE(settings->savePreferences().value(QStringLiteral("createKey")).toString(), QStringLiteral("B")); QVERIFY(area->toolTip().contains('B'));
+        settings->restorePreferences({{QStringLiteral("createKey"), QStringLiteral("P")}, {QStringLiteral("areaShortcutVersion"), 2}});
+        QCOMPARE(settings->savePreferences().value(QStringLiteral("createKey")).toString(), QStringLiteral("P")); settings->restorePreferences({});
+        QVERIFY(toolbar->grab().save(QStringLiteral("compact-toolbar.png")));
+        const auto previousPalette = QApplication::palette();
+        const auto previousStyle = QApplication::style()->objectName();
+        const auto restorePalette = qScopeGuard([previousPalette, previousStyle] {
+            if (auto *style = QStyleFactory::create(previousStyle)) QApplication::setStyle(style);
+            QApplication::setPalette(previousPalette);
+        });
+        QApplication::setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
+        QPalette dark(QColor("#202020")); dark.setColor(QPalette::WindowText, Qt::white); dark.setColor(QPalette::ButtonText, Qt::white);
+        dark.setColor(QPalette::Window, QColor("#202020")); dark.setColor(QPalette::Button, QColor("#202020"));
+        QApplication::setPalette(dark); window.setPalette(dark); toolbar->setPalette(dark);
+        QVERIFY(QTest::qWaitFor([&] { const auto frame = toolbar->grab().toImage(); return frame.pixelColor(frame.width() - 4, frame.height() / 2).lightness() < 100; }, 1000));
+        QVERIFY(toolbar->grab().save(QStringLiteral("compact-toolbar-dark.png")));
+        for (const auto icon : {swak::UiIcon::Clear, swak::UiIcon::Marker, swak::UiIcon::Area, swak::UiIcon::Map, swak::UiIcon::Edit, swak::UiIcon::Move}) {
+            const auto image = swak::uiIcon(icon); QVERIFY(!image.pixmap(QSize(24, 24), 2).isNull());
+            QVERIFY(!image.pixmap(QSize(24, 24), QIcon::Disabled).isNull()); QVERIFY(!image.pixmap(QSize(24, 24), QIcon::Selected).isNull());
+        }
+    }
+
     void pluginToolbar()
     {
         QTemporaryDir directory;
@@ -1882,8 +1942,9 @@ private slots:
             QCOMPARE(window.toolBarArea(toolbar), Qt::TopToolBarArea);
             QVERIFY(!toolbar->isMovable());
             QVERIFY(!toolbar->isFloatable());
-            QCOMPARE(toolbar->actions().size(), 2);
-            QCOMPARE(toolbar->findChild<QLabel *>(QStringLiteral("toolbarPluginLabel"))->text(), QStringLiteral("Example toolbar"));
+            QCOMPARE(toolbar->actions().size(), 1);
+            QVERIFY(!toolbar->findChild<QLabel *>(QStringLiteral("toolbarPluginLabel")));
+            QCOMPARE(toolbar->toolButtonStyle(), Qt::ToolButtonIconOnly);
             action = toolbar->actions().last();
             QVERIFY(!action->icon().isNull());
             action->trigger();

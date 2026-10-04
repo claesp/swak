@@ -36,11 +36,11 @@ Plugins implement the feature interfaces that they need. Their manifests declare
 
 The unchanged data and map interfaces retain version 1.0. Most UI interfaces use version 2.0 because their service arguments changed. ToolbarPlugin uses version 3.0 because it now requires `name()`. The former `MapConsumer` interface is removed. The view now receives the map catalog through the shared context.
 
-The host adds a plain-text label from `ToolbarPlugin::name()` before each toolbar section. Separators divide these sections. The host calls menu callbacks before toolbar callbacks. A toolbar callback receives its plugin menu or null. Plugins can share one action between their menu and toolbar. Plugins must not assume that a menu exists.
+The host uses icon-only toolbar sections with separators. Plugin names remain available through the API but do not consume toolbar space. The host calls menu callbacks before toolbar callbacks. A toolbar callback receives its plugin menu or null. Plugins can share one action between their menu and toolbar. Plugins must not assume that a menu exists.
 
 Tools and sources require a codec for their panes. The host leaves those panes unavailable when no codec exists. Codec-free panes, menus, and independent map layers remain available. Pane visibility does not unload plugin code or stop a receiver.
 
-The host owns pane placement, visibility actions, and layout persistence. Plugins with commands receive a submenu under Tools > Plugins. The plugin entry has a checkbox that shows or hides its pane. Return and Space also toggle the pane. Hover and Right open the command submenu. Plugins without commands use a direct checkbox action unless they supply a primaryAction. Marker and Polygon use direct creation commands. Closing a pane hides it.
+The host owns pane placement, visibility actions, and layout persistence. Plugins with commands receive a submenu under Tools > Plugins. The plugin entry has a checkbox that shows or hides its pane. Return and Space also toggle the pane. Hover and Right open the command submenu. Plugins without commands use a direct checkbox action unless they supply a primaryAction. Marker and Area use direct creation commands. Closing a pane hides it.
 
 # Implemented plugins
 
@@ -56,7 +56,7 @@ The host owns pane placement, visibility actions, and layout persistence. Plugin
 | `src/plugins/activity` | Events | Pane and menu |
 | `src/plugins/information` | Information | Pane |
 | `src/plugins/markers` | Markers | Pane, map tool, and Core collection |
-| `src/plugins/polygons` | Polygons | Pane and map tool |
+| `src/plugins/polygons` | Areas | Pane and map tool |
 | `src/plugins/milstd2525` | MILSTD2525 | Marker collection |
 | `src/plugins/mvt` | MVT vector tiles | Map provider and vector tiles |
 | `src/plugins/xyz` | XYZ image tiles | Map provider |
@@ -254,13 +254,13 @@ The generic form selects a choice field's first declared value when a saved valu
 
 # Primary pane commands
 
-PanePlugin can return a pane-owned QAction from `primaryAction(QWidget *)`. The argument is the dock content container, which contains the plugin widget. The host uses that action instead of the pane toggle in Tools > Plugins. The default remains the existing pane toggle.
+PanePlugin can return a pane-owned QAction from `primaryAction(QWidget *)`. The argument is the dock content container, which contains the plugin widget. The host shares that action between Tools > Plugins and the main toolbar. Supply its icon, tooltip, and active state. The default remains the existing pane toggle.
 
 MapTool can emit `activationRequested`, which MapTools forwards to the map view. The view cancels the current tool, calls `activate(QWidget &)`, and focuses the map. The default activation method does nothing. Markers uses this path for the Marker menu action and shares its placement setup with the keyboard action. The editor pane still opens after placement or an explicit edit.
 
 # Polygon tools
 
-The Polygons plugin implements Plugin, PanePlugin, and MapExtension. Its embedded MANIFEST declares the pane and map-tool roles. The primary pane command activates polygon creation through the same API as Marker.
+The Areas plugin implements Plugin, PanePlugin, and MapExtension. Its embedded MANIFEST declares the pane and map-tool roles. The primary pane command activates polygon creation through the same API as Marker.
 
 MapTool::interactionActive gives an active gesture or editor first access to map events. MapTools then tries inactive tools for unhandled events. Keyboard activation uses activationRequested, so the host cancels previous tool state before it activates another tool.
 
@@ -278,6 +278,9 @@ MapItem::outlineStyle controls the selected polygon outline. Imported areas reta
 
 `MapTool::interact(item, event, map)` handles a chosen object. The default returns false. A tool must reject another owner's item and find its current record by ID. A missing record causes no action. Left release selects the object. A context event opens that object's menu. Tool-specific creation, movement, and corner editing remain in `handle`.
 
-`MapTools` collects hits and routes chosen objects through this API. Markers and Polygons both use it. The view also collects CoT, data feed, and vector feature hits. `DataSources::itemsAt` and `TileRenderer::itemsAt` return all hits. These methods replace the former first-hit `itemAt` methods.
+`MapTools` collects hits and routes chosen objects through this API. Markers and Areas both use it. The view also collects CoT, data feed, and vector feature hits. `DataSources::itemsAt` and `TileRenderer::itemsAt` return all hits. These methods replace the former first-hit `itemAt` methods.
 
-The host opens a chooser when more than one object matches. Menu rows show a number, label, and type or source. More objects appear on pages of 30. Pages allocate their actions only when opened. Cancellation preserves selection. Content changes close the chooser before an old result can act. No saved schema changes. These shared C++ classes require all static plugins to rebuild together.
+The host opens a chooser when more than one object matches. Menu rows show a label and icon. Tooltips show type and source details. More objects appear on pages of 30. Pages allocate their actions only when opened. Cancellation preserves selection. Content changes close the chooser before an old result can act. No saved schema changes. These shared C++ classes require all static plugins to rebuild together.
+
+
+`MapItem::icon` optionally supplies a chooser icon. The marker tool uses `collectionIcon` to preserve its actual symbol and color. The host uses shared UI icons for area and point fallbacks. `uiIcon` provides the application command icons. Plugins must use these factories for matching commands. The icon engine uses Qt vector paths and the active palette. No runtime icon theme or SVG parser is required.

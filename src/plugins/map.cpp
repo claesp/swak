@@ -1,3 +1,4 @@
+#include "core/ui_icons.h"
 #include "core/interfaces.h"
 #include "core/tiles.h"
 #include "core/map_tools.h"
@@ -47,7 +48,7 @@ namespace swak {
 namespace {
 const std::array<QString, 14> KeyPaths{QStringLiteral("panNorthKey"), QStringLiteral("panWestKey"), QStringLiteral("panSouthKey"), QStringLiteral("panEastKey"), QStringLiteral("zoomInKey"), QStringLiteral("zoomOutKey"), QStringLiteral("resetViewKey"), QStringLiteral("zoomPlusKey"), QStringLiteral("zoomEqualKey"), QStringLiteral("zoomMinusKey"),
     QStringLiteral("stepWestKey"), QStringLiteral("stepEastKey"), QStringLiteral("stepNorthKey"), QStringLiteral("stepSouthKey")};
-const std::array<int, 14> DefaultKeys{Qt::Key_W, Qt::Key_A, Qt::Key_S, Qt::Key_D, Qt::Key_Q, Qt::Key_E, Qt::Key_Home, Qt::Key_Plus, Qt::Key_Equal, Qt::Key_Minus, Qt::Key_Left, Qt::Key_Right, Qt::Key_Up, Qt::Key_Down};
+const std::array<int, 14> DefaultKeys{Qt::Key_Up, Qt::Key_Left, Qt::Key_Down, Qt::Key_Right, Qt::Key_Q, Qt::Key_E, Qt::Key_Home, Qt::Key_Plus, Qt::Key_Equal, Qt::Key_Minus, 0, 0, 0, 0};
 int navigationKey(const QString &text)
 {
     if (text.isEmpty() || text.size() > 32) return 0;
@@ -243,6 +244,7 @@ public:
                 {QStringLiteral("panSpeed"), panSpeed_}, {QStringLiteral("wheelZoom"), wheelZoom_},
                 {QStringLiteral("wheelReverse"), wheelReverse_}, {QStringLiteral("wheelSteps"), wheelSteps_},
                 {QStringLiteral("prefetchMargin"), prefetchMargin_}};
+        values.insert(QStringLiteral("navigationKeysVersion"), 2);
         values.insert(QStringLiteral("gridStyleVersion"), 2); values.insert(QStringLiteral("gridVisible"), gridVisible_); values.insert(QStringLiteral("gridOpacity"), gridOpacity_); values.insert(QStringLiteral("gridSpacing"), gridSpacing_);
         for (size_t i = 0; i < KeyPaths.size(); ++i) values.insert(KeyPaths[i], QKeySequence(keys_[i]).toString(QKeySequence::PortableText));
         return values;
@@ -510,8 +512,7 @@ protected:
         if (hits.isEmpty()) return false;
         qsizetype chosen = 0;
         if (hits.size() > 1) {
-            QMenu menu(this); menu.setObjectName(QStringLiteral("mapObjectChooser"));
-            menu.addSection(tr("Choose an object"));
+            QMenu menu(this); menu.setObjectName(QStringLiteral("mapObjectChooser")); menu.setToolTipsVisible(true);
             chosen = -1;
             closeOnContentChange(menu);
             // Build each page only when it opens. Dense overlaps keep a small menu.
@@ -524,13 +525,14 @@ protected:
                     if (hit.source == QStringLiteral("cot")) detail += tr(" / CoT message");
                     if (hit.source == QStringLiteral("data")) detail += tr(" / Data provider");
                     if (hit.source == QStringLiteral("vector")) detail += tr(" / Map feature");
-                    const auto text = QStringLiteral("%1. %2 (%3)").arg(i + 1).arg(label.left(100), detail.left(100));
-                    auto *action = page->addAction(QString(text).replace('&', QStringLiteral("&&")));
+                    const auto text = label.left(100);
+                    auto *action = page->addAction(hit.item.icon.isNull() ? uiIcon(hit.item.kind == MapItem::Kind::Polygon ? UiIcon::Area : UiIcon::Marker) : hit.item.icon, QString(text).replace('&', QStringLiteral("&&")));
+                    action->setToolTip(label + QStringLiteral(" (%1)").arg(detail));
                     action->setData(hit.item.id);
                     connect(action, &QAction::triggered, &menu, [&, i] { chosen = i; menu.close(); });
                 }
                 if (end < hits.size()) {
-                    auto *more = page->addMenu(tr("More objects"));
+                    auto *more = page->addMenu(tr("More objects")); more->setToolTipsVisible(true);
                     connect(more, &QMenu::aboutToShow, &menu, [&, more, end] { if (more->actions().isEmpty()) self(self, more, end); });
                 }
             };
@@ -631,8 +633,17 @@ private:
         setText(tlsStatus_, source.value(QStringLiteral("ignoreTls")).toBool(false) ? tr("HTTPS certificate checks disabled") : QString{}, true);
     }
 
-    static std::optional<std::array<int, 14>> readKeys(const QJsonObject &values)
+    static std::optional<std::array<int, 14>> readKeys(QJsonObject values)
     {
+        if (values.value(QStringLiteral("navigationKeysVersion")).toInt() < 2) {
+            const std::array<int, 4> oldPan{Qt::Key_W, Qt::Key_A, Qt::Key_S, Qt::Key_D};
+            const std::array<int, 4> oldStep{Qt::Key_Left, Qt::Key_Right, Qt::Key_Up, Qt::Key_Down};
+            for (size_t i = 0; i < 4; ++i) {
+                if (values.value(KeyPaths[i]).toString() == QKeySequence(oldPan[i]).toString(QKeySequence::PortableText))
+                    values.insert(KeyPaths[i], QKeySequence(DefaultKeys[i]).toString(QKeySequence::PortableText));
+                if (values.value(KeyPaths[i + 10]).toString() == QKeySequence(oldStep[i]).toString(QKeySequence::PortableText)) values.insert(KeyPaths[i + 10], QString{});
+            }
+        }
         std::array<int, 14> keys{};
         QSet<int> used;
         for (size_t i = 0; i < KeyPaths.size(); ++i) {
@@ -788,8 +799,8 @@ public:
         mapButton->setObjectName(QStringLiteral("mapProviderButton"));
         mapButton->setAccessibleName(tr("Select map provider"));
         mapButton->setPopupMode(QToolButton::InstantPopup);
-        mapButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-        mapButton->setIcon(QIcon::fromTheme(QStringLiteral("globe"), toolbar.style()->standardIcon(QStyle::SP_DirIcon)));
+        mapButton->setToolButtonStyle(Qt::ToolButtonIconOnly);
+        mapButton->setIcon(uiIcon(UiIcon::Map));
         auto *mapMenu = new QMenu(mapButton);
         mapMenu->setObjectName(QStringLiteral("mapProviderMenu"));
         mapButton->setMenu(mapMenu);
@@ -797,6 +808,7 @@ public:
         const auto updateMapButton = [mapButton, mapSources] {
             const auto source = mapSources->activeSource();
             mapButton->setText(source.isEmpty() ? tr("No map provider") : source.value(QStringLiteral("name")).toString());
+            mapButton->setToolTip(tr("Map provider: %1").arg(mapButton->text()));
         };
         connect(mapSources, &MapSources::changed, mapButton, updateMapButton);
         connect(mapMenu, &QMenu::aboutToShow, mapMenu, [mapMenu, mapSources] {

@@ -28,7 +28,7 @@ The editor generates `a-u-G` events by default. Map markers use blue for `a-f` t
 
 Select a table row or map marker to focus that event. The XML preview then shows that event. Selection changes the preview but keeps the editor fields unchanged.
 
-Drag the map with the left mouse button to move it. Double-click with the left button to center that point without changing zoom. Use the wheel to zoom around the pointer. With map focus, hold W, A, S, or D to move north, west, south, or east. Diagonal movement keeps the same speed. Release the keys to stop. Losing focus also stops movement. Arrow keys move one step. Q and E zoom in and out. Plus and minus also change zoom, and Home resets the view.
+Drag the map with the left mouse button to move it. Double-click with the left button to center that point without changing zoom. Use the wheel to zoom around the pointer. With map focus, hold the arrow keys to pan in their direction. Diagonal movement keeps the same speed. Release the keys to stop. Losing focus also stops movement. Q and E zoom in and out. Plus and minus also change zoom, and Home resets the view.
 
 The map uses Web Mercator, a rectangular map projection. It clips positions near the poles to approximately 85.05 degrees. The event table retains the original coordinates, including polar positions.
 
@@ -254,7 +254,7 @@ Tools > Plugins > Marker activates marker placement. Click the map to open the m
 
 # Create and edit polygons
 
-Press P while the map has focus, or select Tools > Plugins > Polygon. The crosshair and black guide lines follow the pointer. Click to place each blue corner. After two corners, the preview fills the area through the current pointer position with 30 percent blue.
+Press A while the map has focus, or select Area on the toolbar or under Tools > Plugins. The crosshair and black guide lines follow the pointer. Click to place each blue corner. After two corners, the preview fills the area through the current pointer position with 30 percent blue.
 
 Click the first corner after placing at least three corners to close the polygon. Enter closes the placed outline. With exactly two placed corners, Enter adds the current pointer position as the third corner. A polygon needs three distinct corners and a nonzero area. Crossing or overlapping edges prevent completion. Each polygon supports at most 64 corners.
 
@@ -264,12 +264,17 @@ Click inside a saved polygon to open Information. The selected area has a white 
 
 Escape during a corner move restores its previous position in the draft. Escape again cancels the edit. Apply saves all corner and metadata changes together. Delete or Backspace removes the selected polygon. Edit > Undo or Ctrl+Z restores a deleted polygon.
 
-P toggles polygon creation. M switches to marker creation. A tool switch discards an unfinished shape or edit. File > Settings > Keybindings contains the polygon shortcut. The Polygons section controls corner size, outline width, fill opacity, and guide opacity.
+A toggles Area mode. M switches to marker creation. A tool switch discards an unfinished shape or edit. File > Settings > Keybindings contains the area shortcut. The Areas section controls corner size, outline width, fill opacity, and guide opacity.
 
 Information formats area with the system locale and measurement system. Metric locales use m² below 1000 m² and km² from that threshold. Imperial locales use ft², acres, and mi² as the area increases. Area uses a spherical Earth radius of 6371008.8 meters and integrates along the straight map edges. It is an estimate, not an ellipsoidal survey measurement. The shape follows the displayed world and does not wrap across the date line.
 
 # Select overlapping objects
 
-When objects overlap, click their shared area to open the object chooser. Select the required object from the list. Each row shows its label and type. Numbers distinguish rows with the same label. Use More objects to reach another page. Press Escape to cancel without changing selection.
+When objects overlap, click their shared area to open the object chooser. Select the required object from the list. Each row shows its label and icon. Tooltips provide type and source details. Use More objects to reach another page. Press Escape to cancel without changing selection.
 
 For object commands, right-click the overlap and choose an object first. Its context menu then opens. Local markers and polygons provide their normal edit and delete commands. Downloaded objects provide information. Active drawing and corner editing continue to use their own controls.
+
+
+The main toolbar uses icons and separators. Hover over a button to read its command and shortcut. Marker and Area buttons show their active state. Click an active mode button again to stop it. The globe button opens the map provider list. Its tooltip names the current provider. Clear CoT Messages uses the trash icon.
+
+Older profiles migrate the default W/A/S/D pan keys to arrow keys and the default P area key to A. Other custom keys remain unchanged. File > Settings > Keybindings can change these assignments. Saved geometry still uses the polygon type internally.

@@ -1,3 +1,4 @@
+#include "core/ui_icons.h"
 #include "core/interfaces.h"
 #include "core/maps.h"
 #include "core/map_tools.h"
@@ -26,9 +27,9 @@ class PolygonEditor final : public ObjectEditor, public SettingsParticipant {
 public:
     PolygonEditor(UserObjects &objects, MarkerCollections &collections, QWidget *parent) : ObjectEditor(objects, collections, parent) { setObjectName(QStringLiteral("polygonEditor")); }
     QString preferenceId() const override { return QStringLiteral("org.swak.polygons"); }
-    QString settingsTitle() const override { return tr("Polygons"); }
+    QString settingsTitle() const override { return tr("Areas"); }
     QList<SettingField> settingsFields() const override {
-        return {keySetting(QStringLiteral("createKey"), tr("Create polygon")),
+        return {keySetting(QStringLiteral("createKey"), tr("Create area")),
             numberSetting(QStringLiteral("vertexRadius"), tr("Corner radius (pixels)"), 1, 6),
             numberSetting(QStringLiteral("lineWidth"), tr("Outline width (pixels)"), 1, 6),
             numberSetting(QStringLiteral("fillOpacity"), tr("Fill opacity"), 0, 1, 2),
@@ -36,12 +37,13 @@ public:
     }
     QJsonObject savePreferences() const override {
         auto state = editorState(); state.insert(QStringLiteral("createKey"), QKeySequence(key_).toString(QKeySequence::PortableText));
+        state.insert(QStringLiteral("areaShortcutVersion"), 2);
         state.insert(QStringLiteral("vertexRadius"), radius); state.insert(QStringLiteral("lineWidth"), lineWidth);
         state.insert(QStringLiteral("fillOpacity"), fillOpacity); state.insert(QStringLiteral("guideOpacity"), guideOpacity); return state;
     }
     QString validateSettings(const QJsonObject &values) const override { return readKey(values) ? QString{} : tr("Use one letter without modifiers to create a polygon."); }
     void restorePreferences(const QJsonObject &values) override {
-        key_ = readKey(values); if (!key_) key_ = Qt::Key_P;
+        key_ = readKey(values); if (!key_) key_ = Qt::Key_A;
         radius = preferenceNumber(values, QStringLiteral("vertexRadius"), 3, 1, 6);
         lineWidth = preferenceNumber(values, QStringLiteral("lineWidth"), 2, 1, 6);
         fillOpacity = preferenceNumber(values, QStringLiteral("fillOpacity"), 0.3, 0, 1);
@@ -52,12 +54,13 @@ public:
     double radius = 3, lineWidth = 2, fillOpacity = 0.3, guideOpacity = 0.5;
 private:
     static int readKey(const QJsonObject &values) {
-        const auto text = preferenceText(values, QStringLiteral("createKey"), QStringLiteral("P"), 32);
+        auto text = preferenceText(values, QStringLiteral("createKey"), QStringLiteral("A"), 32);
+        if (values.value(QStringLiteral("areaShortcutVersion")).toInt() < 2 && text == QStringLiteral("P")) text = QStringLiteral("A");
         const auto key = QKeySequence::fromString(text, QKeySequence::PortableText);
         if (key.count() != 1 || key[0].keyboardModifiers() != Qt::NoModifier) return 0;
         return key[0].key() >= Qt::Key_A && key[0].key() <= Qt::Key_Z ? static_cast<int>(key[0].key()) : 0;
     }
-    int key_ = Qt::Key_P;
+    int key_ = Qt::Key_A;
 };
 class PolygonTool final : public MapTool {
 public:
@@ -84,7 +87,7 @@ public:
     void activate(QWidget &map) override { cancel(); map_ = &map; drawing_ = true; selection_.clear(); store_.select({}); map.setCursor(Qt::CrossCursor); emit changed(); }
     bool interactionActive() const override { return drawing_ || moving_ >= 0 || editor_.draft().has_value(); }
     bool coordinateGridActive() const override { return drawing_ || moving_ >= 0; }
-    QString statusText() const override { return drawing_ || moving_ >= 0 ? QStringLiteral("P") : QString{}; }
+    QString statusText() const override { return drawing_ || moving_ >= 0 ? QStringLiteral("A") : QString{}; }
     bool cancel() override {
         const bool active = interactionActive(); resetPointer(); editor_.cancel(); if (active) emit changed(); return active;
     }
@@ -167,8 +170,8 @@ public:
         auto &context = static_cast<QContextMenuEvent &>(event);
         tools_.cancel(); select(id);
         QMenu menu(&map); menu.setObjectName(QStringLiteral("polygonContextMenu"));
-        auto *edit = menu.addAction(tr("Edit")); edit->setObjectName(QStringLiteral("editPolygon"));
-        auto *remove = menu.addAction(tr("Delete")); remove->setObjectName(QStringLiteral("deletePolygon"));
+        auto *edit = menu.addAction(uiIcon(UiIcon::Edit), tr("Edit")); edit->setObjectName(QStringLiteral("editPolygon"));
+        auto *remove = menu.addAction(uiIcon(UiIcon::Clear), tr("Delete")); remove->setObjectName(QStringLiteral("deletePolygon"));
         connect(edit, &QAction::triggered, this, [this, id] {
             const auto item = objects_.find(id); if (item) { selection_.clear(); editor_.edit(*item); editingVertices_ = true; emit changed(); }
         });
@@ -181,7 +184,7 @@ public:
         for (const auto &record : objects_.items()) {
             if (record.type != QStringLiteral("polygon")) continue;
             if (!polygonVertices(record.geometry).containsPoint(worldPoint(pointer, view), Qt::OddEvenFill)) continue;
-            MapItem item; item.owner = owner(); item.id = record.id; item.label = record.title; item.type = tr("Polygon");
+            MapItem item; item.owner = owner(); item.id = record.id; item.label = record.title; item.type = tr("Area"); item.kind = MapItem::Kind::Polygon;
             result.append(std::move(item));
         }
         return result;
@@ -225,7 +228,7 @@ private:
     void complete(const QPolygonF &candidate) {
         const auto problem = validatePolygon(candidate); if (!problem.isEmpty()) { error(problem); return; }
         UserObject item; item.id = QUuid::createUuid().toString(QUuid::WithoutBraces); item.type = QStringLiteral("polygon");
-        item.title = tr("New Polygon"); item.color = QStringLiteral("#1e88e5"); item.geometry = polygonGeometry(candidate);
+        item.title = tr("New Area"); item.color = QStringLiteral("#1e88e5"); item.geometry = polygonGeometry(candidate);
         resetPointer(); editor_.edit(item); emit changed();
     }
     void draw(QPainter &painter, const QPolygonF &points, const QColor &color) const {
@@ -243,8 +246,8 @@ private:
         if (index < 0) return;
         auto reduced = points; reduced.removeAt(index);
         QMenu menu(&map); menu.setObjectName(QStringLiteral("polygonVertexMenu"));
-        auto *move = menu.addAction(tr("Move")); move->setObjectName(QStringLiteral("movePolygonVertex"));
-        auto *remove = menu.addAction(tr("Delete")); remove->setObjectName(QStringLiteral("deletePolygonVertex"));
+        auto *move = menu.addAction(uiIcon(UiIcon::Move), tr("Move")); move->setObjectName(QStringLiteral("movePolygonVertex"));
+        auto *remove = menu.addAction(uiIcon(UiIcon::Clear), tr("Delete")); remove->setObjectName(QStringLiteral("deletePolygonVertex"));
         remove->setEnabled(validatePolygon(reduced).isEmpty());
         connect(move, &QAction::triggered, this, [this, index, &map] {
             if (!editor_.draft() || index >= polygonVertices(editor_.draft()->geometry).size()) return;
@@ -257,7 +260,7 @@ private:
         const auto record = objects_.find(id); if (!record || record->type != QStringLiteral("polygon")) return;
         const auto points = polygonVertices(record->geometry);
         MapItem item; item.kind = MapItem::Kind::Polygon; item.owner = owner(); item.id = id; item.label = record->title;
-        item.type = tr("Polygon"); item.description = record->description; item.color = QColor(record->color); item.lineWidth = editor_.lineWidth;
+        item.type = tr("Area"); item.description = record->description; item.color = QColor(record->color); item.lineWidth = editor_.lineWidth;
         item.outlineStyle = Qt::SolidLine; item.path.addPolygon(points); item.path.closeSubpath(); item.properties = record->properties;
         item.properties.insert(QStringLiteral("ID"), id); item.properties.insert(QStringLiteral("Area"), formatArea(polygonArea(points)));
         store_.select({}); selection_.select(std::move(item));
@@ -280,17 +283,24 @@ class PolygonPlugin final : public QObject, public Plugin, public PanePlugin, pu
     Q_PLUGIN_METADATA(IID "org.swak.Plugin/2.0" FILE "polygons/MANIFEST")
     Q_INTERFACES(swak::Plugin swak::PanePlugin swak::MapExtension)
 public:
-    QString name() const override { return tr("Edit polygon"); }
+    QString name() const override { return tr("Edit area"); }
     QString mapId() const override { return QStringLiteral("org.swak.polygons"); }
-    QString mapName() const override { return tr("Polygons"); }
+    QString mapName() const override { return tr("Areas"); }
     Kind mapKind() const override { return Kind::Tool; }
     QAction *primaryAction(QWidget *pane) override { return pane->findChild<QAction *>(QStringLiteral("polygonModeAction")); }
     QWidget *create(PluginServices &services, QWidget *parent) override {
         if (!services.objects || !services.selection || !services.mapTools || !services.collections) return new QWidget(parent);
         auto *editor = new PolygonEditor(*services.objects, *services.collections, parent);
         auto *tool = new PolygonTool(services, *editor); services.mapTools->add(tool);
-        auto *action = new QAction(tr("Polygon"), editor); action->setObjectName(QStringLiteral("polygonModeAction"));
-        connect(action, &QAction::triggered, tool, [tool] { emit tool->activationRequested(); });
+        auto *action = new QAction(uiIcon(UiIcon::Area), tr("Area"), editor); action->setObjectName(QStringLiteral("polygonModeAction"));
+        action->setCheckable(true);
+        const auto updateAction = [action, editor, tool] {
+            action->setChecked(!tool->statusText().isEmpty());
+            action->setToolTip(tr("Area mode (%1)").arg(QKeySequence(editor->createKey()).toString(QKeySequence::NativeText)));
+        };
+        connect(tool, &MapTool::changed, action, updateAction);
+        connect(editor, &ObjectEditor::configurationChanged, action, updateAction); updateAction();
+        connect(action, &QAction::triggered, tool, [tool] { if (!tool->statusText().isEmpty()) tool->cancel(); else emit tool->activationRequested(); });
         QTimer::singleShot(0, editor, [editor] { emit editor->visibilityRequested(false); }); return editor;
     }
 };

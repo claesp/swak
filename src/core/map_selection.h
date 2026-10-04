@@ -5,6 +5,7 @@
 #include <QJsonObject>
 #include <QPainterPath>
 #include <QColor>
+#include <QIcon>
 #include <optional>
 #include <utility>
 class QPainter;
@@ -15,6 +16,7 @@ struct MapItem {
     QString owner;
     QString id;
     QString label;
+    QIcon icon;
     QString type;
     QString description;
     QJsonObject properties;

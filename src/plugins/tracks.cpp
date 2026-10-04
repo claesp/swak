@@ -1,3 +1,4 @@
+#include "core/ui_icons.h"
 #include "core/marker_symbols.h"
 #include "core/logging.h"
 #include "core/interfaces.h"
@@ -181,8 +182,7 @@ public:
 private:
     QAction *createClearAction(Store &store, QWidget &owner)
     {
-        auto *clear = new QAction(QIcon::fromTheme(QStringLiteral("edit-clear"),
-            owner.style()->standardIcon(QStyle::SP_DialogResetButton)), tr("&Clear"), &owner);
+        auto *clear = new QAction(uiIcon(UiIcon::Clear), tr("&Clear"), &owner);
         clear->setObjectName(QStringLiteral("clearEventsAction"));
         clear->setToolTip(tr("Clear CoT Messages"));
         clear->setStatusTip(tr("Remove all current CoT messages and clear the selection."));

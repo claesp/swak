@@ -1,3 +1,4 @@
+#include "core/ui_icons.h"
 #include "core/marker_symbols.h"
 #include "core/marker_collections.h"
 #include "core/interfaces.h"
@@ -182,9 +183,9 @@ public:
         auto &context = static_cast<QContextMenuEvent &>(event);
         editor_.cancel(); select(id);
         QMenu menu(&map); menu.setObjectName(QStringLiteral("markerContextMenu"));
-        auto *edit = menu.addAction(tr("Edit")); edit->setObjectName(QStringLiteral("editMarker"));
-        auto *move = menu.addAction(tr("Move")); move->setObjectName(QStringLiteral("moveMarker"));
-        auto *remove = menu.addAction(tr("Delete")); remove->setObjectName(QStringLiteral("deleteMarker"));
+        auto *edit = menu.addAction(uiIcon(UiIcon::Edit), tr("Edit")); edit->setObjectName(QStringLiteral("editMarker"));
+        auto *move = menu.addAction(uiIcon(UiIcon::Move), tr("Move")); move->setObjectName(QStringLiteral("moveMarker"));
+        auto *remove = menu.addAction(uiIcon(UiIcon::Clear), tr("Delete")); remove->setObjectName(QStringLiteral("deleteMarker"));
         connect(edit, &QAction::triggered, this, [this, id] { const auto item = objects_.find(id); if (item) { selection_.clear(); editor_.edit(*item); } });
         connect(move, &QAction::triggered, this, [this, id, &map] {
             const auto item = objects_.find(id); if (!item) return;
@@ -200,6 +201,7 @@ public:
             if (record.type != QStringLiteral("circle")) continue;
             if (QLineF(screen(location(record), view), pointer).length() > editor_.radius() + 5) continue;
             MapItem item; item.owner = owner(); item.id = record.id; item.label = record.title; item.type = tr("Marker");
+            if (const auto symbol = collections_.symbol(record.collection, record.symbol)) item.icon = collectionIcon(*symbol, QColor(record.color));
             result.append(std::move(item));
         }
         return result;
@@ -279,8 +281,15 @@ public:
         auto *editor = new MarkerEditor(*services.objects, *services.collections, parent);
         auto *tool = new MarkerTool(services, *editor);
         services.mapTools->add(tool);
-        auto *action = new QAction(tr("Marker"), editor); action->setObjectName(QStringLiteral("markerModeAction"));
-        connect(action, &QAction::triggered, tool, [tool] { emit tool->activationRequested(); });
+        auto *action = new QAction(uiIcon(UiIcon::Marker), tr("Marker"), editor); action->setObjectName(QStringLiteral("markerModeAction"));
+        action->setCheckable(true);
+        const auto updateAction = [action, editor, tool] {
+            action->setChecked(!tool->statusText().isEmpty());
+            action->setToolTip(tr("Marker mode (%1)").arg(QKeySequence(editor->createKey()).toString(QKeySequence::NativeText)));
+        };
+        connect(tool, &MapTool::changed, action, updateAction);
+        connect(editor, &ObjectEditor::configurationChanged, action, updateAction); updateAction();
+        connect(action, &QAction::triggered, tool, [tool] { if (!tool->statusText().isEmpty()) tool->cancel(); else emit tool->activationRequested(); });
         QTimer::singleShot(0, editor, [editor] { emit editor->visibilityRequested(false); });
         return editor;
     }

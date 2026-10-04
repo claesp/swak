@@ -290,6 +290,8 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     auto *toolbar = new QToolBar(tr("Main toolbar"), this);
     toolbar->setObjectName(QStringLiteral("mainToolbar"));
     toolbar->setMovable(false);
+    toolbar->setToolButtonStyle(Qt::ToolButtonIconOnly);
+    toolbar->setIconSize(QSize(24, 24));
     toolbar->setFloatable(false);
     toolbar->setAllowedAreas(Qt::TopToolBarArea);
     addToolBar(Qt::TopToolBarArea, toolbar);
@@ -303,11 +305,6 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         }
         if (auto *provider = qobject_cast<ToolbarPlugin *>(plugin)) {
             if (!toolbar->actions().isEmpty()) toolbar->addSeparator();
-            auto *label = new QLabel(provider->name(), toolbar);
-            label->setTextFormat(Qt::PlainText);
-            label->setObjectName(QStringLiteral("toolbarPluginLabel"));
-            label->setMargin(4);
-            toolbar->addWidget(label);
             provider->populateToolbar(services, *toolbar, menu);
         }
         if (auto *dock = pluginDocks.value(plugin)) {
@@ -316,6 +313,8 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
             if (primary) {
                 primary->setProperty("activatesPluginAction", true);
                 pluginsMenu->addAction(primary);
+                if (!toolbar->actions().isEmpty()) toolbar->addSeparator();
+                toolbar->addAction(primary);
             } else if (menu && !menu->isEmpty()) {
                 addPaneAction(*pluginsMenu, *dock, menu->menuAction());
             } else {

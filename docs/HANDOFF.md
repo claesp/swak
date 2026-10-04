@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 3, 2026: Read “Overlapping map objects” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 4, 2026: Read “Compact toolbar and Area mode” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -817,3 +817,24 @@ The release build passed in `build/overlap-release.log`. The final build with co
 Final coverage passed eight suites and 70 GUI cases in `build/quality/20261003-232942-coverage-38680`. MapTools reached 48 of 49 lines and all 19 functions. Its remaining line is a closing brace. The map plugin reached 648 of 649 lines. Its remaining line is a defensive switch default. Markers reached all 49 functions, and Polygons reached all 52 functions. Missing-record branches, allocation failures, and hardware-specific paths retain coverage gaps. Line coverage does not establish complete input coverage.
 
 The overlap workflow also passed at 200 percent scaling in `build/overlap-hidpi.log`. It covers pagination and dragging through an overlap. Native screenshots show the chooser's labels and object types.
+
+
+## 2026-10-04: Compact toolbar and Area mode
+
+The object chooser now shows object labels and icons without a heading, numbering, or type suffixes. Tooltips retain type and source details. Local markers use their collection symbol and selected color. Areas use the shared area icon. MapItem adds an optional icon through the shared plugin API.
+
+The main toolbar uses icon-only controls with separators. It no longer shows plugin names. Marker and Area share their pane primary actions with Tools > Plugins and the toolbar. Their checked state tracks active modes. Clicking an active button stops that mode. Tooltips show the configured shortcut. The provider selector uses a globe icon and names its active provider in a tooltip.
+
+Area replaces Polygon in user-facing tool, editor, and mode labels. A activates Area mode. Arrow keys now provide continuous panning in all four directions. Saved defaults migrate from W/A/S/D and P. Other custom bindings remain intact. Navigation and area shortcut version fields make migration run once. The stored polygon type, plugin ID, and object names stay stable for profile compatibility.
+
+Six command icons come from Lucide 0.468.0. Their original SVG files and Lucide/Feather notices are under third_party/lucide. The application draws generated Qt vector paths through a shared icon engine. FontTools 4.55.3 converts the bundled assets during development only. Normal builds require no new runtime dependency. Palette colors and vector scaling support light, dark, and scaled displays. Marker symbols, color swatches, and application branding keep their existing meanings.
+
+Read toolbar-design.md for the Qt and KDE guidance, compact-layout choice, and source links. Plugin contracts, usage, dependency notes, and affected MANIFEST versions were updated. Focused native tests passed mode toggles, shortcut migration, custom bindings, chooser icons, and arrow-key panning. Hardware graphics, native Wayland, and two-hour qualification remain untested.
+
+Eight sanitizer suites passed in `build/quality/20261004-075734-quick-43224`. Source analysis passed in `build/quality/20261004-080201-analyze-3`. The native sanitizer run passed 71 cases in `build/quality/20261004-080325-gui-46675`. The existing Mesa leak still reports 240732 bytes in 1073 allocations. The GUI diagnostic remains failed without suppression.
+
+Coverage passed eight suites and 71 GUI cases in `build/quality/20261004-075934-coverage-44449`. Generated icon paths reached 89 of 90 lines. Their remaining line is a closing brace. The icon engine reached 22 of 23 lines. Its required QIconEngine clone override remains untested. Allocation failures and defensive branches retain coverage gaps. Later focused tests exercise chooser tooltips and explicit dark Fusion colors at 200 percent scaling. The scaled run passed in `build/compact-hidpi.log`, including a background contrast assertion. Native screenshots cover the light and dark toolbar and simplified chooser.
+
+The 60-second workload passed in `build/quality/20261004-080117-soak-45836`. It completed 1191 cycles with 14516224 bytes of peak memory growth. The maximum heartbeat gap was 55 milliseconds, and idle CPU time was 0.007 seconds. This short run does not replace two-hour qualification.
+
+The release build passed in `build/compact-release.log`. The final build with committed version metadata uses `build/compact-release-final.log`. The icon generator reproduced the checked-in paths from the bundled SVG assets without changes.
