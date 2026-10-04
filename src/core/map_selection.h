@@ -18,6 +18,7 @@ struct MapItem {
     QString owner;
     QString id;
     QString label;
+    QRectF cachedLabelBounds;
     QIcon icon;
     QString type;
     QString description;

@@ -96,8 +96,17 @@ private slots:
         { QPainter painter(&image); tools.paint(painter, view); }
         QVERIFY(image.pixelColor(850, 50).alpha() > 0); QVERIFY(image.pixelColor(850, 50).red() > image.pixelColor(850, 50).blue());
         QCOMPARE(image.pixelColor(510, 50).alpha(), 0);
+        const auto beforePause = image;
+        store.motion().setPaused(true);
+        marker.geometry.insert(QStringLiteral("y"), 0.50003); QVERIFY(objects.put(marker).isEmpty());
+        image.fill(Qt::transparent); { QPainter painter(&image); tools.paint(painter, view); }
+        QCOMPARE(image, beforePause);
+        store.motion().setPaused(false);
+        image.fill(Qt::transparent); { QPainter painter(&image); tools.paint(painter, view); }
+        QVERIFY(image != beforePause);
         objects.remove(marker.id); image.fill(Qt::transparent); { QPainter painter(&image); tools.paint(painter, view); }
         QCOMPARE(image.pixelColor(850, 50).alpha(), 0);
+        marker.geometry.insert(QStringLiteral("y"), 0.5);
         marker.id = QStringLiteral("date-line"); marker.geometry.insert(QStringLiteral("x"), 0.99999); QVERIFY(objects.put(marker).isEmpty()); point.id = marker.id;
         QMenu crossing; tools.populateContextMenu(point, crossing); crossing.findChild<QAction *>(QStringLiteral("traceMarker"))->trigger();
         marker.geometry.insert(QStringLiteral("x"), 0.00001); QVERIFY(objects.put(marker).isEmpty());

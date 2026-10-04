@@ -1,3 +1,5 @@
+#include <QUuid>
+#include "core/map_label.h"
 #include "core/measure.h"
 #include <QProcess>
 #include "core/projection.h"
@@ -1589,6 +1591,71 @@ private slots:
         QVERIFY(window.findChild<swak::UserObjects *>()->items().isEmpty());
     }
 
+    void cachedLabelInversion()
+    {
+        SelectionCanvas canvas; canvas.resize(320, 240); canvas.view = {QSizeF(320, 240), QPointF(0.5, 0.5), 4};
+        swak::MapItem item; item.kind = swak::MapItem::Kind::Line;
+        const auto scale = canvas.view.scale();
+        item.cachedLabelBounds = QRectF(canvas.view.center + QPointF(-100, -70) / scale, QSizeF(90 / scale, 30 / scale));
+        canvas.selection.select(item); canvas.show(); QVERIFY(QTest::qWaitForWindowExposed(&canvas));
+        const auto frame = canvas.grabFramebuffer(); const auto ratio = canvas.devicePixelRatioF();
+        QVERIFY(frame.pixelColor(QPoint(qRound(70 * ratio), qRound(60 * ratio))).lightness() > 240);
+        QVERIFY(frame.pixelColor(QPoint(qRound(40 * ratio), qRound(40 * ratio))).lightness() < 10);
+    }
+    void generatedIdentityPersists()
+    {
+        QTemporaryDir directory; const auto path = directory.filePath(QStringLiteral("identity.json")); QString uid;
+        {
+            swak::Window window(path, QPluginLoader::staticInstances());
+            uid = window.findChild<QLineEdit *>(QStringLiteral("identity"))->text(); QVERIFY(!QUuid(uid).isNull()); QVERIFY(window.savePreferences());
+        }
+        swak::Window restored(path, QPluginLoader::staticInstances()); QCOMPARE(restored.findChild<QLineEdit *>(QStringLiteral("identity"))->text(), uid);
+    }
+    void selectableLabels()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("labels.json")), QPluginLoader::staticInstances());
+        window.show(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *map = window.findChild<QOpenGLWidget *>(); QVERIFY(map);
+        auto *objects = window.findChild<swak::UserObjects *>(); auto *selection = window.findChild<swak::MapSelection *>(); QVERIFY(objects && selection);
+        for (auto *dock : window.findChildren<QDockWidget *>()) dock->hide();
+        auto *preferences = dynamic_cast<swak::PreferenceParticipant *>(map);
+        preferences->restorePreferences({{QStringLiteral("centerX"), 0.5}, {QStringLiteral("centerY"), 0.5}, {QStringLiteral("zoom"), 8}});
+        const swak::Viewport view{map->size(), {0.5, 0.5}, 8};
+        const auto world = [&](QPointF point) { return view.center + (point - QPointF(map->width() / 2.0, map->height() / 2.0)) / view.scale(); };
+        const QPoint point(180, 180); const auto coordinate = world(point);
+        swak::UserObject marker; marker.id = QStringLiteral("label-marker"); marker.type = QStringLiteral("circle"); marker.title = QStringLiteral("Select this marker label");
+        marker.geometry = {{QStringLiteral("x"), coordinate.x()}, {QStringLiteral("y"), coordinate.y()}}; QVERIFY(objects->put(marker).isEmpty());
+        const auto actions = window.findChild<QToolBar *>(QStringLiteral("mainToolbar"))->actions();
+        const auto index = actions.indexOf(window.findChild<QAction *>(QStringLiteral("markerModeAction"))); QVERIFY(index >= 0);
+        QCOMPARE(actions.at(index + 1)->objectName(), QStringLiteral("polygonModeAction"));
+        QCOMPARE(actions.at(index + 2)->objectName(), QStringLiteral("shapeMode0"));
+        QCOMPARE(actions.at(index + 3)->objectName(), QStringLiteral("shapeMode2"));
+        QVERIFY(actions.at(index + 4)->isSeparator()); QCOMPARE(actions.at(index + 5)->objectName(), QStringLiteral("shapeMode1"));
+        const auto bounds = swak::mapLabelBounds(map->fontMetrics(), point + QPointF(16, -8), marker.title);
+        const auto before = map->grabFramebuffer();
+        QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, bounds.center().toPoint());
+        QVERIFY(selection->item()); QCOMPARE(selection->item()->id, marker.id);
+        const auto after = map->grabFramebuffer();
+        const auto sample = ((bounds.topLeft() + QPointF(1, 1)) * map->devicePixelRatioF()).toPoint();
+        QVERIFY(after.pixelColor(sample).lightness() > before.pixelColor(sample).lightness() + 80);
+        QVERIFY(after.save(QStringLiteral("selected-label.png")));
+        QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, bounds.topRight().toPoint() + QPoint(5, -5)); QVERIFY(!selection->item());
+        objects->remove(marker.id);
+        swak::Event event; event.uid = QStringLiteral("label-cot"); event.callsign = QStringLiteral("Selectable CoT label"); event.type = QStringLiteral("a-f-G-U"); event.how = QStringLiteral("m-g");
+        const auto geo = swak::unproject(coordinate); event.latitude = geo.y(); event.longitude = geo.x();
+        event.time = QDateTime::currentDateTimeUtc(); event.start = event.time; event.stale = event.time.addSecs(300); QVERIFY(window.store().accept(event).isEmpty());
+        const auto cotBounds = swak::mapLabelBounds(map->fontMetrics(), point + QPointF(16, -8), event.callsign);
+        QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, cotBounds.center().toPoint());
+        QCOMPARE(window.store().selected(), event.uid); QVERIFY(selection->item()); QCOMPARE(selection->item()->id, event.uid);
+        QImage normal(320, 80, QImage::Format_ARGB32_Premultiplied), inverted = normal; normal.fill(Qt::transparent); inverted.fill(Qt::transparent);
+        { QPainter painter(&normal); swak::paintMapLabel(painter, {10, 40}, QStringLiteral("Label")); }
+        { QPainter painter(&inverted); swak::paintMapLabel(painter, {10, 40}, QStringLiteral("Label"), true); }
+        for (int y = 0; y < normal.height(); ++y) for (int x = 0; x < normal.width(); ++x) {
+            const auto a = normal.pixelColor(x, y), b = inverted.pixelColor(x, y); QCOMPARE(a.alpha(), b.alpha());
+            if (a.alpha() > 0) QVERIFY(std::abs(a.red() + b.red() - 255) <= 2);
+        }
+    }
     void overlappingObjects()
     {
         QTemporaryDir directory;
@@ -1713,6 +1780,7 @@ private slots:
             auto *tool = dynamic_cast<swak::MapTool *>(window.findChild<QObject *>(QStringLiteral("shapesTool"))); QVERIFY(tool);
             const swak::Viewport view{QSizeF(map->size()), QPointF(0.5, 0.5), 8};
             const auto frame = [&] { QImage image(map->size(), QImage::Format_ARGB32_Premultiplied); image.fill(Qt::transparent); QPainter painter(&image); tool->paint(painter, view); return image; };
+            selection->clear();
             const auto before = frame(); const auto count = objects->items().size();
             QTest::keyClick(map, Qt::Key_D); click({400, 200}); motion({500, 250}); click({500, 250}); QCOMPARE(objects->items().size(), count); QVERIFY(frame() != before);
             QVERIFY(QTest::qWaitFor([&] { return frame() == before; }, 2500));
@@ -2302,6 +2370,14 @@ private slots:
         auto *trace = dynamic_cast<swak::SettingsParticipant *>(window.findChild<QObject *>(QStringLiteral("traceTool"))); QVERIFY(trace);
         QCOMPARE(trace->savePreferences().value(QStringLiteral("targets")).toArray().size(), 1);
         QVERIFY(QTest::qWaitFor([&] { return window.findChild<QCheckBox *>(QStringLiteral("information/traceMarker"))->isChecked(); }));
+        auto *traceTool = dynamic_cast<swak::MapTool *>(window.findChild<QObject *>(QStringLiteral("traceTool"))); QVERIFY(traceTool);
+        const auto traceImage = [&] { QImage image(800, 200, QImage::Format_ARGB32_Premultiplied); image.fill(Qt::transparent); QPainter painter(&image); traceTool->paint(painter, swak::Viewport{QSizeF(800, 200), swak::project(0, 1), 8}); return image; };
+        event.longitude = 1.2; event.time = event.time.addMSecs(100); QVERIFY(window.store().accept(event).isEmpty());
+        const auto trail = traceImage();
+        map->setFocus(); QTest::keyClick(map, Qt::Key_Space); QVERIFY(window.store().motion().paused());
+        event.longitude = 1.5; event.time = event.time.addMSecs(100); QVERIFY(window.store().accept(event).isEmpty());
+        QCOMPARE(traceImage(), trail); QCOMPARE(window.store().events().first().longitude, 1.5);
+        QTest::keyClick(map, Qt::Key_Space); QVERIFY(!window.store().motion().paused()); QVERIFY(traceImage() != trail);
         QVERIFY(window.grab().save(QStringLiteral("information-trace.png")));
         window.findChild<QCheckBox *>(QStringLiteral("information/traceMarker"))->click();
         QCOMPARE(trace->savePreferences().value(QStringLiteral("targets")).toArray().size(), 0);
@@ -2859,10 +2935,20 @@ private slots:
         window.findChild<QPushButton *>(QStringLiteral("addServer"))->click(); QVERIFY(emptyAdd); QCOMPARE(list->rowCount(), 0);
         QTimer::singleShot(0, &window, [&] {
             auto *dialog = window.findChild<QDialog *>(QStringLiteral("identityDialog")); QVERIFY(dialog);
-            dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.identity/uid"))->setText(QStringLiteral("sender-test"));
+            auto *uid = dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.identity/uid")); QVERIFY(uid); QVERIFY(uid->isReadOnly()); QVERIFY(!uid->text().isEmpty());
+            const auto generated = uid->text(); QTest::keyClicks(uid, "blocked"); QCOMPARE(uid->text(), generated);
+            auto *lock = dialog->findChild<QToolButton *>(QStringLiteral("org.swak.identity/uid/lock")); QVERIFY(lock); QVERIFY(!lock->icon().isNull());
+            lock->click(); QVERIFY(!uid->isReadOnly()); uid->setText(QStringLiteral("sender-test"));
+            lock->click(); QVERIFY(uid->isReadOnly());
+            QVERIFY(dialog->grab().save(QStringLiteral("identity-locked.png")));
             dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.identity/callsign"))->setText(QStringLiteral("Test Sender"));
             dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.identity/team"))->setText(QStringLiteral("Blue"));
             dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+        });
+        window.findChild<QAction *>(QStringLiteral("identityAction"))->trigger();
+        QTimer::singleShot(0, &window, [&] {
+            auto *dialog = window.findChild<QDialog *>(QStringLiteral("identityDialog")); QVERIFY(dialog);
+            auto *uid = dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.identity/uid")); QVERIFY(uid->isReadOnly()); QCOMPARE(uid->text(), QStringLiteral("sender-test")); dialog->reject();
         });
         window.findChild<QAction *>(QStringLiteral("identityAction"))->trigger();
         QCOMPARE(window.findChild<QLineEdit *>(QStringLiteral("identity"))->text(), QStringLiteral("sender-test"));

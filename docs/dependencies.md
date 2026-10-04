@@ -29,3 +29,5 @@ Application branding, marker symbols, and color swatches retain their own meanin
 CoT connections use the existing Qt Network and Core libraries. TLS and PKCS12 support use the Qt TLS backend installed on the host. This change adds no runtime dependency or copied TAK Server implementation. The CoT and LAN harnesses use the Python standard library. Isolated LAN tests also use the development tools unshare and ip. None of these harnesses are installed with the application.
 
 Circle, Distance, and Line use original vector paths in tools/generate_icons.py. They share the application icon renderer and its stroke style. They add no library dependency.
+
+The UID lock and unlock buttons use original vector paths in the shared icon factory. They add no external dependency.

@@ -128,3 +128,5 @@ The workload now enables 128 trace identities. Each cycle adds 52 positions to o
 The motion tests exercise pause, incoming position updates, new markers, immediate resume, expiry, and clearing. Native tests exercise the Space shortcut and Information Trace control. They also inspect CoT category descriptions and preserved unknown codes. The UDP workload allows two seconds for receive progress after each paced burst.
 
 Circle and Line tests cover two-point geometry, world bounds, locale units, control editing, move cancellation, deletion, undo, and restart. Native tests inspect the OpenGL circle fill and temporary Distance expiry. The workload creates and deletes both saved shape types and exercises their undo records.
+
+Label tests cover native clicks outside marker symbols, inverted text colors, visible vector labels, hidden labels, and label collisions. Trace tests compare frozen images during updates and changed images after resume. Identity tests cover generated UID persistence, locked input, unlocking, relocking, and a reopened dialog.

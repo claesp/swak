@@ -125,8 +125,8 @@ void TrackMotion::advance()
 void TrackMotion::setPaused(bool paused)
 {
     if (paused == paused_) return;
-    if (paused) { frozen_ = snapshot(); paused_ = true; timer_.stop(); emit changed(); return; }
-    paused_ = false; frozen_.clear();
+    if (paused) { frozen_ = snapshot(); paused_ = true; timer_.stop(); emit pauseChanged(true); emit changed(); return; }
+    paused_ = false; frozen_.clear(); emit pauseChanged(false);
     for (auto &record : records_) if (record.stale < 0) {
         record.from = record.to; record.start = time() - std::max(duration_, fade_);
         record.teleport = false; record.initialOpacity = 1; record.velocity = {}; record.horizon = 0;

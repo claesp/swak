@@ -327,6 +327,14 @@ MapTool::populateInformationMenu contributes checkable actions for the selected 
 
 TrackMotion::setPaused freezes its displayed snapshot. Store continues accepting and replacing messages through its usual bounded path. Resuming clears prediction and interpolation for the retained latest positions. Later messages use normal animation. Pause state lasts only for the session and is not a saved preference.
 
+TrackMotion::pauseChanged reports pause transitions. TraceTool retains a bounded display snapshot during pause while its live history continues recording. Resume discards the snapshot and draws the latest retained history.
+
+The shared mapLabelBounds and paintMapLabel helpers use the same shortened text and padding. The selected argument inverts foreground and background colors. Plugins must use matching bounds for label clicks. DataSources::paint accepts the selected MapItem to style feed labels. Feed items use a provider owner and a shape index for session selection. Vector labels retain normalized cachedLabelBounds in MapItem. MapSelection inverts those cached pixels without rebuilding tile images.
+
+SettingField::unlockToEdit makes a text field read-only until the user selects its lock button. The lock state belongs to the dialog and is not saved. Section reset preserves these fields. Identity uses this shared contract for UID in both Identity and Settings.
+
+setToolbarSection assigns a shared toolbar section and order to a QAction. The host groups tagged actions after plugin registration. Creation contains Marker, Area, Circle, and Line. Measurement contains Distance. Plugins reuse their existing actions, so menus and toolbar controls retain the same state and callbacks.
+
 cotFieldDescription uses the same category catalog as the CoT selectors. Information uses it for CoT Type and How without changing the stored message. Unknown categories retain the original code.
 
 # Circle, line, and measurement tools

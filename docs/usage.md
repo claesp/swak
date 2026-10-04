@@ -310,6 +310,8 @@ Information describes CoT Type and How with names from the shared selector catal
 
 # Circle, Distance, and Line
 
+Click an object label to select its object. Selected labels invert their foreground and background colors. Overlapping labels use the same object chooser as overlapping symbols.
+
 With the map focused, press C to start Circle. Click the center. Move the pointer to set the radius. Click again to open the object editor. Enter the title, description, color, and properties. Select Apply to save the circle. Circle uses the fill opacity from File > Settings > Areas.
 
 Press D to start Distance. Click the first point. Move the pointer to read the distance. Click the second point to finish. The measurement stays for ten seconds, then fades for one second and disappears. Measurements are temporary and do not survive restart. The tool retains at most 64 measurements.
@@ -321,3 +323,11 @@ Right-click a saved circle or line to select Edit, Move, or Delete. During editi
 The toolbar and Tools > Plugins > Circle and line tools provide the same creation actions. File > Settings > Keybindings configures C, D, and L. The Circle and line tools section controls line width, control-point size, measurement duration, and fade time.
 
 Circles remain circular on the projected map. Their area estimate integrates a 128-point boundary over a spherical Earth. Distance uses the shortest spherical surface distance and ignores elevation. Lines wrap across the date line, but their straight map segment approximates the surface path. These values are estimates for map work. Circles must remain inside the projected world.
+
+# Identity and paused traces
+
+The application generates a UID on first startup and saves it in the profile. Open File > Identity to view it. Select the lock button beside UID before editing it. Select the button again to lock it. Apply or OK saves the value. A new dialog starts with UID locked. Cancel discards unapplied changes. Section reset preserves UID.
+
+Space freezes both displayed CoT positions and traces. Incoming messages and bounded trace history continue updating internally. Resume shows the latest positions and trace history immediately.
+
+The main toolbar groups Marker, Area, Circle, and Line in one creation section. A separator places Distance in its own measurement section.

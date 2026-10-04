@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 4, 2026: Read “Circle, Distance, and Line” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 4, 2026: Read “Selectable labels, paused traces, Identity, and toolbar groups” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -1034,3 +1034,26 @@ The 60-second workload passed in build/quality/20261004-190858-soak-121970. It c
 The release build passed in build/shapes-release.log. The final rebuild after the commit uses build/shapes-release-final.log.
 
 All 81 native sanitizer cases passed in build/quality/20261004-191216-gui-123523. The diagnostic still fails on the existing Mesa leak of 240732 bytes in 1073 allocations. No suppression hides this leak.
+
+
+## 2026-10-04: Selectable labels, paused traces, Identity, and toolbar groups
+
+Object labels invert their foreground and background colors on selection. Shared bounds include shortened text and padding. CoT, local markers, areas, circles, lines, and data labels use these bounds for selection. Vector labels share their layout between tile rendering and hit testing. Selected vector labels invert cached pixels without another tile render. Overlap selection retains the existing chooser.
+
+TraceTool listens to TrackMotion::pauseChanged. It freezes a bounded display copy while the live history continues recording. Resume shows the latest retained history. User actions can still disable or clear traces during pause. Focused tests compare images before pause, during incoming updates, and after resume.
+
+Identity already generates and persists its initial UID. SettingField::unlockToEdit now adds a lock button and read-only text input. The lock resets when the dialog reopens. Both Identity and Settings use the same field contract. Section reset preserves UID. Tests cover generated identity persistence and the lock workflow.
+
+Toolbar actions now use shared section metadata. Marker, Area, Circle, and Line share the creation section. Distance occupies the measurement section. The host preserves menu action reuse and removes redundant separators. No external dependency was added.
+
+Focused native label and pause tests passed in build/label-focused.log. The initial core pause test exposed a reused coordinate in its date-line fixture. The corrected fixture resets that coordinate. Vector label targets passed in build/label-vector.log. Later entries record full diagnostics and release output.
+
+Ten initial sanitizer suites passed in build/quality/20261004-192222-quick-126169. Final source analysis passed in build/quality/20261004-192752-analyze-3. The first native run passed 82 cases and found one outdated image baseline. The Distance expiry test now clears selection before comparison because selected labels have different colors.
+
+The 60-second workload passed in build/quality/20261004-192626-soak-130115. It completed 1102 cycles with 17170432 bytes of peak memory growth. The maximum heartbeat gap was 48 milliseconds. Idle CPU time was 0.010 seconds. Hardware graphics, native Wayland, and two-hour operation remain unqualified. High-load pause transitions and every translated font retain coverage gaps.
+
+Final coverage passed ten suites and all 84 native cases in build/quality/20261004-192740-coverage-130342. The label helpers and trace code reached every line. Toolbar coverage reached 24 of 25 lines. Remaining gaps include the trailing-separator cleanup and some reset branches for unrelated field types. Inspected screenshots show the UID lock and grouped creation buttons with a separate Distance section.
+
+The release build passed in build/label-release.log. The final rebuild after the commit uses build/label-release-final.log.
+
+All 84 native sanitizer cases passed in build/quality/20261004-193004-gui-132121. The diagnostic still reports the existing Mesa leak of 240732 bytes in 1073 allocations. No suppression hides this leak. The run used Qt 6.8.2 and Xvfb with software OpenGL.

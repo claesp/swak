@@ -34,6 +34,8 @@ public:
     virtual VectorTile decodeTile(const QByteArray &bytes, const std::atomic_bool &cancelled) const = 0;
     virtual QStringList layerNames() const = 0;
 };
+struct VectorLabel { int index; QRectF bounds; QString text; };
+QList<VectorLabel> vectorLabels(const VectorTile &tile, const QJsonObject &source, const std::atomic_bool *cancelled = nullptr);
 bool vectorLayerVisible(const QJsonObject &source, const QString &layer);
 void paintVectorTile(QPainter &painter, const VectorTile &tile, const QRectF &rectangle, const QJsonObject &source,
                      QList<QRectF> &labels, const std::atomic_bool *cancelled = nullptr);

@@ -6,7 +6,8 @@ Identity::Identity(QObject *parent) : QObject(parent), values_{{QStringLiteral("
     {QStringLiteral("how"), QStringLiteral("h-e")}, {QStringLiteral("team"), QStringLiteral("Cyan")}, {QStringLiteral("role"), QStringLiteral("Team Member")}} {}
 QList<SettingField> Identity::settingsFields() const
 {
-    return {textSetting(QStringLiteral("uid"), tr("UID"), 128), textSetting(QStringLiteral("callsign"), tr("Callsign"), 128),
+    auto uid = textSetting(QStringLiteral("uid"), tr("UID"), 128); uid.unlockToEdit = true;
+    return {uid, textSetting(QStringLiteral("callsign"), tr("Callsign"), 128),
         cotSetting(QStringLiteral("type"), tr("Type"), CotField::Type), cotSetting(QStringLiteral("how"), tr("Location method"), CotField::How),
         cotSetting(QStringLiteral("team"), tr("Team"), CotField::Team), cotSetting(QStringLiteral("role"), tr("Role"), CotField::Role)};
 }

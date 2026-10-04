@@ -1,3 +1,6 @@
+#include "core/ui_icons.h"
+#include <QToolButton>
+#include <QHBoxLayout>
 #include "core/settings_dialog.h"
 #include "core/logging.h"
 #include "core/single_line_label.h"
@@ -176,7 +179,19 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
                 label->setWordWrap(false);
                 label->setMinimumWidth(label->sizeHint().width());
                 label->setBuddy(editor); fieldLabel = label;
-                form->addRow(label, field.picker != CotField::None && qobject_cast<QLineEdit *>(editor) ? cotFieldEditor(qobject_cast<QLineEdit *>(editor), field.picker) : editor);
+                QWidget *row = field.picker != CotField::None && qobject_cast<QLineEdit *>(editor) ? cotFieldEditor(qobject_cast<QLineEdit *>(editor), field.picker) : editor;
+                if (field.unlockToEdit) if (auto *text = qobject_cast<QLineEdit *>(editor)) {
+                    auto *container = new QWidget(content); auto *rowLayout = new QHBoxLayout(container); rowLayout->setContentsMargins(0, 0, 0, 0);
+                    auto *lock = new QToolButton(container); lock->setObjectName(editor->objectName() + QStringLiteral("/lock")); lock->setCheckable(true);
+                    const auto update = [text, lock, name = field.label](bool unlocked) {
+                        text->setReadOnly(!unlocked); lock->setIcon(uiIcon(unlocked ? UiIcon::Unlock : UiIcon::Lock));
+                        lock->setToolTip(unlocked ? tr("Lock %1").arg(name) : tr("Unlock %1 for editing").arg(name)); lock->setAccessibleName(lock->toolTip());
+                        if (unlocked) text->setFocus();
+                    };
+                    connect(lock, &QToolButton::toggled, text, update); update(false);
+                    rowLayout->addWidget(row, 1); rowLayout->addWidget(lock); row = container;
+                }
+                form->addRow(label, row);
             }
             editors.append(editor); labels.append(fieldLabel);
         }
@@ -200,7 +215,7 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
             connect(reset, &QPushButton::clicked, this, [page, editors, form] {
                 for (qsizetype i = 0; i < page.fields.size(); ++i) {
                     auto *editor = editors.at(i);
-                    if (!form->parentWidget()->isAncestorOf(editor)) continue;
+                    if (!form->parentWidget()->isAncestorOf(editor) || page.fields.at(i).unlockToEdit) continue;
                     const auto value = settingValue(page.defaults, page.fields.at(i).path);
                     if (value.isUndefined()) continue;
                     if (auto *box = qobject_cast<QCheckBox *>(editor)) box->setChecked(value.toBool());

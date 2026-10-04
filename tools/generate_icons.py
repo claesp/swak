@@ -33,5 +33,6 @@ for name, file in names.items():
             lines.append(f'        path.{method}({args});')
     lines.append('        break;')
 lines.extend(['    case UiIcon::Circle:', '        path.addEllipse(QPointF(12, 12), 9, 9);', '        break;', '    case UiIcon::Line:', '        path.moveTo(4, 20); path.lineTo(20, 4);', '        path.addEllipse(QPointF(4, 20), 1.5, 1.5); path.addEllipse(QPointF(20, 4), 1.5, 1.5);', '        break;', '    case UiIcon::Distance:', '        path.moveTo(3, 17); path.lineTo(17, 3); path.lineTo(21, 7); path.lineTo(7, 21); path.closeSubpath();', '        path.moveTo(7, 13); path.lineTo(9, 15); path.moveTo(11, 9); path.lineTo(13, 11); path.moveTo(15, 5); path.lineTo(17, 7);', '        break;'])
+lines.extend(['    case UiIcon::Lock:', '    case UiIcon::Unlock:', '        path.addRoundedRect(QRectF(5, 10, 14, 11), 2, 2);', '        path.moveTo(8, 10); path.lineTo(8, 7); path.cubicTo(8, 1, 16, 1, 16, 7);', '        if (icon == UiIcon::Lock) path.lineTo(16, 10);', '        path.moveTo(12, 14); path.lineTo(12, 17);', '        break;'])
 lines.extend(['    }', '    return path;', '}'])
 (root / 'src/core/ui_icon_paths.inc').write_text('\n'.join(lines) + '\n')

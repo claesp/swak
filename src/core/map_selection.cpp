@@ -13,6 +13,12 @@ void MapSelection::paint(QPainter &painter, const Viewport &view, std::optional<
     painter.setOpacity(opacity);
     for (int wrap = -1; wrap <= 1; ++wrap) {
         const auto offset = origin + QPointF(wrap * scale, 0);
+        if (!selected.cachedLabelBounds.isEmpty()) {
+            painter.save(); painter.setCompositionMode(QPainter::CompositionMode_Difference);
+            const auto bounds = selected.cachedLabelBounds;
+            painter.fillRect(QRectF(bounds.topLeft() * scale + offset, bounds.size() * scale), Qt::white);
+            painter.restore();
+        }
         if (selected.kind == MapItem::Kind::Point) {
             painter.setBrush(Qt::NoBrush);
             painter.setPen(QPen(Qt::white, 3));

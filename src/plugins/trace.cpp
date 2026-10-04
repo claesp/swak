@@ -17,6 +17,9 @@ public:
     TraceTool(PluginServices &services, QObject *parent) : MapTool(parent), store_(services.store), objects_(services.objects)
     {
         setObjectName(QStringLiteral("traceTool"));
+        connect(&store_.motion(), &TrackMotion::pauseChanged, this, [this](bool paused) {
+            frozen_ = paused ? records_ : QHash<QString, Record>{}; emit changed();
+        });
         connect(&store_, &Store::eventAccepted, this, [this](const Event &event) {
             auto it = records_.find(key(QStringLiteral("org.swak.events"), event.uid));
             if (it != records_.end()) append(*it, project(event.latitude, event.longitude), event.type.startsWith(QLatin1String("a-h-")) ? QColor("#ff7a7a") : QColor("#54c8ff"));
@@ -54,11 +57,13 @@ public:
             while (record.points.size() > limit_) record.points.removeFirst();
             next.insert(name, record);
         }
-        records_ = std::move(next); refresh(); emit changed(); emit actionsChanged();
+        records_ = std::move(next);
+        for (auto it = frozen_.begin(); it != frozen_.end();) { if (!records_.contains(it.key())) it = frozen_.erase(it); else ++it; }
+        refresh(); emit changed(); emit actionsChanged();
     }
     bool handle(QEvent &, const Viewport &, QWidget &) override { return false; }
     bool cancel() override { return false; }
-    void clear() { records_.clear(); emit changed(); emit actionsChanged(); }
+    void clear() { records_.clear(); frozen_.clear(); emit changed(); emit actionsChanged(); }
     void populateInformationMenu(const MapItem &item, QMenu &menu) override { populateContextMenu(item, menu); }
     void populateContextMenu(const MapItem &item, QMenu &menu) override {
         if (item.kind != MapItem::Kind::Point || !supported(item.owner)) return;
@@ -67,7 +72,7 @@ public:
         action->setChecked(records_.contains(name)); action->setEnabled(records_.contains(name) || records_.size() < MaxTraces);
         if (!action->isEnabled()) action->setToolTip(tr("The trace limit is 128 markers. Clear or stop another trace first."));
         connect(action, &QAction::triggered, this, [this, owner = item.owner, id = item.id, name](bool active) {
-            if (!active) records_.remove(name);
+            if (!active) { records_.remove(name); frozen_.remove(name); }
             else if (!records_.contains(name) && records_.size() < MaxTraces) records_.insert(name, {owner, id, {}, Qt::white});
             refresh(); emit changed(); emit actionsChanged();
         });
@@ -75,7 +80,8 @@ public:
     void paint(QPainter &painter, const Viewport &view) const override {
         painter.setClipRect(QRectF(QPointF{}, view.size));
         const auto scale = view.scale(); const auto origin = QPointF(view.size.width() / 2, view.size.height() / 2) - view.center * scale;
-        for (const auto &record : records_) for (qsizetype i = 1; i < record.points.size(); ++i) {
+        const auto &display = store_.motion().paused() ? frozen_ : records_;
+        for (const auto &record : display) for (qsizetype i = 1; i < record.points.size(); ++i) {
             const auto a = record.points.at(i - 1); auto b = record.points.at(i);
             b.setX(a.x() + (b.x() - a.x()) - std::round(b.x() - a.x()));
             auto color = record.color; color.setAlphaF(static_cast<float>(opacity_ * (0.25 + 0.75 * static_cast<double>(i) / static_cast<double>(record.points.size() - 1))));
@@ -109,7 +115,7 @@ private:
     }
     Store &store_;
     UserObjects *objects_;
-    QHash<QString, Record> records_;
+    QHash<QString, Record> records_, frozen_;
     int limit_ = 50;
     double opacity_ = 0.7;
     double width_ = 1.5;

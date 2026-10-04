@@ -1,3 +1,4 @@
+#include "core/map_label.h"
 #include "core/ui_icons.h"
 #include "core/interfaces.h"
 #include "core/tiles.h"
@@ -339,7 +340,7 @@ protected:
         const auto paintBase = [&] {
             tiles_.paint(painter, view_, opacity_, smooth_, missingOpacity_);
             if (gridVisible_ && tools_ && tools_->coordinateGridActive()) paintMapGrid(painter, view_, gridOpacity_, gridSpacing_);
-            if (dataSources_) dataSources_->paint(painter, view_);
+            if (dataSources_) dataSources_->paint(painter, view_, selection_ && selection_->item() ? &*selection_->item() : nullptr);
         };
         bool tilesPainted = false;
         for (const auto *layer : layers_) {
@@ -499,10 +500,16 @@ protected:
         QList<Hit> hits;
         if (tools_) for (const auto &item : tools_->itemsAt(view_, position)) hits.append({item, QStringLiteral("local")});
         const auto now = QDateTime::currentDateTimeUtc();
+        int labels = 0;
         for (const auto &visual : store_.motion().snapshot()) {
             const auto &message = visual.event;
             const auto screen = (visual.world - view_.center) * view_.scale() + QPointF(view_.size.width() / 2, view_.size.height() / 2);
-            if (visual.expired || visual.opacity < 0.15 || message.start > now || message.stale <= now || QLineF(screen, position).length() >= 14) continue;
+            if (message.start > now) continue;
+            const bool visible = QRectF(QPointF{}, view_.size).adjusted(-12, -12, 12, 12).contains(screen);
+            const bool labelVisible = visible && (message.uid == store_.selected() || labels++ < 100);
+            const auto label = (message.callsign.isEmpty() ? message.uid : message.callsign).left(32);
+            const bool labelHit = labelVisible && mapLabelBounds(fontMetrics(), screen + QPointF(16, -8), label).contains(position);
+            if (visual.expired || visual.opacity < 0.15 || message.stale <= now || (QLineF(screen, position).length() >= 14 && !labelHit)) continue;
             MapItem item; item.owner = QStringLiteral("org.swak.events"); item.label = message.callsign.isEmpty() ? message.uid : message.callsign; item.type = message.type;
             item.point = project(message.latitude, message.longitude); item.color = Qt::white;
             item.symbol = markerSymbolForCot(message.type);

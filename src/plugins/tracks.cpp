@@ -150,7 +150,7 @@ public:
             painter.save(); painter.setOpacity(visual.opacity);
             paintMarkerSymbol(painter, symbol, point, selected ? 8 : 6, color, selected);
             if (selected || labels++ < 100) {
-                paintMapLabel(painter, point + QPointF(16, -8), (event.callsign.isEmpty() ? event.uid : event.callsign).left(32));
+                paintMapLabel(painter, point + QPointF(16, -8), (event.callsign.isEmpty() ? event.uid : event.callsign).left(32), selected);
             }
             painter.restore();
         }

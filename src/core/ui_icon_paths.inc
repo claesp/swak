@@ -99,6 +99,13 @@ QPainterPath iconPath(UiIcon icon)
         path.moveTo(3, 17); path.lineTo(17, 3); path.lineTo(21, 7); path.lineTo(7, 21); path.closeSubpath();
         path.moveTo(7, 13); path.lineTo(9, 15); path.moveTo(11, 9); path.lineTo(13, 11); path.moveTo(15, 5); path.lineTo(17, 7);
         break;
+    case UiIcon::Lock:
+    case UiIcon::Unlock:
+        path.addRoundedRect(QRectF(5, 10, 14, 11), 2, 2);
+        path.moveTo(8, 10); path.lineTo(8, 7); path.cubicTo(8, 1, 16, 1, 16, 7);
+        if (icon == UiIcon::Lock) path.lineTo(16, 10);
+        path.moveTo(12, 14); path.lineTo(12, 17);
+        break;
     }
     return path;
 }

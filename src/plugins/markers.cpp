@@ -1,3 +1,5 @@
+#include "core/toolbar.h"
+#include <QGuiApplication>
 #include "core/map_label.h"
 #include "core/ui_icons.h"
 #include "core/marker_symbols.h"
@@ -202,7 +204,8 @@ public:
         QList<MapItem> result;
         for (const auto &record : objects_.items()) {
             if (record.type != QStringLiteral("circle")) continue;
-            if (QLineF(screen(location(record), view), pointer).length() > editor_.radius() + 5) continue;
+            if (QLineF(screen(location(record), view), pointer).length() > editor_.radius() + 5 &&
+                !mapLabelBounds(QFontMetrics(QGuiApplication::font()), screen(location(record), view) + QPointF(16, -8), record.title).contains(pointer)) continue;
             MapItem item; item.owner = owner(); item.id = record.id; item.label = record.title; item.type = tr("Marker");
             if (const auto symbol = collections_.symbol(record.collection, record.symbol)) item.icon = collectionIcon(*symbol, QColor(record.color));
             result.append(std::move(item));
@@ -240,7 +243,7 @@ private:
     void paint(QPainter &painter, const UserObject &item, QPointF point) const {
         if (const auto symbol = collections_.symbol(item.collection, item.symbol)) paintCollectionSymbol(painter, *symbol, point, editor_.radius(), QColor(item.color));
         else paintMarkerSymbol(painter, {}, point, editor_.radius(), QColor(item.color));
-        paintMapLabel(painter, point + QPointF(16, -8), item.title);
+        paintMapLabel(painter, point + QPointF(16, -8), item.title, selection_.item() && selection_.item()->owner == owner() && selection_.item()->id == item.id);
     }
     void select(const QString &id) {
         const auto record = objects_.find(id); if (!record || record->type != QStringLiteral("circle")) return;
@@ -286,7 +289,7 @@ public:
         auto *editor = new MarkerEditor(*services.objects, *services.collections, parent);
         auto *tool = new MarkerTool(services, *editor);
         services.mapTools->add(tool);
-        auto *action = new QAction(uiIcon(UiIcon::Marker), tr("Marker"), editor); action->setObjectName(QStringLiteral("markerModeAction"));
+        auto *action = new QAction(uiIcon(UiIcon::Marker), tr("Marker"), editor); action->setObjectName(QStringLiteral("markerModeAction")); setToolbarSection(*action, ToolbarSection::Creation, 0);
         action->setCheckable(true);
         const auto updateAction = [action, editor, tool] {
             action->setChecked(!tool->statusText().isEmpty());

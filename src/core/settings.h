@@ -18,6 +18,7 @@ struct SettingField {
     QStringList choices;
     QJsonArray choiceValues;
     CotField picker = CotField::None;
+    bool unlockToEdit = false;
     QString enabledBy = {};
     QJsonValue enabledValue = {};
 };

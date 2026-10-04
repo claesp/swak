@@ -26,6 +26,7 @@ public:
     qint64 time() const { return clock_.elapsed(); }
 signals:
     void changed();
+    void pauseChanged(bool paused);
 private:
     struct Motion { Event event; QPointF from, to; qint64 start = 0, stale = -1; bool teleport = false; double initialOpacity = 1; QPointF velocity = {}; qint64 horizon = 0; };
     VisualEvent visual(const Motion &motion, qint64 now) const;

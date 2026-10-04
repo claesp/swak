@@ -1,3 +1,6 @@
+#include "core/toolbar.h"
+#include "core/map_label.h"
+#include <QGuiApplication>
 #include "core/ui_icons.h"
 #include "core/interfaces.h"
 #include "core/maps.h"
@@ -186,7 +189,10 @@ public:
         QList<MapItem> result;
         for (const auto &record : objects_.items()) {
             if (record.type != QStringLiteral("polygon")) continue;
-            if (!polygonVertices(record.geometry).containsPoint(worldPoint(pointer, view), Qt::OddEvenFill)) continue;
+            const QFontMetrics metrics(QGuiApplication::font());
+            const auto text = metrics.elidedText(record.title, Qt::ElideRight, 240);
+            const auto baseline = screenPoint(polygonLabelPoint(polygonVertices(record.geometry)), view) + QPointF(-metrics.horizontalAdvance(text) / 2.0, metrics.ascent() / 2.0);
+            if (!polygonVertices(record.geometry).containsPoint(worldPoint(pointer, view), Qt::OddEvenFill) && !mapLabelBounds(metrics, baseline, record.title).contains(pointer)) continue;
             MapItem item; item.owner = owner(); item.id = record.id; item.label = record.title; item.type = tr("Area"); item.kind = MapItem::Kind::Polygon;
             result.append(std::move(item));
         }
@@ -197,12 +203,9 @@ public:
         for (const auto &item : objects_.items()) {
             if (item.type != QStringLiteral("polygon") || (editor_.draft() && editor_.draft()->id == item.id)) continue;
             const auto points = polygonVertices(item.geometry); draw(painter, screenPolygon(points, view), QColor(item.color));
-            painter.setPen(Qt::white);
-            const auto label = screenPoint(polygonLabelPoint(points), view);
             const auto text = painter.fontMetrics().elidedText(item.title, Qt::ElideRight, 240);
-            const auto bounds = painter.fontMetrics().boundingRect(text).adjusted(-4, -2, 4, 2);
-            QRectF box(label.x() - bounds.width() / 2.0, label.y() - bounds.height() / 2.0, bounds.width(), bounds.height());
-            painter.fillRect(box, QColor(0, 0, 0, 170)); painter.drawText(box, Qt::AlignCenter, text);
+            const auto baseline = screenPoint(polygonLabelPoint(points), view) + QPointF(-painter.fontMetrics().horizontalAdvance(text) / 2.0, painter.fontMetrics().ascent() / 2.0);
+            paintMapLabel(painter, baseline, item.title, selection_.item() && selection_.item()->owner == owner() && selection_.item()->id == item.id);
         }
         if (editor_.draft() && moving_ < 0) draw(painter, screenPolygon(polygonVertices(editor_.draft()->geometry), view), QColor(editor_.draft()->color));
     }
@@ -295,7 +298,7 @@ public:
         if (!services.objects || !services.selection || !services.mapTools || !services.collections) return new QWidget(parent);
         auto *editor = new PolygonEditor(*services.objects, *services.collections, parent);
         auto *tool = new PolygonTool(services, *editor); services.mapTools->add(tool);
-        auto *action = new QAction(uiIcon(UiIcon::Area), tr("Area"), editor); action->setObjectName(QStringLiteral("polygonModeAction"));
+        auto *action = new QAction(uiIcon(UiIcon::Area), tr("Area"), editor); action->setObjectName(QStringLiteral("polygonModeAction")); setToolbarSection(*action, ToolbarSection::Creation, 1);
         action->setCheckable(true);
         const auto updateAction = [action, editor, tool] {
             action->setChecked(!tool->statusText().isEmpty());

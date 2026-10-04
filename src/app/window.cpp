@@ -1,3 +1,4 @@
+#include "core/toolbar.h"
 #include "core/identity.h"
 #include "core/servers.h"
 #include "core/server_browser.h"
@@ -354,6 +355,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         }
         if (menu && menu->isEmpty()) delete menu;
     }
+    arrangeToolbarSections(*toolbar);
     addPaneAction(*pluginsMenu, *findChild<QDockWidget *>(QStringLiteral("pluginsDock")));
     pluginsMenu->setEnabled(!pluginsMenu->isEmpty());
     defaultLayout_ = panels_->saveState(LayoutVersion);

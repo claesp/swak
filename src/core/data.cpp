@@ -266,7 +266,7 @@ QStringList DataSources::attributions() const
     }
     return credits;
 }
-void DataSources::paint(QPainter &painter, const Viewport &view) const
+void DataSources::paint(QPainter &painter, const Viewport &view, const MapItem *selected) const
 {
     auto ids = feeds_.keys(); ids.sort();
     const double worldSize = view.scale();
@@ -301,7 +301,7 @@ void DataSources::paint(QPainter &painter, const Viewport &view) const
                     painter.drawPath(mapping.map(shape.path)); painter.restore();
                 }
                 if (source.value(QStringLiteral("labels")).toBool() && labels < 100 && screen.contains(point) && !shape.name.isEmpty()) {
-                    paintMapLabel(painter, point + QPointF(8, -8), shape.name); ++labels;
+                    paintMapLabel(painter, point + QPointF(8, -8), shape.name, selected && selected->owner == QStringLiteral("org.swak.data/") + id && selected->id == QString::number(&shape - feed->document.shapes.constData())); ++labels;
                 }
             }
         }
@@ -316,7 +316,7 @@ QList<MapItem> DataSources::itemsAt(const Viewport &view, QPointF position) cons
     const QPointF origin = QPointF(view.size.width() / 2, view.size.height() / 2) - view.center * scale;
     if (!QRectF(origin, QSizeF(scale, scale)).contains(position)) return {};
     auto ids = feeds_.keys(); ids.sort();
-    const QFontMetricsF metrics(QGuiApplication::font());
+    const QFontMetrics metrics(QGuiApplication::font());
     QMultiHash<const DataShape *, QRectF> labelBounds;
     const QRectF screen(QPointF{}, view.size);
     int labels = 0;
@@ -329,7 +329,7 @@ QList<MapItem> DataSources::itemsAt(const Viewport &view, QPointF position) cons
             for (int wrap = -1; wrap <= 1 && labels < 100; ++wrap) {
                 const auto point = shape.point * scale + origin + QPointF(wrap * scale, 0);
                 if (!screen.contains(point)) continue;
-                auto bounds = metrics.boundingRect(shape.name); bounds.translate(point + QPointF(8, -8));
+                const auto bounds = mapLabelBounds(metrics, point + QPointF(8, -8), shape.name);
                 labelBounds.insert(&shape, bounds); ++labels;
             }
         }
@@ -344,23 +344,21 @@ QList<MapItem> DataSources::itemsAt(const Viewport &view, QPointF position) cons
             for (int wrap = -1; wrap <= 1; ++wrap) {
                 const auto offset = origin + QPointF(wrap * scale, 0);
                 const auto point = shape->point * scale + offset;
-                bool hit = false;
+                const auto rectangles = labelBounds.values(&*shape);
+                bool hit = std::any_of(rectangles.cbegin(), rectangles.cend(), [&](const QRectF &label) { return label.contains(position); });
                 if (shape->kind == DataShape::Kind::Point) {
-                    hit = std::hypot(point.x() - position.x(), point.y() - position.y()) <= std::max(8.0, radius + 3);
-                    if (!hit) {
-                        const auto bounds = labelBounds.values(&*shape);
-                        hit = std::any_of(bounds.begin(), bounds.end(), [&](const QRectF &label) { return label.contains(position); });
-                    }
+                    hit = hit || std::hypot(point.x() - position.x(), point.y() - position.y()) <= std::max(8.0, radius + 3);
+
                 } else {
                     const auto bounds = shape->path.boundingRect();
-                    if (!QRectF(bounds.topLeft() * scale + offset, bounds.size() * scale).adjusted(-8, -8, 8, 8).contains(position)) continue;
+                    if (!hit && !QRectF(bounds.topLeft() * scale + offset, bounds.size() * scale).adjusted(-8, -8, 8, 8).contains(position)) continue;
                     QTransform mapping; mapping.translate(offset.x(), offset.y()); mapping.scale(scale, scale);
                     const auto path = mapping.map(shape->path);
                     QPainterPathStroker stroke; stroke.setWidth(std::max(10.0, lineWidth + 6));
-                    hit = (shape->kind == DataShape::Kind::Polygon && path.contains(position)) || stroke.createStroke(path).contains(position);
+                    hit = hit || (shape->kind == DataShape::Kind::Polygon && path.contains(position)) || stroke.createStroke(path).contains(position);
                 }
                 if (!hit) continue;
-                MapItem item;
+                MapItem item; item.owner = QStringLiteral("org.swak.data/") + *id; item.id = QString::number(&*shape - feed->document.shapes.constData());
                 item.kind = shape->kind == DataShape::Kind::Point ? MapItem::Kind::Point : shape->kind == DataShape::Kind::Line ? MapItem::Kind::Line : MapItem::Kind::Polygon;
                 item.type = shape->kind == DataShape::Kind::Point ? tr("Point") : shape->kind == DataShape::Kind::Line ? tr("Route / track") : tr("Polygon");
                 item.label = shape->name.isEmpty() ? item.type : shape->name;

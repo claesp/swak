@@ -91,6 +91,18 @@ private slots:
         QCOMPARE(canvas.pixelColor(50, 50), QColor("#92bfd0"));
         QVERIFY(!labels.isEmpty());
     }
+    void labelTargets()
+    {
+        VectorTile tile; VectorFeature feature; feature.kind = VectorFeature::Kind::Point; feature.layer = QStringLiteral("poi");
+        feature.points = {{0.25, 0.5}}; feature.properties = {{QStringLiteral("name"), QStringLiteral("A selectable label")}}; tile.features.append(feature);
+        auto source = provider_->defaults(); const auto labels = vectorLabels(tile, source); QCOMPARE(labels.size(), 1);
+        const auto point = labels.first().bounds.center(); QVERIFY(QLineF(QPointF(64, 128), point).length() > 14);
+        QCOMPARE(vectorFeaturesAt(tile, QRectF(0, 0, 256, 256), point, source).size(), 1);
+        source.insert(QStringLiteral("labels"), false); QVERIFY(vectorLabels(tile, source).isEmpty());
+        QVERIFY(vectorFeaturesAt(tile, QRectF(0, 0, 256, 256), point, source).isEmpty());
+        source.insert(QStringLiteral("labels"), true); tile.features.append(feature); QCOMPARE(vectorLabels(tile, source).size(), 1);
+        std::atomic_bool cancelled{true}; QVERIFY(vectorLabels(tile, source, &cancelled).isEmpty());
+    }
     void denseTileLimits()
     {
         for (const int count : {100001, 500001}) {
