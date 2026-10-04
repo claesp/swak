@@ -231,6 +231,7 @@ public:
         }
         QTimer::singleShot(0, editor, [editor] { emit editor->visibilityRequested(false); }); return editor;
     }
+    bool rootActions() const override { return true; }
     void populateMenu(PluginServices &services, QMenu &menu) override { addActions(editors_.value(services.mapTools), [&menu](QAction *action) { menu.addAction(action); }); }
     void populateToolbar(PluginServices &services, QToolBar &toolbar, QMenu *) override { addActions(editors_.value(services.mapTools), [&toolbar](QAction *action) { toolbar.addAction(action); }); }
 private:

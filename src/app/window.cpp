@@ -1,3 +1,6 @@
+#include "core/ui_behavior.h"
+#include "core/menu_order.h"
+#include "core/provider_toolbar.h"
 #include "core/toolbar.h"
 #include "core/identity.h"
 #include "core/servers.h"
@@ -331,7 +334,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     for (auto *plugin : plugins) {
         QMenu *menu = nullptr;
         if (auto *provider = qobject_cast<MenuPlugin *>(plugin)) {
-            menu = pluginsMenu->addMenu(provider->name());
+            menu = provider->rootActions() ? pluginsMenu : pluginsMenu->addMenu(provider->name());
             provider->populateMenu(services, *menu);
         }
         if (auto *provider = qobject_cast<ToolbarPlugin *>(plugin)) {
@@ -346,6 +349,8 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
                 pluginsMenu->addAction(primary);
                 if (!toolbar->actions().isEmpty()) toolbar->addSeparator();
                 toolbar->addAction(primary);
+            } else if (menu == pluginsMenu) {
+                // Root tool actions control this editor pane.
             } else if (menu && !menu->isEmpty()) {
                 addPaneAction(*pluginsMenu, *dock, menu->menuAction());
             } else {
@@ -353,11 +358,14 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
                 addPaneAction(*pluginsMenu, *dock);
             }
         }
-        if (menu && menu->isEmpty()) delete menu;
+        if (menu && menu != pluginsMenu && menu->isEmpty()) delete menu;
     }
+    if (servers) addProviderToolbar(*toolbar, *servers, *findChild<QAction *>(QStringLiteral("serversAction")), QStringLiteral("serverProvider"), tr("Servers"), UiIcon::Server);
+    if (!dataSources->providers().isEmpty()) addProviderToolbar(*toolbar, *dataSources, *manageData, QStringLiteral("dataProvider"), tr("Data providers"), UiIcon::Data);
     arrangeToolbarSections(*toolbar);
     addPaneAction(*pluginsMenu, *findChild<QDockWidget *>(QStringLiteral("pluginsDock")));
     pluginsMenu->setEnabled(!pluginsMenu->isEmpty());
+    installMenuOrder(); installUiBehavior();
     defaultLayout_ = panels_->saveState(LayoutVersion);
     defaultWindowLayout_ = QMainWindow::saveState(LayoutVersion);
     auto *helpMenu = menuBar()->addMenu(tr("&Help"));
@@ -437,6 +445,8 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     for (const auto &page : settingsPages()) settingsDefaults_.insert(page.id, page.values);
     settingsDefaults_.insert(QStringLiteral("logging"), {{QStringLiteral("enabled"), false}, {QStringLiteral("severity"), 2},
         {QStringLiteral("urgency"), 0}, {QStringLiteral("rate"), 20}, {QStringLiteral("qt"), true}, {QStringLiteral("prefix"), QString{}}});
+    for (auto *menu : findChildren<QMenu *>()) sortMenuActions(*menu);
+    sortMenuActions(*menuBar());
     restorePreferences();
     connect(mapSources, &MapSources::changed, this, [this, mapSources] {
         savePreferences();

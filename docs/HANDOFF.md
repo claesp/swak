@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 4, 2026: Read “Selectable labels, paused traces, Identity, and toolbar groups” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 4, 2026: Read “Menus, provider controls, overlay scrolling, and Identity presentation” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -1067,3 +1067,28 @@ The toolbar order is Map provider, Clear messages, Marker, Area, Circle, Line, a
 The working tree was clean before this checkpoint. Commit this checkpoint as documentation only. Its commit follows the functional revision embedded in both executables. No background development task needs to resume after reboot.
 
 This session used temporary tools under /tmp/swak-toolchain/root/usr and /tmp/swak-quality-tools/root/usr. A reboot can remove them. Inspect the local toolchain before the next build. Follow docs/build.md and docs/quality.md if those paths no longer exist. Do not assume that temporary tools are portable to another machine.
+
+
+## 2026-10-04: Menus, provider controls, overlay scrolling, and Identity presentation
+
+Selected vector labels now redraw in white on solid black after selection geometry. The earlier pixel inversion ran before translucent selection fill and depended on the underlying image. MapItem retains the cached label text, bounds, and normalized font height.
+
+Circle, Distance, and Line use MenuPlugin::rootActions and appear directly in Plugins. A shared locale sorter handles the menu bar, submenus, and transient context menus. Menu separators are removed for global alphabetical order. Toolbar separators remain unchanged.
+
+Servers and Data providers now have toolbar menus with active-state checkboxes and their existing management actions. Each toggle updates the latest source record. MapPanels consumes unhandled wheel events from overlay controls. A map-side filter rejects wheel events over the visible overlay mask.
+
+Identity displays descriptions with raw codes for Type, Location method, and Team. The shared picker retains custom code entry and raw storage. Team choices use colored vector icons. Read-only text fields use disabled palette colors while preserving copying. Lock states use different icons and action tooltips. OK and Apply now use different vector icons.
+
+The focused native tests passed in build/menu-focused-final.log with Qt 6.8.2. The initial fixture omitted required attribution and was corrected. Inspected screenshots show the muted Identity fields and distinct buttons. Full diagnostic evidence follows below.
+
+After reboot, the system supplies Qt 6.8.2, CMake, Ninja, and GCC. Old build caches referenced removed temporary tools. The debug, sanitizer, coverage, and release presets need fresh configuration for the system toolchain. Development-only Xvfb and Cppcheck were extracted under build/dev-tools. Cppcheck also uses an extracted tinyxml2 library and a local cfg symlink. None of these tools enters the release executable.
+
+Ten sanitizer suites passed in build/quality/20261004-200412-quick-9419. The first full native run exposed popup closure during sorting. The sorter now moves actions before menus open and defers separator destruction safely. Tests identify providers by ID rather than old menu positions. Chooser paths passed in build/menu-chooser-fixed.log except that outdated provider-position assertion, which was then corrected.
+
+All 85 native sanitizer cases passed in build/quality/20261004-201155-gui-16788. The diagnostic still reports the existing Mesa leak of 240732 bytes in 1073 allocations. No suppression hides it. Source analysis passed in build/quality/20261004-201156-analyze-3 after restoring the Cppcheck configuration files.
+
+The 60-second workload passed in build/quality/20261004-200717-soak-13331. It completed 1107 cycles with 18141184 bytes of peak memory growth. The maximum heartbeat gap was 47 milliseconds. Idle CPU time was 0.018 seconds. Hardware graphics, native Wayland, two-hour operation, and all locale/font combinations remain unqualified.
+
+Final coverage passed ten suites and all 85 native cases in build/quality/20261004-201244-coverage-17301. The new menu, provider-toolbar, and read-only presentation helpers reached every line and function. The picker and overlay panel code also reached every line. Branch coverage remains incomplete, including rare source-removal timing and all theme/locale combinations.
+
+The release build passed in build/menu-release.log. Final builds after the commit use build/menu-release-final.log and build/menu-debug-final.log. Both executables must use the same committed functional revision. No user request remains pending after these builds succeed.

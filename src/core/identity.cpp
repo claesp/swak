@@ -7,9 +7,11 @@ Identity::Identity(QObject *parent) : QObject(parent), values_{{QStringLiteral("
 QList<SettingField> Identity::settingsFields() const
 {
     auto uid = textSetting(QStringLiteral("uid"), tr("UID"), 128); uid.unlockToEdit = true;
+    auto type = cotSetting(QStringLiteral("type"), tr("Type"), CotField::Type); type.describeCode = true;
+    auto how = cotSetting(QStringLiteral("how"), tr("Location method"), CotField::How); how.describeCode = true;
+    auto team = cotSetting(QStringLiteral("team"), tr("Team"), CotField::Team); team.describeCode = true;
     return {uid, textSetting(QStringLiteral("callsign"), tr("Callsign"), 128),
-        cotSetting(QStringLiteral("type"), tr("Type"), CotField::Type), cotSetting(QStringLiteral("how"), tr("Location method"), CotField::How),
-        cotSetting(QStringLiteral("team"), tr("Team"), CotField::Team), cotSetting(QStringLiteral("role"), tr("Role"), CotField::Role)};
+        type, how, team, cotSetting(QStringLiteral("role"), tr("Role"), CotField::Role)};
 }
 QString Identity::validateSettings(const QJsonObject &values) const
 {

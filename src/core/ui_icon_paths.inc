@@ -106,6 +106,22 @@ QPainterPath iconPath(UiIcon icon)
         if (icon == UiIcon::Lock) path.lineTo(16, 10);
         path.moveTo(12, 14); path.lineTo(12, 17);
         break;
+    case UiIcon::Server:
+        path.addRoundedRect(QRectF(3, 3, 18, 7), 2, 2); path.addRoundedRect(QRectF(3, 14, 18, 7), 2, 2);
+        path.moveTo(7, 6); path.lineTo(7, 7); path.moveTo(7, 17); path.lineTo(7, 18);
+        break;
+    case UiIcon::Data:
+        path.moveTo(3, 7); path.lineTo(12, 2); path.lineTo(21, 7); path.lineTo(12, 12); path.closeSubpath();
+        path.moveTo(3, 12); path.lineTo(12, 17); path.lineTo(21, 12);
+        path.moveTo(3, 17); path.lineTo(12, 22); path.lineTo(21, 17);
+        break;
+    case UiIcon::Confirm:
+        path.moveTo(4, 12); path.lineTo(9, 17); path.lineTo(20, 6);
+        break;
+    case UiIcon::Apply:
+        path.moveTo(4, 3); path.lineTo(17, 3); path.lineTo(21, 7); path.lineTo(21, 21); path.lineTo(3, 21); path.lineTo(3, 3); path.closeSubpath();
+        path.addRect(QRectF(7, 3, 9, 6)); path.addRect(QRectF(7, 14, 10, 7));
+        break;
     }
     return path;
 }

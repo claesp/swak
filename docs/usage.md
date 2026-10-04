@@ -320,7 +320,7 @@ Press L to start Line. Click each endpoint. Complete the object editor and selec
 
 Right-click a saved circle or line to select Edit, Move, or Delete. During editing, right-click a control point to move it. Both control points are required, so their Delete action stays disabled. Moving a circle center retains its radius. Moving its edge control changes its radius. Esc cancels a pending move. Delete and Backspace delete the selected saved object. Ctrl+Z restores a deleted object.
 
-The toolbar and Tools > Plugins > Circle and line tools provide the same creation actions. File > Settings > Keybindings configures C, D, and L. The Circle and line tools section controls line width, control-point size, measurement duration, and fade time.
+The toolbar and Tools > Plugins provide the same creation actions. File > Settings > Keybindings configures C, D, and L. The Circle and line tools section controls line width, control-point size, measurement duration, and fade time.
 
 Circles remain circular on the projected map. Their area estimate integrates a 128-point boundary over a spherical Earth. Distance uses the shortest spherical surface distance and ignores elevation. Lines wrap across the date line, but their straight map segment approximates the surface path. These values are estimates for map work. Circles must remain inside the projected world.
 
@@ -331,3 +331,16 @@ The application generates a UID on first startup and saves it in the profile. Op
 Space freezes both displayed CoT positions and traces. Incoming messages and bounded trace history continue updating internally. Resume shows the latest positions and trace history immediately.
 
 The main toolbar groups Marker, Area, Circle, and Line in one creation section. A separator places Distance in its own measurement section.
+
+
+# Menus and provider controls
+
+Menus sort alphabetically with the operating-system locale. Circle, Distance, and Line appear directly under Tools > Plugins. Menu separators are removed so the full menu stays sorted. Toolbar sections retain separators.
+
+Use the Servers toolbar button to enable or disable configured servers. Use its Servers command to open management. Use the Data providers button to enable or disable feeds. Its Data Providers command opens management. Multiple servers and feeds can stay active together.
+
+Scrolling inside an overlay pane affects that pane. At either scrollbar limit, wheel events do not zoom the map. Move the pointer onto the uncovered map before zooming.
+
+Identity shows Type, Location method, and Team descriptions with their original codes in parentheses. Use Select to change these fields or enter a custom code. Read-only text fields appear muted and still support selection and copying. The UID button shows a closed lock when it offers Unlock and an open lock when it offers Lock. OK uses a checkmark. Apply uses a disk icon and keeps the dialog open.
+
+Selected vector labels use white text on a black background. The selection highlight does not cover the label background.

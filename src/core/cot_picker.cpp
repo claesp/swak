@@ -1,6 +1,8 @@
 #include "core/cot_picker.h"
 #include "core/event.h"
 #include <QCoreApplication>
+#include <QSignalBlocker>
+#include "core/ui_icons.h"
 #include <QHash>
 #include <QCollator>
 #include <QDialog>
@@ -88,14 +90,18 @@ void openPicker(QLineEdit *field, CotField kind)
         auto *parent = items.value(parentCode);
         auto *item = parent ? new SortedItem(parent) : new SortedItem(tree);
         item->setText(0, choice.label); item->setText(1, choice.code); item->setData(0, Qt::UserRole, choice.code);
+        if (kind == CotField::Team) {
+            auto colorName = choice.code; colorName.remove(' '); QColor color(colorName);
+            if (color.isValid()) { CollectionSymbol symbol; symbol.frame.addEllipse(QPointF{}, 0.8, 0.8); item->setIcon(0, collectionIcon(symbol, color)); }
+        }
         items.insert(choice.code, item);
     }
     tree->sortItems(0, Qt::AscendingOrder);
     tree->setColumnWidth(0, 320);
     layout->addWidget(tree);
     auto *label = new QLabel(translated("Value (custom values are allowed)"), dialog);
-    auto *value = new QLineEdit(field->text(), dialog); value->setObjectName(QStringLiteral("cotPickerValue"));
-    value->setMaxLength(field->maxLength()); label->setBuddy(value);
+    auto *value = new QLineEdit(cotFieldValue(field), dialog); value->setObjectName(QStringLiteral("cotPickerValue"));
+    value->setMaxLength(field->property("cotRawMaximum").isValid() ? field->property("cotRawMaximum").toInt() : field->maxLength()); label->setBuddy(value);
     layout->addWidget(label); layout->addWidget(value);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dialog);
     layout->addWidget(buttons);
@@ -103,11 +109,11 @@ void openPicker(QLineEdit *field, CotField kind)
     ok->setEnabled(valid(kind, value->text()));
     QObject::connect(value, &QLineEdit::textChanged, dialog, [kind, ok](const QString &text) { ok->setEnabled(valid(kind, text)); });
     QObject::connect(tree, &QTreeWidget::currentItemChanged, dialog, [value](QTreeWidgetItem *item) { if (item) value->setText(item->data(0, Qt::UserRole).toString()); });
-    if (auto *item = items.value(field->text())) {
+    if (auto *item = items.value(cotFieldValue(field))) {
         for (auto *ancestor = item->parent(); ancestor; ancestor = ancestor->parent()) ancestor->setExpanded(true);
         tree->setCurrentItem(item); tree->scrollToItem(item);
     }
-    QObject::connect(buttons, &QDialogButtonBox::accepted, dialog, [dialog, field, value] { field->setText(value->text()); dialog->accept(); });
+    QObject::connect(buttons, &QDialogButtonBox::accepted, dialog, [dialog, field, value] { setCotFieldValue(field, value->text()); dialog->accept(); });
     QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
     dialog->open();
 }
@@ -126,8 +132,25 @@ QString cotFieldDescription(CotField kind, const QString &code)
     }
     return labels.join(QStringLiteral(" / ")) + QStringLiteral(" (%1)").arg(code);
 }
-QWidget *cotFieldEditor(QLineEdit *field, CotField kind)
+QString cotFieldValue(const QLineEdit *field)
 {
+    return field->property("cotRawCode").isValid() ? field->property("cotRawCode").toString() : field->text();
+}
+void setCotFieldValue(QLineEdit *field, const QString &code)
+{
+    if (!field->property("cotDescriptionKind").isValid()) { field->setText(code); return; }
+    field->setProperty("cotRawCode", code);
+    const QSignalBlocker blocker(field);
+    field->setText(cotFieldDescription(static_cast<CotField>(field->property("cotDescriptionKind").toInt()), code));
+}
+QWidget *cotFieldEditor(QLineEdit *field, CotField kind, bool descriptive)
+{
+    if (descriptive) {
+        const auto code = field->text(); field->setProperty("cotDescriptionKind", static_cast<int>(kind));
+        field->setProperty("cotRawMaximum", field->maxLength()); field->setMaxLength(1024); field->setReadOnly(true);
+        QObject::connect(field, &QLineEdit::textChanged, field, [field](const QString &value) { setCotFieldValue(field, value); });
+        setCotFieldValue(field, code);
+    }
     auto *container = new QWidget(field->parentWidget());
     auto *layout = new QHBoxLayout(container); layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(field, 1);

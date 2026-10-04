@@ -1,5 +1,6 @@
 #include "core/map_selection.h"
 #include <QPainter>
+#include <algorithm>
 #include "core/marker_symbols.h"
 namespace swak {
 void MapSelection::paint(QPainter &painter, const Viewport &view, std::optional<QPointF> point, double opacity) const
@@ -13,12 +14,6 @@ void MapSelection::paint(QPainter &painter, const Viewport &view, std::optional<
     painter.setOpacity(opacity);
     for (int wrap = -1; wrap <= 1; ++wrap) {
         const auto offset = origin + QPointF(wrap * scale, 0);
-        if (!selected.cachedLabelBounds.isEmpty()) {
-            painter.save(); painter.setCompositionMode(QPainter::CompositionMode_Difference);
-            const auto bounds = selected.cachedLabelBounds;
-            painter.fillRect(QRectF(bounds.topLeft() * scale + offset, bounds.size() * scale), Qt::white);
-            painter.restore();
-        }
         if (selected.kind == MapItem::Kind::Point) {
             painter.setBrush(Qt::NoBrush);
             painter.setPen(QPen(Qt::white, 3));
@@ -38,6 +33,15 @@ void MapSelection::paint(QPainter &painter, const Viewport &view, std::optional<
             QTransform transform; transform.translate(offset.x(), offset.y()); transform.scale(scale, scale);
             const auto bounds = transform.mapRect(selected.path.boundingRect()).adjusted(-pen.widthF(), -pen.widthF(), pen.widthF(), pen.widthF());
             if (QRectF(QPointF{}, view.size).intersects(bounds)) painter.drawPath(transform.map(selected.path));
+        }
+        if (!selected.cachedLabelBounds.isEmpty()) {
+            painter.save();
+            const auto bounds = selected.cachedLabelBounds;
+            const QRectF screenBounds(bounds.topLeft() * scale + offset, bounds.size() * scale);
+            painter.fillRect(screenBounds, Qt::black); painter.setPen(Qt::white);
+            auto font = painter.font(); font.setPixelSize(std::clamp(qRound(selected.cachedLabelFontHeight * scale), 1, 256)); painter.setFont(font);
+            painter.drawText(screenBounds, Qt::AlignCenter, selected.cachedLabelText);
+            painter.restore();
         }
     }
     painter.restore();

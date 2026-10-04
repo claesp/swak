@@ -1,3 +1,4 @@
+#include "core/ui_behavior.h"
 #include "core/ui_icons.h"
 #include <QToolButton>
 #include <QHBoxLayout>
@@ -30,7 +31,7 @@ QJsonValue editorValue(QWidget *editor)
     if (auto *box = qobject_cast<QCheckBox *>(editor)) return box->isChecked();
     if (auto *number = qobject_cast<QDoubleSpinBox *>(editor)) return number->value();
     if (auto *key = qobject_cast<QKeySequenceEdit *>(editor)) return key->keySequence().toString(QKeySequence::PortableText);
-    if (auto *text = qobject_cast<QLineEdit *>(editor)) return text->text();
+    if (auto *text = qobject_cast<QLineEdit *>(editor)) return cotFieldValue(text);
     if (auto *choices = qobject_cast<QComboBox *>(editor)) return QJsonValue::fromVariant(choices->currentData());
     return {};
 }
@@ -38,6 +39,7 @@ QJsonValue editorValue(QWidget *editor)
 SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString()> save, QWidget *parent, bool providerForm, bool newProvider)
     : QDialog(parent), pages_(std::move(pages)), save_(std::move(save)), newProvider_(newProvider)
 {
+    installUiBehavior();
     setObjectName(QStringLiteral("settingsDialog"));
     setWindowTitle(tr("Settings"));
     resize(760, 580);
@@ -179,7 +181,7 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
                 label->setWordWrap(false);
                 label->setMinimumWidth(label->sizeHint().width());
                 label->setBuddy(editor); fieldLabel = label;
-                QWidget *row = field.picker != CotField::None && qobject_cast<QLineEdit *>(editor) ? cotFieldEditor(qobject_cast<QLineEdit *>(editor), field.picker) : editor;
+                QWidget *row = field.picker != CotField::None && qobject_cast<QLineEdit *>(editor) ? cotFieldEditor(qobject_cast<QLineEdit *>(editor), field.picker, field.describeCode) : editor;
                 if (field.unlockToEdit) if (auto *text = qobject_cast<QLineEdit *>(editor)) {
                     auto *container = new QWidget(content); auto *rowLayout = new QHBoxLayout(container); rowLayout->setContentsMargins(0, 0, 0, 0);
                     auto *lock = new QToolButton(container); lock->setObjectName(editor->objectName() + QStringLiteral("/lock")); lock->setCheckable(true);
@@ -221,7 +223,7 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages, std::function<QString(
                     if (auto *box = qobject_cast<QCheckBox *>(editor)) box->setChecked(value.toBool());
                     else if (auto *number = qobject_cast<QDoubleSpinBox *>(editor)) number->setValue(value.toDouble());
                     else if (auto *key = qobject_cast<QKeySequenceEdit *>(editor)) key->setKeySequence(QKeySequence::fromString(value.toString(), QKeySequence::PortableText));
-                    else if (auto *text = qobject_cast<QLineEdit *>(editor)) text->setText(value.toString());
+                    else if (auto *text = qobject_cast<QLineEdit *>(editor)) setCotFieldValue(text, value.toString());
                     else if (auto *choice = qobject_cast<QComboBox *>(editor)) choice->setCurrentIndex(choice->findData(value.toVariant()));
                 }
             });

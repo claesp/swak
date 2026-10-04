@@ -527,8 +527,11 @@ QList<MapItem> TileRenderer::itemsAt(QPointF position) const
             item.properties.insert(QStringLiteral("Map provider"), source_.value(QStringLiteral("name")));
             QTransform world; const double count = 1 << tile.z;
             world.translate(tile.x / count, tile.y / count); world.scale(1 / count, 1 / count);
-            for (const auto &label : labels) if (label.index == hit.value(QStringLiteral("featureIndex")).toInt())
-                item.cachedLabelBounds = world.mapRect(QRectF(label.bounds.topLeft() / 256, label.bounds.size() / 256).intersected(QRectF(0, 0, 1, 1)));
+            for (const auto &label : labels) if (label.index == hit.value(QStringLiteral("featureIndex")).toInt()) {
+                item.cachedLabelBounds = world.mapRect(QRectF(label.bounds.topLeft() / 256, label.bounds.size() / 256));
+                item.cachedLabelText = label.text;
+                item.cachedLabelFontHeight = source_.value(QStringLiteral("labelSize")).toInt(12) / (256 * count);
+            }
             if (!feature.points.isEmpty()) {
                 const auto nearest = std::min_element(feature.points.begin(), feature.points.end(), [&](const auto &a, const auto &b) {
                     const auto screen = [&](QPointF point) { return tile.rectangle.topLeft() + QPointF(point.x() * tile.rectangle.width(), point.y() * tile.rectangle.height()); };

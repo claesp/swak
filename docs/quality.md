@@ -130,3 +130,5 @@ The motion tests exercise pause, incoming position updates, new markers, immedia
 Circle and Line tests cover two-point geometry, world bounds, locale units, control editing, move cancellation, deletion, undo, and restart. Native tests inspect the OpenGL circle fill and temporary Distance expiry. The workload creates and deletes both saved shape types and exercises their undo records.
 
 Label tests cover native clicks outside marker symbols, inverted text colors, visible vector labels, hidden labels, and label collisions. Trace tests compare frozen images during updates and changed images after resume. Identity tests cover generated UID persistence, locked input, unlocking, relocking, and a reopened dialog.
+
+Menu tests cover locale ordering, direct plugin actions, provider toggles, and management action reuse. Native tests exercise wheel events at both overlay scroll limits. They inspect selected vector labels, read-only palettes, UID lock states, Team icon colors, and distinct OK and Apply icons.

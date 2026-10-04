@@ -31,3 +31,5 @@ CoT connections use the existing Qt Network and Core libraries. TLS and PKCS12 s
 Circle, Distance, and Line use original vector paths in tools/generate_icons.py. They share the application icon renderer and its stroke style. They add no library dependency.
 
 The UID lock and unlock buttons use original vector paths in the shared icon factory. They add no external dependency.
+
+The Server, Data providers, OK, and Apply icons use original vector paths in the shared factory. Team swatches use the existing vector icon engine. These changes add no runtime dependency.

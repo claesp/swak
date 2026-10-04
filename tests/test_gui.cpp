@@ -1,3 +1,4 @@
+#include "core/menu_order.h"
 #include <QUuid>
 #include "core/map_label.h"
 #include "core/measure.h"
@@ -464,15 +465,19 @@ private slots:
             auto *maps = window.findChild<swak::MapSources *>();
             auto *menu = button->menu();
             QMetaObject::invokeMethod(menu, "aboutToShow");
-            QCOMPARE(menu->actions().size(), maps->sources().size() + 3);
-            QCOMPARE(menu->actions().first()->text(), QStringLiteral("No map provider"));
-            QVERIFY(menu->actions().first()->isChecked());
-            menu->actions().at(1)->trigger();
+            QCOMPARE(menu->actions().size(), maps->sources().size() + 2);
+            QAction *none = nullptr, *provider = nullptr, *manage = nullptr;
+            for (auto *action : menu->actions()) {
+                if (action->text() == QStringLiteral("No map provider")) none = action;
+                else if (action->text() == QStringLiteral("Map Providers")) manage = action;
+                else if (action->isEnabled()) provider = action;
+            }
+            QVERIFY(none && provider && manage); QVERIFY(none->isChecked()); provider->trigger();
             QVERIFY(!maps->activeSource().isEmpty());
             QCOMPARE(button->text(), maps->activeSource().value(QStringLiteral("name")).toString());
-            menu->actions().first()->trigger();
+            none->trigger();
             QVERIFY(maps->activeSource().isEmpty());
-            menu->actions().last()->trigger();
+            manage->trigger();
             QVERIFY(window.findChild<swak::MapManager *>());
             window.findChild<swak::MapManager *>()->close();
             auto values = maps->savePreferences();
@@ -481,7 +486,8 @@ private slots:
             values.insert(QStringLiteral("sources"), sources);
             maps->restorePreferences(values);
             QMetaObject::invokeMethod(menu, "aboutToShow");
-            QVERIFY(!menu->actions().at(1)->isEnabled());
+            QAction *absent = nullptr; for (auto *entry : menu->actions()) if (entry->data().toString() == QStringLiteral("absent")) absent = entry;
+            QVERIFY(absent); QVERIFY(!absent->isEnabled());
             QVERIFY(window.savePreferences());
             QVERIFY(window.grab().save(QStringLiteral("activity-toolbar-smoke.png")));
         }
@@ -1591,15 +1597,65 @@ private slots:
         QVERIFY(window.findChild<swak::UserObjects *>()->items().isEmpty());
     }
 
+    void menusProvidersAndWheel()
+    {
+        QTemporaryDir directory; swak::Window window(directory.filePath(QStringLiteral("menus.json")), QPluginLoader::staticInstances());
+        window.show(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *plugins = window.findChild<QMenu *>(QStringLiteral("pluginsMenu")); QVERIFY(plugins);
+        for (auto *action : plugins->actions()) QVERIFY(action->text() != QStringLiteral("Circle and line tools"));
+        for (int i = 0; i < 3; ++i) QVERIFY(plugins->actions().contains(window.findChild<QAction *>(QStringLiteral("shapeMode%1").arg(i))));
+        const auto sorted = [](const QList<QAction *> &actions) {
+            QCollator collator; collator.setCaseSensitivity(Qt::CaseInsensitive); QString previous;
+            for (const auto *action : actions) { if (action->isSeparator()) return false; auto text = action->text(); text.remove('&'); if (!previous.isEmpty() && collator.compare(previous, text) > 0) return false; previous = text; } return true;
+        };
+        QVERIFY(sorted(window.menuBar()->actions())); for (auto *menu : window.findChildren<QMenu *>()) QVERIFY(sorted(menu->actions()));
+        auto *mapMenu = window.findChild<QToolButton *>(QStringLiteral("mapProviderButton"))->menu(); qsizetype actionCount = 0;
+        for (int i = 0; i < 5; ++i) {
+            mapMenu->popup(window.mapToGlobal(QPoint(60, 60))); QVERIFY(QTest::qWaitForWindowExposed(mapMenu)); QVERIFY(sorted(mapMenu->actions()));
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            const auto count = mapMenu->findChildren<QAction *>(QString{}, Qt::FindDirectChildrenOnly).size();
+            if (i == 0) actionCount = count; else QCOMPARE(count, actionCount); mapMenu->close();
+        }
+        auto *servers = window.findChild<swak::Servers *>(); QVERIFY(servers); auto server = swak::serverDefaults();
+        server.insert(QStringLiteral("name"), QStringLiteral("Local test")); server.insert(QStringLiteral("protocol"), QStringLiteral("stcp")); server.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1")); server.insert(QStringLiteral("port"), 1); server.insert(QStringLiteral("enabled"), false);
+        QVERIFY(servers->put(QStringLiteral("local-test"), server).isEmpty());
+        auto *data = window.findChild<swak::DataSources *>(); QVERIFY(data); auto feed = swak::dataDefaults();
+        feed.insert(QStringLiteral("attribution"), QStringLiteral("Test")); feed.insert(QStringLiteral("name"), QStringLiteral("Local feed")); feed.insert(QStringLiteral("format"), QStringLiteral("org.swak.kml")); feed.insert(QStringLiteral("endpoint"), QStringLiteral("https://127.0.0.1:1/test.kml")); feed.insert(QStringLiteral("enabled"), false);
+        QVERIFY(data->put(QStringLiteral("local-test"), feed).isEmpty());
+        for (const auto &name : {QStringLiteral("serverProviderButton"), QStringLiteral("dataProviderButton")}) {
+            auto *button = window.findChild<QToolButton *>(name); QVERIFY(button); auto *menu = button->menu(); QVERIFY(menu);
+            menu->popup(window.mapToGlobal(QPoint(60, 60))); QVERIFY(QTest::qWaitForWindowExposed(menu)); QVERIFY(sorted(menu->actions()));
+            QAction *toggle = nullptr; for (auto *action : menu->actions()) if (action->data().toString() == QStringLiteral("local-test")) toggle = action;
+            QVERIFY(toggle); QVERIFY(toggle->isCheckable()); QVERIFY(!toggle->isChecked()); toggle->trigger();
+            const auto values = name.startsWith(QStringLiteral("server")) ? servers->sources() : data->sources(); QVERIFY(values.value(QStringLiteral("local-test")).toObject().value(QStringLiteral("enabled")).toBool()); toggle->trigger(); menu->close();
+        }
+        auto *map = window.findChild<QOpenGLWidget *>(); QVERIFY(map); auto *selection = window.findChild<swak::MapSelection *>(); QVERIFY(selection);
+        swak::MapItem item; item.label = QStringLiteral("Wheel test"); item.description = QString(10000, 'x'); selection->select(item);
+        auto *description = window.findChild<QWidget *>(QStringLiteral("informationPane"))->findChild<QPlainTextEdit *>(); QVERIFY(description);
+        QVERIFY(QTest::qWaitFor([&] { return description->isVisible(); }));
+        auto *prefs = dynamic_cast<swak::PreferenceParticipant *>(map); const auto zoom = prefs->savePreferences().value(QStringLiteral("zoom"));
+        description->verticalScrollBar()->setValue(description->verticalScrollBar()->maximum());
+        const auto position = description->viewport()->rect().center();
+        for (int delta : {-120, 120}) {
+            description->verticalScrollBar()->setValue(delta < 0 ? description->verticalScrollBar()->maximum() : 0);
+            QWheelEvent wheel(position, description->viewport()->mapToGlobal(position), {}, QPoint(0, delta), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QApplication::sendEvent(description->viewport(), &wheel); QCOMPARE(prefs->savePreferences().value(QStringLiteral("zoom")), zoom);
+        }
+        QVERIFY(window.findChild<QToolBar *>(QStringLiteral("mainToolbar"))->grab().save(QStringLiteral("provider-toolbar.png")));
+    }
     void cachedLabelInversion()
     {
         SelectionCanvas canvas; canvas.resize(320, 240); canvas.view = {QSizeF(320, 240), QPointF(0.5, 0.5), 4};
         swak::MapItem item; item.kind = swak::MapItem::Kind::Line;
         const auto scale = canvas.view.scale();
         item.cachedLabelBounds = QRectF(canvas.view.center + QPointF(-100, -70) / scale, QSizeF(90 / scale, 30 / scale));
+        item.kind = swak::MapItem::Kind::Polygon; item.path.addRect(item.cachedLabelBounds.adjusted(-10 / scale, -10 / scale, 10 / scale, 10 / scale));
+        item.cachedLabelText = QStringLiteral("Selected"); item.cachedLabelFontHeight = 12 / scale;
         canvas.selection.select(item); canvas.show(); QVERIFY(QTest::qWaitForWindowExposed(&canvas));
         const auto frame = canvas.grabFramebuffer(); const auto ratio = canvas.devicePixelRatioF();
-        QVERIFY(frame.pixelColor(QPoint(qRound(70 * ratio), qRound(60 * ratio))).lightness() > 240);
+        QVERIFY(frame.pixelColor(QPoint(qRound(62 * ratio), qRound(52 * ratio))).lightness() < 10);
+        int white = 0; for (int y = qRound(50 * ratio); y < qRound(80 * ratio); ++y) for (int x = qRound(60 * ratio); x < qRound(150 * ratio); ++x) if (frame.pixelColor(x, y).lightness() > 200) ++white;
+        QVERIFY(white > 10);
         QVERIFY(frame.pixelColor(QPoint(qRound(40 * ratio), qRound(40 * ratio))).lightness() < 10);
     }
     void generatedIdentityPersists()
@@ -1715,7 +1771,7 @@ private slots:
         QTimer::singleShot(0, map, [&] {
             auto *menu = map->findChild<QMenu *>(QStringLiteral("mapObjectChooser")); QVERIFY(menu);
             const auto close = qScopeGuard([menu] { menu->close(); });
-            auto *more = menu->actions().last()->menu(); QVERIFY(more);
+            QMenu *more = nullptr; for (auto *action : menu->actions()) if (action->menu()) more = action->menu(); QVERIFY(more);
             QVERIFY(QMetaObject::invokeMethod(more, "aboutToShow", Qt::DirectConnection));
             for (auto *action : more->actions()) if (action->data().toString() == QStringLiteral("marker-b")) { action->trigger(); return; }
             QFAIL("Last overlapping marker is absent from the next page");
@@ -2154,7 +2210,7 @@ private slots:
         auto *help = window.findChild<QMenu *>(QStringLiteral("helpMenu"));
         auto *about = window.findChild<QAction *>(QStringLiteral("aboutAction"));
         QVERIFY(help && about);
-        QCOMPARE(window.menuBar()->actions().last(), help->menuAction());
+        QVERIFY(window.menuBar()->actions().contains(help->menuAction()));
         QVERIFY(help->actions().contains(about));
         for (int i = 0; i < 2; ++i) {
             about->trigger();
@@ -2256,7 +2312,7 @@ private slots:
             QVERIFY(!action->isChecked());
             dock->setFloating(false);
         }
-        QCOMPARE(activated, 7);
+        QCOMPARE(activated, 6);
         QVERIFY(window.grab().save(QStringLiteral("plugin-labels-smoke.png")));
     }
     void clearEventsMenu()
@@ -2774,6 +2830,10 @@ private slots:
                 QCOMPARE(list->topLevelItemCount(), kind == swak::CotField::Team ? 14 : 8);
                 const QCollator collator;
                 for (int i = 1; i < list->topLevelItemCount(); ++i) QVERIFY(collator.compare(list->topLevelItem(i - 1)->text(0), list->topLevelItem(i)->text(0)) <= 0);
+                if (kind == swak::CotField::Team) for (int i = 0; i < list->topLevelItemCount(); ++i) {
+                    auto *item = list->topLevelItem(i); QVERIFY(!item->icon(0).isNull()); auto name = item->text(1); name.remove(' ');
+                    QCOMPARE(item->icon(0).pixmap(24, 24).toImage().pixelColor(12, 12).rgb(), QColor(name).rgb());
+                }
                 list->setCurrentItem(list->topLevelItem(0));
             }
             const auto selected = list->currentItem()->text(1);
@@ -2938,8 +2998,15 @@ private slots:
             auto *uid = dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.identity/uid")); QVERIFY(uid); QVERIFY(uid->isReadOnly()); QVERIFY(!uid->text().isEmpty());
             const auto generated = uid->text(); QTest::keyClicks(uid, "blocked"); QCOMPARE(uid->text(), generated);
             auto *lock = dialog->findChild<QToolButton *>(QStringLiteral("org.swak.identity/uid/lock")); QVERIFY(lock); QVERIFY(!lock->icon().isNull());
-            lock->click(); QVERIFY(!uid->isReadOnly()); uid->setText(QStringLiteral("sender-test"));
+            const auto lockedIcon = lock->icon().pixmap(24, 24).toImage();
+            const auto muted = uid->palette().color(QPalette::Text); QVERIFY(lock->toolTip().contains(QStringLiteral("Unlock")));
+            lock->click(); QVERIFY(!uid->isReadOnly()); QVERIFY(lock->icon().pixmap(24, 24).toImage() != lockedIcon); QVERIFY(lock->toolTip().contains(QStringLiteral("Lock")));
+            QVERIFY(uid->palette().color(QPalette::Text) != muted); uid->setText(QStringLiteral("sender-test"));
             lock->click(); QVERIFY(uid->isReadOnly());
+            for (const auto &path : {QStringLiteral("type"), QStringLiteral("how"), QStringLiteral("team")}) {
+                auto *field = dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.identity/") + path); QVERIFY(field); QVERIFY(field->text().contains('(')); QVERIFY(!swak::cotFieldValue(field).contains('('));
+            }
+            auto *buttons = dialog->findChild<QDialogButtonBox *>(); QVERIFY(buttons->button(QDialogButtonBox::Ok)->icon().pixmap(24, 24).toImage() != buttons->button(QDialogButtonBox::Apply)->icon().pixmap(24, 24).toImage());
             QVERIFY(dialog->grab().save(QStringLiteral("identity-locked.png")));
             dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.identity/callsign"))->setText(QStringLiteral("Test Sender"));
             dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.identity/team"))->setText(QStringLiteral("Blue"));
@@ -3111,7 +3178,7 @@ private slots:
         QCOMPARE(viewMenu->actions().size(), 2);
         QVERIFY(viewMenu->actions().contains(window.findChild<QToolBar *>(QStringLiteral("mainToolbar"))->toggleViewAction()));
         QVERIFY(fileMenu->actions().contains(quit));
-        QCOMPARE(window.menuBar()->actions().first(), fileMenu->menuAction());
+        QCOMPARE(window.menuBar()->actions().first()->text(), QStringLiteral("&Edit"));
         QCOMPARE(quit->shortcut(), QKeySequence(QKeySequence::Quit));
         for (const auto *menu : window.findChildren<QMenu *>()) {
             if (menu != fileMenu) QVERIFY(!menu->actions().contains(quit));

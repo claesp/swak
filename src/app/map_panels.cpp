@@ -1,6 +1,7 @@
 #include "app/map_panels.h"
 #include <QDockWidget>
 #include <QEvent>
+#include <QWheelEvent>
 #include <QLayout>
 #include <QPainter>
 #include <QTabBar>
@@ -35,12 +36,14 @@ void MapPanels::track(QDockWidget *pane)
 }
 bool MapPanels::event(QEvent *event)
 {
+    if (event->type() == QEvent::Wheel) { event->accept(); return true; }
     if (event->type() == QEvent::LayoutRequest || event->type() == QEvent::Resize || event->type() == QEvent::Show)
         maskTimer_.start(0);
     return QMainWindow::event(event);
 }
 bool MapPanels::eventFilter(QObject *object, QEvent *event)
 {
+    if (object == parentWidget() && event->type() == QEvent::Wheel && isVisible() && mask().contains(static_cast<QWheelEvent *>(event)->position().toPoint())) { event->accept(); return true; }
     if (object == parentWidget() && event->type() == QEvent::Resize) setGeometry(parentWidget()->rect());
     if (event->type() == QEvent::Move || event->type() == QEvent::Resize || event->type() == QEvent::Show || event->type() == QEvent::Hide)
         maskTimer_.start(0);

@@ -80,6 +80,7 @@ public:
 };
 class MenuPlugin {
 public:
+    virtual bool rootActions() const { return false; }
     virtual ~MenuPlugin() = default;
     virtual QString name() const = 0;
     virtual void populateMenu(PluginServices &services, QMenu &menu) = 0;

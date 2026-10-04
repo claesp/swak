@@ -19,6 +19,8 @@ struct MapItem {
     QString id;
     QString label;
     QRectF cachedLabelBounds;
+    QString cachedLabelText;
+    double cachedLabelFontHeight = 0;
     QIcon icon;
     QString type;
     QString description;
