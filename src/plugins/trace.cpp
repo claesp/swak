@@ -27,18 +27,22 @@ public:
     QString preferenceId() const override { return QStringLiteral("org.swak.trace"); }
     QString settingsTitle() const override { return tr("Trace"); }
     QList<SettingField> settingsFields() const override {
-        return {numberSetting(QStringLiteral("positions"), tr("Recorded positions"), 2, 10),
-            numberSetting(QStringLiteral("opacity"), tr("Trace opacity"), 0.05, 0.8, 2),
+        return {numberSetting(QStringLiteral("positions"), tr("Recorded positions"), 2, 50),
+            numberSetting(QStringLiteral("opacity"), tr("Trace opacity"), 0.05, 1.0, 2),
             numberSetting(QStringLiteral("width"), tr("Trace width"), 0.5, 5, 1)};
     }
     QJsonObject savePreferences() const override {
         QJsonArray targets;
         for (const auto &record : records_) targets.append(QJsonObject{{QStringLiteral("owner"), record.owner}, {QStringLiteral("id"), record.id}});
-        return {{QStringLiteral("positions"), limit_}, {QStringLiteral("opacity"), opacity_}, {QStringLiteral("width"), width_}, {QStringLiteral("targets"), targets}};
+        return {{QStringLiteral("styleVersion"), 2}, {QStringLiteral("positions"), limit_}, {QStringLiteral("opacity"), opacity_}, {QStringLiteral("width"), width_}, {QStringLiteral("targets"), targets}};
     }
     void restorePreferences(const QJsonObject &values) override {
-        limit_ = preferenceInteger(values, QStringLiteral("positions"), 10, 2, 10);
-        opacity_ = preferenceNumber(values, QStringLiteral("opacity"), 0.35, 0.05, 0.8);
+        limit_ = preferenceInteger(values, QStringLiteral("positions"), 50, 2, 50);
+        opacity_ = preferenceNumber(values, QStringLiteral("opacity"), 0.7, 0.05, 1.0);
+        if (values.value(QStringLiteral("styleVersion")).toInt() < 2) {
+            if (limit_ == 10) limit_ = 50;
+            if (opacity_ == 0.35) opacity_ = 0.7;
+        }
         width_ = preferenceNumber(values, QStringLiteral("width"), 1.5, 0.5, 5);
         QHash<QString, Record> next;
         for (const auto &value : values.value(QStringLiteral("targets")).toArray()) {
@@ -73,7 +77,7 @@ public:
         for (const auto &record : records_) for (qsizetype i = 1; i < record.points.size(); ++i) {
             const auto a = record.points.at(i - 1); auto b = record.points.at(i);
             b.setX(a.x() + (b.x() - a.x()) - std::round(b.x() - a.x()));
-            auto color = record.color; color.setAlphaF(static_cast<float>(opacity_ * static_cast<double>(i) / static_cast<double>(record.points.size() - 1)));
+            auto color = record.color; color.setAlphaF(static_cast<float>(opacity_ * (0.25 + 0.75 * static_cast<double>(i) / static_cast<double>(record.points.size() - 1))));
             painter.setPen(QPen(color, width_, Qt::SolidLine, Qt::RoundCap));
             for (int wrap = -1; wrap <= 1; ++wrap) {
                 const auto offset = origin + QPointF(wrap * scale, 0); painter.drawLine(a * scale + offset, b * scale + offset);
@@ -105,8 +109,8 @@ private:
     Store &store_;
     UserObjects *objects_;
     QHash<QString, Record> records_;
-    int limit_ = 10;
-    double opacity_ = 0.35;
+    int limit_ = 50;
+    double opacity_ = 0.7;
     double width_ = 1.5;
 };
 }

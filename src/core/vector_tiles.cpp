@@ -59,7 +59,7 @@ void paintVectorTile(QPainter &painter, const VectorTile &tile, const QRectF &re
         if (std::any_of(labels.cbegin(), labels.cend(), [&](const QRectF &other) { return other.intersects(bounds); })) continue;
         labels.append(bounds);
         painter.fillRect(bounds, QColor(255, 255, 255, 195));
-        painter.setPen(QColor("#30352f"));
+        painter.setPen(Qt::black);
         painter.drawText(bounds, Qt::AlignCenter, name);
     }
     painter.restore();

@@ -154,7 +154,7 @@ private slots:
             store.select(event.uid);
             auto tracedEvent = event;
             for (const auto &received : store.events()) if (received.uid == event.uid) tracedEvent = received;
-            for (int sample = 0; sample < 12; ++sample) {
+            for (int sample = 0; sample < 52; ++sample) {
                 tracedEvent.longitude = static_cast<double>(sample) * 0.0001;
                 QVERIFY(store.accept(tracedEvent).isEmpty());
             }

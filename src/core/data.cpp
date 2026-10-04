@@ -300,7 +300,8 @@ void DataSources::paint(QPainter &painter, const Viewport &view) const
                     painter.drawPath(mapping.map(shape.path)); painter.restore();
                 }
                 if (source.value(QStringLiteral("labels")).toBool() && labels < 100 && screen.contains(point) && !shape.name.isEmpty()) {
-                    painter.drawText(point + QPointF(8, -8), shape.name); ++labels;
+                    painter.save(); painter.setPen(Qt::black);
+                    painter.drawText(point + QPointF(8, -8), shape.name); painter.restore(); ++labels;
                 }
             }
         }

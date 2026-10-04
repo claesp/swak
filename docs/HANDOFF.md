@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 4, 2026: Read “Server forms, Information closure, prediction, and traces” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 4, 2026: Read “Trace visibility and black map labels” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -972,3 +972,16 @@ Coverage passed ten suites and 78 GUI cases in build/quality/20261004-161037-cov
 The 60-second sanitizer workload passed in build/quality/20261004-161301-soak-98792. It completed 1173 cycles with 16867328 bytes of peak memory growth. The maximum heartbeat gap was 52 milliseconds. Idle CPU time was 0.024 seconds. This short run does not establish two-hour stability.
 
 The final core trace test passed under sanitizers in build/trace-core-sanitize-final.log. Both focused native cases passed in build/trace-gui-focused-final.log. That native process still reports the same Mesa leak. Qt 6.8.2 supplied the native test environment. The release rebuild after the commit uses build/trace-release-final.log.
+
+
+## 2026-10-04: Trace visibility and black map labels
+
+Trace history now defaults to 50 positions and accepts two through 50 positions. Default opacity increases from 35 to 70 percent. Older segments retain at least one-quarter of the configured opacity. The upper opacity limit is 100 percent. The limit remains 128 traced identities.
+
+Trace preferences now include styleVersion 2. Older profiles with the original default count or opacity adopt the new defaults. Other saved values remain unchanged. Once migrated, explicit choices of ten positions or 35 percent opacity remain unchanged.
+
+CoT, area, data, and vector map labels use black text. Area labels use a pale translucent background for contrast. Selection outlines and marker colors remain unchanged. Tests exercise the 50-position bound, fading, and preference migration. The workload now adds 52 positions per cycle to exercise history eviction.
+
+The first sanitizer run rejected an incompatible manifest schema value and failed two core cases. The manifest now retains the supported schema. The plugin stores its migration version inside its own preferences. Source analysis passed in build/quality/20261004-163310-analyze-3. All 78 native GUI cases passed in build/quality/20261004-163426-gui-101809. The native diagnostic still reports the existing Mesa leak of 240732 bytes in 1073 allocations. No suppression hides it. Native images confirm black area text and the stronger trace.
+
+The corrected core sanitizer suite passed all 47 cases in build/visibility-core-final.log. The other nine sanitizer suites passed in build/quality/20261004-163309-quick-101128. Coverage passed all ten suites and 78 GUI cases in build/quality/20261004-163615-coverage-102462. The 60-second workload passed in build/quality/20261004-163459-soak-102137. It completed 1113 cycles with 15192064 bytes of peak memory growth and a maximum heartbeat gap of 67 milliseconds. Two-hour operation and hardware graphics remain unqualified. The release build passed in build/visibility-release.log. The final rebuild after the commit uses build/visibility-release-final.log.

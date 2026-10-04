@@ -3,7 +3,7 @@
   "id": "org.swak.trace",
   "name": "Trace",
   "description": "Record bounded movement trails for CoT and local markers.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "apiVersion": 2,
   "entryPoint": "TracePlugin",
   "linkage": "static",

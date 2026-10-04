@@ -149,7 +149,7 @@ public:
             painter.save(); painter.setOpacity(visual.opacity);
             paintMarkerSymbol(painter, symbol, point, selected ? 8 : 6, color, selected);
             if (selected || labels++ < 100) {
-                painter.setPen(visual.expired ? QColor("#aaaaaa") : QColor("#ffffff"));
+                painter.setPen(Qt::black);
                 painter.drawText(point + QPointF(12, -8), (event.callsign.isEmpty() ? event.uid : event.callsign).left(32));
             }
             painter.restore();

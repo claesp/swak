@@ -2680,14 +2680,14 @@ private slots:
         QMenu menu; trace->populateContextMenu(item, menu); auto *action = menu.findChild<QAction *>(QStringLiteral("traceMarker")); QVERIFY(action); QVERIFY(action->isChecked());
         QCOMPARE(settings->savePreferences().value(QStringLiteral("targets")).toArray().size(), 1);
         QList<swak::Event> batch;
-        for (int i = 1; i <= 12; ++i) { event.longitude = i * 0.01; event.time = event.time.addMSecs(100); batch.append(event); }
+        for (int i = 1; i <= 52; ++i) { event.longitude = i * 0.0025; event.time = event.time.addMSecs(100); batch.append(event); }
         window.store().acceptBatch(batch);
         const swak::Viewport view{QSizeF(600, 200), swak::project(0, 0.06), 12};
         QImage image(600, 200, QImage::Format_ARGB32_Premultiplied); image.fill(Qt::transparent);
         { QPainter painter(&image); trace->paint(painter, view); }
-        const auto older = view.screen(0, 0.035).toPoint(); const auto newer = view.screen(0, 0.115).toPoint();
+        const auto older = view.screen(0, 0.00875).toPoint(); const auto newer = view.screen(0, 0.12875).toPoint();
         QVERIFY(image.pixelColor(newer).alpha() > image.pixelColor(older).alpha());
-        QVERIFY(image.pixelColor(newer).alpha() > 0); QCOMPARE(image.pixelColor(view.screen(0, 0.015).toPoint()).alpha(), 0);
+        QVERIFY(image.pixelColor(newer).alpha() > 0); QCOMPARE(image.pixelColor(view.screen(0, 0.00375).toPoint()).alpha(), 0);
         QVERIFY(image.save(QStringLiteral("marker-trace.png")));
         action->trigger(); QCOMPARE(settings->savePreferences().value(QStringLiteral("targets")).toArray().size(), 0);
         image.fill(Qt::transparent); { QPainter painter(&image); trace->paint(painter, view); } QCOMPARE(image.pixelColor(newer).alpha(), 0);

@@ -63,6 +63,14 @@ private slots:
             qobject_cast<MenuPlugin *>(plugin)->populateMenu(services, main);
         auto *tool = dynamic_cast<MapTool *>(main.findChild<QObject *>(QStringLiteral("traceTool"))); QVERIFY(tool);
         auto *settings = dynamic_cast<SettingsParticipant *>(tool); QVERIFY(settings);
+        settings->restorePreferences({{QStringLiteral("positions"), 10}, {QStringLiteral("opacity"), 0.35}});
+        QCOMPARE(settings->savePreferences().value(QStringLiteral("positions")).toInt(), 50);
+        QCOMPARE(settings->savePreferences().value(QStringLiteral("opacity")).toDouble(), 0.7);
+        auto custom = settings->savePreferences(); custom.insert(QStringLiteral("positions"), 10); custom.insert(QStringLiteral("opacity"), 0.35);
+        settings->restorePreferences(custom);
+        QCOMPARE(settings->savePreferences().value(QStringLiteral("positions")).toInt(), 10);
+        QCOMPARE(settings->savePreferences().value(QStringLiteral("opacity")).toDouble(), 0.35);
+        settings->restorePreferences({});
         for (int i = 0; i < 129; ++i) {
             MapItem item; item.owner = QStringLiteral("org.swak.markers"); item.id = QString::number(i);
             QMenu menu; tools.populateContextMenu(item, menu); auto *action = menu.findChild<QAction *>(QStringLiteral("traceMarker")); QVERIFY(action);
@@ -70,7 +78,7 @@ private slots:
         }
         auto values = settings->savePreferences(); QCOMPARE(values.value(QStringLiteral("targets")).toArray().size(), 128);
         values.insert(QStringLiteral("positions"), 1000); values.insert(QStringLiteral("opacity"), -1);
-        settings->restorePreferences(values); QCOMPARE(settings->savePreferences().value(QStringLiteral("positions")).toInt(), 10);
+        settings->restorePreferences(values); QCOMPARE(settings->savePreferences().value(QStringLiteral("positions")).toInt(), 50);
         QVERIFY(settings->savePreferences().value(QStringLiteral("opacity")).toDouble() > 0);
         main.findChild<QAction *>(QStringLiteral("clearTraces"))->trigger(); QCOMPARE(settings->savePreferences().value(QStringLiteral("targets")).toArray().size(), 0);
         settings->restorePreferences(values); QCOMPARE(settings->savePreferences().value(QStringLiteral("targets")).toArray().size(), 128);
@@ -81,7 +89,7 @@ private slots:
         marker.geometry = {{QStringLiteral("x"), 0.5}, {QStringLiteral("y"), 0.5}}; QVERIFY(objects.put(marker).isEmpty());
         MapItem point; point.owner = QStringLiteral("org.swak.markers"); point.id = marker.id;
         QMenu local; tools.populateContextMenu(point, local); local.findChild<QAction *>(QStringLiteral("traceMarker"))->trigger();
-        for (int i = 1; i <= 12; ++i) { marker.geometry.insert(QStringLiteral("x"), 0.5 + i * 0.00003); QVERIFY(objects.put(marker).isEmpty()); }
+        for (int i = 1; i <= 52; ++i) { marker.geometry.insert(QStringLiteral("x"), 0.5 + i * 0.000007); QVERIFY(objects.put(marker).isEmpty()); }
         QImage image(1000, 100, QImage::Format_ARGB32_Premultiplied); image.fill(Qt::transparent);
         const Viewport view{QSizeF(1000, 100), QPointF(0.5, 0.5), 12};
         { QPainter painter(&image); tools.paint(painter, view); }
