@@ -79,6 +79,8 @@ install(FILES docs/servers.md docs/usage.md docs/map-providers.md docs/data-prov
 
 if(BUILD_TESTING)
     find_package(Qt6 6.4 REQUIRED COMPONENTS Test)
+    add_executable(swak_tak_compat tools/tak_compat.cpp)
+    target_link_libraries(swak_tak_compat PRIVATE swak_core Qt6::Test)
     add_executable(swak_server_tests tests/test_servers.cpp)
     target_link_libraries(swak_server_tests PRIVATE swak_core Qt6::Test)
     add_test(NAME servers COMMAND swak_server_tests)

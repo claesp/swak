@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 4, 2026: Read “Shared CoT field pickers” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 4, 2026: Read “Live TAK Server compatibility” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -891,3 +891,16 @@ Nine sanitizer suites passed in build/quality/20261004-115047-quick-68138. All 7
 The 60-second workload passed in build/quality/20261004-115412-soak-70933. It completed 1194 cycles with 12644352 bytes of peak memory growth. The maximum heartbeat gap was 43 milliseconds, and idle CPU time was 0.022 seconds. This short run does not replace two-hour qualification. Hardware graphics, native Wayland, Qt 6.4, and expanded translated labels remain untested.
 
 Coverage passed nine suites and 76 GUI cases in build/quality/20261004-115549-coverage-71289. The new picker reached all 88 lines and all 11 functions. It reached 240 of 546 reported branches. Allocation failures, defensive branches, and other input combinations retain gaps. These results do not establish complete input coverage.
+
+
+## 2026-10-04: Live TAK Server compatibility
+
+The user requested a local compatibility test. Official TAK Server 5.7-RELEASE-14 was built from commit 5187abd46d827d37cfc5708805eced197a837e49. Configuration and messaging ran in a disposable Java 17 container with PostgreSQL 15 and PostGIS 3.3. The official schema manager applied 94 updates. The API service and web dashboards were excluded. Only loopback TCP and TLS ports were exposed.
+
+The new development-only swak_tak_compat executable uses production Servers, Store, encoding, and parsing code. Two clients exchange synthetic CoT through the server. The probe checks identity fields, same-UID position updates, and a disconnect followed by reconnect. It uses bounded profile reads and finite waits. It remains outside release builds and installation. No application behavior, plugin contract, or runtime dependency changed.
+
+TCP, PEM mutual TLS, and encrypted PKCS12 mutual TLS passed. An untrusted server certificate and missing client certificates failed as expected. The PEM test also passed under AddressSanitizer and UndefinedBehaviorSanitizer without a report. Malformed profiles, missing client configurations, and unsupported protocols failed before sending. Detailed evidence and rerun instructions are in tak-compatibility.md.
+
+The existing application diagnostics from the preceding picker task remain applicable because production sources did not change. This task adds a development probe and tests it against the actual server. These results supersede the earlier statement that no full server deployment test occurred. They do not establish enrollment, LDAP, mission API, federation, binary-only, packet-loss, or two-hour compatibility. The earlier Mesa GUI leak and hardware graphics gaps remain.
+
+The test containers, database volume, and private network were removed after the tests. Cached development images and the reference build remain local. Temporary certificates expire after two days. They contain no production credentials. Raw reports remain under build/tak-*.json and build/tak-*.log. The final release rebuild uses build/tak-compat-release.log.
