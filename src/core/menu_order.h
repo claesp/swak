@@ -5,6 +5,17 @@
 
 #include <algorithm>
 namespace swak {
+inline QAction *addMenuFooterAction(QMenu &menu, const QString &text)
+{
+    auto *separator = new QAction(&menu);
+    separator->setSeparator(true);
+    separator->setProperty("menuTailOrder", 1);
+    menu.addAction(separator);
+    auto *action = new QAction(text, &menu);
+    action->setProperty("menuTailOrder", 2);
+    menu.addAction(action);
+    return action;
+}
 inline void sortMenuActions(QMenu &menu)
 {
     auto actions = menu.actions();

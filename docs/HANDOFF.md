@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 5, 2026: Read “Identity, map controls, and motion details” at the end of this file. Earlier sections are historical snapshots. Use Git for the current revision.
+Latest implementation, October 5, 2026: Read “Graphics startup and provider menus” at the end of this file. Earlier sections are historical snapshots. Use Git for the current revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -1311,3 +1311,24 @@ Coverage uses build/quality/20261005-010236-coverage-95168. All ten headless sui
 Remaining paths include full TrackMotion capacity eviction, some stale-timer boundaries, and cancellation during a corner move. Native Wayland, hardware graphics, all locales, and two-hour operation remain unqualified. The isolated LAN harness is not repeated because this change does not alter network transport. The prior Qt advisory and package patch-status limit still apply. This task produces a development release, not a qualified production release.
 
 The release preset builds without compiler warnings in build/map-controls-release.log. The post-commit rebuild uses build/map-controls-release-committed.log. The executable is build/release/swak. Tests use Qt 6.8.2 and GCC 14.2. Generated screenshots are stored under build/map-controls-screens and the diagnostic report directories.
+
+
+## 2026-10-05: Graphics startup and provider menus
+
+SWAK now prefers the Qt EGL integration on X11. A shared configureGraphics helper runs before QApplication in the application and graphical test executables. It sets the existing OpenGL 3.3 format and preserves explicit QT_XCB_GL_INTEGRATION values. Qt retains GLX as an integration fallback. Native Wayland selection remains unchanged. No driver package or dependency changes occur.
+
+The minimal Qt reproducer reports 240732 leaked bytes in 1073 allocations with zero, one, and twenty OpenGL widgets on GLX. EGL reports no leaks with twenty widgets. Extended allocation stacks reach Mesa glXChooseFBConfig through the KDE platform theme during QApplication construction. This narrows the earlier Mesa/LLVM attribution to the GLX startup path. The workaround avoids those allocations without disabling or suppressing leak detection. The reproduction logs remain in build/gl-leak/probe-*.log.
+
+The full native suite passes 98 cases with leak detection enabled and no leak report. The default-path report is build/quality/20261005-011628-gui-100352. The explicit EGL comparison passes 97 cases in build/quality/20261005-011102-gui-98431. The new graphicsLifecycle case creates, renders, and destroys twenty plain QOpenGLWidget instances. The graphicsConfiguration test covers the default, GLX, EGL, none, and an explicitly empty environment value.
+
+All three provider menus on the main toolbar end with More ... after a separator. The entries open Map providers, Servers, or Data providers management. They use separate actions, so Tools keeps the full management names. Shared menu sorting gives these footer actions explicit priority. Tests cover sorting, repeated construction, and management activation.
+
+The native rendering workload exposed an incorrect idle measurement. Each cycle expires markers, whose fade and gray retention last about 11 seconds. The previous test measured CPU before that animation finished. The corrected test waits for 500 milliseconds without model, motion, or frame signals, with a twenty-second limit. It keeps the existing memory, descriptor, heartbeat, and CPU thresholds. The outer workload timeout now allows sixty seconds for setup and settling.
+
+Source analysis passes in build/quality/20261005-011648-analyze-3. The release build in build/gl-leak/release.log completes without compiler warnings. Native tests use Qt 6.8.2, Mesa 25.0.7, and llvmpipe under Xvfb. Hardware graphics, native Wayland, unavailable-EGL fallback, and two-hour operation still require separate qualification. An explicit GLX override can still reproduce the upstream leak. The prior Qt certificate-loading advisory remains a separate dependency limit.
+
+The corrected native rendering workload passes in build/quality/20261005-012451-soak-103202 with no leak report. It completes 791 cycles over the 60-second workload. Peak memory growth is 63397888 bytes, below the unchanged 64 MiB limit. The maximum heartbeat gap is 90 milliseconds. Idle CPU time is 0.020 seconds. Final style diagnostics pass in build/quality/20261005-012652-style-4.
+
+Quick sanitizer diagnostics pass all ten suites in build/quality/20261005-012725-quick-103677. The corrected workload also passes in headless mode. The final release rebuild after the commit uses build/gl-leak/release-committed.log. The executable remains build/release/swak.
+
+Coverage passes ten headless suites and 98 native cases in build/quality/20261005-012917-coverage-104190. It records 12609 of 13528 lines, 1219 of 1285 functions, and 18434 of 34984 branches. Every line of the shared graphics helper and menu footer helper runs. Provider removal during an open popup and failed provider writes remain existing coverage gaps. The six high-scaling cases pass without leaks in build/gl-leak/hidpi.log.

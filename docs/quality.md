@@ -22,7 +22,7 @@ The quick mode builds with address and undefined behavior sanitizers. It runs th
 python3 tools/quality.py quick
 ```
 
-The GUI mode tests the native interface under Xvfb. It includes dock changes, repeated closure, rendering, and restored preferences. This mode has a three-minute test limit. The known Mesa leak on this host causes a failure and remains visible in the log.
+The GUI mode tests the native interface under Xvfb. It includes dock changes, repeated closure, rendering, and restored preferences. This mode has a three-minute test limit. The default EGL graphics path avoids the known Mesa GLX startup leak on this host. An explicit GLX override still exposes that leak.
 
 ```sh
 python3 tools/quality.py gui
@@ -30,7 +30,7 @@ python3 tools/quality.py gui
 
 # Long sessions
 
-A soak test repeats work in one process for a set duration. Run this mode for at least two hours before a release. The command below adds a short warmup and idle phase to the requested duration. The external watchdog allows another 30 seconds before it stops a stalled process.
+A soak test repeats work in one process for a set duration. Run this mode for at least two hours before a release. The command below adds a short warmup and idle phase to the requested duration. The external watchdog allows another 60 seconds before it stops a stalled process.
 
 ```sh
 python3 tools/quality.py soak --seconds 7200
@@ -41,7 +41,7 @@ The workload fills the event store to its limit, then exercises bounded parsing 
 - Resident memory growth stays below 64 MiB from the warmup baseline.
 - Open file descriptors grow by no more than eight.
 - The event loop responds within two seconds.
-- The idle receiver consumes less than half of one CPU core over one second.
+- The idle process consumes less than half of one CPU core over one second.
 
 Resident memory means memory currently held in RAM. Allocator caches and sanitizer overhead affect this measurement. The threshold detects large growth, while LeakSanitizer detects unreleased allocations at exit. A smaller leak can pass a short run. Logs record cycles, peak growth, heartbeat delay, and idle CPU time. Compare reports on the same host before changing thresholds.
 
@@ -148,3 +148,25 @@ Restricted Area tests cover fill and stripes, draft preview, cancellation, Apply
 Grid tests cover saved definitions, invalid values, catalog bounds, canceled edits, deletion, and legacy migration. Known coordinates cover Norway, Svalbard, the equator, and both polar systems. Rendering tests cover all angle formats, broad zone views, close views, and the date line. Native tests exercise tab switching, provider grouping, decoration visibility, and live resizing of existing markers.
 
 The trace workload uses an explicit clock after timestamp mutation. It extends the synthetic expiry before advancing the trace. This keeps generated trace samples valid without weakening the application parser or store rules. Rejected samples report their exact error.
+
+# Graphics leak regression
+
+The application, native GUI tests, and soak executable call the same graphics startup helper before QApplication. The helper prefers EGL on X11 and preserves explicit backend choices. Leak detection stays enabled with no suppression file. The graphicsLifecycle test creates, renders, and destroys twenty QOpenGLWidget instances in one process. The full GUI suite also exercises real map lifetimes and screenshots.
+
+After a sanitizer build, run the isolated native regression from the repository root:
+
+```sh
+QT_QPA_PLATFORM=xcb xvfb-run -a build/sanitize/swak_gui_tests graphicsLifecycle
+```
+
+For comparison, select GLX explicitly:
+
+```sh
+QT_QPA_PLATFORM=xcb QT_XCB_GL_INTEGRATION=xcb_glx xvfb-run -a build/sanitize/swak_gui_tests graphicsLifecycle
+```
+
+On the development host, the GLX path reports 240732 leaked bytes in 1073 allocations. An empty Qt application reports the same amount without a map widget. The extended allocation stack reaches Mesa through glXChooseFBConfig and the KDE platform theme during QApplication construction. These results identify a startup-path leak, not growth per map widget. The default EGL path avoids these allocations and passes leak detection.
+
+Qt retains a fallback from EGL integration initialization to GLX. Its source defines this order in [QXcbConnection](https://github.com/qt/qtbase/blob/v6.4.3/src/plugins/platforms/xcb/qxcbconnection.cpp#L1090-L1121). Hardware graphics, Wayland, and fallback behavior on systems without EGL require separate host testing. Do not disable leak detection when testing those systems.
+
+The workload waits for 500 milliseconds without model updates, animation updates, or rendered frames before its idle CPU measurement. This wait has a twenty-second limit. A continuously active map fails the wait. The default stale-marker fade and gray retention last about 11 seconds. This activity no longer counts as idle work. The CPU threshold remains unchanged.

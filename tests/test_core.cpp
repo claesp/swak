@@ -1,5 +1,6 @@
 #include "core/activity.h"
 #include "core/files.h"
+#include "core/graphics.h"
 #include "core/interfaces.h"
 #include "core/map_grid.h"
 #include "core/map_tools.h"
@@ -24,8 +25,10 @@
 #include <QPainter>
 #include <QPluginLoader>
 #include <QPushButton>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QSpinBox>
+#include <QSurfaceFormat>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QUdpSocket>
@@ -59,6 +62,33 @@ private:
         return event;
     }
 private slots:
+    void graphicsConfiguration()
+    {
+        const bool set = qEnvironmentVariableIsSet("QT_XCB_GL_INTEGRATION");
+        const auto original = qgetenv("QT_XCB_GL_INTEGRATION");
+        const auto format = QSurfaceFormat::defaultFormat();
+        const auto restore = qScopeGuard([&] {
+            if (set) {
+                qputenv("QT_XCB_GL_INTEGRATION", original);
+            } else {
+                qunsetenv("QT_XCB_GL_INTEGRATION");
+            }
+            QSurfaceFormat::setDefaultFormat(format);
+        });
+        qunsetenv("QT_XCB_GL_INTEGRATION");
+        configureGraphics();
+        QCOMPARE(qgetenv("QT_XCB_GL_INTEGRATION"), QByteArray("xcb_egl"));
+        QCOMPARE(QSurfaceFormat::defaultFormat().version(), qMakePair(3, 3));
+        QCOMPARE(QSurfaceFormat::defaultFormat().profile(), QSurfaceFormat::CoreProfile);
+        QCOMPARE(QSurfaceFormat::defaultFormat().stencilBufferSize(), 8);
+        QCOMPARE(QSurfaceFormat::defaultFormat().depthBufferSize(), 0);
+        for (const auto *value : {"xcb_glx", "xcb_egl", "none", ""}) {
+            qputenv("QT_XCB_GL_INTEGRATION", value);
+            configureGraphics();
+            QVERIFY(qEnvironmentVariableIsSet("QT_XCB_GL_INTEGRATION"));
+            QCOMPARE(qgetenv("QT_XCB_GL_INTEGRATION"), QByteArray(value));
+        }
+    }
     void trackKinematics()
     {
         TrackMotion motion;

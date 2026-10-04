@@ -1,5 +1,6 @@
 #pragma once
 #include "core/logging.h"
+#include "core/menu_order.h"
 #include "core/toolbar.h"
 #include "core/ui_icons.h"
 
@@ -54,7 +55,10 @@ void addProviderToolbar(QToolBar &toolbar,
                 }
             });
         }
-        menu->addAction(&manage);
+        auto *more =
+            addMenuFooterAction(*menu, QCoreApplication::translate("ProviderToolbar", "More ..."));
+        more->setEnabled(manage.isEnabled());
+        QObject::connect(more, &QAction::triggered, &manage, &QAction::trigger);
     });
 }
 } // namespace swak

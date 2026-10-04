@@ -426,3 +426,6 @@ The CoT layer draws a heading cone at the animated position. The cone uses the s
 ObjectEditor exposes Restricted for polygon and range-circle records. Both tools draw the saved flag as diagonal fill lines. Circle Information includes the flag. The polygon tool handles a corner double-click as Move and consumes the final release. Its corner menu gives Move priority through menuOrder.
 
 mapZoomLegendRect and mapZoomLevelAt share screen geometry for drawing and hit testing. Clicking the right-side legend selects a bounded integer zoom level around the map center. The navigation lock blocks this change. Lock buttons show the action available on the next click.
+
+
+The host and graphical test executables call configureGraphics before QApplication. This shared startup helper sets the OpenGL format and the default X11 integration preference. Plugins do not change the graphics integration after startup. The addMenuFooterAction helper creates a separated final menu action with explicit sorting priority. Provider toolbar menus use it for More ... without renaming their shared management actions.

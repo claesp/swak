@@ -7,6 +7,7 @@
 #include "core/cot.h"
 #include "core/cot_picker.h"
 #include "core/delete_confirmation.h"
+#include "core/graphics.h"
 #include "core/grid_types.h"
 #include "core/identity.h"
 #include "core/interfaces.h"
@@ -278,6 +279,17 @@ class GuiTest final : public QObject
 {
     Q_OBJECT
 private slots:
+    void graphicsLifecycle()
+    {
+        for (int i = 0; i < 20; ++i) {
+            QOpenGLWidget widget;
+            widget.resize(320, 240);
+            widget.show();
+            QVERIFY(QTest::qWaitForWindowExposed(&widget));
+            QVERIFY(widget.isValid());
+            QVERIFY(!widget.grabFramebuffer().isNull());
+        }
+    }
     void headingCone()
     {
         QTemporaryDir directory;
@@ -990,14 +1002,14 @@ private slots:
             auto *maps = window.findChild<swak::MapSources *>();
             auto *menu = button->menu();
             QMetaObject::invokeMethod(menu, "aboutToShow");
-            QCOMPARE(menu->actions().size(), maps->sources().size() + 2);
+            QCOMPARE(menu->actions().size(), maps->sources().size() + 3);
             QAction *none = nullptr, *provider = nullptr, *manage = nullptr;
             for (auto *action : menu->actions()) {
                 if (action->text() == QStringLiteral("No map provider")) {
                     none = action;
-                } else if (action->text() == QStringLiteral("Map Providers")) {
+                } else if (action->text() == QStringLiteral("More ...")) {
                     manage = action;
-                } else if (action->isEnabled()) {
+                } else if (action->isEnabled() && action->isCheckable()) {
                     provider = action;
                 }
             }
@@ -3348,7 +3360,10 @@ private slots:
         for (int i = 0; i < 5; ++i) {
             mapMenu->popup(window.mapToGlobal(QPoint(60, 60)));
             QVERIFY(QTest::qWaitForWindowExposed(mapMenu));
-            QVERIFY(sorted(mapMenu->actions()));
+            auto entries = mapMenu->actions();
+            QCOMPARE(entries.takeLast()->text(), QStringLiteral("More ..."));
+            QVERIFY(entries.takeLast()->isSeparator());
+            QVERIFY(sorted(entries));
             QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
             const auto count =
                 mapMenu->findChildren<QAction *>(QString{}, Qt::FindDirectChildrenOnly).size();
@@ -3362,7 +3377,7 @@ private slots:
         auto *servers = window.findChild<swak::Servers *>();
         QVERIFY(servers);
         auto server = swak::serverDefaults();
-        server.insert(QStringLiteral("name"), QStringLiteral("Local test"));
+        server.insert(QStringLiteral("name"), QStringLiteral("Zulu test"));
         server.insert(QStringLiteral("protocol"), QStringLiteral("stcp"));
         server.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
         server.insert(QStringLiteral("port"), 1);
@@ -3372,7 +3387,7 @@ private slots:
         QVERIFY(data);
         auto feed = swak::dataDefaults();
         feed.insert(QStringLiteral("attribution"), QStringLiteral("Test"));
-        feed.insert(QStringLiteral("name"), QStringLiteral("Local feed"));
+        feed.insert(QStringLiteral("name"), QStringLiteral("Zulu feed"));
         feed.insert(QStringLiteral("format"), QStringLiteral("org.swak.kml"));
         feed.insert(QStringLiteral("endpoint"), QStringLiteral("https://127.0.0.1:1/test.kml"));
         feed.insert(QStringLiteral("enabled"), false);
@@ -3385,7 +3400,29 @@ private slots:
             QVERIFY(menu);
             menu->popup(window.mapToGlobal(QPoint(60, 60)));
             QVERIFY(QTest::qWaitForWindowExposed(menu));
-            QVERIFY(sorted(menu->actions()));
+            auto entries = menu->actions();
+            auto *more = entries.takeLast();
+            QCOMPARE(more->text(), QStringLiteral("More ..."));
+            QVERIFY(entries.takeLast()->isSeparator());
+            QVERIFY(sorted(entries));
+            auto *manage = window.findChild<QAction *>(name.startsWith("server")
+                                                           ? QStringLiteral("serversAction")
+                                                           : QStringLiteral("dataProvidersAction"));
+            QVERIFY(manage);
+            QVERIFY(manage->text() != more->text());
+            QSignalSpy opened(manage, &QAction::triggered);
+            if (name.startsWith(QStringLiteral("server"))) {
+                QTimer::singleShot(0, &window, [] {
+                    auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+                    QVERIFY(dialog);
+                    dialog->reject();
+                });
+            }
+            more->trigger();
+            QCOMPARE(opened.count(), 1);
+            if (auto *dialog = window.findChild<swak::DataManager *>()) {
+                dialog->close();
+            }
             QAction *toggle = nullptr;
             for (auto *action : menu->actions()) {
                 if (action->data().toString() == QStringLiteral("local-test")) {
@@ -6946,11 +6983,7 @@ private slots:
 };
 int main(int argc, char **argv)
 {
-    QSurfaceFormat format;
-    format.setVersion(3, 3);
-    format.setProfile(QSurfaceFormat::CoreProfile);
-    format.setStencilBufferSize(8);
-    QSurfaceFormat::setDefaultFormat(format);
+    swak::configureGraphics();
     QApplication app(argc, argv);
     QTemporaryDir mapCache;
     qputenv("XDG_CACHE_HOME", mapCache.path().toUtf8());

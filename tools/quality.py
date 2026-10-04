@@ -268,7 +268,7 @@ def main():
                         "-s",
                         "-screen 0 1600x1200x24 -nolisten tcp",
                     ] + command
-                run(command, report / "soak.log", args.seconds + 30, env, report)
+                run(command, report / "soak.log", args.seconds + 60, env, report)
             if args.mode == "gui" or (args.mode == "coverage" and args.gui):
                 env["QT_QPA_PLATFORM"] = "xcb"
                 run(

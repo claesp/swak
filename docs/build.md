@@ -81,3 +81,15 @@ After committing release sources, rebuild the release preset. Run `build/release
 # CoT emulator
 
 Build the separate development tool with `cmake --build --preset debug --target swak_cot_emulator`. Read [CoT emulator](cot-emulator.md) for local reception, TAK connections, and scenario parameters. The release executable does not include this tool.
+
+# Graphics startup
+
+SWAK prefers EGL for the Qt X11 graphics connection. EGL and GLX connect OpenGL rendering to the window system. This avoids the Mesa GLX allocation leak reproduced during KDE theme startup on the development host. Rendering still uses OpenGL and the installed driver. Qt tries GLX if its EGL integration cannot initialize. Native Wayland selection remains unchanged.
+
+SWAK preserves an explicit QT_XCB_GL_INTEGRATION environment value. For a GLX comparison, run this command from the repository root:
+
+```sh
+QT_XCB_GL_INTEGRATION=xcb_glx ./build/release/swak
+```
+
+To use the SWAK default again, unset QT_XCB_GL_INTEGRATION before startup. No system driver changes or leak suppressions are required. GPU and desktop combinations outside the tested host still require native testing.

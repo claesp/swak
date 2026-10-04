@@ -8,6 +8,7 @@
 #include "core/map_tools.h"
 #include "core/marker_symbols.h"
 #include "core/measure.h"
+#include "core/menu_order.h"
 #include "core/preferences.h"
 #include "core/projection.h"
 #include "core/single_line_label.h"
@@ -1490,8 +1491,7 @@ public:
                     mapSources->select(id);
                 });
             }
-            mapMenu->addSeparator();
-            const auto *manage = mapMenu->addAction(tr("Map Providers"));
+            const auto *manage = addMenuFooterAction(*mapMenu, tr("More ..."));
             connect(manage, &QAction::triggered, mapSources, &MapSources::managementRequested);
         });
         updateMapButton();

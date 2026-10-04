@@ -414,3 +414,5 @@ The zoom legend appears at the right edge of the map. Click a tick to select tha
 The Information pane shows ground speed for received CoT objects. The calculation uses the distance and time between consecutive messages. It shows kilometers per hour or miles per hour from the operating system locale. Reported speed provides a fallback when no valid calculation exists. Unknown values remain marked Unknown.
 
 A faint cone shows reported heading, or an estimated heading from recent movement. CoT animation in Settings controls its visibility, angle, length, and opacity. The cone follows the marker during movement, teleport fades, and stale fades. Space freezes the cone and motion values with the map. The angle is a visual aid, not a measured sensor field of view.
+
+The Map providers, Servers, and Data providers menus on the main toolbar end with the More ... action. This entry opens the corresponding management window. A separator places it below the provider choices. The Tools menu keeps the full management names.

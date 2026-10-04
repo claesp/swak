@@ -63,6 +63,8 @@ endif()
 
 add_library(
     swak_core STATIC
+    src/core/graphics.cpp
+    src/core/graphics.h
     src/core/measure.cpp
     src/core/measure.h
     src/core/lan_protocol.cpp

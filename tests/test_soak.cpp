@@ -1,6 +1,7 @@
 #include "app/window.h"
 #include "core/activity.h"
 #include "core/data.h"
+#include "core/graphics.h"
 #include "core/interfaces.h"
 #include "core/map_tools.h"
 #include "core/maps.h"
@@ -309,10 +310,43 @@ private slots:
             QVERIFY2(maxGap < 2000, "The event loop stalled for at least two seconds.");
         }
         QVERIFY(cycles > 0);
+        QElapsedTimer quiet;
+        quiet.start();
+        QObject idleObserver;
+        int modelUpdates = 0, motionUpdates = 0, frames = 0;
+        const auto activityChanged = [&quiet, &frames] {
+            ++frames;
+            quiet.restart();
+        };
+        connect(&store, &Store::changed, &idleObserver, [&] {
+            ++modelUpdates;
+            quiet.restart();
+        });
+        connect(&store.motion(), &TrackMotion::changed, &idleObserver, [&] {
+            ++motionUpdates;
+            quiet.restart();
+        });
+        if (window) {
+            connect(window->findChild<QOpenGLWidget *>(),
+                    &QOpenGLWidget::frameSwapped,
+                    &idleObserver,
+                    activityChanged);
+        }
+        QVERIFY2(QTest::qWaitFor(
+                     [&quiet] {
+                         return quiet.elapsed() >= 500;
+                     },
+                     20000),
+                 qPrintable(QStringLiteral("Idle did not settle: model=%1 motion=%2 frames=%3")
+                                .arg(modelUpdates)
+                                .arg(motionUpdates)
+                                .arg(frames)));
         const auto cpuStart = std::clock();
         QTest::qWait(1000);
         const double idleCpu = static_cast<double>(std::clock() - cpuStart) / CLOCKS_PER_SEC;
-        QVERIFY2(idleCpu < 0.5, "The idle receiver consumed at least half of one CPU core.");
+        QVERIFY2(
+            idleCpu < 0.5,
+            qPrintable(QStringLiteral("Idle CPU time was %1 seconds; limit is 0.5.").arg(idleCpu)));
         servers->remove(QStringLiteral("soak"));
         receiver.reset();
         sender.close();
@@ -324,5 +358,11 @@ private slots:
               idleCpu);
     }
 };
-QTEST_MAIN(SoakTest)
+int main(int argc, char **argv)
+{
+    swak::configureGraphics();
+    QApplication app(argc, argv);
+    SoakTest test;
+    return QTest::qExec(&test, argc, argv);
+}
 #include "test_soak.moc"
