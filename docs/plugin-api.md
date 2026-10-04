@@ -348,10 +348,12 @@ MapTool::areaFillOpacity optionally supplies the shared area fill value. MapTool
 Distance measurements stay inside ShapesTool and never enter UserObjects. The tool keeps at most 64 measurements. A monotonic clock controls duration and fading. The timer stops when the list becomes empty. Circles and lines use the existing preference store and deletion undo history.
 
 
-MenuPlugin::rootActions returns true when a plugin contributes direct entries to Tools > Plugins. The host omits that plugin submenu and its editor toggle. ShapesPlugin uses this for Circle, Distance, and Line. Other plugins retain their pane actions. Shared menu ordering uses QCollator and ignores mnemonic markers. It sorts static and popup menus, including the menu bar, and removes menu separators. Toolbar separators remain intact.
+MenuPlugin::rootActions returns true when a plugin contributes direct entries to Tools > Plugins. The host omits that plugin submenu and its editor toggle. ShapesPlugin uses this for Circle, Distance, and Line. Other plugins retain their pane actions. Shared menu ordering uses QCollator and ignores mnemonic markers. It sorts dropdown and popup menus and removes their separators. The menu bar keeps File, Edit, View, Tools, Help in that order. Toolbar separators remain intact.
 
 The shared addProviderToolbar helper adds a multi-select source menu with the existing management action. The host uses it for Servers and Data providers. Each toggle reads the latest source record before updating its enabled field. Recoverable errors use the shared logger. These controls keep provider management in the host and use the existing source services.
 
 SettingField::describeCode displays CoT descriptions while retaining the raw code. cotFieldValue and setCotFieldValue read and write that value. Identity uses this for Type, Location method, and Team. The description field is read-only. The shared picker supports selection and custom raw values. UiBehavior uses disabled palette colors for read-only text fields while preserving selection and copying. It restores the original palette when editing resumes. Standard OK and Apply buttons use distinct shared icons.
 
 MapPanels consumes unhandled wheel events at the overlay boundary. Child controls receive wheel events first. The map filter also rejects wheel events over the visible overlay mask. Floating panes remain separate windows.
+
+The plugin catalog exposes pluginManifest for accepted built-in instances. It returns validated embedded metadata or an empty object for unknown instances. The Plugins pane shows each accepted plugin once. Selection shows every manifest field as read-only plain text. No plugin interface version changes.

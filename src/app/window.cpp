@@ -1,3 +1,4 @@
+#include "app/plugin_panel.h"
 #include "core/ui_behavior.h"
 #include "core/menu_order.h"
 #include "core/provider_toolbar.h"
@@ -112,14 +113,10 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     Codec *codec = nullptr;
     ViewPlugin *view = nullptr;
     QList<MapLayer *> layers;
-    QStringList names;
     for (auto *plugin : plugins) {
-        if (auto *candidate = qobject_cast<Codec *>(plugin)) { codec = candidate; names.append(candidate->name()); }
-        if (auto *candidate = qobject_cast<ViewPlugin *>(plugin)) { view = candidate; names.append(candidate->name()); }
-        if (auto *layer = qobject_cast<MapLayer *>(plugin)) { layers.append(layer); names.append(layer->name()); }
-        if (auto *extension = qobject_cast<MapExtension *>(plugin)) names.append(extension->mapName());
-        if (auto *provider = qobject_cast<DataProvider *>(plugin)) names.append(provider->dataName());
-        if (auto *provider = qobject_cast<MarkerCollectionProvider *>(plugin)) names.append(provider->markerCollection().value(QStringLiteral("name")).toString());
+        if (auto *candidate = qobject_cast<Codec *>(plugin)) { codec = candidate; }
+        if (auto *candidate = qobject_cast<ViewPlugin *>(plugin)) { view = candidate; }
+        if (auto *layer = qobject_cast<MapLayer *>(plugin)) { layers.append(layer); }
     }
     auto *mapSources = new MapSources(plugins, this);
     auto *dataSources = new DataSources(plugins, this);
@@ -218,7 +215,6 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
                 resizeDocks({dock}, {170}, Qt::Vertical);
             } else {
                 sideDocks.append(dock);
-                names.append(tool->name());
             }
         }
     }
@@ -229,7 +225,6 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
                 source->create(services, *codec, this), Qt::RightDockWidgetArea);
             sideDocks.append(dock);
             pluginDocks.insert(plugin, dock);
-            names.append(source->name());
         }
     }
     for (auto *plugin : plugins) {
@@ -242,21 +237,14 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
             if (area == Qt::RightDockWidgetArea) sideDocks.append(dock);
             else if (area == Qt::BottomDockWidgetArea && bottomDock) tabifyDockWidget(bottomDock, dock);
             dock->hide();
-            names.append(pane->name());
         }
     }
-    auto *pluginPanel = new QWidget(this);
-    auto *pluginLayout = new QVBoxLayout(pluginPanel);
-    auto *pluginText = new QLabel(tr("Built-in plugins\n\n%1\n\nPlugins run with application permissions. This build does not load external plugin files.").arg(names.join('\n')), pluginPanel);
-    pluginText->setTextFormat(Qt::PlainText);
-    pluginText->setWordWrap(true);
-    pluginLayout->addWidget(pluginText);
+    auto *pluginPanel = createPluginPanel(plugins, this);
     if (!codec) {
         auto *missing = new QLabel(tr("No data format plugin is available. Event tools are unavailable."), pluginPanel);
         missing->setWordWrap(true);
-        pluginLayout->addWidget(missing);
+        pluginPanel->layout()->addWidget(missing);
     }
-    pluginLayout->addStretch();
     sideDocks.append(createDock(tr("Plugins"), QStringLiteral("pluginsDock"), pluginPanel, Qt::RightDockWidgetArea));
     for (qsizetype index = 1; index < sideDocks.size(); ++index) {
         tabifyDockWidget(sideDocks.first(), sideDocks.at(index));
@@ -329,7 +317,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     toolbar->setFloatable(false);
     toolbar->setAllowedAreas(Qt::TopToolBarArea);
     addToolBar(Qt::TopToolBarArea, toolbar);
-    toolbar->toggleViewAction()->setText(tr("Show main toolbar"));
+    toolbar->toggleViewAction()->setText(tr("Toolbar"));
     viewMenu->insertAction(resetLayout, toolbar->toggleViewAction());
     for (auto *plugin : plugins) {
         QMenu *menu = nullptr;
@@ -446,7 +434,6 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     settingsDefaults_.insert(QStringLiteral("logging"), {{QStringLiteral("enabled"), false}, {QStringLiteral("severity"), 2},
         {QStringLiteral("urgency"), 0}, {QStringLiteral("rate"), 20}, {QStringLiteral("qt"), true}, {QStringLiteral("prefix"), QString{}}});
     for (auto *menu : findChildren<QMenu *>()) sortMenuActions(*menu);
-    sortMenuActions(*menuBar());
     restorePreferences();
     connect(mapSources, &MapSources::changed, this, [this, mapSources] {
         savePreferences();

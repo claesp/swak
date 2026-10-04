@@ -10,7 +10,7 @@ Each detached pane has a resize handle in its lower-right corner. Close a pane t
 
 Use Tools > Plugins > CoT Messages > Clear to remove all current events and clear the selection. Plugins add their commands under Tools > Plugins.
 
-The top toolbar groups plugin icons with separators. Its Clear button performs the same action as the CoT Messages menu command. Point to an icon to read its tooltip. Use View > Show main toolbar to hide or show the toolbar. The application saves this choice across restarts.
+The top toolbar groups plugin icons with separators. Its Clear button performs the same action as the CoT Messages menu command. Point to an icon to read its tooltip. Use View > Toolbar to hide or show the toolbar. The application saves this choice across restarts.
 
 Use Help > About to read the application version and general information.
 
@@ -64,7 +64,7 @@ Saved preferences include these interface choices:
 
 Live events, the selected event, message counts, and generated XML previews are session data. They are not preferences and do not survive a restart. Editor drafts survive without automatically generating events.
 
-Use View > Reset layout to return panes to their initial arrangement. This command keeps editor values, map position, and receiver configuration. Tools > Plugins contains pane toggles and the Marker placement command. View contains only Show main toolbar and Reset layout.
+Use View > Reset layout to return panes to their initial arrangement. This command keeps editor values, map position, and receiver configuration. Tools > Plugins contains pane toggles and the Marker placement command. View contains only Toolbar and Reset layout.
 
 The default file is `preferences.json` in the Qt application configuration directory. On Linux, Qt uses the user configuration location under `XDG_CONFIG_HOME` or `~/.config`. The application identifies itself with organization `SWAK` and name `swak`.
 
@@ -335,7 +335,7 @@ The main toolbar groups Marker, Area, Circle, and Line in one creation section. 
 
 # Menus and provider controls
 
-Menus sort alphabetically with the operating-system locale. Circle, Distance, and Line appear directly under Tools > Plugins. Menu separators are removed so the full menu stays sorted. Toolbar sections retain separators.
+The menu bar uses File, Edit, View, Tools, Help in that order. Dropdown menus sort alphabetically with the operating-system locale. Circle, Distance, and Line appear directly under Tools > Plugins. Menu separators are removed so the full menu stays sorted. Toolbar sections retain separators.
 
 Use the Servers toolbar button to enable or disable configured servers. Use its Servers command to open management. Use the Data providers button to enable or disable feeds. Its Data Providers command opens management. Multiple servers and feeds can stay active together.
 
@@ -344,3 +344,5 @@ Scrolling inside an overlay pane affects that pane. At either scrollbar limit, w
 Identity shows Type, Location method, and Team descriptions with their original codes in parentheses. Use Select to change these fields or enter a custom code. Read-only text fields appear muted and still support selection and copying. The UID button shows a closed lock when it offers Unlock and an open lock when it offers Lock. OK uses a checkmark. Apply uses a disk icon and keeps the dialog open.
 
 Selected vector labels use white text on a black background. The selection highlight does not cover the label background.
+
+The Plugins pane lists built-in plugins in a sortable table. Select a row to read its full manifest below the table. A manifest describes the plugin version, purpose, interfaces, requirements, permissions, and supported platform. These fields are read-only.

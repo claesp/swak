@@ -1,3 +1,4 @@
+#include "app/plugin_panel.h"
 #include "core/menu_order.h"
 #include <QUuid>
 #include "core/map_label.h"
@@ -1597,6 +1598,43 @@ private slots:
         QVERIFY(window.findChild<swak::UserObjects *>()->items().isEmpty());
     }
 
+    void pluginManifestPanel()
+    {
+        const auto plugins = swak::builtInPlugins();
+        QVERIFY(!plugins.isEmpty());
+        QWidget owner;
+        auto *panel = swak::createPluginPanel(plugins, &owner);
+        auto *table = panel->findChild<QTableWidget *>(QStringLiteral("pluginTable"));
+        auto *details = panel->findChild<QPlainTextEdit *>(QStringLiteral("pluginDetails"));
+        QVERIFY(table); QVERIFY(details); QVERIFY(details->isReadOnly());
+        QCOMPARE(table->rowCount(), plugins.size());
+        QCOMPARE(table->editTriggers(), QAbstractItemView::NoEditTriggers);
+        owner.resize(650, 700);
+        auto *layout = new QVBoxLayout(&owner); layout->addWidget(panel);
+        owner.show(); QVERIFY(QTest::qWaitForWindowExposed(&owner));
+        for (int direction = 0; direction < 2; ++direction) {
+            table->sortItems(0, direction == 0 ? Qt::AscendingOrder : Qt::DescendingOrder);
+            for (int row = 0; row < table->rowCount(); ++row) {
+                table->selectRow(row);
+                const auto manifest = table->item(row, 0)->data(Qt::UserRole).toJsonObject();
+                QVERIFY(details->toPlainText().contains(manifest.value(QStringLiteral("id")).toString()));
+                QVERIFY(details->toPlainText().contains(manifest.value(QStringLiteral("description")).toString()));
+                for (auto it = manifest.begin(); it != manifest.end(); ++it)
+                    QVERIFY(details->toPlainText().contains(it.key() + QStringLiteral(": ")));
+            }
+        }
+        table->sortItems(0); table->selectRow(0); table->scrollToItem(table->item(0, 0));
+        QVERIFY(owner.grab().save(QStringLiteral("plugins-manifest.png")));
+        table->clearSelection(); QVERIFY(details->toPlainText().isEmpty());
+        QObject unknown;
+        QVERIFY(swak::pluginManifest(&unknown).isEmpty());
+        QVERIFY(swak::pluginManifest(nullptr).isEmpty());
+        auto *empty = swak::createPluginPanel({&unknown}, &owner);
+        QCOMPARE(empty->findChild<QTableWidget *>()->rowCount(), 0);
+        QVERIFY(empty->findChild<QPlainTextEdit *>()->toPlainText().isEmpty());
+        delete empty;
+    }
+
     void menusProvidersAndWheel()
     {
         QTemporaryDir directory; swak::Window window(directory.filePath(QStringLiteral("menus.json")), QPluginLoader::staticInstances());
@@ -1608,7 +1646,9 @@ private slots:
             QCollator collator; collator.setCaseSensitivity(Qt::CaseInsensitive); QString previous;
             for (const auto *action : actions) { if (action->isSeparator()) return false; auto text = action->text(); text.remove('&'); if (!previous.isEmpty() && collator.compare(previous, text) > 0) return false; previous = text; } return true;
         };
-        QVERIFY(sorted(window.menuBar()->actions())); for (auto *menu : window.findChildren<QMenu *>()) QVERIFY(sorted(menu->actions()));
+        QStringList menuTitles; for (auto *action : window.menuBar()->actions()) menuTitles.append(QString(action->text()).remove('&'));
+        QCOMPARE(menuTitles, (QStringList{QStringLiteral("File"), QStringLiteral("Edit"), QStringLiteral("View"), QStringLiteral("Tools"), QStringLiteral("Help")})); for (auto *menu : window.findChildren<QMenu *>()) QVERIFY(sorted(menu->actions()));
+        QCOMPARE(window.findChild<QToolBar *>()->toggleViewAction()->text(), QStringLiteral("Toolbar"));
         auto *mapMenu = window.findChild<QToolButton *>(QStringLiteral("mapProviderButton"))->menu(); qsizetype actionCount = 0;
         for (int i = 0; i < 5; ++i) {
             mapMenu->popup(window.mapToGlobal(QPoint(60, 60))); QVERIFY(QTest::qWaitForWindowExposed(mapMenu)); QVERIFY(sorted(mapMenu->actions()));
@@ -3178,7 +3218,7 @@ private slots:
         QCOMPARE(viewMenu->actions().size(), 2);
         QVERIFY(viewMenu->actions().contains(window.findChild<QToolBar *>(QStringLiteral("mainToolbar"))->toggleViewAction()));
         QVERIFY(fileMenu->actions().contains(quit));
-        QCOMPARE(window.menuBar()->actions().first()->text(), QStringLiteral("&Edit"));
+        QCOMPARE(window.menuBar()->actions().first()->text(), QStringLiteral("&File"));
         QCOMPARE(quit->shortcut(), QKeySequence(QKeySequence::Quit));
         for (const auto *menu : window.findChildren<QMenu *>()) {
             if (menu != fileMenu) QVERIFY(!menu->actions().contains(quit));

@@ -81,6 +81,17 @@ QString validatePluginManifest(const QJsonObject &manifest, QObject *instance)
     }
     return {};
 }
+QJsonObject pluginManifest(QObject *instance)
+{
+    if (!instance) return {};
+    for (const auto &entry : QPluginLoader::staticPlugins()) {
+        if (entry.metaData().value(QStringLiteral("IID")).toString() != QStringLiteral("org.swak.Plugin/2.0")) continue;
+        if (entry.instance() != instance) continue;
+        const auto manifest = entry.metaData().value(QStringLiteral("MetaData")).toObject();
+        return validatePluginManifest(manifest, instance).isEmpty() ? manifest : QJsonObject{};
+    }
+    return {};
+}
 QList<QObject *> builtInPlugins()
 {
     QList<QObject *> result;

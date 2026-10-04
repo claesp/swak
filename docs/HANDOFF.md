@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 4, 2026: Read “Menus, provider controls, overlay scrolling, and Identity presentation” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 4, 2026: Read “Plugin manifest table and menu conventions” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -1092,3 +1092,20 @@ The 60-second workload passed in build/quality/20261004-200717-soak-13331. It co
 Final coverage passed ten suites and all 85 native cases in build/quality/20261004-201244-coverage-17301. The new menu, provider-toolbar, and read-only presentation helpers reached every line and function. The picker and overlay panel code also reached every line. Branch coverage remains incomplete, including rare source-removal timing and all theme/locale combinations.
 
 The release build passed in build/menu-release.log. Final builds after the commit use build/menu-release-final.log and build/menu-debug-final.log. Both executables must use the same committed functional revision. No user request remains pending after these builds succeed.
+
+
+## 2026-10-04: Plugin manifest table and menu conventions
+
+The menu bar uses File, Edit, View, Tools, Help in that order. Dropdown and context menus retain locale sorting. The shared sorter accepts QMenu only. The View checkbox now reads Toolbar.
+
+The Plugins pane shows one table row per accepted built-in plugin. Columns show Name, Version, and Interfaces. The lower read-only field shows every embedded MANIFEST value. Selection remains attached to the correct metadata after sorting. Empty selection clears the details. Unknown instances show no unvalidated metadata. The pane retains the permission notice and missing-codec warning. No dependency or plugin interface version changes.
+
+The native regression covers all accepted manifests, sorting in both directions, cleared selection, unknown instances, and an empty table. Menu tests assert the complete top-level order and the Toolbar label. Focused tests passed in build/plugins-focused.log. Native screenshots show the selected row and its manifest.
+
+Source analysis passed in build/quality/20261004-202233-analyze-3. Ten sanitizer suites passed in build/quality/20261004-202247-quick-20260. All 86 native sanitizer cases passed in build/quality/20261004-202414-gui-21186. The diagnostic still fails on the existing Mesa leak of 240732 bytes in 1073 allocations. No suppression hides this leak.
+
+The initial release build passed in build/plugins-release.log. Final debug and release builds follow the functional commit. Hardware graphics, native Wayland, two-hour operation, and all locale/theme combinations remain unqualified.
+
+The 60-second workload passed in build/quality/20261004-202506-soak-21546. It completed 1120 cycles with 17272832 bytes of peak memory growth. The maximum heartbeat gap was 43 milliseconds. Idle CPU time was 0.015 seconds.
+
+Coverage passed ten suites and all 86 native cases in build/quality/20261004-202620-coverage-21679. The new pane and menu sorter reached every line and function. Branch coverage remains incomplete. Catalog gaps include rejected interface declarations and startup rejection logging. The new manifest lookup reached every line. Final build logs are build/plugins-release-final.log and build/plugins-debug-final.log.

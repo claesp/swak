@@ -2,10 +2,9 @@
 #include <QApplication>
 #include <QCollator>
 #include <QMenu>
-#include <QMenuBar>
 #include <algorithm>
 namespace swak {
-inline void sortMenuActions(QWidget &menu)
+inline void sortMenuActions(QMenu &menu)
 {
     auto actions = menu.actions();
     actions.removeIf([&menu](QAction *action) {
@@ -32,7 +31,6 @@ protected:
         if (!sorting_ && (event->type() == QEvent::ActionAdded || event->type() == QEvent::ActionChanged)) {
             sorting_ = true;
             if (auto *menu = qobject_cast<QMenu *>(object)) sortMenuActions(*menu);
-            else if (auto *bar = qobject_cast<QMenuBar *>(object)) sortMenuActions(*bar);
             sorting_ = false;
         }
         return false;
