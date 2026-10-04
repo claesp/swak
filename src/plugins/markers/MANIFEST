@@ -3,7 +3,7 @@
   "id": "org.swak.markers",
   "name": "Markers",
   "description": "Edit local markers with original vector ground-unit symbols.",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "apiVersion": 2,
   "entryPoint": "MarkerPlugin",
   "linkage": "static",

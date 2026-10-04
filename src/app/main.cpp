@@ -30,7 +30,7 @@ int main(int argc, char **argv)
     QGuiApplication::setDesktopFileName(QStringLiteral("org.swak.Swak"));
     QCommandLineParser parser;
     parser.setApplicationDescription(
-        QCoreApplication::translate("main", "A native Cursor-on-Target workspace."));
+        QCoreApplication::translate("main", "Receive, create, and present CoT data."));
     parser.addHelpOption();
     parser.addVersionOption();
     const QCommandLineOption preferencesOption(

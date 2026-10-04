@@ -1,5 +1,7 @@
 #include "app/map_panels.h"
 
+#include "core/map_decorations.h"
+
 #include <QDockWidget>
 #include <QEvent>
 #include <QLayout>
@@ -86,6 +88,7 @@ void MapPanels::updateMask()
         }
     }
     region &= rect();
+    parentWidget()->setProperty(MapOcclusionProperty, QVariant::fromValue(region));
     setMask(region.isEmpty() ? QRegion(-1, -1, 1, 1) : region);
     update();
     parentWidget()->update();

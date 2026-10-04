@@ -7,9 +7,12 @@
 #include "core/cot.h"
 #include "core/cot_picker.h"
 #include "core/delete_confirmation.h"
+#include "core/grid_types.h"
 #include "core/identity.h"
 #include "core/interfaces.h"
 #include "core/logging.h"
+#include "core/map_decorations.h"
+#include "core/map_grid.h"
 #include "core/map_label.h"
 #include "core/map_selection.h"
 #include "core/map_tools.h"
@@ -275,6 +278,222 @@ class GuiTest final : public QObject
 {
     Q_OBJECT
 private slots:
+    void gridTypesAndCoordinates()
+    {
+        swak::GridTypes grids;
+        QCOMPARE(grids.entries().size(), 3);
+        QVERIFY(grids.settingsFields().isEmpty());
+        QCOMPARE(grids.selected(), QStringLiteral("geographic"));
+        QCOMPARE(swak::gridCoordinate(0, 3, "mgrs", 5), QStringLiteral("31NEA0000000000"));
+        QVERIFY(swak::gridCoordinate(60, 4, "utm").startsWith(QStringLiteral("UTM 32N")));
+        QVERIFY(swak::gridCoordinate(78, 20, "mgrs").startsWith(QStringLiteral("33X")));
+        QVERIFY(swak::gridCoordinate(85, 20, "mgrs").startsWith('Z'));
+        QVERIFY(swak::gridCoordinate(-85, 20, "mgrs").startsWith('B'));
+        QVERIFY(swak::gridCoordinate(91, 0, "mgrs").isEmpty());
+        QVERIFY(swak::gridCoordinate(0, 0, "unknown").isEmpty());
+        for (const auto &field :
+             {QStringLiteral("name"), QStringLiteral("system"), QStringLiteral("format")}) {
+            auto bad = swak::GridTypes::defaults();
+            bad.insert(field, "");
+            QVERIFY(!swak::GridTypes::validate(bad).isEmpty());
+        }
+        auto hiddenName = swak::GridTypes::defaults();
+        hiddenName.insert("name", QString(QChar(0x202e)));
+        QVERIFY(!swak::GridTypes::validate(hiddenName).isEmpty());
+        auto invalid = swak::GridTypes::defaults();
+        invalid.insert("spacing", 0);
+        QVERIFY(!grids.put("invalid", invalid).isEmpty());
+        invalid = swak::GridTypes::defaults();
+        invalid.insert("color", "red");
+        QVERIFY(!grids.put("invalid", invalid).isEmpty());
+        auto value = swak::GridTypes::defaults("mgrs");
+        value.insert("name", "Custom grid");
+        QVERIFY(grids.put("custom", value).isEmpty());
+        grids.select("custom");
+        const auto saved = grids.savePreferences();
+        swak::GridTypes restored;
+        restored.restorePreferences(saved);
+        QCOMPARE(restored.savePreferences(), saved);
+        restored.remove("custom");
+        QVERIFY(restored.selected().isEmpty());
+        restored.restorePreferences(
+            {{"types", QJsonObject{{"bad", invalid}}}, {"selected", "bad"}});
+        QVERIFY(restored.entries().isEmpty());
+        QVERIFY(restored.selected().isEmpty());
+        for (int i = 0; i < 32; ++i) {
+            QVERIFY(restored.put(QString::number(i), value).isEmpty());
+        }
+        QVERIFY(!restored.put("overflow", value).isEmpty());
+        restored.select("missing");
+        QVERIFY(restored.selected().isEmpty());
+        swak::GridTypes hiddenLegacy;
+        hiddenLegacy.migrate({{"gridVisible", false}});
+        QVERIFY(hiddenLegacy.selected().isEmpty());
+        swak::GridTypes legacy;
+        legacy.migrate({{"gridVisible", true}, {"gridOpacity", .2}});
+        QCOMPARE(legacy.entries().value("geographic").toObject().value("opacity").toDouble(), .5);
+        for (const auto &system :
+             {QStringLiteral("geographic"), QStringLiteral("utm"), QStringLiteral("mgrs")}) {
+            for (const auto position : {QPointF(4, 60),
+                                        QPointF(20, 78),
+                                        QPointF(20, 85),
+                                        QPointF(20, -85),
+                                        QPointF(179.9, 0)}) {
+                QImage image(800, 600, QImage::Format_ARGB32_Premultiplied);
+                image.fill(Qt::white);
+                QPainter painter(&image);
+                swak::paintGridType(
+                    painter,
+                    {QSizeF(800, 600), swak::project(position.y(), position.x()), 9},
+                    swak::GridTypes::defaults(system));
+                painter.end();
+                QVERIFY(image.save(QStringLiteral("grid-%1-%2.png").arg(system).arg(position.y())));
+            }
+        }
+        for (int format = 0; format < 3; ++format) {
+            auto type = swak::GridTypes::defaults();
+            type.insert("format", format);
+            QImage image(800, 600, QImage::Format_ARGB32_Premultiplied);
+            image.fill(Qt::transparent);
+            const auto blank = image;
+            QPainter painter(&image);
+            swak::paintGridType(painter, {QSizeF(800, 600), swak::project(0, 0), 4}, type);
+            painter.end();
+            QVERIFY(image != blank);
+        }
+        for (const auto &system : {QStringLiteral("utm"), QStringLiteral("mgrs")}) {
+            QImage image(800, 600, QImage::Format_ARGB32_Premultiplied);
+            image.fill(Qt::transparent);
+            const auto blank = image;
+            QPainter painter(&image);
+            swak::paintGridType(painter,
+                                {QSizeF(800, 600), swak::project(0, 0), 2},
+                                swak::GridTypes::defaults(system));
+            painter.end();
+            QVERIFY(image != blank);
+        }
+        std::unique_ptr<QWidget> widget(grids.createSettingsWidget(nullptr));
+        widget->show();
+        auto *table = widget->findChild<QTableWidget *>(QStringLiteral("gridTypesTable"));
+        QVERIFY(table);
+        auto *utm = widget->findChild<QRadioButton *>(QStringLiteral("activeProvider/utm"));
+        QVERIFY(utm);
+        utm->click();
+        QCOMPARE(grids.selected(), QStringLiteral("utm"));
+        QTimer::singleShot(0, widget.get(), [&] {
+            auto *dialog =
+                widget->findChild<swak::SettingsDialog *>(QStringLiteral("gridTypeEditor"));
+            QVERIFY(dialog);
+            auto *name = dialog->findChild<QLineEdit *>(QStringLiteral("grid/name"));
+            QVERIFY(name && name->text().isEmpty());
+            name->setText(QStringLiteral("New test grid"));
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+        });
+        widget->findChild<QPushButton *>(QStringLiteral("addGridType"))->click();
+        QVERIFY(QTest::qWaitFor([&] {
+            return table->rowCount() == 5;
+        }));
+        QVERIFY(widget->grab().save(QStringLiteral("grid-types-editor.png")));
+        table->setCurrentCell(0, 1);
+        const auto beforeEdit = grids.savePreferences();
+        QTimer::singleShot(0, widget.get(), [&] {
+            auto *dialog =
+                widget->findChild<swak::SettingsDialog *>(QStringLiteral("gridTypeEditor"));
+            QVERIFY(dialog);
+            dialog->findChild<QLineEdit *>(QStringLiteral("grid/name"))->setText("Canceled name");
+            dialog->reject();
+        });
+        widget->findChild<QPushButton *>(QStringLiteral("editGridType"))->click();
+        QCOMPARE(grids.savePreferences(), beforeEdit);
+        QTimer::singleShot(0, widget.get(), [&] {
+            auto *dialog =
+                widget->findChild<swak::SettingsDialog *>(QStringLiteral("gridTypeEditor"));
+            QVERIFY(dialog);
+            dialog->findChild<QLineEdit *>(QStringLiteral("grid/name"))->setText("Edited name");
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+        });
+        widget->findChild<QPushButton *>(QStringLiteral("editGridType"))->click();
+        QVERIFY(grids.savePreferences() != beforeEdit);
+        answerDeletion(Qt::Key_Escape);
+        widget->findChild<QPushButton *>(QStringLiteral("deleteGridType"))->click();
+        QCOMPARE(grids.entries().size(), 5);
+        answerDeletion();
+        widget->findChild<QPushButton *>(QStringLiteral("deleteGridType"))->click();
+        QCOMPARE(grids.entries().size(), 4);
+        widget->findChild<QPushButton *>(QStringLiteral("hideGrid"))->click();
+        QVERIFY(grids.selected().isEmpty());
+    }
+    void mapViewDecorations()
+    {
+        QVERIFY(swak::mapScaleLegend({QSizeF(0, 0), {}, 12}).text.isEmpty());
+        QVERIFY(swak::mapScaleLegend({QSizeF(800, 600), {0, 100}, 12}).text.isEmpty());
+        const swak::Viewport view{QSizeF(800, 600), swak::project(59, 18), 12};
+        const auto metric = swak::mapScaleLegend(view, QLocale(QLocale::Swedish, QLocale::Sweden));
+        const auto imperial =
+            swak::mapScaleLegend(view, QLocale(QLocale::English, QLocale::UnitedStates));
+        QVERIFY(metric.pixels > 0 && metric.pixels <= 160);
+        QVERIFY(metric.text.contains(QStringLiteral("m")));
+        QVERIFY(imperial.text.contains(QStringLiteral("ft")) ||
+                imperial.text.contains(QStringLiteral("mi")));
+        auto closer = view;
+        closer.zoom += 1;
+        QVERIFY(swak::mapScaleLegend(closer).meters < swak::mapScaleLegend(view).meters);
+        QTemporaryDir directory;
+        const auto path = directory.filePath(QStringLiteral("map-view.json"));
+        {
+            swak::Window window(path, QPluginLoader::staticInstances());
+            window.show();
+            QVERIFY(QTest::qWaitForWindowExposed(&window));
+            QCOMPARE(window.windowTitle(), QStringLiteral("SWAK"));
+            auto *tabs = window.findChild<QTabWidget *>(QStringLiteral("mainViews"));
+            QCOMPARE(tabs->tabText(0), QStringLiteral("Map"));
+            auto *map = window.findChild<QOpenGLWidget *>();
+            QCOMPARE(tabs->widget(0), map);
+            tabs->addTab(new QWidget(tabs), QStringLiteral("Test view"));
+            tabs->setCurrentIndex(1);
+            QVERIFY(!map->isVisible());
+            tabs->setCurrentIndex(0);
+            QVERIFY(map->isVisible());
+            map->setFocus();
+            auto *settings = dynamic_cast<swak::SettingsParticipant *>(map);
+            const auto before = settings->savePreferences().value("zoom").toInt();
+            QTest::keyClick(map, Qt::Key_Q);
+            QVERIFY(settings->savePreferences().value("zoom").toInt() > before);
+            auto *toolbar = window.findChild<QToolBar *>(QStringLiteral("mainToolbar"));
+            auto *mapButton = window.findChild<QToolButton *>(QStringLiteral("mapProviderButton"));
+            auto *serverButton =
+                window.findChild<QToolButton *>(QStringLiteral("serverProviderButton"));
+            auto *dataButton =
+                window.findChild<QToolButton *>(QStringLiteral("dataProviderButton"));
+            QVERIFY(mapButton && serverButton && dataButton);
+            QList<QWidget *> providerWidgets;
+            for (auto *action : toolbar->actions()) {
+                if (action->isSeparator()) {
+                    break;
+                }
+                providerWidgets.append(toolbar->widgetForAction(action));
+            }
+            QCOMPARE(providerWidgets, (QList<QWidget *>{mapButton, serverButton, dataButton}));
+            auto *scale = window.findChild<QAction *>(QStringLiteral("mapScaleAction"));
+            auto *zoom = window.findChild<QAction *>(QStringLiteral("mapZoomAction"));
+            QVERIFY(scale->isChecked() && zoom->isChecked());
+            QVERIFY(map->grabFramebuffer().save(QStringLiteral("map-decorations-frame.png")));
+            QSignalSpy decorationFrames(map, &QOpenGLWidget::frameSwapped);
+            map->update();
+            QVERIFY(QTest::qWaitFor([&] {
+                return !decorationFrames.isEmpty();
+            }));
+            QVERIFY(window.screen()
+                        ->grabWindow(window.winId())
+                        .save(QStringLiteral("map-tab-decorations.png")));
+            scale->trigger();
+            zoom->trigger();
+            QVERIFY(window.savePreferences());
+        }
+        swak::Window restored(path, QPluginLoader::staticInstances());
+        QVERIFY(!restored.findChild<QAction *>(QStringLiteral("mapScaleAction"))->isChecked());
+        QVERIFY(!restored.findChild<QAction *>(QStringLiteral("mapZoomAction"))->isChecked());
+    }
     void integerMapZoomAndBackground()
     {
         QTemporaryDir directory;
@@ -293,17 +512,7 @@ private slots:
         const auto zoom = [&] {
             return settings->savePreferences().value(QStringLiteral("zoom")).toDouble();
         };
-        auto gridValues = settings->savePreferences();
-        QCOMPARE(gridValues.value(QStringLiteral("gridOpacity")).toDouble(), 0.5);
-        gridValues.remove(QStringLiteral("gridStyleVersion"));
-        gridValues.insert(QStringLiteral("gridOpacity"), 0.2);
-        settings->restorePreferences(gridValues);
-        QCOMPARE(settings->savePreferences().value(QStringLiteral("gridOpacity")).toDouble(), 0.5);
-        gridValues.insert(QStringLiteral("gridStyleVersion"), 2);
-        settings->restorePreferences(gridValues);
-        QCOMPARE(settings->savePreferences().value(QStringLiteral("gridOpacity")).toDouble(), 0.2);
-        gridValues.insert(QStringLiteral("gridOpacity"), 0.5);
-        settings->restorePreferences(gridValues);
+        window.findChild<swak::GridTypes *>()->select({});
         const auto initial = map->grabFramebuffer();
         QCOMPARE(initial.pixelColor(20, 21), QColor(swak::MapBackgroundRgb));
         const auto id = QStringLiteral("org.swak.xyz");
@@ -1972,7 +2181,7 @@ private slots:
             }));
             auto *modeTools = window.findChild<swak::MapTools *>();
             QVERIFY(modeTools);
-            QVERIFY(!modeTools->coordinateGridActive());
+            QVERIFY(!modeTools->guidesActive());
             auto *modeStatus = window.findChild<QLabel *>(QStringLiteral("mapToolStatus"));
             QVERIFY(modeStatus);
             QVERIFY(modeStatus->text().isEmpty());
@@ -1986,10 +2195,10 @@ private slots:
             QTest::keyClick(map, Qt::Key_M);
             QVERIFY(modeStatus->text().isEmpty());
             QVERIFY(map->cursor().shape() != Qt::CrossCursor);
-            QVERIFY(!modeTools->coordinateGridActive());
+            QVERIFY(!modeTools->guidesActive());
             QTest::keyClick(map, Qt::Key_M);
             QCOMPARE(modeStatus->text(), QStringLiteral("M"));
-            QVERIFY(modeTools->coordinateGridActive());
+            QVERIFY(modeTools->guidesActive());
             auto *tools = window.findChild<swak::MapTools *>();
             QVERIFY(tools);
             QSignalSpy sceneChanges(tools, &swak::MapTools::changed);
@@ -2045,7 +2254,7 @@ private slots:
                         .save(QStringLiteral("marker-crosshair.png")));
             QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, point);
             QVERIFY(modeStatus->text().isEmpty());
-            QVERIFY(!modeTools->coordinateGridActive());
+            QVERIFY(!modeTools->guidesActive());
             QVERIFY(pane->isVisible());
             QVERIFY(editor->draft());
             QVERIFY(objects->items().isEmpty());
@@ -2890,7 +3099,7 @@ private slots:
         QVERIFY(!editor->draft());
         QCOMPARE(tools->statusText(), QStringLiteral("A"));
         tools->cancel();
-        QVERIFY(!tools->coordinateGridActive());
+        QVERIFY(!tools->guidesActive());
         QVERIFY(window.findChild<swak::UserObjects *>()->items().isEmpty());
     }
 
@@ -4450,7 +4659,7 @@ private slots:
         QVERIFY(clear && events->actions().contains(clear));
         QCOMPARE(clear->text(), QStringLiteral("&Clear"));
         auto *toolbar = window.findChild<QToolBar *>(QStringLiteral("mainToolbar"));
-        QVERIFY(toolbar && toolbar->actions().contains(clear));
+        QVERIFY(toolbar && !toolbar->actions().contains(clear));
         QVERIFY(!clear->icon().isNull());
         QCOMPARE(clear->toolTip(), QStringLiteral("Clear CoT Messages"));
         QVERIFY(!window.menuBar()->actions().contains(events->menuAction()));
@@ -4459,31 +4668,11 @@ private slots:
         generate->click();
         QCOMPARE(window.store().rowCount(), 1);
         QVERIFY(!window.store().selected().isEmpty());
-        auto *button = qobject_cast<QToolButton *>(toolbar->widgetForAction(clear));
-        QVERIFY(button);
-        button->click();
+        clear->trigger();
         QCOMPARE(window.store().rowCount(), 0);
         QVERIFY(window.store().selected().isEmpty());
         clear->trigger();
         QCOMPARE(window.store().rowCount(), 0);
-        bool standalone = false;
-        for (auto *plugin : QPluginLoader::staticInstances()) {
-            if (auto *provider = qobject_cast<swak::ToolbarPlugin *>(plugin);
-                provider && qobject_cast<swak::ToolPlugin *>(plugin)) {
-                QToolBar independent;
-                swak::PluginServices services{window.store(),
-                                              *window.findChild<swak::ActivityModel *>(),
-                                              *window.findChild<swak::MapSources *>()};
-                provider->populateToolbar(services, independent, nullptr);
-                QCOMPARE(independent.actions().size(), 1);
-                generate->click();
-                QCOMPARE(window.store().rowCount(), 1);
-                independent.actions().first()->trigger();
-                QCOMPARE(window.store().rowCount(), 0);
-                standalone = true;
-            }
-        }
-        QVERIFY(standalone);
     }
     void localizedSettingsLists()
     {
@@ -4707,6 +4896,26 @@ private slots:
             auto *settings = dynamic_cast<swak::SettingsParticipant *>(map);
             QVERIFY(settings);
             QCOMPARE(settings->savePreferences().value(QStringLiteral("markerScale")).toInt(), 100);
+            auto *objects = window.findChild<swak::UserObjects *>();
+            swak::UserObject existing;
+            existing.id = QStringLiteral("existing-size-test");
+            existing.type = QStringLiteral("circle");
+            existing.title = QStringLiteral("Existing marker");
+            existing.color = QStringLiteral("#ffc857");
+            existing.geometry = {{"x", .5}, {"y", .5}};
+            QVERIFY(objects->put(existing).isEmpty());
+            const auto markerPixels = [&] {
+                const auto image = map->grabFramebuffer();
+                int count = 0;
+                for (int y = image.height() / 2 - 50; y < image.height() / 2 + 50; ++y) {
+                    for (int x = image.width() / 2 - 50; x < image.width() / 2 + 50; ++x) {
+                        count += image.pixelColor(x, y) == QColor("#ffc857");
+                    }
+                }
+                return count;
+            };
+            const int originalPixels = markerPixels();
+            QVERIFY(originalPixels > 10);
             const auto toolbarSize = window.findChild<QToolBar *>()->iconSize();
             for (const bool apply : {false, true}) {
                 QTimer::singleShot(0, &window, [&] {
@@ -4731,6 +4940,17 @@ private slots:
                 QCOMPARE(settings->savePreferences().value(QStringLiteral("markerScale")).toInt(),
                          apply ? 200 : 100);
             }
+            QCOMPARE(objects->items().size(), 1);
+            QVERIFY(markerPixels() > 2 * originalPixels);
+            auto *markerSettings = dynamic_cast<swak::SettingsParticipant *>(
+                window.findChild<swak::ObjectEditor *>(QStringLiteral("objectEditor")));
+            QVERIFY(markerSettings);
+            const auto oldRadius = markerPixels();
+            auto markerValues = markerSettings->savePreferences();
+            markerValues.insert("radius", 14);
+            markerSettings->restorePreferences(markerValues);
+            QVERIFY(markerPixels() > 2 * oldRadius);
+            QCOMPARE(objects->items().size(), 1);
             QCOMPARE(window.findChild<QToolBar *>()->iconSize(), toolbarSize);
             QVERIFY(window.savePreferences());
         }
@@ -6220,7 +6440,7 @@ private slots:
         auto *fileMenu = window.findChild<QMenu *>(QStringLiteral("fileMenu"));
         auto *quit = window.findChild<QAction *>(QStringLiteral("quitAction"));
         QVERIFY(viewMenu && fileMenu && quit);
-        QCOMPARE(viewMenu->actions().size(), 2);
+        QCOMPARE(viewMenu->actions().size(), 4);
         QVERIFY(viewMenu->actions().contains(
             window.findChild<QToolBar *>(QStringLiteral("mainToolbar"))->toggleViewAction()));
         for (int repeat = 0; repeat < 5; ++repeat) {
@@ -6346,14 +6566,13 @@ private slots:
         QTest::keyClick(map, Qt::Key_Home);
         auto *mapConfiguration = dynamic_cast<swak::SettingsParticipant *>(map);
         QVERIFY(mapConfiguration);
-        const auto gridValues = mapConfiguration->savePreferences();
-        auto withoutGrid = gridValues;
-        withoutGrid.insert(QStringLiteral("gridVisible"), false);
-        mapConfiguration->restorePreferences(withoutGrid);
+        auto *grids = window.findChild<swak::GridTypes *>();
+        const auto previousGrid = grids->selected();
+        grids->select({});
         const QImage frame = map->grabFramebuffer();
         QVERIFY(!frame.isNull());
         QCOMPARE(frame.pixelColor(20, 21), QColor(swak::MapBackgroundRgb));
-        mapConfiguration->restorePreferences(gridValues);
+        grids->select(previousGrid);
         QVERIFY(frame.save(QStringLiteral("map-smoke.png")));
         QSignalSpy frames(map, &QOpenGLWidget::frameSwapped);
         map->update();

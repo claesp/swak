@@ -37,3 +37,14 @@ The Server, Data providers, OK, and Apply icons use original vector paths in the
 # Source formatters
 
 Development uses clang-format 19, Black 25.1.0, and cmake-format 0.6.13 to enforce the documented source style. These tools provide repeatable formatting across the repository. They are not linked, packaged, or installed with SWAK. Read [Coding style](coding-style.md) for commands and exclusions.
+
+
+# Coordinate conversion
+
+Grid Types uses GeographicLib for WGS 84 conversion between geographic coordinates, UTM, UPS, and MGRS. UTM uses zones in meters. UPS covers polar regions. MGRS names cells within these coordinate systems. Qt does not supply these conversions. This dependency avoids custom projection series and military grid lettering rules.
+
+The upstream [GeographicLib repository](https://github.com/geographiclib/geographiclib) describes these conversions and its MIT license. Development uses Debian GeographicLib 2.5-1. The package copyright notices are in GeographicLib-copyright.txt and install with SWAK. The notices also identify other package components. No source files from GeographicLib enter the repository. Builds find an installed development package and do not download code.
+
+On this host, the Debian packages are extracted under build/geographiclib. The CMake cache names the extracted include directory and static library. This local path is not portable. Install libgeographiclib-dev on another machine, as described in build.md. The release executable on this host links the static library. A normal system build can link its shared library.
+
+The grid renderer limits entries, visible lines, sampling points, coordinate formats, and user text. GeographicLib receives finite, bounded coordinates. Its coordinate-domain exceptions stop the affected grid cell. The application does not suppress memory corruption or fatal signals.

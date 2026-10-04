@@ -100,10 +100,10 @@ bool MapTools::deleteSelection()
         return tool && tool->deleteSelection();
     });
 }
-bool MapTools::coordinateGridActive() const
+bool MapTools::guidesActive() const
 {
     return std::any_of(tools_.cbegin(), tools_.cend(), [](const auto &tool) {
-        return tool && tool->coordinateGridActive();
+        return tool && tool->guidesActive();
     });
 }
 QString MapTools::statusText() const

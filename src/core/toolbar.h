@@ -6,8 +6,9 @@
 namespace swak {
 enum class ToolbarSection
 {
-    Creation = 1,
-    Measurement = 2
+    Providers = 1,
+    Creation = 2,
+    Measurement = 3
 };
 inline void setToolbarSection(QAction &action, ToolbarSection section, int order)
 {

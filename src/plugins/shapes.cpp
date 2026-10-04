@@ -227,17 +227,17 @@ public:
     }
     bool activeMode(ShapeMode mode) const
     {
-        return mode == mode_ && coordinateGridActive();
+        return mode == mode_ && guidesActive();
     }
-    bool coordinateGridActive() const override
+    bool guidesActive() const override
     {
         return drawing_ || moving_.has_value() || movingPoint_ >= 0;
     }
     QString statusText() const override
     {
-        return coordinateGridActive() ? QKeySequence(editor_.keys[static_cast<size_t>(mode_)])
-                                            .toString(QKeySequence::NativeText)
-                                      : QString{};
+        return guidesActive() ? QKeySequence(editor_.keys[static_cast<size_t>(mode_)])
+                                    .toString(QKeySequence::NativeText)
+                              : QString{};
     }
     bool cancel() override
     {
@@ -295,15 +295,14 @@ public:
         }
         if (event.type() == QEvent::MouseMove) {
             pointer_ = static_cast<QMouseEvent &>(event).position();
-            if (coordinateGridActive()) {
+            if (guidesActive()) {
                 emit overlayChanged();
                 return true;
             }
         }
         if ((event.type() == QEvent::MouseButtonPress ||
              event.type() == QEvent::MouseButtonDblClick) &&
-            coordinateGridActive() &&
-            static_cast<QMouseEvent &>(event).button() == Qt::LeftButton) {
+            guidesActive() && static_cast<QMouseEvent &>(event).button() == Qt::LeftButton) {
             return true;
         }
         if (event.type() == QEvent::MouseButtonRelease &&
@@ -550,7 +549,7 @@ public:
             }
             dots(painter, points, QColor(editor_.draft()->color), view);
         }
-        if (coordinateGridActive()) {
+        if (guidesActive()) {
             painter.setPen(QPen(QColor(0, 0, 0, 128), 1));
             painter.drawLine(QPointF(0, pointer.y()), QPointF(view.size.width(), pointer.y()));
             painter.drawLine(QPointF(pointer.x(), 0), QPointF(pointer.x(), view.size.height()));

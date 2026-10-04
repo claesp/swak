@@ -26,7 +26,7 @@ public:
     {
         return {};
     }
-    virtual bool coordinateGridActive() const
+    virtual bool guidesActive() const
     {
         return false;
     }
@@ -72,7 +72,7 @@ public:
     void paintOverlay(QPainter &painter, const Viewport &view, QPointF pointer) const;
     QString statusText() const;
     double areaFillOpacity() const;
-    bool coordinateGridActive() const;
+    bool guidesActive() const;
     QList<MapItem> itemsAt(const Viewport &view, QPointF position) const;
     bool interact(const MapItem &item, QEvent &event, QWidget &map);
     void populateContextMenu(const MapItem &item, QMenu &menu);

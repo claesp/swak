@@ -144,3 +144,7 @@ Marker scaling tests exercise all six percentages, point drawing, hit targets, s
 Predict tests cover known speeds, stationary positions, date-line crossing, high latitudes, invalid input, equal timestamps, bounded history, and enabled-target limits. Native tests exercise both activation controls, endpoint teleport fades, pause, resume, stale sources, clear, and restart. The workload enables 128 forecast targets and repeatedly feeds timestamped positions. Forecast accuracy against real routes remains unqualified.
 
 Restricted Area tests cover fill and stripes, draft preview, cancellation, Apply, Undo, saved profiles, and absent or invalid legacy fields. Native screenshots cover the OpenGL pattern. Other object editors hide the checkbox.
+
+Grid tests cover saved definitions, invalid values, catalog bounds, canceled edits, deletion, and legacy migration. Known coordinates cover Norway, Svalbard, the equator, and both polar systems. Rendering tests cover all angle formats, broad zone views, close views, and the date line. Native tests exercise tab switching, provider grouping, decoration visibility, and live resizing of existing markers.
+
+The trace workload uses an explicit clock after timestamp mutation. It extends the synthetic expiry before advancing the trace. This keeps generated trace samples valid without weakening the application parser or store rules. Rejected samples report their exact error.

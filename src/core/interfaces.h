@@ -35,6 +35,7 @@ struct PluginServices
     Identity *identity = nullptr;
     Servers *servers = nullptr;
     QAction *navigationLock = nullptr;
+    QList<QAction *> viewActions = {};
 };
 class Plugin
 {

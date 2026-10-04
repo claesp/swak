@@ -10,7 +10,7 @@ Each detached pane has a resize handle in its lower-right corner. Close a pane t
 
 Use Tools > Plugins > CoT Messages > Clear to remove all current events and clear the selection. Plugins add their commands under Tools > Plugins.
 
-The top toolbar groups plugin icons with separators. Its Clear button performs the same action as the CoT Messages menu command. Point to an icon to read its tooltip. Use View > Toolbar to hide or show the toolbar. The application saves this choice across restarts.
+The top toolbar groups plugin icons with separators. Map Providers, Servers, and Data Providers share one toolbar section. Clear remains in Tools > Plugins > CoT Messages. Point to an icon to read its tooltip. Use View > Toolbar to hide or show the toolbar. The application saves this choice across restarts.
 
 Use Help > About to read the application version and general information.
 
@@ -210,7 +210,7 @@ Undo stays available while the history contains deletions to restore. After the 
 File > Settings > General > Markers changes circle color, radius, and guide opacity. File > Settings > Keybindings > Markers changes the creation key. It accepts one letter without modifiers. A tool activation key takes priority over a map navigation key with the same value. Choose different keys for these actions. The model allows at most 256 objects and reserves storage for undo. ID, Latitude, and Longitude are reserved property names.
 
 
-During marker placement or movement, the coordinate grid shows longitude along the top and bottom edges, and latitude along the left and right edges. Lines and labels use black at 50 percent opacity. Intervals follow zoom and latitude, with rounded decimal degrees and compass letters. File > Settings > General > Map controls grid visibility, opacity, and spacing in logical pixels.
+The coordinate grid operates independently of marker modes. File > Settings > General > Grid Types manages its appearance and coordinate system.
 
 
 Press the marker activation key again to leave placement mode. The default key is M. The same key cancels movement and restores the original position. The status bar shows M during placement or movement and clears it when that mode ends. Press Enter in the Title field to apply marker details. Enter uses the same validation as Apply.
@@ -218,7 +218,7 @@ Press the marker activation key again to leave placement mode. The default key i
 Help > About shows the application version and full Git SHA. The SHA identifies the source commit. The version includes a short SHA and adds `-dirty` when tracked files contain uncommitted changes. About also shows an exact Git tag when one exists. Builds without Git metadata show `+unknown`. These values identify the build but do not query a server for newer releases.
 
 
-The coordinate grid hides when marker mode ends. The grid stays below data-feed and local markers. File > Settings > General > Map can also disable the grid during marker mode.
+The grid stays below data-feed and local markers. Choose No grid in Grid Types to hide it.
 
 
 After Apply or Enter saves a marker, keyboard focus returns to the map. Press M to create the next marker without closing Information or clicking the map first. This also applies when the editor or Information pane is detached.
@@ -271,7 +271,7 @@ When objects overlap, click their shared area to open the object chooser. Select
 For object commands, right-click the overlap and choose an object first. Its context menu then opens. Local markers and polygons provide their normal edit and delete commands. Downloaded objects provide information. Active drawing and corner editing continue to use their own controls.
 
 
-The main toolbar uses icons and separators. Hover over a button to read its command and shortcut. Marker and Area buttons show their active state. Click an active mode button again to stop it. The globe button opens the map provider list. Its tooltip names the current provider. Clear CoT Messages uses the trash icon.
+The main toolbar uses icons and separators. Hover over a button to read its command and shortcut. Marker and Area buttons show their active state. Click an active mode button again to stop it. The globe button opens the map provider list. Its tooltip names the current provider. Clear CoT Messages remains in its plugin menu.
 
 Older profiles migrate the default W/A/S/D pan keys to arrow keys and the default P area key to A. Other custom keys remain unchanged. File > Settings > Keybindings can change these assignments. Saved geometry still uses the polygon type internally.
 
@@ -375,3 +375,18 @@ Arrow keys stay within overlay controls when a table reaches its edge. Select th
 Delete ... opens a confirmation dialog for objects, area corners, providers, servers, and marker collections. Press Enter to delete the selected item. Press Escape to cancel. Object deletion remains available through Undo. Provider, server, and collection deletion does not support Undo. Object context menus put Edit before Delete ....
 
 The Information pane shows Restricted as Yes or No for each Area.
+
+
+# Map view and reference controls
+
+The main view appears in the Map tab. Its keyboard, mouse, overlay, and lock controls retain their behavior. Map scale appears at the lower left. The scale uses the local ground distance at its latitude. Units follow the operating system locale, with meters and kilometers or feet and miles.
+
+The faded indicator at the left center shows the supported zoom levels. A longer tick marks the current level. View > Map scale and View > Map zoom level control visibility. Both choices survive restart.
+
+Open File > Settings > General > Grid Types to manage coordinate grids. Longitude/latitude is the default selection. UTM and MGRS are also available. Select a radio button to activate a type. Select No grid to hide all types.
+
+Select Add to create a named type. Select a row before Edit or Delete .... Each type stores its coordinate system, color, opacity, target spacing, line width, and angle-label format. The angle format applies to longitude/latitude grids. Edits apply immediately after the editor accepts them. Delete requires confirmation. A deleted active type leaves the grid hidden.
+
+Longitude/latitude labels support decimal degrees, degrees and minutes, or degrees, minutes, and seconds. UTM and MGRS use WGS 84 and include the Norway and Svalbard zone exceptions. Polar regions use UPS. At broad zoom levels, these grids show zone boundaries. Closer views add lines in meters or MGRS subdivisions. Target spacing adapts to rounded intervals and bounded drawing work.
+
+Grid types and the active choice survive restart. The catalog holds at most 32 types. Existing longitude/latitude appearance values migrate from older map profiles. Marker icon scaling applies to existing local markers, CoT symbols, and data points. Marker radius applies to existing local markers. Active previews also repaint after these changes.

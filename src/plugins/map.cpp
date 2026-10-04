@@ -1,5 +1,7 @@
 #include "core/data.h"
+#include "core/grid_types.h"
 #include "core/interfaces.h"
+#include "core/map_decorations.h"
 #include "core/map_grid.h"
 #include "core/map_label.h"
 #include "core/map_selection.h"
@@ -10,6 +12,7 @@
 #include "core/single_line_label.h"
 #include "core/store.h"
 #include "core/tiles.h"
+#include "core/toolbar.h"
 #include "core/ui_icons.h"
 
 #include <QCollator>
@@ -133,6 +136,18 @@ public:
     MapWidget(Store &store, QList<MapLayer *> layers, QWidget *parent)
         : QOpenGLWidget(parent), store_(store), layers_(std::move(layers))
     {
+        grids_ = new GridTypes(this);
+        connect(grids_, &GridTypes::changed, this, qOverload<>(&MapWidget::update));
+        const auto decorationAction = [this](const QString &text, const QString &name) {
+            auto *action = new QAction(text, this);
+            action->setObjectName(name);
+            action->setCheckable(true);
+            action->setChecked(true);
+            connect(action, &QAction::toggled, this, qOverload<>(&MapWidget::update));
+            return action;
+        };
+        scaleLegend_ = decorationAction(tr("Map scale"), QStringLiteral("mapScaleAction"));
+        zoomIndicator_ = decorationAction(tr("Map zoom level"), QStringLiteral("mapZoomAction"));
         navigationLock_ = new QAction(tr("Lock"), this);
         navigationLock_->setObjectName(QStringLiteral("mapNavigationLock"));
         navigationLock_->setCheckable(true);
@@ -143,7 +158,7 @@ public:
             dragging_ = false;
             moved_ = true;
             wheelRemainder_ = 0;
-            if (!tools_ || !tools_->coordinateGridActive()) {
+            if (!tools_ || !tools_->guidesActive()) {
                 unsetCursor();
             }
             navigationLock_->setIcon(uiIcon(locked ? UiIcon::Lock : UiIcon::Unlock));
@@ -334,6 +349,10 @@ public:
         return status;
     }
 
+    QList<QAction *> viewActions() const
+    {
+        return {scaleLegend_, zoomIndicator_};
+    }
     QAction *navigationLockAction() const
     {
         return navigationLock_;
@@ -397,10 +416,8 @@ public:
                           0,
                           1,
                           2),
-            booleanSetting(QStringLiteral("gridVisible"), tr("Coordinate grid in marker mode")),
-            numberSetting(QStringLiteral("gridOpacity"), tr("Coordinate grid opacity"), 0, 1, 2),
-            numberSetting(
-                QStringLiteral("gridSpacing"), tr("Coordinate grid spacing (pixels)"), 80, 400),
+            booleanSetting(QStringLiteral("scaleLegend"), tr("Map scale")),
+            booleanSetting(QStringLiteral("zoomIndicator"), tr("Map zoom level")),
             booleanSetting(QStringLiteral("smooth"), tr("Smooth image scaling")),
             booleanSetting(QStringLiteral("antialias"), tr("Smooth vector edges"))};
     }
@@ -435,10 +452,8 @@ public:
             {QStringLiteral("wheelSteps"), wheelSteps_},
             {QStringLiteral("prefetchMargin"), prefetchMargin_}};
         values.insert(QStringLiteral("navigationKeysVersion"), 2);
-        values.insert(QStringLiteral("gridStyleVersion"), 2);
-        values.insert(QStringLiteral("gridVisible"), gridVisible_);
-        values.insert(QStringLiteral("gridOpacity"), gridOpacity_);
-        values.insert(QStringLiteral("gridSpacing"), gridSpacing_);
+        values.insert(QStringLiteral("scaleLegend"), scaleLegend_->isChecked());
+        values.insert(QStringLiteral("zoomIndicator"), zoomIndicator_->isChecked());
         for (size_t i = 0; i < KeyPaths.size(); ++i) {
             values.insert(KeyPaths[i], QKeySequence(keys_[i]).toString(QKeySequence::PortableText));
         }
@@ -477,12 +492,12 @@ public:
         opacity_ = preferenceNumber(values, QStringLiteral("opacity"), 1, 0, 1);
         attributionOpacity_ =
             preferenceNumber(values, QStringLiteral("attributionOpacity"), 0.55, 0, 1);
-        gridVisible_ = values.value(QStringLiteral("gridVisible")).toBool(true);
-        gridOpacity_ = preferenceNumber(values, QStringLiteral("gridOpacity"), 0.5, 0, 1);
-        if (!values.contains(QStringLiteral("gridStyleVersion")) && gridOpacity_ == 0.2) {
-            gridOpacity_ = 0.5;
+        grids_->migrate(values);
+        scaleLegend_->setChecked(values.value(QStringLiteral("scaleLegend")).toBool(true));
+        zoomIndicator_->setChecked(values.value(QStringLiteral("zoomIndicator")).toBool(true));
+        if (overlay_) {
+            overlay_->update();
         }
-        gridSpacing_ = preferenceNumber(values, QStringLiteral("gridSpacing"), 140, 80, 400);
         smooth_ = values.value(QStringLiteral("smooth")).toBool(true);
         antialias_ = values.value(QStringLiteral("antialias")).toBool(true);
         update();
@@ -562,9 +577,7 @@ protected:
         painter.setRenderHint(QPainter::Antialiasing, antialias_);
         const auto paintBase = [&] {
             tiles_.paint(painter, view_, opacity_, smooth_, missingOpacity_);
-            if (gridVisible_ && tools_ && tools_->coordinateGridActive()) {
-                paintMapGrid(painter, view_, gridOpacity_, gridSpacing_);
-            }
+            grids_->paint(painter, view_);
             if (dataSources_) {
                 dataSources_->paint(painter,
                                     view_,
@@ -605,6 +618,13 @@ protected:
                 selection_->paint(painter, view_);
             }
         }
+        paintMapDecorations(painter,
+                            view_,
+                            scaleLegend_->isChecked(),
+                            zoomIndicator_->isChecked(),
+                            zoomLimits().first,
+                            zoomLimits().second,
+                            property(MapOcclusionProperty).value<QRegion>());
         const auto source = sources_ ? sources_->activeSource() : QJsonObject{};
         painter.setPen(QColor("#c7d7e5"));
         updateStatus();
@@ -1309,9 +1329,6 @@ private:
     QPointer<QDialog> information_;
     QByteArray informationGeometry_;
     ToolOverlay *overlay_ = nullptr;
-    bool gridVisible_ = true;
-    double gridOpacity_ = 0.5;
-    double gridSpacing_ = 140;
     MapTools *tools_ = nullptr;
     MapSources *sources_ = nullptr;
     TileRenderer tiles_;
@@ -1330,6 +1347,8 @@ private:
     DataSources *dataSources_ = nullptr;
     QList<MapLayer *> layers_;
     QAction *navigationLock_;
+    QAction *scaleLegend_, *zoomIndicator_;
+    GridTypes *grids_;
     Viewport view_;
     QPointF cursor_;
     QPointF last_;
@@ -1352,6 +1371,7 @@ public:
     {
         auto *widget = new MapWidget(services.store, layers, parent);
         services.navigationLock = widget->navigationLockAction();
+        services.viewActions = widget->viewActions();
         widget->setMapSources(&services.maps);
         widget->setDataSources(services.data);
         widget->setSelection(services.selection);
@@ -1374,7 +1394,7 @@ public:
         auto *mapMenu = new QMenu(mapButton);
         mapMenu->setObjectName(QStringLiteral("mapProviderMenu"));
         mapButton->setMenu(mapMenu);
-        toolbar.addWidget(mapButton);
+        setToolbarSection(*toolbar.addWidget(mapButton), ToolbarSection::Providers, 0);
         const auto updateMapButton = [mapButton, mapSources] {
             const auto source = mapSources->activeSource();
             mapButton->setText(source.isEmpty() ? tr("No map provider")

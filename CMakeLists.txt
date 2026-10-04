@@ -10,6 +10,8 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Widgets Network OpenGLWidgets Concurrent)
 find_package(LibArchive REQUIRED)
+find_path(GEOGRAPHICLIB_INCLUDE_DIR GeographicLib/UTMUPS.hpp REQUIRED)
+find_library(GEOGRAPHICLIB_LIBRARY NAMES GeographicLib REQUIRED)
 include(CTest)
 include(GNUInstallDirs)
 option(SWAK_SANITIZERS "Enable address and undefined behavior sanitizers" OFF)
@@ -82,6 +84,10 @@ add_library(
     src/core/milstd2525_symbols.cpp
     src/core/marker_symbols.cpp
     src/core/marker_symbols.h
+    src/core/grid_types.cpp
+    src/core/grid_types.h
+    src/core/map_decorations.cpp
+    src/core/map_decorations.h
     src/core/map_grid.cpp
     src/core/map_grid.h
     src/core/object_editor.cpp
@@ -127,6 +133,9 @@ target_include_directories(swak_core PUBLIC src)
 target_link_libraries(
     swak_core PUBLIC swak_build LibArchive::LibArchive Qt6::Widgets Qt6::Network Qt6::Concurrent
 )
+
+target_include_directories(swak_core SYSTEM PRIVATE "${GEOGRAPHICLIB_INCLUDE_DIR}")
+target_link_libraries(swak_core PUBLIC "${GEOGRAPHICLIB_LIBRARY}")
 
 function(swak_plugin name file)
     add_library(${name} STATIC ${file})
@@ -200,7 +209,8 @@ install(FILES third_party/protozero/LICENSE.md third_party/protozero/LICENSE.fro
         DESTINATION ${CMAKE_INSTALL_DOCDIR}/protozero
 )
 install(
-    FILES docs/servers.md
+    FILES docs/GeographicLib-copyright.txt
+          docs/servers.md
           docs/usage.md
           docs/map-providers.md
           docs/data-providers.md

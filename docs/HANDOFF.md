@@ -1202,3 +1202,33 @@ Coverage passed ten suites and all 92 native cases in build/quality/20261004-222
 The refreshed report reaches 11679 of 12637 lines, 1144 of 1220 functions, and 16743 of 32086 branches. Every PredictionHistory, PredictTool, and deletion-helper function ran. Remaining gaps include expression bookkeeping in prediction arithmetic, cancellation of an Area corner deletion, missing deletion targets, and some locked-tool combinations. Existing gaps include client-key errors, startup rejection logging, and cache paths. Source analysis reports no unused first-party function. These results do not prove that all faults are absent.
 
 Final style evidence uses build/navigation-quality-style-finish.log. Final builds after the commit use build/navigation-release-committed.log and build/navigation-debug-committed.log. The release executable remains build/release/swak. These tests use Qt 6.8.2 and GCC 14.2.
+
+## 2026-10-04: Map tab, reference controls, and grid types
+
+The main view now uses a Map tab. The map retains its keyboard, mouse, lock, selection, and overlay behavior. The application title is SWAK. The old workspace phrase no longer appears in application text. The toolbar groups Map Providers, Servers, and Data providers before the creation tools. CoT Messages keeps its Clear menu action but no toolbar action.
+
+Marker radius and icon scaling repaint existing objects. Active previews also repaint. The regression test measures existing marker pixels before and after both changes. It also makes sure that the object count stays fixed.
+
+The map shows a locale-based scale at the lower left and a faded zoom indicator at the left center. View menu actions control both and survive restart. The controls move above bottom overlays. Scale calculation uses the latitude at the actual legend location. The map still uses its full viewport for projection and input.
+
+Grid Types replaces the marker-mode coordinate grid. It provides named longitude/latitude, UTM, and MGRS definitions through the shared Settings interfaces. Users can add, edit, delete, select, and hide types. The catalog holds at most 32 entries. Each entry stores color, opacity, spacing, width, coordinate system, and angle format. Older map grid appearance values migrate to the default definition. Missing active identifiers hide the grid. Grid visibility no longer depends on tool mode.
+
+GeographicLib supplies WGS 84 coordinate conversion. The new dependency avoids custom UTM, UPS, and MGRS conversion code. Builds find an installed development package without downloads. This host uses Debian 2.5-1 packages extracted under build/geographiclib and links the static library. Other hosts need libgeographiclib-dev. Read docs/dependencies.md and docs/build.md for the reason, license, and build instructions.
+
+UTM and MGRS drawing includes Norway and Svalbard zone exceptions and UPS polar regions within the map bounds. Broad views show zone boundaries. Closer views show bounded sampled coordinate lines. MGRS labels use original projected coordinates to avoid round-trip errors at cell boundaries. Label rectangles prevent overlap within each zone cell. The renderer catches coordinate-domain errors only.
+
+PluginServices now publishes view actions. ToolbarSection adds Providers. MapTools uses guidesActive for placement guides, independently of Grid Types. MapPanels publishes its occupied region through MapOcclusionProperty. The shared API documentation describes these changes. Updated manifests match the changed roles. AGENTS.md now requires a release rebuild after each commit.
+
+The initial 60-second workload failed while advancing accepted, mutated timestamps. The old test could cross expiry or future-time limits. The test now advances an explicit clock and extends synthetic expiry. It also reports the rejection reason. Production time validation remains unchanged. No input rejection becomes a success through this test change.
+
+Final native tests pass all 94 cases in build/mapview-gui-final.log. Focused tests pass at 200 percent display scaling in build/mapview-hidpi-final.log. Native screenshots show the Map tab, grouped selectors, scale above overlays, zoom ticks, and grid editor. All 51 first-party headers compile independently in build/mapview-headers.log. Builds use Qt 6.8.2 and GCC 14.2.
+
+Quick sanitizer mode passes ten suites in build/quality/20261004-230003-quick-61712. The full native sanitizer run passes 94 cases in build/quality/20261004-230227-gui-64609. It still fails with status 23 for the known Mesa leak: 240732 bytes in 1073 allocations. The final focused sanitizer tests also pass and report the same unsuppressed leak in build/mapview-sanitize-gap-final.log.
+
+The corrected 60-second workload passes in build/quality/20261004-230706-soak-67751. It completes 975 cycles with 17989632 bytes of peak memory growth. Its maximum heartbeat gap is 71 milliseconds. Idle CPU time is 0.023 seconds. This short test does not establish two-hour stability.
+
+Coverage passes ten suites and 94 native cases in build/quality/20261004-230425-coverage-65819. Final focused tests and the refreshed report cover radio selection, angle formats, hidden legacy grids, editor cancellation, and invalid scale bounds. Their log is build/mapview-coverage-gap-final.log. The report reaches 12145 of 13122 lines, 1186 of 1263 functions, and 17565 of 33636 branches. Every new grid and decoration function runs.
+
+Remaining new gaps include no-row editing, the full-catalog editor error, defensive conversion errors, and collapsed or degenerate scale paths. Some reported lines represent expression bookkeeping. Existing gaps include client-key errors, startup rejection logging, and cache paths. Source analysis reports no unused first-party function. It passes in build/quality/20261004-230905-analyze-79. Final style evidence uses build/mapview-quality-style-final.log.
+
+The final release build passes without compiler warnings in build/mapview-release-final.log. The commit is followed by release and debug builds with logs build/mapview-release-committed.log and build/mapview-debug-committed.log. The executable is build/release/swak. Hardware graphics, native Wayland, all locale/theme combinations, and two-hour desktop operation remain unqualified. This task rebuilds a development release, not a qualified production release.

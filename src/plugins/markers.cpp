@@ -183,6 +183,8 @@ public:
             emit changed();
         });
         connect(&editor_, &ObjectEditor::configurationChanged, this, [this] {
+            emit overlayChanged();
+            emit itemsChanged();
             if (selection_.item() && selection_.item()->owner == owner()) {
                 select(selection_.item()->id);
             }
@@ -207,7 +209,7 @@ public:
     {
         return mode_ != Mode::Idle;
     }
-    bool coordinateGridActive() const override
+    bool guidesActive() const override
     {
         return mode_ != Mode::Idle;
     }

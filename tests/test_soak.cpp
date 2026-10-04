@@ -239,7 +239,11 @@ private slots:
             for (int sample = 0; sample < 52; ++sample) {
                 tracedEvent.time = tracedEvent.time.addMSecs(100);
                 tracedEvent.longitude = static_cast<double>(sample) * 0.0001;
-                QVERIFY(store.accept(tracedEvent).isEmpty());
+                // Mutations can place time near the accepted expiry or future limit.
+                const auto sampleNow = qMax(QDateTime::currentDateTimeUtc(), tracedEvent.time);
+                tracedEvent.stale = qMax(tracedEvent.stale, sampleNow.addSecs(60));
+                const auto traceError = store.accept(tracedEvent, sampleNow);
+                QVERIFY2(traceError.isEmpty(), qPrintable(traceError));
             }
             // Valid mutations can extend the expiry time.
             auto latestStale = event.stale;

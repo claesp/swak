@@ -16,7 +16,6 @@
 #include <QSortFilterProxyModel>
 #include <QStyle>
 #include <QTableView>
-#include <QToolBar>
 
 #include <algorithm>
 
@@ -159,12 +158,11 @@ class TracksPlugin final : public QObject,
                            public Plugin,
                            public MapLayer,
                            public ToolPlugin,
-                           public MenuPlugin,
-                           public ToolbarPlugin
+                           public MenuPlugin
 {
     Q_OBJECT
     Q_PLUGIN_METADATA(IID "org.swak.Plugin/2.0" FILE "tracks/MANIFEST")
-    Q_INTERFACES(swak::Plugin swak::MapLayer swak::ToolPlugin swak::MenuPlugin swak::ToolbarPlugin)
+    Q_INTERFACES(swak::Plugin swak::MapLayer swak::ToolPlugin swak::MenuPlugin)
 public:
     QString name() const override
     {
@@ -173,16 +171,6 @@ public:
     void populateMenu(PluginServices &services, QMenu &menu) override
     {
         menu.addAction(createClearAction(services.store, menu));
-    }
-    void populateToolbar(PluginServices &services, QToolBar &toolbar, QMenu *pluginMenu) override
-    {
-        auto *clear = pluginMenu
-                          ? pluginMenu->findChild<QAction *>(QStringLiteral("clearEventsAction"))
-                          : nullptr;
-        if (!clear) {
-            clear = createClearAction(services.store, toolbar);
-        }
-        toolbar.addAction(clear);
     }
     int order() const override
     {

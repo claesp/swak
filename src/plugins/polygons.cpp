@@ -188,7 +188,7 @@ public:
     {
         return editor_.fillOpacity;
     }
-    bool coordinateGridActive() const override
+    bool guidesActive() const override
     {
         return drawing_ || moving_ >= 0;
     }

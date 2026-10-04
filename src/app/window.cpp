@@ -36,6 +36,7 @@
 #include <QShowEvent>
 #include <QSizeGrip>
 #include <QStatusBar>
+#include <QTabWidget>
 #include <QToolBar>
 #include <QVBoxLayout>
 
@@ -137,7 +138,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
 {
     auto *activity = new ActivityModel(this);
     configureLogging(preferences_.document().value(QStringLiteral("logging")).toObject());
-    setWindowTitle(tr("SWAK | Cursor-on-Target workspace"));
+    setWindowTitle(tr("SWAK"));
     resize(1280, 800);
     setMinimumSize(850, 600);
     Codec *codec = nullptr;
@@ -178,15 +179,21 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
                             collections,
                             identity,
                             servers};
+    auto *mainViews = new QTabWidget(this);
+    mainViews->setObjectName(QStringLiteral("mainViews"));
+    mainViews->setDocumentMode(true);
+    setCentralWidget(mainViews);
+    QWidget *mainView = nullptr;
     if (view) {
-        setCentralWidget(view->create(services, layers, this));
+        mainView = view->create(services, layers, mainViews);
     } else {
         auto *empty = new QLabel(tr("No map view plugin is available."), this);
         empty->setObjectName(QStringLiteral("missingMap"));
         empty->setAlignment(Qt::AlignCenter);
         empty->setWordWrap(true);
-        setCentralWidget(empty);
+        mainView = empty;
     }
+    mainViews->addTab(mainView, tr("Map"));
     mapSources->setObjectName(QStringLiteral("mapSources"));
     auto *fileMenu = menuBar()->addMenu(tr("&File"));
     fileMenu->setObjectName(QStringLiteral("fileMenu"));
@@ -241,7 +248,10 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     editMenu->addAction(undo);
     auto *viewMenu = menuBar()->addMenu(tr("&View"));
     viewMenu->setObjectName(QStringLiteral("viewMenu"));
-    panels_ = new MapPanels(centralWidget());
+    for (auto *action : services.viewActions) {
+        viewMenu->addAction(action);
+    }
+    panels_ = new MapPanels(mainView);
     QHash<QObject *, QDockWidget *> pluginDocks;
     const auto createDock =
         [this](const QString &title, const QString &id, QWidget *content, Qt::DockWidgetArea area) {
@@ -538,7 +548,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         auto *dialog =
             new QMessageBox(QMessageBox::Information,
                             tr("About SWAK"),
-                            tr("SWAK\nVersion %1\n\nA native Cursor-on-Target workspace.\nReceive, "
+                            tr("SWAK\nVersion %1\n\nReceive, "
                                "generate, and present CoT messages with built-in plugins.")
                                 .arg(QStringLiteral(SWAK_VERSION)),
                             QMessageBox::Close,
@@ -594,7 +604,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     };
     connect(mapTools, &MapTools::changed, toolStatus, updateToolStatus);
     updateToolStatus();
-    if (auto *provider = dynamic_cast<StatusProvider *>(centralWidget())) {
+    if (auto *provider = dynamic_cast<StatusProvider *>(mainView)) {
         if (auto *widget = provider->createStatusWidget(statusBar())) {
             separator();
             statusBar()->addWidget(widget, 1);
@@ -637,10 +647,8 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
                 ? tr("Map provider cleared.")
                 : tr("Map provider: %1").arg(source.value(QStringLiteral("name")).toString()));
     });
-    logMessage(Severity::Info,
-               Urgency::Routine,
-               QStringLiteral("swak.application"),
-               tr("Workspace ready."));
+    logMessage(
+        Severity::Info, Urgency::Routine, QStringLiteral("swak.application"), tr("SWAK ready."));
     preferencesStatus_->setText(preferences_.error());
     findChild<QFrame *>(QStringLiteral("preferencesSeparator"))
         ->setVisible(!preferences_.error().isEmpty());

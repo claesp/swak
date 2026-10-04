@@ -1,5 +1,6 @@
 #pragma once
 #include "core/logging.h"
+#include "core/toolbar.h"
 #include "core/ui_icons.h"
 
 #include <QMenu>
@@ -24,7 +25,9 @@ void addProviderToolbar(QToolBar &toolbar,
     auto *menu = new QMenu(button);
     menu->setObjectName(name + QStringLiteral("Menu"));
     button->setMenu(menu);
-    toolbar.addWidget(button);
+    setToolbarSection(*toolbar.addWidget(button),
+                      ToolbarSection::Providers,
+                      name.contains(QStringLiteral("server"), Qt::CaseInsensitive) ? 1 : 2);
     QObject::connect(menu, &QMenu::aboutToShow, menu, [menu, &sources, &manage] {
         menu->clear();
         const auto records = sources.sources();

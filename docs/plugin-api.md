@@ -212,7 +212,7 @@ Overlay painting does not request map tile painting. The view refreshes the over
 `MapTool::statusText` returns a short active-mode indicator or empty text. `MapTools::statusText` combines these indicators. The host reserves a separate status area and refreshes it on `MapTools::changed`. Plugins emit `changed` when a mode starts or ends. The marker tool returns M during placement and movement. Pointer-only updates do not refresh this area.
 
 
-`MapTool::coordinateGridActive` requests the coordinate grid during an active tool mode. `MapTools` combines these requests. The view draws the grid only when a tool requests it and the user enables it. Mode changes emit `changed`, so grid visibility follows activation and cancellation.
+`MapTool::guidesActive` reports active placement or movement guides. `MapTools` combines these requests for cursor behavior. Grid Types controls coordinate grids independently of tools.
 
 
 # Map overlay panels
@@ -389,3 +389,18 @@ MapPanels consumes unhandled keyboard and wheel events after child controls proc
 The shared confirmDeletion helper uses plain text and bounds the displayed name to 256 characters. Enter activates Delete. Escape activates Cancel. deleteObject captures the object identity before the dialog and delegates accepted deletion to UserObjects. Model removal remains available without a dialog for noninteractive work. Interactive deletion paths must use the shared helper. Context actions use menuOrder to place Edit before Delete ... while other entries retain locale ordering.
 
 Predict draws successive segments from the source to 1 minute, then 10 minutes, then 30 minutes. Perpendicular endpoint marks measure 14, 10, and 6 logical pixels. Forecast labels are absent. Areas expose their Restricted flag as a derived Information property.
+
+
+# Main view and coordinate grids
+
+The host places its ViewPlugin widget in the Map tab of mainViews. MapPanels remains a child of that widget, so its overlay coordinates do not include the tab bar. StatusProvider still receives the actual view. Hiding the tab cancels map interaction and stops panning through the existing view lifecycle.
+
+PluginServices::viewActions publishes optional view-owned actions for the View menu. The map publishes Map scale and Map zoom level. These actions share state with the map configuration fields and persist through SettingsParticipant.
+
+ToolbarSection::Providers groups map, server, and data selectors before creation and measurement actions. CoT Messages retains MenuPlugin but no longer implements ToolbarPlugin. Its MANIFEST matches these roles.
+
+GridTypes is a map-owned SettingsParticipant and SettingsWidgetProvider. Its component identifier is org.swak.grids. It stores at most 32 validated named records and one active identifier. The geographic, utm, and mgrs system identifiers select renderers. All records use the same editor and catalog operations. Missing active identifiers hide the grid. Legacy map grid values migrate only before the catalog receives restored or explicit user state.
+
+Each record contains name, system, color, opacity, spacing, width, and format. The renderer bounds zones, per-axis lines, and line samples. GeographicLib supplies UTM/UPS conversion and MGRS notation. Drawing uses the current Viewport and logical pixels. This extends the same-build static API without a new plugin loading mechanism.
+
+MapPanels publishes its occupied region through the shared MapOcclusionProperty widget property. The map positions reference controls above bottom overlays on the left edge. Map coordinates and click targets still use the complete viewport. Scale distance uses the legend position, not a resized map projection.
