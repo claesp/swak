@@ -112,6 +112,20 @@ void openPicker(QLineEdit *field, CotField kind)
     dialog->open();
 }
 }
+QString cotFieldDescription(CotField kind, const QString &code)
+{
+    if (code.isEmpty()) return translated("Not specified");
+    const auto catalog = choices(kind);
+    QStringList labels; QString prefix;
+    for (const auto &part : code.split('-')) {
+        if (!prefix.isEmpty()) prefix += '-';
+        prefix += part;
+        const auto found = std::find_if(catalog.cbegin(), catalog.cend(), [&prefix](const Choice &choice) { return choice.code == prefix; });
+        if (found == catalog.cend()) { labels.append(translated("Unknown category")); break; }
+        labels.append(found->label);
+    }
+    return labels.join(QStringLiteral(" / ")) + QStringLiteral(" (%1)").arg(code);
+}
 QWidget *cotFieldEditor(QLineEdit *field, CotField kind)
 {
     auto *container = new QWidget(field->parentWidget());

@@ -196,12 +196,12 @@ public:
         for (const auto &item : objects_.items()) {
             if (item.type != QStringLiteral("polygon") || (editor_.draft() && editor_.draft()->id == item.id)) continue;
             const auto points = polygonVertices(item.geometry); draw(painter, screenPolygon(points, view), QColor(item.color));
-            painter.setPen(Qt::black);
+            painter.setPen(Qt::white);
             const auto label = screenPoint(polygonLabelPoint(points), view);
             const auto text = painter.fontMetrics().elidedText(item.title, Qt::ElideRight, 240);
             const auto bounds = painter.fontMetrics().boundingRect(text).adjusted(-4, -2, 4, 2);
             QRectF box(label.x() - bounds.width() / 2.0, label.y() - bounds.height() / 2.0, bounds.width(), bounds.height());
-            painter.fillRect(box, QColor(255, 255, 255, 100)); painter.drawText(box, Qt::AlignCenter, text);
+            painter.fillRect(box, QColor(0, 0, 0, 170)); painter.drawText(box, Qt::AlignCenter, text);
         }
         if (editor_.draft() && moving_ < 0) draw(painter, screenPolygon(polygonVertices(editor_.draft()->geometry), view), QColor(editor_.draft()->color));
     }

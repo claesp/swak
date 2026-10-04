@@ -24,7 +24,7 @@ void TrackMotion::restorePreferences(const QJsonObject &v)
     fade_ = preferenceInteger(v, QStringLiteral("fade"), 600, 100, 5000);
     staleSeconds_ = preferenceInteger(v, QStringLiteral("staleSeconds"), 10, 0, 300);
     for (auto &record : records_) { record.from = record.to; record.start = time() - std::max(duration_, fade_); record.initialOpacity = 1; record.velocity = {}; record.horizon = 0; }
-    if (!records_.isEmpty()) timer_.start();
+    if (!records_.isEmpty()) if (!paused_) timer_.start();
     emit changed();
 }
 VisualEvent TrackMotion::visual(const Motion &m, qint64 now) const
@@ -75,6 +75,7 @@ void TrackMotion::update(const Event &event, qint64 now)
         }
         records_.insert(event.uid, {event, target, target, now - std::max(duration_, fade_)}); return;
     }
+    if (paused_) { *it = {event, target, target, now - std::max(duration_, fade_)}; return; }
     auto &record = *it;
     if (record.to == target && record.stale < 0 && record.velocity.isNull()) { record.event = event; return; }
     if (record.teleport && record.stale < 0 && now - record.start < fade_) {
@@ -102,10 +103,11 @@ void TrackMotion::expire(const QString &uid, qint64 now)
     if (now < 0) now = time();
     const auto current = visual(*it, now);
     it->from = it->to = current.world; it->initialOpacity = 1; it->start = now - std::max(duration_, fade_); it->stale = now; it->velocity = {}; it->horizon = 0;
-    timer_.start();
+    if (!paused_) timer_.start();
 }
 QList<VisualEvent> TrackMotion::snapshot(qint64 now) const
 {
+    if (paused_) return frozen_;
     if (now < 0) now = time();
     QList<VisualEvent> result; result.reserve(records_.size());
     for (const auto &record : records_) { auto v = visual(record, now); if (v.opacity > 0) result.append(std::move(v)); }
@@ -120,5 +122,17 @@ void TrackMotion::advance()
     }
     emit changed(); if (!active) timer_.stop();
 }
-void TrackMotion::clear() { records_.clear(); timer_.stop(); emit changed(); }
+void TrackMotion::setPaused(bool paused)
+{
+    if (paused == paused_) return;
+    if (paused) { frozen_ = snapshot(); paused_ = true; timer_.stop(); emit changed(); return; }
+    paused_ = false; frozen_.clear();
+    for (auto &record : records_) if (record.stale < 0) {
+        record.from = record.to; record.start = time() - std::max(duration_, fade_);
+        record.teleport = false; record.initialOpacity = 1; record.velocity = {}; record.horizon = 0;
+    }
+    advance();
+    if (std::any_of(records_.cbegin(), records_.cend(), [](const Motion &record) { return record.stale >= 0; })) timer_.start();
+}
+void TrackMotion::clear() { frozen_.clear(); records_.clear(); timer_.stop(); emit changed(); }
 }

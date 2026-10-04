@@ -595,7 +595,7 @@ private slots:
         QVERIFY(tls->isVisible());
         QVERIFY(tls->text().contains(QStringLiteral("HTTPS")));
         for (auto *label : {cache, zoom, pointer, tls, tileStatus}) QVERIFY(!label->text().contains('|'));
-        QCOMPARE(window.findChildren<QFrame *>(QStringLiteral("mapStatusSeparator")).size(), 4);
+        QCOMPARE(window.findChildren<QFrame *>(QStringLiteral("mapStatusSeparator")).size(), 5);
         source.insert(QStringLiteral("ignoreTls"), false);
         QVERIFY(sources->put(id, source).isEmpty());
         QVERIFY(QTest::qWaitFor([&] { return tls->parentWidget()->isHidden(); }));
@@ -2220,6 +2220,36 @@ private slots:
         swak::SettingsDialog reopened(pages, [] { return QString{}; }, nullptr);
         reopened.restoreNavigation(dialog.navigation());
         QCOMPARE(reopened.navigation(), dialog.navigation());
+    }
+    void pauseAndInformationTrace()
+    {
+        QTemporaryDir directory; swak::Window window(directory.filePath(QStringLiteral("pause.json")), QPluginLoader::staticInstances());
+        window.show(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *map = window.findChild<QOpenGLWidget *>(); QVERIFY(map);
+        swak::Event event; event.uid = QStringLiteral("paused"); event.callsign = QStringLiteral("Paused unit"); event.type = QStringLiteral("a-f-G-U"); event.how = QStringLiteral("m-s");
+        event.time = event.start = QDateTime::currentDateTimeUtc(); event.stale = event.time.addSecs(60); QVERIFY(window.store().accept(event).isEmpty());
+        const auto before = window.store().motion().snapshot().first().world;
+        map->setFocus(); QTest::keyClick(map, Qt::Key_Space); QVERIFY(window.store().motion().paused());
+        event.longitude = 1; event.time = event.time.addMSecs(100); QVERIFY(window.store().accept(event).isEmpty());
+        QCOMPARE(window.store().events().first().longitude, 1.0); QCOMPARE(window.store().motion().snapshot().first().world, before);
+        QTest::keyClick(map, Qt::Key_Space); QVERIFY(!window.store().motion().paused());
+        QCOMPARE(window.store().motion().snapshot().first().world, swak::project(0, 1));
+        auto *selection = window.findChild<swak::MapSelection *>(); QVERIFY(selection);
+        swak::MapItem item; item.owner = QStringLiteral("org.swak.events"); item.id = event.uid; item.label = event.callsign; item.type = event.type; item.properties.insert(QStringLiteral("How"), event.how);
+        selection->select(item);
+        QCOMPARE(window.findChild<QLabel *>(QStringLiteral("informationType"))->text(), QStringLiteral("Object / Friend / Ground / Unit (a-f-G-U)"));
+        QCOMPARE(window.findChild<QTableWidget *>(QStringLiteral("informationProperties"))->item(0, 1)->text(), QStringLiteral("Machine generated / Simulation (m-s)"));
+        QCOMPARE(swak::cotFieldDescription(swak::CotField::How, QStringLiteral("x-z")), QStringLiteral("Unknown category (x-z)"));
+        QCOMPARE(swak::cotFieldDescription(swak::CotField::Type, QStringLiteral("a-f-G-Z")), QStringLiteral("Object / Friend / Ground / Unknown category (a-f-G-Z)"));
+        auto *box = window.findChild<QCheckBox *>(QStringLiteral("information/traceMarker")); QVERIFY(box); QVERIFY(!box->isChecked()); box->click();
+        auto *trace = dynamic_cast<swak::SettingsParticipant *>(window.findChild<QObject *>(QStringLiteral("traceTool"))); QVERIFY(trace);
+        QCOMPARE(trace->savePreferences().value(QStringLiteral("targets")).toArray().size(), 1);
+        QVERIFY(QTest::qWaitFor([&] { return window.findChild<QCheckBox *>(QStringLiteral("information/traceMarker"))->isChecked(); }));
+        QVERIFY(window.grab().save(QStringLiteral("information-trace.png")));
+        window.findChild<QCheckBox *>(QStringLiteral("information/traceMarker"))->click();
+        QCOMPARE(trace->savePreferences().value(QStringLiteral("targets")).toArray().size(), 0);
+        item.kind = swak::MapItem::Kind::Polygon; item.owner = QStringLiteral("org.swak.polygons"); selection->select(item);
+        QVERIFY(!window.findChild<QCheckBox *>(QStringLiteral("information/traceMarker")));
     }
     void resetTraceSettings()
     {

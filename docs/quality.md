@@ -124,3 +124,5 @@ The simulation suite tests the separate CoT emulator. It covers deterministic ro
 The standard source report covers application code. For the development emulator, also inspect tools/cot_emulator.cpp and tools/cot_simulation.cpp with the debug compilation database. Do not interpret unused functions from a partial source scan as dead application code. Read the latest handoff for emulator load results and remaining paths without tests.
 
 The workload now enables 128 trace identities. Each cycle adds 52 positions to one identity, then expires the source. This exercises bounded trace history, repeated clearing, and shutdown. Native tests inspect fading, the context action, preference restoration, TLS field dependencies, and explicit Information closure. Motion tests cover continuity, bounded prediction, and stale freeze.
+
+The motion tests exercise pause, incoming position updates, new markers, immediate resume, expiry, and clearing. Native tests exercise the Space shortcut and Information Trace control. They also inspect CoT category descriptions and preserved unknown codes. The UDP workload allows two seconds for receive progress after each paced burst.

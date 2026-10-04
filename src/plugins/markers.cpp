@@ -1,3 +1,4 @@
+#include "core/map_label.h"
 #include "core/ui_icons.h"
 #include "core/marker_symbols.h"
 #include "core/marker_collections.h"
@@ -239,6 +240,7 @@ private:
     void paint(QPainter &painter, const UserObject &item, QPointF point) const {
         if (const auto symbol = collections_.symbol(item.collection, item.symbol)) paintCollectionSymbol(painter, *symbol, point, editor_.radius(), QColor(item.color));
         else paintMarkerSymbol(painter, {}, point, editor_.radius(), QColor(item.color));
+        paintMapLabel(painter, point + QPointF(16, -8), item.title);
     }
     void select(const QString &id) {
         const auto record = objects_.find(id); if (!record || record->type != QStringLiteral("circle")) return;

@@ -20,6 +20,7 @@ public:
     void acceptBatch(const QList<Event> &events);
     void expire(const QDateTime &now = QDateTime::currentDateTimeUtc());
     void clear();
+    TrackMotion &motion() { return *motion_; }
     const TrackMotion &motion() const { return *motion_; }
     const QList<Event> &events() const { return events_; }
     void select(const QString &uid);

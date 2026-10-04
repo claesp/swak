@@ -297,3 +297,13 @@ Close Information with its top-right button to clear selection. Incoming updates
 Open File > Settings and select a standard configuration section. Select Restore section defaults. Select Apply or OK to save the default values. Select Cancel to discard the staged reset. A reset affects only the fields in that section and tab. Provider management tables keep their existing add, edit, and delete controls.
 
 For Trace, the defaults are 50 positions, 0.70 maximum opacity, and 1.5 pixels of line width. The reset preserves traced marker identities and current histories within the restored limit. Older saved profiles can contain ten positions and 0.35 opacity.
+
+# Pause CoT positions
+
+With the map focused, press Space to pause displayed CoT positions. Press Space again to resume. The status bar shows CoT positions paused during the pause. Reception and the message store continue operating. Resume places each current marker at its latest received position without animation. Later updates use normal animation. New markers appear after resume. Stale records continue aging and disappear according to the configured retention rules.
+
+File > Settings > Keybindings > Map controls the pause shortcut. Holding the key does not repeatedly toggle pause. A restart starts with updates enabled. Pause does not change local marker editing or provider refreshes.
+
+Information now contains a Trace checkbox for supported CoT and local point markers. It uses the same state as the right-click Trace command. Marker labels use white text on a dark translucent background.
+
+Information describes CoT Type and How with names from the shared selector catalog. It keeps the complete original code in parentheses. Unknown categories remain marked as unknown and retain their original codes. For example, m-s appears as Machine generated / Simulation (m-s).

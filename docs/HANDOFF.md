@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 4, 2026: Read “Restore section defaults” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 4, 2026: Read “Paused CoT positions and Information tracing” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -996,3 +996,22 @@ The GUI regression exercises reset, cancellation, application, preserved trace i
 Ten sanitizer suites passed in build/quality/20261004-165620-quick-105479. Source analysis passed in build/quality/20261004-165621-analyze-3. All 79 native GUI cases passed in build/quality/20261004-165752-gui-106139. The GUI diagnostic still reports the existing Mesa leak of 240732 bytes in 1073 allocations. The inspected trace-reset.png image shows the reset control and default values. The new regression directly exercises numeric reset fields. Boolean, text, key, and choice reset branches retain direct test gaps.
 
 Coverage passed ten suites and 79 GUI cases in build/quality/20261004-165943-coverage-106697. The 60-second workload passed in build/quality/20261004-165829-soak-106556. It completed 1131 cycles with 17117184 bytes of peak memory growth and a maximum heartbeat gap of 46 milliseconds. Idle CPU time was 0.019 seconds. Two-hour operation and hardware graphics remain unqualified. The release build passed in build/reset-release.log. The final rebuild after the commit uses build/reset-release-final.log.
+
+
+## 2026-10-04: Paused CoT positions and Information tracing
+
+Marker labels now use white text on a dark translucent background. Local point markers also show their titles. Areas and downloaded data labels use the same contrast scheme. Base vector-map labels retain their provider rendering.
+
+Space toggles displayed CoT positions when the map has focus. The configurable shortcut appears under Map in Keybindings. TrackMotion retains a bounded frozen snapshot while Store continues accepting messages. Resume clears prediction and interpolation and shows the latest retained positions immediately. New messages then animate normally. Pause state is not persisted. The status bar uses a separate pause field.
+
+Information exposes Trace through generic MapTool contributions. Context menus and Information share the Trace action implementation. A dedicated actionsChanged signal refreshes controls after toggles or clearing. Continuous position updates do not recreate the checkbox for the same selection. The focused motion and GUI tests passed in build/pause-motion.log and build/pause-focused.log.
+
+The user also requested readable CoT Type and How fields. cotFieldDescription reuses the selector catalog and appends the original code in parentheses. Unknown categories remain explicit. Information applies this formatting only to CoT objects. Live selection refresh also updates Type and How from the latest message. Tests cover known categories and unknown suffixes.
+
+The initial full runs exposed label padding that touched a selected symbol and an outdated separator-count assertion. Label text now starts farther from point symbols. The status test includes the new pause section. The final analysis passed in build/quality/20261004-184608-analyze-4. The focused tests exercise reception during pause, immediate resume, new objects, expiry, clearing, and Information tracing. Extended pause under high traffic and physical GPU timing retain qualification gaps.
+
+The corrected core sanitizer suite passed 47 cases in build/pause-core-final.log. All 80 native GUI cases passed in build/quality/20261004-185108-gui-116082. The GUI diagnostic still reports the existing Mesa leak of 240732 bytes in 1073 allocations. Inspected images show white marker labels, Information tracing, and readable CoT categories.
+
+The 60-second workload passed in build/quality/20261004-184601-soak-113718. It completed 1130 cycles with 17903616 bytes of peak memory growth and an 80 millisecond maximum heartbeat gap. The first coverage run failed its short UDP progress assertion. The workload now allows a bounded two-second receive wait after its existing pacing delay. Later evidence records the rerun.
+
+Final coverage passed ten suites and 80 GUI cases in build/quality/20261004-185143-coverage-116490. The release build passed in build/pause-release-complete.log. The rebuild after the commit uses build/pause-release-final.log. The user next requested Circle, Distance, and Line tools. That work follows in a separate change.

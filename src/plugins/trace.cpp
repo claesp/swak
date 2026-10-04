@@ -54,11 +54,12 @@ public:
             while (record.points.size() > limit_) record.points.removeFirst();
             next.insert(name, record);
         }
-        records_ = std::move(next); refresh(); emit changed();
+        records_ = std::move(next); refresh(); emit changed(); emit actionsChanged();
     }
     bool handle(QEvent &, const Viewport &, QWidget &) override { return false; }
     bool cancel() override { return false; }
-    void clear() { records_.clear(); emit changed(); }
+    void clear() { records_.clear(); emit changed(); emit actionsChanged(); }
+    void populateInformationMenu(const MapItem &item, QMenu &menu) override { populateContextMenu(item, menu); }
     void populateContextMenu(const MapItem &item, QMenu &menu) override {
         if (item.kind != MapItem::Kind::Point || !supported(item.owner)) return;
         const auto name = key(item.owner, item.id);
@@ -68,7 +69,7 @@ public:
         connect(action, &QAction::triggered, this, [this, owner = item.owner, id = item.id, name](bool active) {
             if (!active) records_.remove(name);
             else if (!records_.contains(name) && records_.size() < MaxTraces) records_.insert(name, {owner, id, {}, Qt::white});
-            refresh(); emit changed();
+            refresh(); emit changed(); emit actionsChanged();
         });
     }
     void paint(QPainter &painter, const Viewport &view) const override {

@@ -150,7 +150,7 @@ private slots:
             }
             QVERIFY(preferences.save({{QStringLiteral("version"), 1}, {QStringLiteral("cycle"), cycles}}));
             QTest::qWait(40);
-            QVERIFY2(store.rowCount() > 0, "The receiver made no progress.");
+            QVERIFY2(QTest::qWaitFor([&] { return store.rowCount() > 0; }, 2000), "The receiver made no progress.");
             store.select(event.uid);
             auto tracedEvent = event;
             for (const auto &received : store.events()) if (received.uid == event.uid) tracedEvent = received;

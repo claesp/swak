@@ -20,6 +20,8 @@ public:
     void update(const Event &event, qint64 now = -1);
     void expire(const QString &uid, qint64 now = -1);
     void clear();
+    bool paused() const { return paused_; }
+    void setPaused(bool paused);
     QList<VisualEvent> snapshot(qint64 now = -1) const;
     qint64 time() const { return clock_.elapsed(); }
 signals:
@@ -29,6 +31,8 @@ private:
     VisualEvent visual(const Motion &motion, qint64 now) const;
     void advance();
     QHash<QString, Motion> records_;
+    QList<VisualEvent> frozen_;
+    bool paused_ = false;
     QElapsedTimer clock_;
     QTimer timer_;
     int duration_ = 600;

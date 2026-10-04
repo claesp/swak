@@ -46,9 +46,9 @@
 
 namespace swak {
 namespace {
-const std::array<QString, 14> KeyPaths{QStringLiteral("panNorthKey"), QStringLiteral("panWestKey"), QStringLiteral("panSouthKey"), QStringLiteral("panEastKey"), QStringLiteral("zoomInKey"), QStringLiteral("zoomOutKey"), QStringLiteral("resetViewKey"), QStringLiteral("zoomPlusKey"), QStringLiteral("zoomEqualKey"), QStringLiteral("zoomMinusKey"),
-    QStringLiteral("stepWestKey"), QStringLiteral("stepEastKey"), QStringLiteral("stepNorthKey"), QStringLiteral("stepSouthKey")};
-const std::array<int, 14> DefaultKeys{Qt::Key_Up, Qt::Key_Left, Qt::Key_Down, Qt::Key_Right, Qt::Key_Q, Qt::Key_E, Qt::Key_Home, Qt::Key_Plus, Qt::Key_Equal, Qt::Key_Minus, 0, 0, 0, 0};
+const std::array<QString, 15> KeyPaths{QStringLiteral("panNorthKey"), QStringLiteral("panWestKey"), QStringLiteral("panSouthKey"), QStringLiteral("panEastKey"), QStringLiteral("zoomInKey"), QStringLiteral("zoomOutKey"), QStringLiteral("resetViewKey"), QStringLiteral("zoomPlusKey"), QStringLiteral("zoomEqualKey"), QStringLiteral("zoomMinusKey"),
+    QStringLiteral("stepWestKey"), QStringLiteral("stepEastKey"), QStringLiteral("stepNorthKey"), QStringLiteral("stepSouthKey"), QStringLiteral("pauseMarkersKey")};
+const std::array<int, 15> DefaultKeys{Qt::Key_Up, Qt::Key_Left, Qt::Key_Down, Qt::Key_Right, Qt::Key_Q, Qt::Key_E, Qt::Key_Home, Qt::Key_Plus, Qt::Key_Equal, Qt::Key_Minus, 0, 0, 0, 0, Qt::Key_Space};
 int navigationKey(const QString &text)
 {
     if (text.isEmpty() || text.size() > 32) return 0;
@@ -56,7 +56,7 @@ int navigationKey(const QString &text)
     if (sequence.count() != 1 || sequence[0].keyboardModifiers() != Qt::NoModifier) return 0;
     const int key = sequence[0].key();
     return ((key >= Qt::Key_A && key <= Qt::Key_Z) || (key >= Qt::Key_0 && key <= Qt::Key_9)
-        || (key >= Qt::Key_F1 && key <= Qt::Key_F12) || (key >= Qt::Key_Left && key <= Qt::Key_Down) || key == Qt::Key_Home || key == Qt::Key_Plus || key == Qt::Key_Equal || key == Qt::Key_Minus) ? key : 0;
+        || (key >= Qt::Key_F1 && key <= Qt::Key_F12) || (key >= Qt::Key_Left && key <= Qt::Key_Down) || key == Qt::Key_Space || key == Qt::Key_Home || key == Qt::Key_Plus || key == Qt::Key_Equal || key == Qt::Key_Minus) ? key : 0;
 }
 }
 class ToolOverlay final : public QWidget {
@@ -108,14 +108,16 @@ public:
                 QDesktopServices::openUrl(url);
         });
         std::sort(layers_.begin(), layers_.end(), [](const auto *a, const auto *b) { return a->order() < b->order(); });
-        connect(&store_.motion(), &TrackMotion::changed, this, [this] { update(); });
+        connect(&store_.motion(), &TrackMotion::changed, this, [this] { updateStatus(); update(); });
         connect(&store_, &Store::changed, this, [this] {
+            if (store_.motion().paused()) { update(); return; }
             if (selection_ && selectedSource_ == QStringLiteral("cot") && selection_->item()) {
                 auto item = *selection_->item();
                 const auto &events = store_.events();
                 const auto found = std::find_if(events.cbegin(), events.cend(), [&item](const Event &event) { return event.uid == item.id; });
                 if (found == events.cend()) selection_->clear();
                 else {
+                    item.type = found->type; item.properties.insert(QStringLiteral("How"), found->how);
                     item.point = project(found->latitude, found->longitude); item.label = found->callsign.isEmpty() ? found->uid : found->callsign;
                     item.properties.insert(QStringLiteral("Latitude"), found->latitude); item.properties.insert(QStringLiteral("Longitude"), found->longitude);
                     item.properties.insert(QStringLiteral("Time"), found->time.toString(Qt::ISODateWithMs)); item.properties.insert(QStringLiteral("Stale"), found->stale.toString(Qt::ISODateWithMs));
@@ -198,6 +200,7 @@ public:
             return label;
         };
         cacheStatus_ = section(QStringLiteral("mapStatus"), tr("Map cache"), false, 0);
+        pauseStatus_ = section(QStringLiteral("mapPauseStatus"), tr("CoT position updates"), true, 0);
         zoomStatus_ = section(QStringLiteral("mapZoomStatus"), tr("Map zoom"), true, 0);
         pointerStatus_ = section(QStringLiteral("mapPointerStatus"), tr("Map pointer coordinates"), true, 1);
         tileStatus_ = section(QStringLiteral("mapTileStatus"), tr("Map tile status"), true, 1);
@@ -213,6 +216,7 @@ public:
         return {numberSetting(QStringLiteral("centerX"), tr("Horizontal center (0–1)"), 0, 1, 6),
                 numberSetting(QStringLiteral("centerY"), tr("Vertical center (0–1)"), 0, 1, 6),
                 numberSetting(QStringLiteral("zoom"), tr("Zoom"), zoomLimits().first, zoomLimits().second),
+                keySetting(QStringLiteral("pauseMarkersKey"), tr("Pause or resume CoT positions")),
                 keySetting(QStringLiteral("panNorthKey"), tr("Pan north")),
                 keySetting(QStringLiteral("panWestKey"), tr("Pan west")),
                 keySetting(QStringLiteral("panSouthKey"), tr("Pan south")),
@@ -245,7 +249,7 @@ public:
     }
     QString validateSettings(const QJsonObject &values) const override
     {
-        return readKeys(values) ? QString{} : tr("Use distinct single keys without modifiers. Use letters, digits, arrows, Home, +, =, -, or F1 through F12. Leave optional keys empty to disable them.");
+        return readKeys(values) ? QString{} : tr("Use distinct single keys without modifiers. Use letters, digits, arrows, Space, Home, +, =, -, or F1 through F12. Leave optional keys empty to disable them.");
     }
     QJsonObject savePreferences() const override
     {
@@ -606,6 +610,10 @@ protected:
     }
     void keyPressEvent(QKeyEvent *event) override
     {
+        if (event->key() == keys_[14] && event->modifiers() == Qt::NoModifier) {
+            if (!event->isAutoRepeat()) store_.motion().setPaused(!store_.motion().paused());
+            event->accept(); return;
+        }
         if (tools_ && tools_->handle(*event, view_, *this)) { stopPanning(); event->accept(); update(); return; }
         const auto modifiers = event->modifiers() & ~Qt::KeypadModifier;
         const bool plainKey = modifiers == Qt::NoModifier || (event->key() == Qt::Key_Plus && modifiers == Qt::ShiftModifier);
@@ -648,13 +656,14 @@ private:
         };
         const auto cacheBytes = tiles_.diskCacheBytes();
         setText(cacheStatus_, cacheBytes < 0 ? tr("Map cache: inactive") : tr("Map cache: %1").arg(QLocale().formattedDataSize(cacheBytes)));
+        setText(pauseStatus_, store_.motion().paused() ? tr("CoT positions paused") : QString{}, true);
         setText(zoomStatus_, tr("Zoom %1").arg(view_.zoom, 0, 'f', 0));
         setText(pointerStatus_, position);
         setText(tileStatus_, tiles_.status(), true);
         setText(tlsStatus_, source.value(QStringLiteral("ignoreTls")).toBool(false) ? tr("HTTPS certificate checks disabled") : QString{}, true);
     }
 
-    static std::optional<std::array<int, 14>> readKeys(QJsonObject values)
+    static std::optional<std::array<int, 15>> readKeys(QJsonObject values)
     {
         if (values.value(QStringLiteral("navigationKeysVersion")).toInt() < 2) {
             const std::array<int, 4> oldPan{Qt::Key_W, Qt::Key_A, Qt::Key_S, Qt::Key_D};
@@ -665,7 +674,7 @@ private:
                 if (values.value(KeyPaths[i + 10]).toString() == QKeySequence(oldStep[i]).toString(QKeySequence::PortableText)) values.insert(KeyPaths[i + 10], QString{});
             }
         }
-        std::array<int, 14> keys{};
+        std::array<int, 15> keys{};
         QSet<int> used;
         for (size_t i = 0; i < KeyPaths.size(); ++i) {
             const auto text = values.value(KeyPaths[i]).toString(QKeySequence(DefaultKeys[i]).toString(QKeySequence::PortableText));
@@ -763,7 +772,7 @@ private:
     QTimer panTimer_;
     QElapsedTimer panClock_;
     QSet<int> heldPan_;
-    std::array<int, 14> keys_ = DefaultKeys;
+    std::array<int, 15> keys_ = DefaultKeys;
     double panSpeed_ = 300;
     bool wheelZoom_ = true;
     bool wheelReverse_ = false;
@@ -779,7 +788,7 @@ private:
     MapSources *sources_ = nullptr;
     TileRenderer tiles_;
     QLabel *attribution_;
-    QPointer<QLabel> cacheStatus_, zoomStatus_, pointerStatus_, tileStatus_, tlsStatus_;
+    QPointer<QLabel> pauseStatus_, cacheStatus_, zoomStatus_, pointerStatus_, tileStatus_, tlsStatus_;
     double attributionOpacity_ = 0.55;
     double opacity_ = 1;
     int tileCacheMiB_ = 256;

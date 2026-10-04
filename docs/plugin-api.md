@@ -319,3 +319,11 @@ MapTool::itemsChanged marks changed local object membership or properties. MapTo
 # Restoring section defaults
 
 The host captures standard SettingsPage values before it loads saved preferences. Plugins must expose their startup defaults through savePreferences at that point. SettingsPage.defaults carries this snapshot to the shared dialog. Restore section defaults updates only the fields in the current section and tab. Apply and OK use the existing validation and save callbacks. Cancel discards staged values. Hidden fields and plugin records remain intact. Custom management widgets keep their own actions and do not receive a generic reset button.
+
+# Information actions and paused positions
+
+MapTool::populateInformationMenu contributes checkable actions for the selected object. Information shows these actions as checkboxes and invokes the same QAction commands. MapTool::actionsChanged requests a state refresh through MapTools. Trace uses the same action implementation for its context menu and Information control. Other plugins do not need Trace-specific identifiers or access to its records.
+
+TrackMotion::setPaused freezes its displayed snapshot. Store continues accepting and replacing messages through its usual bounded path. Resuming clears prediction and interpolation for the retained latest positions. Later messages use normal animation. Pause state lasts only for the session and is not a saved preference.
+
+cotFieldDescription uses the same category catalog as the CoT selectors. Information uses it for CoT Type and How without changing the stored message. Unknown categories retain the original code.

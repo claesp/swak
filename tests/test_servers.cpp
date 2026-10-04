@@ -191,6 +191,22 @@ private slots:
         v.insert(QStringLiteral("passwordEnv"), QStringLiteral("SWAK_COT_TEST_WRONG")); QVERIFY(servers.put(QStringLiteral("tls"), v).isEmpty()); QVERIFY(QTest::qWaitFor([&] { return servers.status(QStringLiteral("tls")).contains(QStringLiteral("credentials")); }, 5000));
         v.insert(QStringLiteral("certificate"), QStringLiteral("/missing/client.p12")); QVERIFY(servers.put(QStringLiteral("tls"), v).isEmpty()); QVERIFY(QTest::qWaitFor([&] { return servers.status(QStringLiteral("tls")).contains(QStringLiteral("credentials")); }, 5000));
     }
+    void pausedMotion()
+    {
+        TrackMotion motion; Event event; event.uid = QStringLiteral("paused"); event.time = QDateTime::currentDateTimeUtc();
+        motion.update(event); motion.setPaused(true); const auto frozen = motion.snapshot(); QCOMPARE(frozen.size(), 1);
+        event.longitude = 20; event.time = event.time.addSecs(1); motion.update(event);
+        QCOMPARE(motion.snapshot().first().world, frozen.first().world);
+        auto added = event; added.uid = QStringLiteral("new"); motion.update(added); QCOMPARE(motion.snapshot().size(), 1);
+        motion.setPaused(false); QCOMPARE(motion.snapshot().size(), 2);
+        for (const auto &visual : motion.snapshot()) { QCOMPARE(visual.world, project(0, 20)); QCOMPARE(visual.opacity, 1.0); }
+        event.longitude = 21; event.time = event.time.addSecs(1); motion.update(event);
+        QVERIFY(motion.snapshot().first().world.x() <= project(0, 21).x());
+        motion.setPaused(true); motion.expire(event.uid); motion.setPaused(false);
+        const auto expired = motion.snapshot();
+        QVERIFY(std::any_of(expired.cbegin(), expired.cend(), [](const auto &item) { return item.expired; }));
+        motion.setPaused(true); motion.clear(); QVERIFY(motion.snapshot().isEmpty()); motion.setPaused(false); QVERIFY(motion.snapshot().isEmpty());
+    }
     void predictiveMotion()
     {
         TrackMotion motion; auto event = sampleEvent(); motion.update(event, 1000);

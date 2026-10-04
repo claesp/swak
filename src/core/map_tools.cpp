@@ -10,6 +10,7 @@ void MapTools::add(MapTool *tool)
     connect(tool, &QObject::destroyed, this, [this] {
         tools_.removeIf([](const auto &entry) { return entry.isNull(); }); emit changed();
     });
+    connect(tool, &MapTool::actionsChanged, this, &MapTools::actionsChanged);
     connect(tool, &MapTool::itemsChanged, this, &MapTools::itemsChanged);
     connect(tool, &MapTool::overlayChanged, this, &MapTools::overlayChanged);
     emit changed();
@@ -33,6 +34,10 @@ bool MapTools::interact(const MapItem &item, QEvent &event, QWidget &map)
 {
     const auto snapshot = tools_;
     return std::any_of(snapshot.cbegin(), snapshot.cend(), [&](const auto &tool) { return tool && tool->interact(item, event, map); });
+}
+void MapTools::populateInformationMenu(const MapItem &item, QMenu &menu)
+{
+    for (const auto &tool : tools_) if (tool) tool->populateInformationMenu(item, menu);
 }
 void MapTools::paint(QPainter &painter, const Viewport &view) const
 {

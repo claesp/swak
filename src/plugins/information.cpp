@@ -1,3 +1,5 @@
+#include <QMenu>
+#include <QCheckBox>
 #include "core/interfaces.h"
 #include "core/store.h"
 #include "core/map_tools.h"
@@ -57,9 +59,12 @@ public:
         title_ = new CopyLabel(this); title_->setObjectName(QStringLiteral("informationTitle"));
         auto font = title_->font(); font.setPointSizeF(font.pointSizeF() > 0 ? font.pointSizeF() * 1.5 : 16); font.setBold(true); title_->setFont(font);
         title_->setTextFormat(Qt::PlainText); title_->setWordWrap(true); layout->addWidget(title_);
-        type_ = new CopyLabel(this); type_->setObjectName(QStringLiteral("informationType")); type_->setTextFormat(Qt::PlainText); layout->addWidget(type_);
+        type_ = new CopyLabel(this); type_->setObjectName(QStringLiteral("informationType")); type_->setTextFormat(Qt::PlainText); type_->setWordWrap(true); layout->addWidget(type_);
         description_ = new Description(this); description_->setObjectName(QStringLiteral("informationDescription"));
         description_->setReadOnly(true); description_->setPlaceholderText(tr("No description")); description_->setMaximumHeight(120); layout->addWidget(description_);
+        actionsMenu_ = new QMenu(this);
+        actionsLayout_ = new QVBoxLayout; layout->addLayout(actionsLayout_);
+        if (tools_) connect(tools_, &MapTools::actionsChanged, this, [this] { refreshActions(true); }, Qt::QueuedConnection);
         properties_ = new QTableWidget(0, 2, this); properties_->setObjectName(QStringLiteral("informationProperties"));
         properties_->setHorizontalHeaderLabels({tr("Property"), tr("Value")}); properties_->setEditTriggers(QAbstractItemView::NoEditTriggers);
         properties_->verticalHeader()->hide(); properties_->horizontalHeader()->setStretchLastSection(true);
@@ -70,7 +75,7 @@ public:
         });
         if (selection) connect(selection, &MapSelection::changed, this, [this, selection] {
             const auto &item = selection->item();
-            title_->setText(item ? item->label : QString{}); type_->setText(item ? item->type : QString{});
+            title_->setText(item ? item->label : QString{}); type_->setText(item ? (item->owner == QStringLiteral("org.swak.events") ? cotFieldDescription(CotField::Type, item->type) : item->type) : QString{});
             description_->setPlainText(item ? item->description : QString{}); properties_->setRowCount(0);
             if (item) {
                 auto keys = item->properties.keys(); const QCollator collator;
@@ -78,12 +83,17 @@ public:
                 for (const auto &key : keys) {
                     const auto value = item->properties.value(key);
                     QString text;
-                    if (value.isString()) text = value.toString();
+                    if (value.isString()) {
+                        text = value.toString();
+                        if (item->owner == QStringLiteral("org.swak.events") && (key == QStringLiteral("Type") || key == QStringLiteral("How")))
+                            text = cotFieldDescription(key == QStringLiteral("Type") ? CotField::Type : CotField::How, text);
+                    }
                     else { auto json = QJsonDocument(QJsonArray{value}).toJson(QJsonDocument::Compact); text = QString::fromUtf8(json.mid(1, json.size() - 2)); }
                     const int row = properties_->rowCount(); properties_->insertRow(row);
                     properties_->setItem(row, 0, new QTableWidgetItem(key)); properties_->setItem(row, 1, new QTableWidgetItem(text));
                 }
             }
+            refreshActions();
             emit visibilityRequested(item.has_value());
         });
     }
@@ -127,6 +137,23 @@ protected:
         return true;
     }
 private:
+    void refreshActions(bool force = false)
+    {
+        const auto identity = selection_ && selection_->item() ? selection_->item()->owner + '/' + selection_->item()->id + '/' + QString::number(static_cast<int>(selection_->item()->kind)) : QString{};
+        if (!force && identity == actionIdentity_) return;
+        actionIdentity_ = identity;
+        while (auto *item = actionsLayout_->takeAt(0)) { delete item->widget(); delete item; }
+        actionsMenu_->clear();
+        if (!tools_ || !selection_ || !selection_->item()) return;
+        tools_->populateInformationMenu(*selection_->item(), *actionsMenu_);
+        for (auto *action : actionsMenu_->actions()) {
+            if (!action->isCheckable()) continue;
+            auto *box = new QCheckBox(action->text(), this); box->setObjectName(QStringLiteral("information/") + action->objectName());
+            box->setChecked(action->isChecked()); box->setEnabled(action->isEnabled()); box->setToolTip(action->toolTip());
+            actionsLayout_->addWidget(box);
+            connect(box, &QCheckBox::clicked, action, [action] { action->trigger(); });
+        }
+    }
     static int dismissalKey(const QJsonObject &values)
     {
         const auto text = values.value(QStringLiteral("dismissKey")).toString(QStringLiteral("Esc"));
@@ -141,6 +168,9 @@ private:
     Store &store_;
     QWidget *owner_;
     int dismissKey_ = Qt::Key_Escape;
+    QString actionIdentity_;
+    QMenu *actionsMenu_;
+    QVBoxLayout *actionsLayout_;
     CopyLabel *title_;
     CopyLabel *type_;
     Description *description_;
