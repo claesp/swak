@@ -1,3 +1,4 @@
+#include "core/measure.h"
 #include "core/user_objects.h"
 #include "core/polygon.h"
 #include <QJsonArray>
@@ -87,6 +88,10 @@ QString UserObjects::validate(const UserObject &item)
             const auto value = item.geometry.value(QLatin1String(key));
             if (!value.isDouble() || !std::isfinite(value.toDouble()) || value.toDouble() < 0 || value.toDouble() > 1) return tr("The marker position is outside the map.");
         }
+    }
+    if (item.type == QStringLiteral("range-circle") || item.type == QStringLiteral("line")) {
+        if (item.properties.contains(QStringLiteral("Area")) || item.properties.contains(QStringLiteral("Distance"))) return tr("Area and Distance are reserved shape properties.");
+        return validateTwoPointShape(item.type, item.geometry);
     }
     if (item.type == QStringLiteral("polygon")) {
         if (item.properties.contains(QStringLiteral("Area"))) return tr("Area is a reserved polygon property.");

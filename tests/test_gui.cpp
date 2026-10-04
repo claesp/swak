@@ -1,3 +1,4 @@
+#include "core/measure.h"
 #include <QProcess>
 #include "core/projection.h"
 #include <QVBoxLayout>
@@ -1663,6 +1664,62 @@ private slots:
         QVERIFY(dynamic_cast<swak::PreferenceParticipant *>(map)->savePreferences().value(QStringLiteral("centerX")) != state.value(QStringLiteral("centerX")));
     }
 
+    void shapeWorkflow()
+    {
+        QTemporaryDir directory; const auto profile = directory.filePath(QStringLiteral("shapes.json"));
+        {
+            swak::Window window(profile, QPluginLoader::staticInstances()); window.show(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+            auto *map = window.findChild<QOpenGLWidget *>(); QVERIFY(map);
+            auto *editor = window.findChild<swak::ObjectEditor *>(QStringLiteral("shapesEditor")); QVERIFY(editor);
+            auto *objects = window.findChild<swak::UserObjects *>(); auto *selection = window.findChild<swak::MapSelection *>(); auto *tools = window.findChild<swak::MapTools *>();
+            QVERIFY(objects && selection && tools);
+            for (auto *dock : window.findChildren<QDockWidget *>()) dock->hide();
+            auto *mapSettings = dynamic_cast<swak::SettingsParticipant *>(map); auto values = mapSettings->savePreferences(); values.insert(QStringLiteral("centerX"), 0.5); values.insert(QStringLiteral("centerY"), 0.5); values.insert(QStringLiteral("zoom"), 8); mapSettings->restorePreferences(values);
+            auto *areaSettings = dynamic_cast<swak::SettingsParticipant *>(window.findChild<QWidget *>(QStringLiteral("polygonEditor"))); QVERIFY(areaSettings);
+            auto areaValues = areaSettings->savePreferences(); areaValues.insert(QStringLiteral("fillOpacity"), 0.65); areaSettings->restorePreferences(areaValues); QCOMPARE(tools->areaFillOpacity(), 0.65);
+            const auto click = [&](QPoint p) { QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, p); };
+            const auto motion = [&](QPoint p) { QMouseEvent event(QEvent::MouseMove, QPointF(p), QPointF(map->mapToGlobal(p)), Qt::NoButton, Qt::NoButton, Qt::NoModifier); QApplication::sendEvent(map, &event); };
+            const auto contextAction = [&](const QString &name, QPoint p) {
+                bool invoked = false;
+                QTimer::singleShot(0, &window, [&] { auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget()); if (!menu) return; if (auto *action = menu->findChild<QAction *>(name)) { action->trigger(); invoked = true; } menu->close(); });
+                QContextMenuEvent event(QContextMenuEvent::Mouse, p, map->mapToGlobal(p)); QApplication::sendEvent(map, &event); return invoked;
+            };
+            for (const auto key : {Qt::Key_C, Qt::Key_L}) {
+                QTest::keyClick(map, key); QCOMPARE(map->cursor().shape(), Qt::CrossCursor);
+                click({180, 180}); motion({260, 180}); click({260, 180}); QVERIFY(editor->draft());
+                const bool circle = key == Qt::Key_C;
+                QCOMPARE(editor->draft()->type, circle ? QStringLiteral("range-circle") : QStringLiteral("line"));
+                editor->findChild<QLineEdit *>(QStringLiteral("objectTitle"))->setText(circle ? QStringLiteral("Circle test") : QStringLiteral("Line test"));
+                editor->findChild<QPushButton *>(QStringLiteral("applyObject"))->click(); QVERIFY(selection->item());
+                const auto id = selection->item()->id; const auto original = objects->find(id)->geometry;
+                QVERIFY(selection->item()->properties.contains(circle ? QStringLiteral("Area") : QStringLiteral("Distance")));
+                QVERIFY(contextAction(QStringLiteral("moveShape"), {220, 180})); motion({240, 210}); QTest::keyClick(map, Qt::Key_Escape); QCOMPARE(objects->find(id)->geometry, original);
+                QVERIFY(contextAction(QStringLiteral("moveShape"), {220, 180})); motion({240, 210}); click({240, 210}); QVERIFY(objects->find(id)->geometry != original);
+                QVERIFY(contextAction(QStringLiteral("editShape"), {240, 210})); QVERIFY(editor->draft());
+                const auto editing = editor->draft()->geometry;
+                QVERIFY(contextAction(QStringLiteral("moveShapePoint"), {200, 210})); motion({210, 220}); QTest::keyClick(map, Qt::Key_Escape); QCOMPARE(editor->draft()->geometry, editing);
+                QVERIFY(contextAction(QStringLiteral("moveShapePoint"), {200, 210})); motion({210, 220}); click({210, 220}); QVERIFY(editor->draft()->geometry != editing);
+                auto points = swak::polygonVertices(editor->draft()->geometry); points[1].setY(points[1].y() + 0.0001); QVERIFY(editor->setGeometry(swak::polygonGeometry(points)));
+                editor->findChild<QPushButton *>(QStringLiteral("applyObject"))->click();
+                QVERIFY(QTest::qWaitFor([&] { return map->isValid(); }));
+                const auto frame = map->grabFramebuffer(); QVERIFY(!frame.isNull());
+                QVERIFY(frame.save(circle ? QStringLiteral("circle-tool.png") : QStringLiteral("line-tool.png")));
+                if (circle) { const auto color = frame.pixelColor(QPoint(200, 250) * map->devicePixelRatioF()); QVERIFY(color.blue() > color.red()); }
+                QTest::keyClick(map, Qt::Key_Delete); QVERIFY(!objects->find(id)); objects->undoStack().undo(); QVERIFY(objects->find(id));
+                objects->remove(id);
+            }
+            objects->undoStack().undo(); QCOMPARE(objects->items().size(), 1);
+            auto *settings = dynamic_cast<swak::SettingsParticipant *>(editor); auto temporary = settings->savePreferences(); temporary.insert(QStringLiteral("holdSeconds"), 1); temporary.insert(QStringLiteral("fadeMs"), 100); settings->restorePreferences(temporary);
+            auto *tool = dynamic_cast<swak::MapTool *>(window.findChild<QObject *>(QStringLiteral("shapesTool"))); QVERIFY(tool);
+            const swak::Viewport view{QSizeF(map->size()), QPointF(0.5, 0.5), 8};
+            const auto frame = [&] { QImage image(map->size(), QImage::Format_ARGB32_Premultiplied); image.fill(Qt::transparent); QPainter painter(&image); tool->paint(painter, view); return image; };
+            const auto before = frame(); const auto count = objects->items().size();
+            QTest::keyClick(map, Qt::Key_D); click({400, 200}); motion({500, 250}); click({500, 250}); QCOMPARE(objects->items().size(), count); QVERIFY(frame() != before);
+            QVERIFY(QTest::qWaitFor([&] { return frame() == before; }, 2500));
+            QVERIFY(window.savePreferences());
+        }
+        swak::Window restored(profile, QPluginLoader::staticInstances()); auto *objects = restored.findChild<swak::UserObjects *>(); QVERIFY(objects); QCOMPARE(objects->items().size(), 1); QCOMPARE(objects->items().first().type, QStringLiteral("line"));
+    }
     void polygonWorkflow()
     {
         QTemporaryDir directory; const auto profile = directory.filePath(QStringLiteral("polygons.json"));
@@ -2131,7 +2188,7 @@ private slots:
             QVERIFY(!action->isChecked());
             dock->setFloating(false);
         }
-        QCOMPARE(activated, 6);
+        QCOMPARE(activated, 7);
         QVERIFY(window.grab().save(QStringLiteral("plugin-labels-smoke.png")));
     }
     void clearEventsMenu()
@@ -2374,7 +2431,7 @@ private slots:
                 if (!dialog) { QFAIL("Settings dialog did not open."); return; }
                 auto *tabs = dialog->findChild<QTabWidget *>();
                 auto *panes = dialog->findChild<QListWidget *>(QStringLiteral("paneSettingsSections"));
-                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 8) {
+                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 9) {
                     dialog->reject(); QFAIL("The pane tab is incomplete."); return;
                 }
                 for (auto *label : dialog->findChildren<QLabel *>()) {
@@ -2959,7 +3016,7 @@ private slots:
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         const auto docks = window.findChildren<QDockWidget *>();
-        QCOMPARE(docks.size(), 8);
+        QCOMPARE(docks.size(), 9);
         QVERIFY(!window.findChild<QWidget *>(QStringLiteral("toolsDock")));
         auto *viewMenu = window.findChild<QMenu *>(QStringLiteral("viewMenu"));
         auto *fileMenu = window.findChild<QMenu *>(QStringLiteral("fileMenu"));

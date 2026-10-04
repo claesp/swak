@@ -23,3 +23,4 @@ Q_IMPORT_PLUGIN(MilitaryMarkers)
 Q_IMPORT_PLUGIN(PolygonPlugin)
 
 Q_IMPORT_PLUGIN(TracePlugin)
+Q_IMPORT_PLUGIN(ShapesPlugin)

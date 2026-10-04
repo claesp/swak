@@ -1,6 +1,6 @@
 # Plugin API
 
-This review covers all seventeen built-in plugins. Every plugin implements `Plugin` and uses the shared contracts in `src/core/`. The common API version is 2. No plugin depends on a concrete application window class.
+This review covers all eighteen built-in plugins. Every plugin implements `Plugin` and uses the shared contracts in `src/core/`. The common API version is 2. No plugin depends on a concrete application window class.
 
 The application links plugins into the executable. Qt embeds each `src/plugins/<plugin>/MANIFEST` file through `Q_PLUGIN_METADATA`. The common metadata identifier is `org.swak.Plugin/2.0`. The application does not load external plugin binaries or search plugin directories.
 
@@ -56,6 +56,7 @@ The host owns pane placement, visibility actions, and layout persistence. Plugin
 | `src/plugins/activity` | Events | Pane and menu |
 | `src/plugins/information` | Information | Pane |
 | `src/plugins/trace` | Trace | Menu and map tool |
+| `src/plugins/shapes` | Circle and line tools | Pane, menu, toolbar, and map tool |
 | `src/plugins/markers` | Markers | Pane, map tool, and Core collection |
 | `src/plugins/polygons` | Areas | Pane and map tool |
 | `src/plugins/milstd2525` | MILSTD2525 | Marker collection |
@@ -327,3 +328,13 @@ MapTool::populateInformationMenu contributes checkable actions for the selected 
 TrackMotion::setPaused freezes its displayed snapshot. Store continues accepting and replacing messages through its usual bounded path. Resuming clears prediction and interpolation for the retained latest positions. Later messages use normal animation. Pause state lasts only for the session and is not a saved preference.
 
 cotFieldDescription uses the same category catalog as the CoT selectors. Information uses it for CoT Type and How without changing the stored message. Unknown categories retain the original code.
+
+# Circle, line, and measurement tools
+
+ShapesPlugin uses one shared ObjectEditor and MapTool for its three creation modes. Its menu and toolbar reuse the same QAction objects. Each host owns its editor and tool instances. The plugin tracks editors with QPointer and removes destroyed instances.
+
+UserObject type range-circle stores a center and radius control point in geometry.vertices. Type line stores two endpoints. The existing circle type remains a point marker. Shared validation bounds coordinates and rejects duplicate points. Circles must fit inside the projected world. ID, Area, and Distance remain computed properties for these shapes. ObjectEditor retains the common title, description, colors, and property table.
+
+MapTool::areaFillOpacity optionally supplies the shared area fill value. MapTools uses the first provider, or 0.3 without one. PolygonTool supplies the configured Area value. ShapesTool uses it for circles. The provider must return a finite value between zero and one.
+
+Distance measurements stay inside ShapesTool and never enter UserObjects. The tool keeps at most 64 measurements. A monotonic clock controls duration and fading. The timer stops when the list becomes empty. Circles and lines use the existing preference store and deletion undo history.

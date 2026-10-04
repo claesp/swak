@@ -87,6 +87,7 @@ public:
     }
     void activate(QWidget &map) override { cancel(); map_ = &map; drawing_ = true; selection_.clear(); store_.select({}); map.setCursor(Qt::CrossCursor); emit changed(); }
     bool interactionActive() const override { return drawing_ || moving_ >= 0 || editor_.draft().has_value(); }
+    std::optional<double> areaFillOpacity() const override { return editor_.fillOpacity; }
     bool coordinateGridActive() const override { return drawing_ || moving_ >= 0; }
     QString statusText() const override { return drawing_ || moving_ >= 0 ? QStringLiteral("A") : QString{}; }
     bool cancel() override {

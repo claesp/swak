@@ -123,9 +123,9 @@ void ObjectEditor::edit(const UserObject &item)
     color_ = item.color;
     const bool marker = item.type == QStringLiteral("circle");
     collection_->setVisible(marker); collectionLabel_->setVisible(marker);
-    title_->setPlaceholderText(marker ? tr("New Marker") : tr("New Area"));
+    title_->setPlaceholderText(marker ? tr("New Marker") : item.type == QStringLiteral("line") ? tr("New Line") : item.type == QStringLiteral("range-circle") ? tr("New Circle") : tr("New Area"));
     if (marker) { refreshCollections(effectiveMarkerCollection(item.collection, item.symbol)); refreshTypes(item.symbol); }
-    else { const QSignalBlocker block(type_); type_->clear(); type_->addItem(tr("Area"), QStringLiteral("polygon")); }
+    else { const QSignalBlocker block(type_); type_->clear(); type_->addItem(item.type == QStringLiteral("line") ? tr("Line") : item.type == QStringLiteral("range-circle") ? tr("Circle") : tr("Area"), item.type); }
     refreshColors();
     title_->setText(objects_.find(item.id) ? item.title : QString{});
     description_->setPlainText(item.description); properties_->setRowCount(0); status_->clear();
@@ -246,7 +246,7 @@ void ObjectEditor::keyPressEvent(QKeyEvent *event)
 void ObjectEditor::apply()
 {
     if (!draft_) return;
-    auto item = *draft_; item.title = title_->text().trimmed(); if (item.title.isEmpty()) item.title = item.type == QStringLiteral("polygon") ? tr("New Area") : tr("New Marker");
+    auto item = *draft_; item.title = title_->text().trimmed(); if (item.title.isEmpty()) item.title = item.type == QStringLiteral("polygon") ? tr("New Area") : item.type == QStringLiteral("line") ? tr("New Line") : item.type == QStringLiteral("range-circle") ? tr("New Circle") : tr("New Marker");
     if (item.type == QStringLiteral("circle")) {
         item.symbol = type_->currentData().toString(); item.collection = collection_->currentData().toString();
     }

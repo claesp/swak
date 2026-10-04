@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 4, 2026: Read “Paused CoT positions and Information tracing” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 4, 2026: Read “Circle, Distance, and Line” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -1015,3 +1015,22 @@ The corrected core sanitizer suite passed 47 cases in build/pause-core-final.log
 The 60-second workload passed in build/quality/20261004-184601-soak-113718. It completed 1130 cycles with 17903616 bytes of peak memory growth and an 80 millisecond maximum heartbeat gap. The first coverage run failed its short UDP progress assertion. The workload now allows a bounded two-second receive wait after its existing pacing delay. Later evidence records the rerun.
 
 Final coverage passed ten suites and 80 GUI cases in build/quality/20261004-185143-coverage-116490. The release build passed in build/pause-release-complete.log. The rebuild after the commit uses build/pause-release-final.log. The user next requested Circle, Distance, and Line tools. That work follows in a separate change.
+
+
+## 2026-10-04: Circle, Distance, and Line
+
+ShapesPlugin adds C for Circle, D for Distance, and L for Line. Its MANIFEST declares pane, menu, toolbar, and map-tool roles. It reuses ObjectEditor, UserObjects, MapSelection, SettingsParticipant, and deletion undo. Saved range-circle and line records each retain two control points. The older circle type still means a point marker. Circle fill opacity comes from PolygonTool through the shared MapTools API.
+
+Distance keeps at most 64 temporary measurements. They remain for ten seconds and fade over one second by default. A monotonic clock drives the timer, which stops when no measurements remain. The configuration controls duration, fade, line width, point size, and shortcuts. Distances use locale units and spherical surface distance. Circle area uses the shared spherical integrator over 128 points. Circle bounds stay inside the projected world. Lines wrap across the date line.
+
+The focused tests cover geometry, locale units, creation, whole-object movement, cancellation, editing, deletion, undo, restart, and temporary measurement expiry. Additional native tests inspect the actual OpenGL frame and control-point movement.
+
+Ten sanitizer suites passed in build/quality/20261004-190638-quick-120293. Source analysis passed in build/quality/20261004-190633-analyze-4. The first native run found three outdated pane-count expectations. Those tests now include the shared shape editor. Coverage passed ten suites and all 81 native cases in build/quality/20261004-191011-coverage-122132.
+
+Shape coverage reached 170 of 171 lines and 61 of 64 functions. Measurement coverage reached 32 of 33 lines and all five functions. Remaining paths include direct menu callbacks, editor cancellation, and complete-circle boundary rejection. The 64-measurement eviction limit and date-line drawing still need dedicated native tests. No source-analysis finding indicates dead code in the new plugin.
+
+The 60-second workload passed in build/quality/20261004-190858-soak-121970. It completed 1105 cycles with 18284544 bytes of peak memory growth. The maximum heartbeat gap was 51 milliseconds. Idle CPU time was 0.016 seconds. Two-hour operation, physical graphics hardware, and native Wayland remain unqualified. Inspected native images show the circle fill, selection outline, and line distance label.
+
+The release build passed in build/shapes-release.log. The final rebuild after the commit uses build/shapes-release-final.log.
+
+All 81 native sanitizer cases passed in build/quality/20261004-191216-gui-123523. The diagnostic still fails on the existing Mesa leak of 240732 bytes in 1073 allocations. No suppression hides this leak.

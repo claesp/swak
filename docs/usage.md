@@ -307,3 +307,17 @@ File > Settings > Keybindings > Map controls the pause shortcut. Holding the key
 Information now contains a Trace checkbox for supported CoT and local point markers. It uses the same state as the right-click Trace command. Marker labels use white text on a dark translucent background.
 
 Information describes CoT Type and How with names from the shared selector catalog. It keeps the complete original code in parentheses. Unknown categories remain marked as unknown and retain their original codes. For example, m-s appears as Machine generated / Simulation (m-s).
+
+# Circle, Distance, and Line
+
+With the map focused, press C to start Circle. Click the center. Move the pointer to set the radius. Click again to open the object editor. Enter the title, description, color, and properties. Select Apply to save the circle. Circle uses the fill opacity from File > Settings > Areas.
+
+Press D to start Distance. Click the first point. Move the pointer to read the distance. Click the second point to finish. The measurement stays for ten seconds, then fades for one second and disappears. Measurements are temporary and do not survive restart. The tool retains at most 64 measurements.
+
+Press L to start Line. Click each endpoint. Complete the object editor and select Apply. The saved line shows its title and distance. Information shows Distance for lines and Area for circles. Measurements use the operating-system locale and unit system. Distances use meters or feet and change to kilometers or miles at the corresponding threshold.
+
+Right-click a saved circle or line to select Edit, Move, or Delete. During editing, right-click a control point to move it. Both control points are required, so their Delete action stays disabled. Moving a circle center retains its radius. Moving its edge control changes its radius. Esc cancels a pending move. Delete and Backspace delete the selected saved object. Ctrl+Z restores a deleted object.
+
+The toolbar and Tools > Plugins > Circle and line tools provide the same creation actions. File > Settings > Keybindings configures C, D, and L. The Circle and line tools section controls line width, control-point size, measurement duration, and fade time.
+
+Circles remain circular on the projected map. Their area estimate integrates a 128-point boundary over a spherical Earth. Distance uses the shortest spherical surface distance and ignores elevation. Lines wrap across the date line, but their straight map segment approximates the surface path. These values are estimates for map work. Circles must remain inside the projected world.

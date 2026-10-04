@@ -1,3 +1,4 @@
+#include "core/measure.h"
 #include "core/servers.h"
 #include "core/map_tools.h"
 #include <QMenu>
@@ -291,6 +292,29 @@ private slots:
         image.fill(Qt::transparent); QPainter painter(&image); Viewport invalid; invalid.size = image.size(); invalid.zoom = std::numeric_limits<double>::quiet_NaN();
         paintMapGrid(painter, invalid, 0.2, 140); painter.end(); QCOMPARE(image.pixelColor(450, 300).alpha(), 0);
     }
+    void measurements()
+    {
+        const auto origin = project(0, 0), east = project(0, 1);
+        QVERIFY(std::abs(groundDistance(origin, east) - 111195.08) < 0.1);
+        QCOMPARE(groundDistance(origin, origin), 0.0);
+        QVERIFY(groundDistance(project(0, 179.9), project(0, -179.9)) < 23000);
+        const QLocale metric(QLocale::English, QLocale::Sweden), imperial(QLocale::English, QLocale::UnitedStates);
+        QVERIFY(formatDistance(999, metric).endsWith(QStringLiteral(" m")));
+        QVERIFY(formatDistance(1000, metric).endsWith(QStringLiteral(" km")));
+        QVERIFY(formatDistance(1, imperial).endsWith(QStringLiteral(" ft")));
+        QVERIFY(formatDistance(1609.344, imperial).endsWith(QStringLiteral(" mi")));
+        QVERIFY(formatDistance(-1).isEmpty()); QVERIFY(formatDistance(std::numeric_limits<double>::infinity()).isEmpty());
+        const QPolygonF points{origin, origin + QPointF(0.00001, 0)};
+        const auto circle = circleBoundary(points[0], points[1]); QCOMPARE(circle.size(), 128);
+        const double radius = groundDistance(points[0], points[1]);
+        QVERIFY(std::abs(polygonArea(circle) / (3.141592653589793 * radius * radius) - 1) < 0.001);
+        QVERIFY(validateTwoPointShape(QStringLiteral("range-circle"), polygonGeometry(points)).isEmpty());
+        QVERIFY(!validateTwoPointShape(QStringLiteral("line"), {}).isEmpty());
+        QVERIFY(!validateTwoPointShape(QStringLiteral("line"), polygonGeometry({origin, origin})).isEmpty());
+        QVERIFY(!validateTwoPointShape(QStringLiteral("range-circle"), polygonGeometry({QPointF(0.01, 0.5), QPointF(0.1, 0.5)})).isEmpty());
+        UserObject object; object.id = QStringLiteral("line"); object.type = QStringLiteral("line"); object.title = QStringLiteral("Line"); object.geometry = polygonGeometry(points);
+        QVERIFY(UserObjects::validate(object).isEmpty()); object.properties.insert(QStringLiteral("Distance"), QStringLiteral("bad")); QVERIFY(!UserObjects::validate(object).isEmpty());
+    }
     void polygons()
     {
         const QPolygonF square{project(0, 0), project(0, 1), project(1, 1), project(1, 0)};
@@ -359,7 +383,7 @@ private slots:
 
     void pluginManifests()
     {
-        QCOMPARE(builtInPlugins().size(), 17);
+        QCOMPARE(builtInPlugins().size(), 18);
         for (const auto &entry : QPluginLoader::staticPlugins()) {
             if (entry.metaData().value(QStringLiteral("IID")).toString() != QStringLiteral("org.swak.Plugin/2.0")) continue;
             const auto manifest = entry.metaData().value(QStringLiteral("MetaData")).toObject();

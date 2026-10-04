@@ -173,6 +173,11 @@ private slots:
             polygon.geometry = polygonGeometry(corners); QVERIFY(localObjects.put(polygon).isEmpty());
             QVERIFY(polygonArea(corners) > 0); localObjects.remove(polygon.id);
             localObjects.undoStack().undo(); QVERIFY(localObjects.find(polygon.id)); localObjects.undoStack().redo();
+            for (const auto &type : {QStringLiteral("range-circle"), QStringLiteral("line")}) {
+                UserObject shape; shape.id = type + QString::number(cycles % 128); shape.type = type; shape.title = QStringLiteral("Soak shape");
+                shape.geometry = polygonGeometry({QPointF(0.5, 0.5), QPointF(0.51, 0.5)}); QVERIFY(localObjects.put(shape).isEmpty());
+                localObjects.remove(shape.id); localObjects.undoStack().undo(); QVERIFY(localObjects.find(shape.id)); localObjects.undoStack().redo();
+            }
             QVERIFY(localObjects.undoStack().count() <= 100);
             QVERIFY(collections.put(markerCollection).isEmpty());
             QVERIFY(collections.symbol(QStringLiteral("soak.collection"), {}));

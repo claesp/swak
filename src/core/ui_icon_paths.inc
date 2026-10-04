@@ -88,6 +88,17 @@ QPainterPath iconPath(UiIcon icon)
         path.lineTo(12, 2);
         path.lineTo(15, 5);
         break;
+    case UiIcon::Circle:
+        path.addEllipse(QPointF(12, 12), 9, 9);
+        break;
+    case UiIcon::Line:
+        path.moveTo(4, 20); path.lineTo(20, 4);
+        path.addEllipse(QPointF(4, 20), 1.5, 1.5); path.addEllipse(QPointF(20, 4), 1.5, 1.5);
+        break;
+    case UiIcon::Distance:
+        path.moveTo(3, 17); path.lineTo(17, 3); path.lineTo(21, 7); path.lineTo(7, 21); path.closeSubpath();
+        path.moveTo(7, 13); path.lineTo(9, 15); path.moveTo(11, 9); path.lineTo(13, 11); path.moveTo(15, 5); path.lineTo(17, 7);
+        break;
     }
     return path;
 }

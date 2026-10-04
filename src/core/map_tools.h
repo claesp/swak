@@ -15,6 +15,7 @@ public:
     virtual void paint(QPainter &painter, const Viewport &view) const = 0;
     virtual void paintOverlay(QPainter &, const Viewport &, QPointF) const {}
     virtual QString statusText() const { return {}; }
+    virtual std::optional<double> areaFillOpacity() const { return {}; }
     virtual bool coordinateGridActive() const { return false; }
     virtual void activate(QWidget &) {}
     virtual bool interactionActive() const { return false; }
@@ -41,6 +42,7 @@ public:
     void paint(QPainter &painter, const Viewport &view) const;
     void paintOverlay(QPainter &painter, const Viewport &view, QPointF pointer) const;
     QString statusText() const;
+    double areaFillOpacity() const;
     bool coordinateGridActive() const;
     QList<MapItem> itemsAt(const Viewport &view, QPointF position) const;
     bool interact(const MapItem &item, QEvent &event, QWidget &map);

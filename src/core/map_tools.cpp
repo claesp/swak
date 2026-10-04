@@ -39,6 +39,11 @@ void MapTools::populateInformationMenu(const MapItem &item, QMenu &menu)
 {
     for (const auto &tool : tools_) if (tool) tool->populateInformationMenu(item, menu);
 }
+double MapTools::areaFillOpacity() const
+{
+    for (const auto &tool : tools_) if (tool) if (const auto value = tool->areaFillOpacity()) return *value;
+    return 0.3;
+}
 void MapTools::paint(QPainter &painter, const Viewport &view) const
 {
     for (const auto &tool : tools_) if (tool) { painter.save(); tool->paint(painter, view); painter.restore(); }

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "org.swak.shapes",
+  "name": "Circle and line tools",
+  "description": "Create circles and lines and measure temporary distances.",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entryPoint": "ShapesPlugin",
+  "linkage": "static",
+  "platforms": [
+    "linux"
+  ],
+  "qtMajor": 6,
+  "qtMinimum": "6.4.0",
+  "interfaces": [
+    "pane",
+    "menu",
+    "toolbar",
+    "map-tool"
+  ],
+  "requires": [],
+  "permissions": [],
+  "settingsSchemaVersion": 1
+}
