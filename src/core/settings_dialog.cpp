@@ -238,7 +238,7 @@ SettingsDialog::SettingsDialog(QList<SettingsPage> pages,
                         lock->setCheckable(true);
                         const auto update = [text, lock, name = field.label](bool unlocked) {
                             text->setReadOnly(!unlocked);
-                            lock->setIcon(uiIcon(unlocked ? UiIcon::Unlock : UiIcon::Lock));
+                            lock->setIcon(uiIcon(unlocked ? UiIcon::Lock : UiIcon::Unlock));
                             lock->setToolTip(unlocked ? tr("Lock %1").arg(name)
                                                       : tr("Unlock %1 for editing").arg(name));
                             lock->setAccessibleName(lock->toolTip());

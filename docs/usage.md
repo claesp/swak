@@ -398,3 +398,19 @@ Longitude/latitude labels support decimal degrees, degrees and minutes, or degre
 Grid types and the active choice survive restart. The catalog holds at most 32 types. Existing longitude/latitude appearance values migrate from older map profiles. Marker icon scaling applies to existing local markers, CoT symbols, and data points. Marker radius applies to existing local markers. Active previews also repaint after these changes.
 
 To use serverless communication, add a server with the Local LAN protocol and select its IPv4 interface. Enable its Active checkbox. Tools > Plugins > Local LAN shows discovery status and peer connections. The Interface field also selects a local address for TCP, TLS, and UDP entries.
+
+# Heading and editing controls
+
+Identity shows Role as a description with its code, like Type, Location method, and Team. Use its selector to change the value. A locked field shows the Unlock icon. An unlocked field shows the Lock icon. The map navigation button follows the same rule.
+
+Circle includes the same Restricted flag as Area. Select this flag to add diagonal lines to the fill. The Information pane shows the saved flag.
+
+While editing an Area, double-click a corner to start Move. Click its new location to place it. Press Escape to cancel that move. The corner menu places Move before Delete.
+
+Grid lines use antialiasing to soften their edges. New grids use 30 percent opacity. Existing grids keep their saved opacity. Change the opacity under Grid Types in Settings.
+
+The zoom legend appears at the right edge of the map. Click a tick to select that zoom level. The map keeps its center and respects the selected provider limits. The navigation lock also blocks legend clicks. View > Map zoom level controls its visibility.
+
+The Information pane shows ground speed for received CoT objects. The calculation uses the distance and time between consecutive messages. It shows kilometers per hour or miles per hour from the operating system locale. Reported speed provides a fallback when no valid calculation exists. Unknown values remain marked Unknown.
+
+A faint cone shows reported heading, or an estimated heading from recent movement. CoT animation in Settings controls its visibility, angle, length, and opacity. The cone follows the marker during movement, teleport fades, and stale fades. Space freezes the cone and motion values with the map. The angle is a visual aid, not a measured sensor field of view.

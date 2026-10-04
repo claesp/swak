@@ -353,7 +353,7 @@ MenuPlugin::rootActions returns true when a plugin contributes direct entries to
 
 The shared addProviderToolbar helper adds a multi-select source menu with the existing management action. The host uses it for Servers and Data providers. Each toggle reads the latest source record before updating its enabled field. Recoverable errors use the shared logger. These controls keep provider management in the host and use the existing source services.
 
-SettingField::describeCode displays CoT descriptions while retaining the raw code. cotFieldValue and setCotFieldValue read and write that value. Identity uses this for Type, Location method, and Team. The description field is read-only. The shared picker supports selection and custom raw values. UiBehavior uses disabled palette colors for read-only text fields while preserving selection and copying. It restores the original palette when editing resumes. Standard OK and Apply buttons use distinct shared icons.
+SettingField::describeCode displays CoT descriptions while retaining the raw code. cotFieldValue and setCotFieldValue read and write that value. Identity uses this for Type, Location method, Team, and Role. The description field is read-only. The shared picker supports selection and custom raw values. UiBehavior uses disabled palette colors for read-only text fields while preserving selection and copying. It restores the original palette when editing resumes. Standard OK and Apply buttons use distinct shared icons.
 
 MapPanels consumes unhandled wheel events at the overlay boundary. Child controls receive wheel events first. The map filter also rejects wheel events over the visible overlay mask. Floating panes remain separate windows.
 
@@ -412,3 +412,17 @@ SourcePlugin::additionalPanes returns optional PluginPane records. Each record s
 The Servers plugin supplies org.swak.lan.pane for Local LAN status and peer rows. It uses the same Servers service as the main browser. Servers stores Local LAN configuration as ordinary server records with protocol lan and localAddress. The former global lan getter and setter no longer exist. Statistics identify each peer through serverId and peerId. LAN server statistics expose state, address, and peer count.
 
 Plugin API version 2 remains the same because this build compiles all static plugins together. The outer preference format remains version 1. Servers uses its own serverSchemaVersion value of 2 to track migration inside that format.
+
+# Motion details and map controls
+
+Event has optional course and speed values. Course uses degrees clockwise from true north. Speed uses meters per second. The CoT codec reads and writes these values through detail/track. The shared validator accepts courses from 0 through 360 and speeds from 0 through 1000. Missing values remain unknown.
+
+TrackKinematics holds speed, heading, and flags that identify calculated speed and estimated heading. TrackMotion exposes these values through kinematics and VisualEvent. Its frozen snapshot preserves these values while paused.
+
+The shared groundMotion helper calculates ground speed and initial bearing from two positions and message timestamps. PredictionHistory uses the same helper. Estimates require intervals from 50 milliseconds through 10 minutes and speeds no greater than 1000 meters per second. TrackMotion also rejects estimates across its configured teleport distance or an expired track.
+
+The CoT layer draws a heading cone at the animated position. The cone uses the same opacity and stale color as its marker. Reported course takes priority over estimated heading. HeadingConeStyle exposes visibility, angle, length, and opacity through CoT animation configuration. Its length uses logical pixels and marker scaling. The cone indicates direction, not a measured sensor field of view. The Information pane shows speed, heading, and their sources. Static objects without motion history receive no invented velocity.
+
+ObjectEditor exposes Restricted for polygon and range-circle records. Both tools draw the saved flag as diagonal fill lines. Circle Information includes the flag. The polygon tool handles a corner double-click as Move and consumes the final release. Its corner menu gives Move priority through menuOrder.
+
+mapZoomLegendRect and mapZoomLevelAt share screen geometry for drawing and hit testing. Clicking the right-side legend selects a bounded integer zoom level around the map center. The navigation lock blocks this change. Lock buttons show the action available on the next click.

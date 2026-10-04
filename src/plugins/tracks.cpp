@@ -12,6 +12,7 @@
 #include <QJsonArray>
 #include <QMenu>
 #include <QPainter>
+#include <QPainterPath>
 #include <QSet>
 #include <QSortFilterProxyModel>
 #include <QStyle>
@@ -215,6 +216,21 @@ public:
             color.setBlue(qRound(color.blue() * (1 - visual.gray) + gray * visual.gray));
             painter.save();
             painter.setOpacity(visual.opacity);
+            const auto &cone = store.motion().headingConeStyle();
+            if (cone.enabled && visual.kinematics.heading) {
+                const double radius = view.markerSize(cone.length);
+                QPainterPath path;
+                path.moveTo(point);
+                path.arcTo(QRectF(point.x() - radius, point.y() - radius, radius * 2, radius * 2),
+                           90 - *visual.kinematics.heading + cone.angle / 2,
+                           -cone.angle);
+                path.closeSubpath();
+                painter.setOpacity(visual.opacity * cone.opacity);
+                painter.setPen(Qt::NoPen);
+                painter.setBrush(color);
+                painter.drawPath(path);
+                painter.setOpacity(visual.opacity);
+            }
             paintMarkerSymbol(
                 painter, symbol, point, view.markerSize(6) + (selected ? 2 : 0), color, selected);
             if (selected || labels++ < 100) {

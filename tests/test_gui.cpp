@@ -278,10 +278,86 @@ class GuiTest final : public QObject
 {
     Q_OBJECT
 private slots:
+    void headingCone()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("heading.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        swak::MapLayer *layer = nullptr;
+        for (auto *plugin : QPluginLoader::staticInstances()) {
+            if (QByteArray(plugin->metaObject()->className()).endsWith("TracksPlugin")) {
+                layer = qobject_cast<swak::MapLayer *>(plugin);
+            }
+        }
+        QVERIFY(layer);
+        auto &store = window.store();
+        auto values = store.motion().savePreferences();
+        values.insert(QStringLiteral("duration"), 0);
+        store.motion().restorePreferences(values);
+        swak::Event event;
+        event.uid = QStringLiteral("heading-test");
+        event.type = QStringLiteral("a-f-G-U");
+        event.how = QStringLiteral("m-g");
+        event.time = event.start = QDateTime::currentDateTimeUtc();
+        event.stale = event.time.addSecs(300);
+        const auto render = [&] {
+            QImage image(400, 400, QImage::Format_ARGB32_Premultiplied);
+            image.fill(Qt::transparent);
+            QPainter painter(&image);
+            painter.setRenderHint(QPainter::Antialiasing);
+            layer->paint(painter,
+                         {QSizeF(400, 400), swak::project(event.latitude, event.longitude), 8},
+                         store);
+            return image;
+        };
+        QVERIFY(store.accept(event).isEmpty());
+        QCOMPARE(render().pixelColor(200, 160).alpha(), 0);
+        event.course = 0;
+        QVERIFY(store.accept(event).isEmpty());
+        QVERIFY(render().pixelColor(200, 160).alpha() > 20);
+        QCOMPARE(render().pixelColor(200, 240).alpha(), 0);
+        event.course = 90;
+        QVERIFY(store.accept(event).isEmpty());
+        QVERIFY(render().pixelColor(240, 200).alpha() > 20);
+        QCOMPARE(render().pixelColor(200, 160).alpha(), 0);
+        store.motion().setPaused(true);
+        event.course = 180;
+        QVERIFY(store.accept(event).isEmpty());
+        QVERIFY(render().pixelColor(240, 200).alpha() > 20);
+        store.motion().setPaused(false);
+        QVERIFY(render().pixelColor(200, 240).alpha() > 20);
+        event.course.reset();
+        event.time = event.time.addSecs(10);
+        event.longitude = .001;
+        QVERIFY(store.accept(event).isEmpty());
+        QVERIFY(render().pixelColor(240, 200).alpha() > 20);
+        auto *map = window.findChild<QOpenGLWidget *>();
+        auto *settings = dynamic_cast<swak::SettingsParticipant *>(map);
+        auto mapValues = settings->savePreferences();
+        const auto world = swak::project(event.latitude, event.longitude);
+        mapValues.insert(QStringLiteral("centerX"), world.x());
+        mapValues.insert(QStringLiteral("centerY"), world.y());
+        settings->restorePreferences(mapValues);
+        QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
+        auto *selection = window.findChild<swak::MapSelection *>();
+        QVERIFY(selection->item());
+        QVERIFY(selection->item()->properties.value(QStringLiteral("Speed")).toString() !=
+                QStringLiteral("Unknown"));
+        QCOMPARE(selection->item()->properties.value(QStringLiteral("Heading source")).toString(),
+                 QStringLiteral("Estimated"));
+        QVERIFY(map->grabFramebuffer().save(QStringLiteral("heading-cone-map.png")));
+        QVERIFY(window.grab().save(QStringLiteral("heading-information.png")));
+        values.insert(QStringLiteral("headingConeEnabled"), false);
+        store.motion().restorePreferences(values);
+        QCOMPARE(render().pixelColor(240, 200).alpha(), 0);
+    }
     void gridTypesAndCoordinates()
     {
         swak::GridTypes grids;
         QCOMPARE(grids.entries().size(), 3);
+        QCOMPARE(swak::GridTypes::defaults().value(QStringLiteral("opacity")).toDouble(), .3);
         QVERIFY(grids.settingsFields().isEmpty());
         QCOMPARE(grids.selected(), QStringLiteral("geographic"));
         QCOMPARE(swak::gridCoordinate(0, 3, "mgrs", 5), QStringLiteral("31NEA0000000000"));
@@ -333,7 +409,7 @@ private slots:
         QVERIFY(hiddenLegacy.selected().isEmpty());
         swak::GridTypes legacy;
         legacy.migrate({{"gridVisible", true}, {"gridOpacity", .2}});
-        QCOMPARE(legacy.entries().value("geographic").toObject().value("opacity").toDouble(), .5);
+        QCOMPARE(legacy.entries().value("geographic").toObject().value("opacity").toDouble(), .3);
         for (const auto &system :
              {QStringLiteral("geographic"), QStringLiteral("utm"), QStringLiteral("mgrs")}) {
             for (const auto position : {QPointF(4, 60),
@@ -489,6 +565,40 @@ private slots:
             auto *scale = window.findChild<QAction *>(QStringLiteral("mapScaleAction"));
             auto *zoom = window.findChild<QAction *>(QStringLiteral("mapZoomAction"));
             QVERIFY(scale->isChecked() && zoom->isChecked());
+            const swak::Viewport legendView{map->size(), {.5, .5}, 8};
+            const auto legend = swak::mapZoomLegendRect(legendView);
+            QVERIFY(legend.left() > map->width() / 2);
+            QVERIFY(swak::mapZoomLegendRect({QSizeF(20, 20), {.5, .5}, 2}).isEmpty());
+            const auto top = legend.topLeft().toPoint() + QPoint(10, 0);
+            QTest::mouseDClick(map, Qt::LeftButton, Qt::NoModifier, top);
+            QMouseEvent legendMove(QEvent::MouseMove,
+                                   QPointF(top + QPoint(0, 20)),
+                                   QPointF(map->mapToGlobal(top + QPoint(0, 20))),
+                                   Qt::NoButton,
+                                   Qt::LeftButton,
+                                   Qt::NoModifier);
+            QApplication::sendEvent(map, &legendMove);
+            QTest::mouseRelease(map, Qt::LeftButton, Qt::NoModifier, top);
+            QCOMPARE(settings->savePreferences().value("zoom").toInt(), 19);
+            QTest::mouseClick(map,
+                              Qt::LeftButton,
+                              Qt::NoModifier,
+                              QPoint(qRound(legend.center().x()), qRound(legend.top())));
+            QCOMPARE(settings->savePreferences().value("zoom").toInt(), 19);
+            auto *lock = window.findChild<QAction *>(QStringLiteral("mapNavigationLock"));
+            lock->setChecked(true);
+            QCOMPARE(lock->icon().pixmap(24, 24).toImage(),
+                     swak::uiIcon(swak::UiIcon::Unlock).pixmap(24, 24).toImage());
+            QTest::mouseClick(
+                map, Qt::LeftButton, Qt::NoModifier, legend.bottomLeft().toPoint() + QPoint(10, 0));
+            QCOMPARE(settings->savePreferences().value("zoom").toInt(), 19);
+            lock->setChecked(false);
+            QCOMPARE(lock->icon().pixmap(24, 24).toImage(),
+                     swak::uiIcon(swak::UiIcon::Lock).pixmap(24, 24).toImage());
+            QTest::mouseClick(
+                map, Qt::LeftButton, Qt::NoModifier, legend.bottomLeft().toPoint() + QPoint(10, 0));
+            QVERIFY(settings->savePreferences().value("zoom").toInt() < 19);
+
             QVERIFY(map->grabFramebuffer().save(QStringLiteral("map-decorations-frame.png")));
             QSignalSpy decorationFrames(map, &QOpenGLWidget::frameSwapped);
             map->update();
@@ -3823,8 +3933,17 @@ private slots:
         QCOMPARE(objects->items().size(), 1);
         QCOMPARE(objects->items().first().type, QStringLiteral("line"));
     }
+    void restrictedArea_data()
+    {
+        QTest::addColumn<bool>("circle");
+        QTest::newRow("area") << false;
+        QTest::newRow("circle") << true;
+    }
     void restrictedArea()
     {
+        QFETCH(bool, circle);
+        const auto editorName =
+            circle ? QStringLiteral("shapesEditor") : QStringLiteral("polygonEditor");
         QTemporaryDir directory;
         const auto profile = directory.filePath(QStringLiteral("restricted-area.json"));
         QString id = QStringLiteral("restricted-area");
@@ -3833,17 +3952,18 @@ private slots:
             window.show();
             QVERIFY(QTest::qWaitForWindowExposed(&window));
             auto *objects = window.findChild<swak::UserObjects *>();
-            auto *editor = window.findChild<swak::ObjectEditor *>(QStringLiteral("polygonEditor"));
+            auto *editor = window.findChild<swak::ObjectEditor *>(editorName);
             auto *selection = window.findChild<swak::MapSelection *>();
             auto *tools = window.findChild<swak::MapTools *>();
             auto *map = window.findChild<QOpenGLWidget *>();
             swak::UserObject area;
             area.id = id;
-            area.type = QStringLiteral("polygon");
+            area.type = circle ? QStringLiteral("range-circle") : QStringLiteral("polygon");
             area.title = QStringLiteral("Restricted area");
             area.color = QStringLiteral("#1e88e5");
             area.geometry =
-                swak::polygonGeometry(QPolygonF{{.4, .4}, {.6, .4}, {.6, .6}, {.4, .6}});
+                swak::polygonGeometry(circle ? QPolygonF{{.5, .5}, {.6, .5}}
+                                             : QPolygonF{{.4, .4}, {.6, .4}, {.6, .6}, {.4, .6}});
             QVERIFY(objects->put(area).isEmpty());
             const auto image = [&] {
                 QImage result(400, 400, QImage::Format_ARGB32_Premultiplied);
@@ -3908,7 +4028,7 @@ private slots:
         swak::Window restored(profile, QPluginLoader::staticInstances());
         auto *objects = restored.findChild<swak::UserObjects *>();
         QVERIFY(objects->find(id)->restricted);
-        auto *editor = restored.findChild<swak::ObjectEditor *>(QStringLiteral("polygonEditor"));
+        auto *editor = restored.findChild<swak::ObjectEditor *>(editorName);
         editor->edit(*objects->find(id));
         auto *restricted = editor->findChild<QCheckBox *>(QStringLiteral("objectRestricted"));
         QVERIFY(restricted->isChecked());
@@ -4064,6 +4184,10 @@ private slots:
                     QVERIFY(entry);
                     seen = true;
                     QCOMPARE(entry->isEnabled(), enabled);
+                    if (menu->objectName() == QStringLiteral("polygonVertexMenu")) {
+                        QCOMPARE(menu->actions().first()->objectName(),
+                                 QStringLiteral("movePolygonVertex"));
+                    }
                     if (enabled) {
                         if (name.startsWith(QStringLiteral("delete"))) {
                             answerDeletion();
@@ -4093,6 +4217,21 @@ private slots:
             }
             QCOMPARE(overlay.pixelColor(a), QColor(editor->draft()->color));
             QVERIFY(overlay.save(QStringLiteral("polygon-corner-color.png")));
+            QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, a);
+            QTest::mouseDClick(map, Qt::LeftButton, Qt::NoModifier, a);
+            QCOMPARE(tools->statusText(), QStringLiteral("A"));
+            QMouseEvent release(QEvent::MouseButtonRelease,
+                                a,
+                                map->mapToGlobal(a),
+                                Qt::LeftButton,
+                                Qt::NoButton,
+                                Qt::NoModifier);
+            QApplication::sendEvent(map, &release);
+            QCOMPARE(editor->draft()->geometry, original);
+            motion(a + QPoint(15, 15));
+            click(a + QPoint(15, 15));
+            QVERIFY(editor->draft()->geometry != original);
+            QVERIFY(editor->setGeometry(original));
             context(a, QStringLiteral("movePolygonVertex"));
             QCOMPARE(tools->statusText(), QStringLiteral("A"));
             motion(b);
@@ -6315,18 +6454,22 @@ private slots:
             QVERIFY(lock);
             QVERIFY(!lock->icon().isNull());
             const auto lockedIcon = lock->icon().pixmap(24, 24).toImage();
+            QCOMPARE(lockedIcon, swak::uiIcon(swak::UiIcon::Unlock).pixmap(24, 24).toImage());
             const auto muted = uid->palette().color(QPalette::Text);
             QVERIFY(lock->toolTip().contains(QStringLiteral("Unlock")));
             lock->click();
             QVERIFY(!uid->isReadOnly());
-            QVERIFY(lock->icon().pixmap(24, 24).toImage() != lockedIcon);
+            QCOMPARE(lock->icon().pixmap(24, 24).toImage(),
+                     swak::uiIcon(swak::UiIcon::Lock).pixmap(24, 24).toImage());
             QVERIFY(lock->toolTip().contains(QStringLiteral("Lock")));
             QVERIFY(uid->palette().color(QPalette::Text) != muted);
             uid->setText(QStringLiteral("sender-test"));
             lock->click();
             QVERIFY(uid->isReadOnly());
-            for (const auto &path :
-                 {QStringLiteral("type"), QStringLiteral("how"), QStringLiteral("team")}) {
+            for (const auto &path : {QStringLiteral("type"),
+                                     QStringLiteral("how"),
+                                     QStringLiteral("team"),
+                                     QStringLiteral("role")}) {
                 auto *field =
                     dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.identity/") + path);
                 QVERIFY(field);

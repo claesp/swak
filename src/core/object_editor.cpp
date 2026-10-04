@@ -127,7 +127,8 @@ ObjectEditor::ObjectEditor(UserObjects &objects, MarkerCollections &collections,
     restricted_->hide();
     layout->addWidget(restricted_);
     connect(restricted_, &QCheckBox::toggled, this, [this](bool checked) {
-        if (draft_ && draft_->type == QStringLiteral("polygon")) {
+        if (draft_ && (draft_->type == QStringLiteral("polygon") ||
+                       draft_->type == QStringLiteral("range-circle"))) {
             draft_->restricted = checked;
             emit configurationChanged();
         }
@@ -212,7 +213,8 @@ void ObjectEditor::edit(const UserObject &item)
     draft_ = item;
     color_ = item.color;
     const bool marker = item.type == QStringLiteral("circle");
-    restricted_->setVisible(item.type == QStringLiteral("polygon"));
+    restricted_->setVisible(item.type == QStringLiteral("polygon") ||
+                            item.type == QStringLiteral("range-circle"));
     {
         const QSignalBlocker block(restricted_);
         restricted_->setChecked(item.restricted);

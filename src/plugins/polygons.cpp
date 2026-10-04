@@ -211,6 +211,7 @@ public:
     {
         if (moving_ >= 0) {
             moving_ = -1;
+            skipMoveRelease_ = false;
             if (map_) {
                 map_->unsetCursor();
             }
@@ -248,6 +249,7 @@ public:
             if (key.key() == Qt::Key_Escape) {
                 if (moving_ >= 0) {
                     moving_ = -1;
+                    skipMoveRelease_ = false;
                     map.unsetCursor();
                     emit changed();
                     return true;
@@ -266,6 +268,24 @@ public:
             }
             if (key.key() == Qt::Key_Delete || key.key() == Qt::Key_Backspace) {
                 return key.isAutoRepeat() || deleteSelection();
+            }
+        }
+        if (event.type() == QEvent::MouseButtonDblClick && editingVertices_ && editor_.draft() &&
+            moving_ < 0) {
+            auto &mouse = static_cast<QMouseEvent &>(event);
+            if (mouse.button() == Qt::LeftButton) {
+                const auto points = polygonVertices(editor_.draft()->geometry);
+                for (qsizetype i = 0; i < points.size(); ++i) {
+                    if (near(screenPoint(points.at(i), view), mouse.position())) {
+                        moving_ = static_cast<int>(i);
+                        skipMoveRelease_ = true;
+                        pointer_ = mouse.position();
+                        map.setCursor(Qt::CrossCursor);
+                        map.setFocus();
+                        emit changed();
+                        return true;
+                    }
+                }
             }
         }
         if (event.type() == QEvent::MouseMove) {
@@ -287,6 +307,10 @@ public:
                 return false;
             }
             pointer_ = mouse.position();
+            if (skipMoveRelease_) {
+                skipMoveRelease_ = false;
+                return true;
+            }
             if (drawing_) {
                 map.setCursor(Qt::CrossCursor);
                 if (points_.size() >= 3 && near(screenPoint(points_.first(), view), pointer_)) {
@@ -314,6 +338,7 @@ public:
                 candidate[moving_] = worldPoint(pointer_, view);
                 if (editor_.setGeometry(polygonGeometry(candidate))) {
                     moving_ = -1;
+                    skipMoveRelease_ = false;
                     map.unsetCursor();
                     emit changed();
                 } else {
@@ -502,6 +527,7 @@ private:
         drawing_ = false;
         editingVertices_ = false;
         moving_ = -1;
+        skipMoveRelease_ = false;
         points_.clear();
         if (map_) {
             map_->unsetCursor();
@@ -576,6 +602,7 @@ private:
         menu.setObjectName(QStringLiteral("polygonVertexMenu"));
         auto *move = menu.addAction(uiIcon(UiIcon::Move), tr("Move"));
         move->setObjectName(QStringLiteral("movePolygonVertex"));
+        move->setProperty("menuOrder", -1);
         auto *remove = menu.addAction(uiIcon(UiIcon::Clear), tr("Delete ..."));
         remove->setObjectName(QStringLiteral("deletePolygonVertex"));
         remove->setEnabled(validatePolygon(reduced).isEmpty());
@@ -624,6 +651,7 @@ private:
     bool drawing_ = false;
     bool editingVertices_ = false;
     int moving_ = -1;
+    bool skipMoveRelease_ = false;
     QPolygonF points_;
     QPointF pointer_;
     QPointer<QWidget> map_;

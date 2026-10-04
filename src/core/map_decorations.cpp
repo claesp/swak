@@ -45,6 +45,28 @@ ScaleLegend mapScaleLegend(const Viewport &view, const QLocale &locale, double b
             nice * unit,
             locale.toString(nice, 'f', decimals) + QLatin1Char(' ') + suffix};
 }
+QRectF mapZoomLegendRect(const Viewport &view)
+{
+    if (view.size.width() < 80 || view.size.height() < 60) {
+        return {};
+    }
+    const double height = std::min(220.0, view.size.height() * .4);
+    return {view.size.width() - 68, (view.size.height() - height) / 2, 58, height};
+}
+std::optional<int>
+mapZoomLevelAt(const Viewport &view, QPointF position, int minimumZoom, int maximumZoom)
+{
+    const auto rectangle = mapZoomLegendRect(view);
+    if (rectangle.isEmpty() || !rectangle.adjusted(0, -10, 0, 10).contains(position)) {
+        return {};
+    }
+    minimumZoom = std::clamp(minimumZoom, 0, 30);
+    maximumZoom = std::clamp(maximumZoom, minimumZoom, 30);
+    return std::clamp(qRound(maximumZoom - (position.y() - rectangle.top()) *
+                                               (maximumZoom - minimumZoom) / rectangle.height()),
+                      minimumZoom,
+                      maximumZoom);
+}
 void paintMapDecorations(QPainter &painter,
                          const Viewport &view,
                          bool scale,
@@ -69,12 +91,9 @@ void paintMapDecorations(QPainter &painter,
             break;
         }
     }
-    if (bottom < 60) {
-        return;
-    }
     painter.save();
     painter.setClipRect(QRectF(QPointF{}, view.size));
-    if (scale) {
+    if (scale && bottom >= 60) {
         const auto legend = mapScaleLegend(view, QLocale(), bottom);
         if (legend.pixels > 0) {
             const double y = bottom - 18;
@@ -97,20 +116,25 @@ void paintMapDecorations(QPainter &painter,
     if (zoom) {
         minimumZoom = std::clamp(minimumZoom, 0, 30);
         maximumZoom = std::clamp(maximumZoom, minimumZoom, 30);
-        const double height = std::min(220.0, bottom * .4);
-        const double top = (bottom - height) / 2;
-        const int span = std::max(1, maximumZoom - minimumZoom);
-        painter.setOpacity(.4);
-        painter.fillRect(QRectF(7, top - 12, 43, height + 24), Qt::white);
-        painter.setPen(QPen(Qt::black, 1));
-        painter.drawLine(QPointF(15, top), QPointF(15, top + height));
-        for (int level = minimumZoom; level <= maximumZoom; ++level) {
-            const double y = top + (maximumZoom - level) * height / span;
-            const bool current = level == qRound(view.zoom);
-            painter.setPen(QPen(Qt::black, current ? 2 : 1));
-            painter.drawLine(QPointF(15, y), QPointF(current ? 34 : 25, y));
-            if (current || level == minimumZoom || level == maximumZoom) {
-                painter.drawText(QPointF(35, y + 4), QLocale().toString(level));
+        const auto rectangle = mapZoomLegendRect(view);
+        if (!rectangle.isEmpty()) {
+            const double height = rectangle.height(), top = rectangle.top();
+            const double x = rectangle.left() + 7;
+            const int span = std::max(1, maximumZoom - minimumZoom);
+            painter.setOpacity(.4);
+            painter.fillRect(rectangle.adjusted(0, -12, 0, 12), Qt::white);
+            painter.setPen(QPen(Qt::black, 1));
+            painter.drawLine(QPointF(x, top), QPointF(x, top + height));
+            for (int level = minimumZoom; level <= maximumZoom; ++level) {
+                const double y = top + (maximumZoom - level) * height / span;
+                const bool current = level == qRound(view.zoom);
+                painter.setPen(QPen(Qt::black, current ? 2 : 1));
+                painter.drawLine(QPointF(x, y), QPointF(x + (current ? 19 : 10), y));
+                if (current || level == minimumZoom || level == maximumZoom) {
+                    painter.drawText(QRectF(x + 20, y - 10, rectangle.right() - x - 24, 20),
+                                     Qt::AlignRight | Qt::AlignVCenter,
+                                     QLocale().toString(level));
+                }
             }
         }
     }

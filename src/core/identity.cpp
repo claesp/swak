@@ -22,12 +22,10 @@ QList<SettingField> Identity::settingsFields() const
     how.describeCode = true;
     auto team = cotSetting(QStringLiteral("team"), tr("Team"), CotField::Team);
     team.describeCode = true;
-    return {uid,
-            textSetting(QStringLiteral("callsign"), tr("Callsign"), 128),
-            type,
-            how,
-            team,
-            cotSetting(QStringLiteral("role"), tr("Role"), CotField::Role)};
+    auto role = cotSetting(QStringLiteral("role"), tr("Role"), CotField::Role);
+    role.describeCode = true;
+    return {
+        uid, textSetting(QStringLiteral("callsign"), tr("Callsign"), 128), type, how, team, role};
 }
 QString Identity::validateSettings(const QJsonObject &values) const
 {

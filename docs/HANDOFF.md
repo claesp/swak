@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 4, 2026: Read “Marker scaling, Predict, and restricted areas” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 5, 2026: Read “Identity, map controls, and motion details” at the end of this file. Earlier sections are historical snapshots. Use Git for the current revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -1288,3 +1288,26 @@ Remaining network gaps include forced listener allocation failures, discovery bi
 The dependency review consulted the [Qt certificate-loading advisory](https://www.qt.io/blog/security-advisory-untrusted-search-path-vulnerability-in-openssl). CVE-2025-14575 affects upstream Qt 6.8.2 under specific certificate-store and working-directory conditions. This host uses Debian package 6.8.2+dfsg-9+deb13u2. Its local changelog does not identify that fix. Its patch status remains unverified. No dependency changes occur in this task.
 
 The release preset builds without compiler warnings in build/lan-release.log. The post-commit release build uses build/lan-release-committed.log. The executable remains build/release/swak. Tests use Qt 6.8.2 and GCC 14.2.
+
+
+## 2026-10-05: Identity, map controls, and motion details
+
+Identity Role now uses the shared description and code selector. Lock buttons show the next action: Unlock while locked, and Lock while unlocked. Circle supports Restricted through the shared object editor, storage, rendering, and Information property. Area corner menus place Move first. Double-clicking a corner starts Move and consumes the final release.
+
+Grid renderers use antialiasing. New grids default to 30 percent opacity. Saved grid values remain unchanged. The zoom legend sits on the right with right-aligned text. Clicking a level changes zoom around the map center within provider limits. The navigation lock blocks legend clicks.
+
+Event accepts optional CoT track course and speed through the shared codec and validator. TrackMotion calculates ground speed and estimated heading from consecutive message positions and timestamps. Reported heading takes priority. Reported speed provides a fallback when a calculation is unavailable. The Information pane shows values and their sources. The heading cone follows marker movement, fading, and pause state.
+
+CoT animation configuration includes cone visibility, angle, length, and opacity. The default cone uses 60 degrees, 60 logical pixels, and 15 percent opacity. Marker scaling also scales its length. The cone is a direction aid, not a measured sensor field of view. The API and usage guides describe the new contracts. No new dependency is added.
+
+Quick sanitizer diagnostics pass ten suites in build/quality/20261005-005907-quick-92470. Final added motion cases pass in build/map-controls-sanitize-core-final.log. Native sanitizer tests pass all 97 cases in build/quality/20261005-010128-gui-93928. The run still fails leak detection on the recorded Mesa/LLVM leak: 240732 bytes in 1073 allocations. The leak remains unsuppressed. Final corner and legend tests use build/map-controls-sanitize-gui-final.log.
+
+The focused interface tests pass at 200 percent scaling in build/map-controls-hidpi.log. Native screenshots cover Role, restricted Circle, grid lines, the zoom legend, and the heading cone. Source analysis passes in build/quality/20261005-010011-analyze-4. Final style diagnostics pass in build/quality/20261005-010659-style-97257.
+
+The 60-second workload passes in build/quality/20261005-010426-soak-96074. It completes 992 cycles with 21573632 bytes of peak memory growth. The maximum heartbeat gap is 108 milliseconds. Idle CPU time is 0.019 seconds.
+
+Coverage uses build/quality/20261005-010236-coverage-95168. All ten headless suites and 97 native cases pass. The outer runner ends with status 143 before report generation. Its native child completes the test suite. A separate call to coverage_report produces the report. The final report includes the focused motion and high-scaling cases. The report records 12564 of 13512 lines, 1210 of 1283 functions, and 18386 of 34946 branches.
+
+Remaining paths include full TrackMotion capacity eviction, some stale-timer boundaries, and cancellation during a corner move. Native Wayland, hardware graphics, all locales, and two-hour operation remain unqualified. The isolated LAN harness is not repeated because this change does not alter network transport. The prior Qt advisory and package patch-status limit still apply. This task produces a development release, not a qualified production release.
+
+The release preset builds without compiler warnings in build/map-controls-release.log. The post-commit rebuild uses build/map-controls-release-committed.log. The executable is build/release/swak. Tests use Qt 6.8.2 and GCC 14.2. Generated screenshots are stored under build/map-controls-screens and the diagnostic report directories.

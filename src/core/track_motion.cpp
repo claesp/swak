@@ -1,5 +1,7 @@
 #include "core/track_motion.h"
 
+#include "core/measure.h"
+#include "core/prediction.h"
 #include "core/projection.h"
 
 #include <algorithm>
@@ -16,6 +18,12 @@ TrackMotion::TrackMotion(QObject *parent) : QObject(parent)
 QList<SettingField> TrackMotion::settingsFields() const
 {
     return {
+        booleanSetting(QStringLiteral("headingConeEnabled"), tr("Show heading cone")),
+        numberSetting(
+            QStringLiteral("headingConeAngle"), tr("Heading cone angle (degrees)"), 5, 180),
+        numberSetting(
+            QStringLiteral("headingConeLength"), tr("Heading cone length (pixels)"), 10, 200),
+        numberSetting(QStringLiteral("headingConeOpacity"), tr("Heading cone opacity"), .01, 1, 2),
         numberSetting(
             QStringLiteral("predictionMs"), tr("Prediction limit (milliseconds)"), 0, 5000),
         numberSetting(QStringLiteral("duration"), tr("Movement duration (milliseconds)"), 0, 5000),
@@ -26,7 +34,11 @@ QList<SettingField> TrackMotion::settingsFields() const
 }
 QJsonObject TrackMotion::savePreferences() const
 {
-    return {{QStringLiteral("predictionMs"), prediction_},
+    return {{QStringLiteral("headingConeEnabled"), cone_.enabled},
+            {QStringLiteral("headingConeAngle"), cone_.angle},
+            {QStringLiteral("headingConeLength"), cone_.length},
+            {QStringLiteral("headingConeOpacity"), cone_.opacity},
+            {QStringLiteral("predictionMs"), prediction_},
             {QStringLiteral("duration"), duration_},
             {QStringLiteral("teleportKm"), threshold_},
             {QStringLiteral("fade"), fade_},
@@ -34,6 +46,10 @@ QJsonObject TrackMotion::savePreferences() const
 }
 void TrackMotion::restorePreferences(const QJsonObject &v)
 {
+    cone_.enabled = v.value("headingConeEnabled").toBool(true);
+    cone_.angle = preferenceNumber(v, "headingConeAngle", 60, 5, 180);
+    cone_.length = preferenceNumber(v, "headingConeLength", 60, 10, 200);
+    cone_.opacity = preferenceNumber(v, "headingConeOpacity", .15, .01, 1);
     prediction_ = preferenceInteger(v, QStringLiteral("predictionMs"), 3000, 0, 5000);
     duration_ = preferenceInteger(v, QStringLiteral("duration"), 600, 0, 5000);
     threshold_ = preferenceNumber(v, QStringLiteral("teleportKm"), 100, 0.01, 20000);
@@ -56,6 +72,7 @@ void TrackMotion::restorePreferences(const QJsonObject &v)
 VisualEvent TrackMotion::visual(const Motion &m, qint64 now) const
 {
     VisualEvent v{m.event, m.to};
+    v.kinematics = m.kinematics;
     if (m.teleport) {
         const double progress = std::clamp(static_cast<double>(now - m.start) / fade_, 0.0, 1.0);
         if (progress < 0.5) {
@@ -106,6 +123,32 @@ void TrackMotion::update(const Event &event, qint64 now)
     }
     const auto target = project(event.latitude, event.longitude);
     auto it = records_.find(event.uid);
+    TrackKinematics motionData{event.speed, event.course};
+    if (motionData.heading) {
+        motionData.heading = std::fmod(*motionData.heading, 360);
+    }
+    if (it != records_.end() && it->stale < 0 && it->event.time == event.time && it->to == target) {
+        motionData = it->kinematics;
+        if (event.course) {
+            motionData.heading = std::fmod(*event.course, 360);
+            motionData.estimatedHeading = false;
+        }
+        if (event.speed && !motionData.calculatedSpeed) {
+            motionData.speed = event.speed;
+        }
+    }
+    if (it != records_.end() && it->stale < 0 &&
+        groundDistance(it->to, target) <= threshold_ * 1000) {
+        if (const auto estimate =
+                groundMotion(it->to, target, it->event.time.msecsTo(event.time))) {
+            motionData.speed = estimate->speed;
+            motionData.calculatedSpeed = true;
+            if (!motionData.heading) {
+                motionData.heading = estimate->heading;
+                motionData.estimatedHeading = estimate->heading.has_value();
+            }
+        }
+    }
     if (it == records_.end()) {
         if (records_.size() >= MaxEvents * 2) {
             auto oldest = records_.end();
@@ -120,14 +163,18 @@ void TrackMotion::update(const Event &event, qint64 now)
             }
             records_.erase(oldest);
         }
-        records_.insert(event.uid, {event, target, target, now - std::max(duration_, fade_)});
+        auto inserted =
+            records_.insert(event.uid, {event, target, target, now - std::max(duration_, fade_)});
+        inserted->kinematics = motionData;
         return;
     }
     if (paused_) {
         *it = {event, target, target, now - std::max(duration_, fade_)};
+        it->kinematics = motionData;
         return;
     }
     auto &record = *it;
+    record.kinematics = motionData;
     if (record.to == target && record.stale < 0 && record.velocity.isNull()) {
         record.event = event;
         return;
@@ -157,6 +204,7 @@ void TrackMotion::update(const Event &event, qint64 now)
                                  static_cast<double>(std::max<qint64>(1, interval)) <=
                              1.0;
     record = {event, current.world, target, now, -1, km > threshold_, current.opacity};
+    record.kinematics = motionData;
     if (predict) {
         record.velocity = delta / static_cast<double>(interval);
         record.horizon = std::min<qint64>(prediction_, interval * 2);
@@ -200,6 +248,17 @@ QList<VisualEvent> TrackMotion::snapshot(qint64 now) const
         }
     }
     return result;
+}
+TrackKinematics TrackMotion::kinematics(const QString &uid) const
+{
+    if (paused_) {
+        const auto found = std::find_if(frozen_.cbegin(), frozen_.cend(), [&uid](const auto &v) {
+            return v.event.uid == uid;
+        });
+        return found == frozen_.cend() ? TrackKinematics{} : found->kinematics;
+    }
+    const auto found = records_.constFind(uid);
+    return found == records_.cend() ? TrackKinematics{} : found->kinematics;
 }
 void TrackMotion::advance()
 {

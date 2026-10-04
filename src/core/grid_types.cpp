@@ -59,7 +59,7 @@ QJsonObject GridTypes::defaults(const QString &system)
     return {{"name", systemName(system)},
             {"system", system},
             {"color", "#000000"},
-            {"opacity", .5},
+            {"opacity", .3},
             {"spacing", 140},
             {"width", 1},
             {"format", 0}};
@@ -174,10 +174,10 @@ void GridTypes::migrate(const QJsonObject &mapValues)
     }
     restored_ = true;
     auto value = defaults();
-    value.insert("opacity", preferenceNumber(mapValues, "gridOpacity", .5, .05, 1));
+    value.insert("opacity", preferenceNumber(mapValues, "gridOpacity", .3, .05, 1));
     value.insert("spacing", preferenceNumber(mapValues, "gridSpacing", 140, 80, 400));
     if (!mapValues.contains("gridStyleVersion") && value.value("opacity").toDouble() == .2) {
-        value.insert("opacity", .5);
+        value.insert("opacity", .3);
     }
     entries_.insert("geographic", value);
     if (!mapValues.value("gridVisible").toBool(true)) {

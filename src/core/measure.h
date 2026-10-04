@@ -4,6 +4,7 @@
 #include <QPolygonF>
 namespace swak {
 double groundDistance(QPointF first, QPointF second);
+QString formatSpeed(double metersPerSecond, const QLocale &locale = QLocale());
 QString formatDistance(double meters, const QLocale &locale = QLocale());
 QPolygonF circleBoundary(QPointF center, QPointF edge);
 QString validateTwoPointShape(const QString &type, const QJsonObject &geometry);

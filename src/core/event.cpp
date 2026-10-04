@@ -45,6 +45,12 @@ QString eventError(const Event &event)
         event.linearError < 0 || event.linearError > 100000000) {
         return tr("The event position or uncertainty is outside the supported range.");
     }
+    if ((event.course &&
+         (!std::isfinite(*event.course) || *event.course < 0 || *event.course > 360)) ||
+        (event.speed &&
+         (!std::isfinite(*event.speed) || *event.speed < 0 || *event.speed > 1000))) {
+        return tr("The reported heading or speed is outside the supported range.");
+    }
     return {};
 }
 } // namespace swak

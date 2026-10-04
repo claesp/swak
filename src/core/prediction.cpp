@@ -14,6 +14,34 @@ constexpr double Radius = 6371000;
 constexpr double Radians = std::numbers::pi / 180.0;
 constexpr double MaxSpeed = 1000;
 } // namespace
+std::optional<GroundMotion> groundMotion(QPointF first, QPointF last, qint64 intervalMs)
+{
+    const auto valid = [](QPointF p) {
+        return std::isfinite(p.x()) && std::isfinite(p.y()) && p.x() >= 0 && p.x() <= 1 &&
+               p.y() >= 0 && p.y() <= 1;
+    };
+    if (!valid(first) || !valid(last) || intervalMs < 50 || intervalMs > 600000) {
+        return {};
+    }
+    const double distance = groundDistance(first, last);
+    const double speed = distance * 1000 / static_cast<double>(intervalMs);
+    if (!std::isfinite(speed) || speed > MaxSpeed) {
+        return {};
+    }
+    GroundMotion result{speed};
+    if (distance >= .01) {
+        const auto a = unproject(first), b = unproject(last);
+        const double latitude = a.y() * Radians, nextLatitude = b.y() * Radians;
+        const double longitude = std::remainder((b.x() - a.x()) * Radians, 2 * std::numbers::pi);
+        const double heading =
+            std::atan2(std::sin(longitude) * std::cos(nextLatitude),
+                       std::cos(latitude) * std::sin(nextLatitude) -
+                           std::sin(latitude) * std::cos(nextLatitude) * std::cos(longitude)) /
+            Radians;
+        result.heading = std::fmod(heading + 360, 360);
+    }
+    return result;
+}
 void PredictionHistory::append(const Event &event, double teleportKm, int historySeconds)
 {
     if (!event.time.isValid() || !std::isfinite(event.latitude) ||
@@ -50,16 +78,12 @@ std::optional<QPointF> PredictionHistory::forecast(int seconds) const
         return {};
     }
     const auto segment = [](const Sample &first, const Sample &last) {
-        const auto a = unproject(first.world), b = unproject(last.world);
-        const double latitude = a.y() * Radians, nextLatitude = b.y() * Radians;
-        const double longitude = std::remainder((b.x() - a.x()) * Radians, 2 * std::numbers::pi);
-        const double duration = static_cast<double>(first.time.msecsTo(last.time)) / 1000;
-        const double bearing =
-            std::atan2(std::sin(longitude) * std::cos(nextLatitude),
-                       std::cos(latitude) * std::sin(nextLatitude) -
-                           std::sin(latitude) * std::cos(nextLatitude) * std::cos(longitude));
-        return std::array<double, 3>{
-            groundDistance(first.world, last.world) / duration, bearing, duration};
+        const auto interval = first.time.msecsTo(last.time);
+        const auto motion =
+            groundMotion(first.world, last.world, interval).value_or(GroundMotion{});
+        return std::array<double, 3>{motion.speed,
+                                     motion.heading.value_or(0) * Radians,
+                                     static_cast<double>(interval) / 1000};
     };
     const auto latest = segment(samples_.at(samples_.size() - 2), samples_.last());
     double speed = latest[0], bearing = latest[1];

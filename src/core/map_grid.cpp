@@ -74,7 +74,7 @@ void paintMapGrid(QPainter &painter,
         return;
     }
     painter.save();
-    painter.setRenderHint(QPainter::Antialiasing, false);
+    painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setClipRect(QRectF(QPointF{}, view.size));
     color.setAlphaF(static_cast<float>(std::clamp(opacity, 0.0, 1.0)));
     painter.setPen(QPen(color, std::clamp(lineWidth, .5, 3.0)));
@@ -313,6 +313,7 @@ void paintGridType(QPainter &painter, const Viewport &view, const QJsonObject &t
         return;
     }
     painter.save();
+    painter.setRenderHint(QPainter::Antialiasing, true);
     auto color = QColor(type.value("color").toString());
     color.setAlphaF(static_cast<float>(type.value("opacity").toDouble()));
     painter.setPen(QPen(color, type.value("width").toDouble()));

@@ -19,6 +19,15 @@ double groundDistance(QPointF first, QPointF second)
                                                           std::pow(std::sin(lon / 2), 2);
     return 12742017.6 * std::asin(std::sqrt(std::clamp(h, 0.0, 1.0)));
 }
+QString formatSpeed(double metersPerSecond, const QLocale &locale)
+{
+    if (!std::isfinite(metersPerSecond) || metersPerSecond < 0) {
+        return {};
+    }
+    const bool metric = locale.measurementSystem() == QLocale::MetricSystem;
+    return locale.toString(metersPerSecond * (metric ? 3.6 : 2.2369362921), 'f', 1) +
+           QLatin1Char(' ') + (metric ? QObject::tr("km/h") : QObject::tr("mph"));
+}
 QString formatDistance(double meters, const QLocale &locale)
 {
     if (!std::isfinite(meters) || meters < 0) {

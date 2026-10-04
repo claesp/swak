@@ -7,6 +7,12 @@
 #include <optional>
 
 namespace swak {
+struct GroundMotion
+{
+    double speed = 0;
+    std::optional<double> heading = {};
+};
+std::optional<GroundMotion> groundMotion(QPointF first, QPointF last, qint64 intervalMs);
 class PredictionHistory final
 {
 public:

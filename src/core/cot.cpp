@@ -36,6 +36,7 @@ DecodeResult decodeCot(const QByteArray &data)
     bool inDetail = false;
     bool contact = false;
     bool group = false;
+    bool track = false;
     const auto timestamp = [](const QString &value) {
         static const QRegularExpression zone(QStringLiteral("(?:Z|[+-][0-9]{2}:[0-9]{2})\\z"));
         if (!zone.match(value).hasMatch()) {
@@ -111,6 +112,31 @@ DecodeResult decodeCot(const QByteArray &data)
                 }
                 contact = true;
                 event.callsign = field("callsign");
+            } else if (depth == 3 && xml.name() == QLatin1String("track") &&
+                       xml.namespaceUri().isEmpty()) {
+                if (track) {
+                    return fail(tr("The event contains more than one track."));
+                }
+                track = true;
+                for (const auto *key : {"course", "speed"}) {
+                    if (!attrs.hasAttribute(QLatin1String(key))) {
+                        continue;
+                    }
+                    const auto text = field(key);
+                    static const QRegularExpression decimal(
+                        QStringLiteral("\\A[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)\\z"));
+                    bool ok = false;
+                    const double value = text.toDouble(&ok);
+                    if (!ok || text.size() > 40 || !decimal.match(text).hasMatch() ||
+                        !std::isfinite(value)) {
+                        return fail(tr("Track heading and speed must be finite decimal numbers."));
+                    }
+                    if (QLatin1String(key) == QLatin1String("course")) {
+                        event.course = value;
+                    } else {
+                        event.speed = value;
+                    }
+                }
             } else if (depth == 3 && xml.name() == QLatin1String("__group") &&
                        xml.namespaceUri().isEmpty()) {
                 if (group) {
@@ -168,6 +194,16 @@ QByteArray encodeCot(const Event &event)
     if (!event.callsign.isEmpty()) {
         xml.writeStartElement(QStringLiteral("contact"));
         attr("callsign", event.callsign);
+        xml.writeEndElement();
+    }
+    if (event.course || event.speed) {
+        xml.writeStartElement(QStringLiteral("track"));
+        if (event.course) {
+            attr("course", QString::number(*event.course, 'f', 6));
+        }
+        if (event.speed) {
+            attr("speed", QString::number(*event.speed, 'f', 6));
+        }
         xml.writeEndElement();
     }
     if (!event.team.isEmpty() || !event.role.isEmpty()) {

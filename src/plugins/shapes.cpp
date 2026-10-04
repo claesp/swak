@@ -497,7 +497,8 @@ public:
                      item.title,
                      view,
                      selection_.item() && selection_.item()->owner == owner() &&
-                         selection_.item()->id == item.id);
+                         selection_.item()->id == item.id,
+                     item.restricted);
             }
         }
         if (editor_.draft() && movingPoint_ < 0) {
@@ -506,7 +507,9 @@ public:
                  editor_.draft()->type,
                  QColor(editor_.draft()->color),
                  editor_.draft()->title,
-                 view);
+                 view,
+                 false,
+                 editor_.draft()->restricted);
         }
         const auto now = clock_.elapsed();
         for (const auto &measurement : measurements_) {
@@ -539,7 +542,9 @@ public:
                  moving_->type,
                  QColor(moving_->color),
                  moving_->title,
-                 view);
+                 view,
+                 false,
+                 moving_->restricted);
         }
         if (editor_.draft()) {
             const auto points = movingPoint_ >= 0 ? editedPoints(point)
@@ -550,7 +555,9 @@ public:
                      editor_.draft()->type,
                      QColor(editor_.draft()->color),
                      editor_.draft()->title,
-                     view);
+                     view,
+                     false,
+                     editor_.draft()->restricted);
             }
             dots(painter, points, QColor(editor_.draft()->color), view);
         }
@@ -625,7 +632,8 @@ private:
               QColor color,
               const QString &title,
               const Viewport &view,
-              bool selected = false) const
+              bool selected = false,
+              bool restricted = false) const
     {
         if (points.size() != 2) {
             return;
@@ -639,6 +647,11 @@ private:
             painter.setBrush(fill);
             const auto radius = QLineF(a, b).length();
             painter.drawEllipse(a, radius, radius);
+            if (restricted) {
+                painter.setPen(Qt::NoPen);
+                painter.setBrush(QBrush(color, Qt::BDiagPattern));
+                painter.drawEllipse(a, radius, radius);
+            }
             const auto label = painter.fontMetrics().elidedText(title, Qt::ElideRight, 240);
             paintMapLabel(painter,
                           a + QPointF(-painter.fontMetrics().horizontalAdvance(label) / 2.0,
@@ -674,6 +687,7 @@ private:
             item.kind = MapItem::Kind::Polygon;
             item.icon = uiIcon(UiIcon::Circle);
             item.type = tr("Circle");
+            item.properties.insert(tr("Restricted"), record.restricted ? tr("Yes") : tr("No"));
             const auto boundary = circleBoundary(points[0], points[1]);
             const auto radius = QLineF(points[0], points[1]).length();
             item.path.addEllipse(points[0], radius, radius);

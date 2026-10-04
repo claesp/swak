@@ -8,6 +8,20 @@
 #include <QPointF>
 #include <QTimer>
 namespace swak {
+struct TrackKinematics
+{
+    std::optional<double> speed = {};
+    std::optional<double> heading = {};
+    bool estimatedHeading = false;
+    bool calculatedSpeed = false;
+};
+struct HeadingConeStyle
+{
+    bool enabled = true;
+    double angle = 60;
+    double length = 60;
+    double opacity = .15;
+};
 struct VisualEvent
 {
     Event event;
@@ -15,6 +29,7 @@ struct VisualEvent
     double opacity = 1;
     double gray = 0;
     bool expired = false;
+    TrackKinematics kinematics = {};
 };
 class TrackMotion final : public QObject, public SettingsParticipant
 {
@@ -42,6 +57,11 @@ public:
     }
     void setPaused(bool paused);
     QList<VisualEvent> snapshot(qint64 now = -1) const;
+    TrackKinematics kinematics(const QString &uid) const;
+    const HeadingConeStyle &headingConeStyle() const
+    {
+        return cone_;
+    }
     qint64 time() const
     {
         return clock_.elapsed();
@@ -60,6 +80,7 @@ private:
         double initialOpacity = 1;
         QPointF velocity = {};
         qint64 horizon = 0;
+        TrackKinematics kinematics = {};
     };
     VisualEvent visual(const Motion &motion, qint64 now) const;
     void advance();
@@ -73,5 +94,6 @@ private:
     double threshold_ = 100;
     int staleSeconds_ = 10;
     int fade_ = 600;
+    HeadingConeStyle cone_;
 };
 } // namespace swak

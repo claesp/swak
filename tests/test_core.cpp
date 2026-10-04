@@ -59,6 +59,120 @@ private:
         return event;
     }
 private slots:
+    void trackKinematics()
+    {
+        TrackMotion motion;
+        auto event = sample();
+        event.latitude = 0;
+        event.longitude = 0;
+        motion.update(event);
+        QVERIFY(!motion.kinematics(event.uid).heading);
+        QVERIFY(!motion.kinematics(event.uid).speed);
+        event.time = event.time.addSecs(10);
+        event.longitude = .001;
+        motion.update(event);
+        auto state = motion.kinematics(event.uid);
+        QVERIFY(state.speed && std::abs(*state.speed - 11.11949) < .01);
+        QVERIFY(state.heading && std::abs(*state.heading - 90) < .01);
+        QVERIFY(state.estimatedHeading && state.calculatedSpeed);
+        motion.update(event);
+        QCOMPARE(motion.kinematics(event.uid).speed, state.speed);
+        motion.setPaused(true);
+        event.time = event.time.addSecs(10);
+        event.latitude = .001;
+        event.course = 360;
+        event.speed = 20;
+        motion.update(event);
+        QCOMPARE(motion.kinematics(event.uid).heading, state.heading);
+        motion.setPaused(false);
+        state = motion.kinematics(event.uid);
+        QCOMPARE(state.heading.value(), 0.0);
+        QVERIFY(!state.estimatedHeading && state.calculatedSpeed);
+        event.time = event.time.addSecs(10);
+        event.longitude = 90;
+        motion.update(event);
+        QVERIFY(!motion.kinematics(event.uid).calculatedSpeed);
+        QCOMPARE(motion.kinematics(event.uid).speed.value(), 20.0);
+        event.course.reset();
+        event.speed.reset();
+        event.time = event.time.addSecs(601);
+        motion.update(event);
+        QVERIFY(!motion.kinematics(event.uid).heading);
+        QVERIFY(!motion.kinematics(event.uid).speed);
+        event.time = event.time.addSecs(10);
+        motion.update(event);
+        QCOMPARE(motion.kinematics(event.uid).speed.value(), 0.0);
+        QVERIFY(!motion.kinematics(event.uid).heading);
+        QVERIFY(!motion.kinematics(QStringLiteral("missing")).speed);
+        TrackMotion reported;
+        event.speed = 5;
+        reported.update(event);
+        event.speed = 6;
+        reported.update(event);
+        QCOMPARE(reported.kinematics(event.uid).speed.value(), 6.0);
+        reported.expire(event.uid);
+        event.speed.reset();
+        event.time = event.time.addSecs(1);
+        reported.update(event);
+        QVERIFY(!reported.kinematics(event.uid).speed);
+        const auto crossing = groundMotion(project(0, 179.999), project(0, -179.999), 1000);
+        QVERIFY(crossing && crossing->heading);
+        QVERIFY(std::abs(*crossing->heading - 90) < .01);
+        QVERIFY(!groundMotion({.5, .5}, {.5, .5}, 0));
+        QVERIFY(!groundMotion({.5, .5}, {.5, .5}, 600001));
+        QVERIFY(!groundMotion({-1, .5}, {.5, .5}, 1000));
+        QVERIFY(!groundMotion({.5, .5}, {.6, .5}, 50));
+        QVERIFY(formatSpeed(10, QLocale(QLocale::English, QLocale::Sweden)).endsWith(" km/h"));
+        QVERIFY(formatSpeed(10, QLocale(QLocale::English, QLocale::UnitedStates)).endsWith(" mph"));
+        QVERIFY(formatSpeed(-1).isEmpty());
+        QVERIFY(formatSpeed(std::numeric_limits<double>::infinity()).isEmpty());
+        auto preferences = motion.savePreferences();
+        preferences.insert(QStringLiteral("headingConeEnabled"), false);
+        preferences.insert(QStringLiteral("headingConeAngle"), 90);
+        preferences.insert(QStringLiteral("headingConeLength"), 100);
+        preferences.insert(QStringLiteral("headingConeOpacity"), .3);
+        motion.restorePreferences(preferences);
+        QVERIFY(!motion.headingConeStyle().enabled);
+        QCOMPARE(motion.headingConeStyle().angle, 90.0);
+        QCOMPARE(motion.headingConeStyle().length, 100.0);
+        QCOMPARE(motion.headingConeStyle().opacity, .3);
+    }
+    void trackDetails()
+    {
+        auto event = sample();
+        event.course = 360;
+        event.speed = 1000;
+        const auto decoded = codec_->decode(codec_->encode(event));
+        QVERIFY(decoded.event);
+        QCOMPARE(decoded.event->course, event.course);
+        QCOMPARE(decoded.event->speed, event.speed);
+        const auto bytes = codec_->encode(sample());
+        for (const QByteArray &detail : {QByteArray("<track course='-1'/>"),
+                                         QByteArray("<track course='361'/>"),
+                                         QByteArray("<track speed='1001'/>"),
+                                         QByteArray("<track speed='-1'/>"),
+                                         QByteArray("<track speed='NaN'/>"),
+                                         QByteArray("<track course='inf'/>"),
+                                         QByteArray("<track/><track/>"),
+                                         QByteArray("<track speed='1e3'/>"),
+                                         QByteArray("<track course=''/>")}) {
+            auto bad = bytes;
+            bad.replace("</detail>", detail + "</detail>");
+            QVERIFY2(!codec_->decode(bad).event, detail.constData());
+        }
+        for (const QByteArray &detail : {QByteArray("<track course='90'/>"),
+                                         QByteArray("<track speed='0'/>"),
+                                         QByteArray("<track/>")}) {
+            auto valid = bytes;
+            valid.replace("</detail>", detail + "</detail>");
+            QVERIFY2(codec_->decode(valid).event, detail.constData());
+        }
+        event.course = std::numeric_limits<double>::infinity();
+        QVERIFY(!eventError(event).isEmpty());
+        event.course = 0;
+        event.speed = std::numeric_limits<double>::quiet_NaN();
+        QVERIFY(!eventError(event).isEmpty());
+    }
     void predictionTrends()
     {
         auto event = sample();

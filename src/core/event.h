@@ -26,6 +26,8 @@ struct Event
     double altitude = 0;
     double circularError = 9999999;
     double linearError = 9999999;
+    std::optional<double> course = {};
+    std::optional<double> speed = {};
 };
 
 struct DecodeResult

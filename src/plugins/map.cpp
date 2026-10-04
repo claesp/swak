@@ -7,6 +7,7 @@
 #include "core/map_selection.h"
 #include "core/map_tools.h"
 #include "core/marker_symbols.h"
+#include "core/measure.h"
 #include "core/preferences.h"
 #include "core/projection.h"
 #include "core/single_line_label.h"
@@ -157,7 +158,7 @@ public:
         navigationLock_ = new QAction(tr("Lock"), this);
         navigationLock_->setObjectName(QStringLiteral("mapNavigationLock"));
         navigationLock_->setCheckable(true);
-        navigationLock_->setIcon(uiIcon(UiIcon::Unlock));
+        navigationLock_->setIcon(uiIcon(UiIcon::Lock));
         navigationLock_->setToolTip(tr("Lock map panning and zooming"));
         connect(navigationLock_, &QAction::toggled, this, [this](bool locked) {
             stopPanning();
@@ -167,7 +168,7 @@ public:
             if (!tools_ || !tools_->guidesActive()) {
                 unsetCursor();
             }
-            navigationLock_->setIcon(uiIcon(locked ? UiIcon::Lock : UiIcon::Unlock));
+            navigationLock_->setIcon(uiIcon(locked ? UiIcon::Unlock : UiIcon::Lock));
             navigationLock_->setToolTip(locked ? tr("Unlock map panning and zooming")
                                                : tr("Lock map panning and zooming"));
             update();
@@ -212,7 +213,7 @@ public:
             updateStatus();
             update();
         });
-        connect(&store_, &Store::changed, this, [this] {
+        const auto refreshSelection = [this] {
             if (store_.motion().paused()) {
                 update();
                 return;
@@ -237,11 +238,19 @@ public:
                                            found->time.toString(Qt::ISODateWithMs));
                     item.properties.insert(QStringLiteral("Stale"),
                                            found->stale.toString(Qt::ISODateWithMs));
+                    addKinematics(item, store_.motion().kinematics(found->uid));
                     selection_->select(std::move(item));
                 }
             }
             update();
-        });
+        };
+        connect(&store_, &Store::changed, this, refreshSelection);
+        connect(
+            &store_.motion(), &TrackMotion::pauseChanged, this, [refreshSelection](bool paused) {
+                if (!paused) {
+                    refreshSelection();
+                }
+            });
         connect(&store_, &Store::selectionChanged, this, [this] {
             const auto &events = store_.events();
             const auto event =
@@ -720,6 +729,17 @@ protected:
     }
     void mousePressEvent(QMouseEvent *event) override
     {
+        if (event->button() == Qt::LeftButton && zoomIndicator_->isChecked()) {
+            const auto [minimum, maximum] = zoomLimits();
+            if (const auto level = mapZoomLevelAt(view_, event->position(), minimum, maximum)) {
+                zoomLegendPressed_ = true;
+                dragging_ = false;
+                moved_ = true;
+                zoomAt(QPointF(width() / 2.0, height() / 2.0), *level - qRound(view_.zoom));
+                event->accept();
+                return;
+            }
+        }
         if (tools_ && tools_->handle(*event, view_, *this)) {
             dragging_ = false;
             moved_ = false;
@@ -739,6 +759,11 @@ protected:
     }
     void mouseDoubleClickEvent(QMouseEvent *event) override
     {
+        if (event->button() == Qt::LeftButton && zoomIndicator_->isChecked() &&
+            mapZoomLevelAt(view_, event->position(), zoomLimits().first, zoomLimits().second)) {
+            mousePressEvent(event);
+            return;
+        }
         if (tools_ && tools_->handle(*event, view_, *this)) {
             event->accept();
             return;
@@ -763,6 +788,10 @@ protected:
     }
     void mouseMoveEvent(QMouseEvent *event) override
     {
+        if (zoomLegendPressed_) {
+            event->accept();
+            return;
+        }
         cursor_ = event->position();
         if (tools_ && tools_->handle(*event, view_, *this)) {
             updateStatus();
@@ -779,6 +808,11 @@ protected:
     }
     void mouseReleaseEvent(QMouseEvent *event) override
     {
+        if (zoomLegendPressed_ && event->button() == Qt::LeftButton) {
+            zoomLegendPressed_ = false;
+            event->accept();
+            return;
+        }
         if (event->button() != Qt::LeftButton) {
             return;
         }
@@ -887,6 +921,7 @@ protected:
                 {QStringLiteral("Start"), message.start.toString(Qt::ISODateWithMs)},
                 {QStringLiteral("Stale"), message.stale.toString(Qt::ISODateWithMs)}};
             item.id = message.uid;
+            addKinematics(item, visual.kinematics);
             hits.append({std::move(item), QStringLiteral("cot")});
         }
         if (dataSources_) {
@@ -898,6 +933,23 @@ protected:
             hits.append({item, QStringLiteral("vector")});
         }
         return hits;
+    }
+    void addKinematics(MapItem &item, const TrackKinematics &motion) const
+    {
+        item.properties.insert(tr("Speed"),
+                               motion.speed ? formatSpeed(*motion.speed) : tr("Unknown"));
+        item.properties.insert(tr("Speed source"),
+                               motion.speed
+                                   ? (motion.calculatedSpeed ? tr("Calculated") : tr("Reported"))
+                                   : tr("Unavailable"));
+        item.properties.insert(tr("Heading"),
+                               motion.heading
+                                   ? QLocale().toString(*motion.heading, 'f', 1) + tr("° true")
+                                   : tr("Unknown"));
+        item.properties.insert(tr("Heading source"),
+                               motion.heading
+                                   ? (motion.estimatedHeading ? tr("Estimated") : tr("Reported"))
+                                   : tr("Unavailable"));
     }
     void closeOnContentChange(QMenu &menu)
     {
@@ -1329,6 +1381,7 @@ private:
     std::array<int, 15> keys_ = DefaultKeys;
     double panSpeed_ = 300;
     bool wheelZoom_ = true;
+    bool zoomLegendPressed_ = false;
     bool wheelReverse_ = false;
     int wheelSteps_ = 1;
     int prefetchMargin_ = 1;
