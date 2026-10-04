@@ -1,3 +1,5 @@
+#include <QProcess>
+#include "core/projection.h"
 #include <QVBoxLayout>
 #include "core/cot_picker.h"
 #include <QTreeWidget>
@@ -2639,6 +2641,38 @@ private slots:
         const auto color = gray.pixelColor(target.toPoint()); QVERIFY(qAbs(color.red() - color.blue()) < 20); QVERIFY(color.lightness() > 65);
         QVERIFY(QTest::qWaitFor([&] { return motion->snapshot().isEmpty(); }, 2000));
         QVERIFY(window.savePreferences());
+    }
+    void emulatorMap()
+    {
+        QTemporaryDir directory; swak::Window window(directory.filePath(QStringLiteral("emulator-ui.json")), QPluginLoader::staticInstances());
+        window.show(); QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *map = window.findChild<QOpenGLWidget *>(); QVERIFY(map);
+        for (auto *dock : window.findChildren<QDockWidget *>()) dock->hide();
+        auto *participant = dynamic_cast<swak::SettingsParticipant *>(map); QVERIFY(participant);
+        auto settings = participant->savePreferences(); const auto center = swak::project(59.33, 18.0);
+        settings.insert(QStringLiteral("zoom"), 11); settings.insert(QStringLiteral("centerX"), center.x()); settings.insert(QStringLiteral("centerY"), center.y());
+        participant->restorePreferences(settings); const auto before = map->grabFramebuffer();
+        QTcpServer reserve; QVERIFY(reserve.listen(QHostAddress::LocalHost, 0)); const auto port = reserve.serverPort(); reserve.close();
+        struct Child final : QProcess {
+            ~Child() override { if (state() != NotRunning) { terminate(); if (!waitForFinished(2000)) { kill(); waitForFinished(2000); } } }
+        } process;
+        process.start(QCoreApplication::applicationDirPath() + QStringLiteral("/swak_cot_emulator"),
+                      {QStringLiteral("--port"), QString::number(port), QStringLiteral("--frequency"), QStringLiteral("5"), QStringLiteral("--duration"), QStringLiteral("10")});
+        QVERIFY(process.waitForStarted());
+        auto source = swak::serverDefaults(); source.insert(QStringLiteral("name"), QStringLiteral("Emulator")); source.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
+        source.insert(QStringLiteral("protocol"), QStringLiteral("stcp")); source.insert(QStringLiteral("port"), port); source.insert(QStringLiteral("enabled"), true); source.insert(QStringLiteral("retrySeconds"), 1);
+        auto *servers = window.findChild<swak::Servers *>(); QVERIFY(servers->put(QStringLiteral("emulator"), source).isEmpty());
+        QVERIFY(QTest::qWaitFor([&] { return window.store().rowCount() == 22; }, 5000));
+        QSignalSpy frames(map, &QOpenGLWidget::frameSwapped); map->update(); QVERIFY(frames.wait(2000));
+        const auto image = map->grabFramebuffer(); QVERIFY(image != before); QVERIFY(image.save(QStringLiteral("emulator-map.png")));
+        int red = 0, blue = 0;
+        for (int y = 0; y < image.height(); ++y) for (int x = 0; x < image.width(); ++x) {
+            const auto color = image.pixelColor(x, y);
+            if (color.red() > 180 && color.red() > color.blue() + 80) ++red;
+            if (color.blue() > 180 && color.blue() > color.red() + 80) ++blue;
+        }
+        QVERIFY(red > 20); QVERIFY(blue > 20);
+        process.terminate(); QVERIFY(process.waitForFinished(3000)); QCOMPARE(process.exitCode(), 0);
     }
     void serverBrowserAndIdentity()
     {

@@ -116,3 +116,9 @@ python3 tools/quality.py coverage --gui --lan
 The LAN test requires `unshare` and `ip`. A host policy that disables namespaces makes this diagnostic fail. The standard servers suite skips this integration case unless the isolated harness enables it.
 
 For an actual TAK Server test, build and run swak_tak_compat. Read [TAK compatibility](tak-compatibility.md) for the profile format, safety limits, and local results. This test sends synthetic messages and requires a configured test server. It does not run as part of CTest.
+
+# Emulator diagnostics
+
+The simulation suite tests the separate CoT emulator. It covers deterministic routes, movement speed, stable identities, coordinate bounds, invalid configuration, TCP and UDP reception, TAK client mode, and interruption. The native GUI suite receives both teams and inspects the rendered map. Both suites run through the existing diagnostic modes.
+
+The standard source report covers application code. For the development emulator, also inspect tools/cot_emulator.cpp and tools/cot_simulation.cpp with the debug compilation database. Do not interpret unused functions from a partial source scan as dead application code. Read the latest handoff for emulator load results and remaining paths without tests.

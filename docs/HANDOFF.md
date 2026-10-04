@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 4, 2026: Read “Live TAK Server compatibility” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 4, 2026: Read “Separate CoT emulator” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -904,3 +904,29 @@ TCP, PEM mutual TLS, and encrypted PKCS12 mutual TLS passed. An untrusted server
 The existing application diagnostics from the preceding picker task remain applicable because production sources did not change. This task adds a development probe and tests it against the actual server. These results supersede the earlier statement that no full server deployment test occurred. They do not establish enrollment, LDAP, mission API, federation, binary-only, packet-loss, or two-hour compatibility. The earlier Mesa GUI leak and hardware graphics gaps remain.
 
 The test containers, database volume, and private network were removed after the tests. Cached development images and the reference build remain local. Temporary certificates expire after two days. They contain no production credentials. Raw reports remain under build/tak-*.json and build/tak-*.log. The final release rebuild uses build/tak-compat-release.log.
+
+
+## 2026-10-04: Separate CoT emulator
+
+The user chose a separate test tool. The development-only swak_cot_emulator now sends two teams with configurable ground and air units. The default scenario contains 22 units near Stockholm. JSON controls counts, type suffixes, affiliations, team colors, speeds, altitude, route radius, separation, seed, and update frequency. CLI flags override the center and rate.
+
+Direct TCP listens on loopback port 18087 by default. UDP sends to an explicit numeric address. TAK mode reuses the shared Servers client and its TLS credentials. All modes reuse the production CoT encoder. No production API, plugin contract, or external dependency changed. Release builds exclude the tool.
+
+Routes use circular patrols with constant ellipsoid altitude. They do not follow terrain or roads. Every unit retains its UID and uses Location method m-s. The tool bounds units, total rate, file input, TCP clients, and output queues. Its timer skips overdue samples. SIGINT and SIGTERM request normal shutdown and a JSON report.
+
+The guide is cot-emulator.md. Start with build/debug/swak_cot_emulator and connect SWAK through Servers using TCP at 127.0.0.1:18087. Center the map at 59.33, 18.0 and zoom to 11 or 12. Use --print-defaults to obtain an editable scenario.
+
+Ten sanitizer suites passed in build/quality/20261004-151505-quick-80032. Application source analysis passed in build/quality/20261004-151608-analyze-3. A separate scan of the emulator passed in build/emulator-tools-analysis.log. The partial scan excludes unused-function claims because it cannot see application callers. Manual review found no unused emulator functions.
+
+The focused native test passed and saved build/atak-native/emulator-map.png. All 77 native cases passed in build/quality/20261004-151710-gui-82009. The GUI diagnostic still fails on the existing Mesa leak of 240732 bytes in 1073 allocations. No suppression hides it.
+
+TLS uses the already tested shared client. This task tests a local TCP destination rather than repeating the actual TAK container deployment. Scheduler overload, failed UDP writes, every malformed nested field, allocation failure, and all certificate combinations retain coverage gaps. Two-hour operation and hardware graphics remain unqualified. Later evidence below records coverage and short load results.
+
+
+Coverage passed ten suites and 77 GUI cases in build/quality/20261004-151753-coverage-82297. A focused gcov report reached 81 of 82 simulation lines and 106 of 110 emulator lines. The remaining line entries include compiler-generated destruction and multiline initializer accounting. Branch coverage remains incomplete. Raw details are in build/emulator-coverage-detail.
+
+A 60-second TCP load test generated 119999 messages for 100 units at 20 updates per second. It recorded zero failed writes and zero skipped samples. One stalled client disconnected at the output limit. Peak resident memory growth after warmup was 3047424 bytes. The process exited normally. Results are in build/emulator-load.json. This short development test does not establish two-hour stability.
+
+The release rebuild passed in build/emulator-release.log. The final rebuild after the commit uses build/emulator-release-final.log.
+
+The 60-second sanitizer workload passed in build/quality/20261004-151927-soak-83451. It completed 1171 cycles with 13365248 bytes of peak memory growth. The maximum heartbeat gap was 39 milliseconds. Idle CPU time was 0.016 seconds.

@@ -77,3 +77,7 @@ Each build refreshes `generated/swak/version.h` through `cmake/version.cmake`. T
 Ninja runs the metadata task on every build. CMake changes the header only when its contents change. This updates the version after a commit or tag change without requiring manual configuration. Git is a build-time tool only. A source archive without Git metadata uses `+unknown`.
 
 After committing release sources, rebuild the release preset. Run `build/release/swak --version` to read its source identity. Development diagnostics test metadata generation in a temporary Git repository.
+
+# CoT emulator
+
+Build the separate development tool with `cmake --build --preset debug --target swak_cot_emulator`. Read [CoT emulator](cot-emulator.md) for local reception, TAK connections, and scenario parameters. The release executable does not include this tool.

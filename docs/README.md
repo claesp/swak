@@ -11,3 +11,5 @@ Map providers support Web Mercator raster and vector tiles. Data providers load 
 Local markers support editable text, colors, and a limited set of original military vector symbols. Received CoT events use the same symbols for supported types. Read [the ATAK reference review](atak-reference-review.md) for provenance and symbol limits. This subset does not establish military-standard compliance.
 
 Read [Build and run](build.md) for setup. Read [Development diagnostics](quality.md) and [the handoff](HANDOFF.md) for tests and current limits. Read [Use the workspace](usage.md) for controls. Read [Plugin architecture](architecture.md) and [Security boundaries](security.md) before adding features.
+
+The separate [CoT emulator](cot-emulator.md) generates two teams with ground and air units. It sends configurable traffic directly to SWAK or through a TAK Server.
