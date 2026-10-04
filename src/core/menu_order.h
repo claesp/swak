@@ -8,13 +8,16 @@ inline void sortMenuActions(QMenu &menu)
 {
     auto actions = menu.actions();
     actions.removeIf([&menu](QAction *action) {
-        if (!action->isSeparator()) return false;
+        if (!action->isSeparator() || action->property("menuTailOrder").toInt() > 0) return false;
         menu.removeAction(action);
         if (action->parent() == &menu && action->associatedObjects().isEmpty()) action->deleteLater();
         return true;
     });
     QCollator collator; collator.setCaseSensitivity(Qt::CaseInsensitive);
     std::stable_sort(actions.begin(), actions.end(), [&collator](const QAction *a, const QAction *b) {
+        const int aTail = a->property("menuTailOrder").toInt();
+        const int bTail = b->property("menuTailOrder").toInt();
+        if (aTail != bTail) return aTail < bTail;
         const auto label = [](const QAction *action) { auto text = action->text().section('\t', 0, 0); text.remove('&'); return text; };
         return collator.compare(label(a), label(b)) < 0;
     });

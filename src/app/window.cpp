@@ -156,7 +156,13 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         dialog.exec(); identityGeometry_ = dialog.saveGeometry(); savePreferences();
     });
     fileMenu->addSeparator();
-    auto *quit = fileMenu->addAction(tr("&Quit"));
+    auto *quitSeparator = new QAction(fileMenu);
+    quitSeparator->setSeparator(true);
+    quitSeparator->setProperty("menuTailOrder", 1);
+    fileMenu->addAction(quitSeparator);
+    auto *quit = new QAction(tr("&Quit"), fileMenu);
+    quit->setProperty("menuTailOrder", 2);
+    fileMenu->addAction(quit);
     quit->setObjectName(QStringLiteral("quitAction"));
     quit->setShortcut(QKeySequence::Quit);
     connect(quit, &QAction::triggered, this, &QWidget::close);

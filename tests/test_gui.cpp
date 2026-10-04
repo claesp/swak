@@ -1647,7 +1647,14 @@ private slots:
             for (const auto *action : actions) { if (action->isSeparator()) return false; auto text = action->text(); text.remove('&'); if (!previous.isEmpty() && collator.compare(previous, text) > 0) return false; previous = text; } return true;
         };
         QStringList menuTitles; for (auto *action : window.menuBar()->actions()) menuTitles.append(QString(action->text()).remove('&'));
-        QCOMPARE(menuTitles, (QStringList{QStringLiteral("File"), QStringLiteral("Edit"), QStringLiteral("View"), QStringLiteral("Tools"), QStringLiteral("Help")})); for (auto *menu : window.findChildren<QMenu *>()) QVERIFY(sorted(menu->actions()));
+        QCOMPARE(menuTitles, (QStringList{QStringLiteral("File"), QStringLiteral("Edit"), QStringLiteral("View"), QStringLiteral("Tools"), QStringLiteral("Help")})); for (auto *menu : window.findChildren<QMenu *>()) {
+            auto actions = menu->actions();
+            if (menu->objectName() == QStringLiteral("fileMenu")) {
+                QCOMPARE(actions.takeLast(), window.findChild<QAction *>(QStringLiteral("quitAction")));
+                QVERIFY(actions.takeLast()->isSeparator());
+            }
+            QVERIFY(sorted(actions));
+        }
         QCOMPARE(window.findChild<QToolBar *>()->toggleViewAction()->text(), QStringLiteral("Toolbar"));
         auto *mapMenu = window.findChild<QToolButton *>(QStringLiteral("mapProviderButton"))->menu(); qsizetype actionCount = 0;
         for (int i = 0; i < 5; ++i) {
@@ -3217,7 +3224,20 @@ private slots:
         QVERIFY(viewMenu && fileMenu && quit);
         QCOMPARE(viewMenu->actions().size(), 2);
         QVERIFY(viewMenu->actions().contains(window.findChild<QToolBar *>(QStringLiteral("mainToolbar"))->toggleViewAction()));
-        QVERIFY(fileMenu->actions().contains(quit));
+        for (int repeat = 0; repeat < 5; ++repeat) {
+            swak::sortMenuActions(*fileMenu);
+            const auto actions = fileMenu->actions();
+            QCOMPARE(actions.last(), quit);
+            QVERIFY(actions.at(actions.size() - 2)->isSeparator());
+            QCOMPARE(std::count_if(actions.begin(), actions.end(), [](const QAction *action) { return action->isSeparator(); }), 1);
+        }
+        auto *lateAction = fileMenu->addAction(QStringLiteral("Zebra"));
+        QCOMPARE(fileMenu->actions().last(), quit);
+        QVERIFY(fileMenu->actions().at(fileMenu->actions().size() - 2)->isSeparator());
+        lateAction->setText(QStringLiteral("Aardvark"));
+        QCOMPARE(fileMenu->actions().first(), lateAction);
+        QCOMPARE(fileMenu->actions().last(), quit);
+        delete lateAction;
         QCOMPARE(window.menuBar()->actions().first()->text(), QStringLiteral("&File"));
         QCOMPARE(quit->shortcut(), QKeySequence(QKeySequence::Quit));
         for (const auto *menu : window.findChildren<QMenu *>()) {

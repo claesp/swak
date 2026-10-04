@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 4, 2026: Read “Plugin manifest table and menu conventions” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
+Latest implementation, October 4, 2026: Read “File menu Quit placement” at the end of this file. Earlier sections record historical states. Use Git for the current source revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -1109,3 +1109,16 @@ The initial release build passed in build/plugins-release.log. Final debug and r
 The 60-second workload passed in build/quality/20261004-202506-soak-21546. It completed 1120 cycles with 17272832 bytes of peak memory growth. The maximum heartbeat gap was 43 milliseconds. Idle CPU time was 0.015 seconds.
 
 Coverage passed ten suites and all 86 native cases in build/quality/20261004-202620-coverage-21679. The new pane and menu sorter reached every line and function. Branch coverage remains incomplete. Catalog gaps include rejected interface declarations and startup rejection logging. The new manifest lookup reached every line. Final build logs are build/plugins-release-final.log and build/plugins-debug-final.log.
+
+
+## 2026-10-04: File menu Quit placement
+
+File keeps Quit last, with one separator directly before it. The other File entries remain alphabetical. The shared sorter preserves actions with a positive menuTailOrder property and places them after ordinary entries. The host assigns this property before it inserts the separator and Quit.
+
+Focused native tests passed in build/quit-focused.log. They exercise repeated sorting and later action insertion and renaming. Source analysis passed in build/quality/20261004-203253-analyze-3. Ten sanitizer suites passed in build/quality/20261004-203251-quick-23357.
+
+All 86 native sanitizer cases passed in build/quality/20261004-203418-gui-23970. The diagnostic still reports the existing Mesa leak of 240732 bytes in 1073 allocations. No suppression hides it. The initial release build passed in build/quit-release.log.
+
+The 60-second workload passed in build/quality/20261004-203457-soak-24241. It completed 1120 cycles with 17547264 bytes of peak memory growth. The maximum heartbeat gap was 44 milliseconds. Idle CPU time was 0.015 seconds.
+
+Coverage passed ten suites and all 86 native cases in build/quality/20261004-203610-coverage-24381. The menu sorter reached all 29 lines and seven functions. Branch coverage remains incomplete at 58 of 96 branches. Hardware graphics, native Wayland, all locale/theme combinations, and two-hour operation remain unqualified. Final builds use build/quit-release-final.log and build/quit-debug-final.log.

@@ -335,7 +335,7 @@ The main toolbar groups Marker, Area, Circle, and Line in one creation section. 
 
 # Menus and provider controls
 
-The menu bar uses File, Edit, View, Tools, Help in that order. Dropdown menus sort alphabetically with the operating-system locale. Circle, Distance, and Line appear directly under Tools > Plugins. Menu separators are removed so the full menu stays sorted. Toolbar sections retain separators.
+The menu bar uses File, Edit, View, Tools, Help in that order. Dropdown menus sort alphabetically with the operating-system locale. File keeps Quit last, with a separator before it. Circle, Distance, and Line appear directly under Tools > Plugins. Other menu separators are removed so each menu stays sorted. Toolbar sections retain separators.
 
 Use the Servers toolbar button to enable or disable configured servers. Use its Servers command to open management. Use the Data providers button to enable or disable feeds. Its Data Providers command opens management. Multiple servers and feeds can stay active together.
 
