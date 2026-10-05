@@ -49,7 +49,7 @@ QJsonObject mapDefaults(const QString &name,
             {QStringLiteral("maxZoom"), maximumZoom},
             {QStringLiteral("ignoreTls"), false}};
 }
-QString validateMapSource(const QJsonObject &source)
+QString validateMapText(const QJsonObject &source)
 {
     for (const auto &key :
          {QStringLiteral("name"), QStringLiteral("attribution"), QStringLiteral("endpoint")}) {
@@ -66,11 +66,6 @@ QString validateMapSource(const QJsonObject &source)
             return QObject::tr("Do not use control characters.");
         }
     }
-    const QUrl url(source.value(QStringLiteral("endpoint")).toString());
-    if (!url.isValid() || url.scheme() != QStringLiteral("https") || url.host().isEmpty() ||
-        !url.userInfo().isEmpty() || url.hasFragment()) {
-        return QObject::tr("Use an HTTPS URL without credentials or a fragment.");
-    }
     for (const auto &key : {QStringLiteral("minZoom"), QStringLiteral("maxZoom")}) {
         const double value = source.value(key).toDouble(-1);
         if (!std::isfinite(value) || value < 0 || value > 19 || std::floor(value) != value) {
@@ -82,6 +77,19 @@ QString validateMapSource(const QJsonObject &source)
         return QObject::tr("Minimum zoom must not exceed maximum zoom.");
     }
     return validateMapAuthentication(source);
+}
+QString validateMapSource(const QJsonObject &source)
+{
+    const auto error = validateMapText(source);
+    if (!error.isEmpty()) {
+        return error;
+    }
+    const QUrl url(source.value(QStringLiteral("endpoint")).toString());
+    if (!url.isValid() || url.scheme() != QStringLiteral("https") || url.host().isEmpty() ||
+        !url.userInfo().isEmpty() || url.hasFragment()) {
+        return QObject::tr("Use an HTTPS URL without credentials or a fragment.");
+    }
+    return {};
 }
 bool validTile(int zoom, int x, int y)
 {
@@ -144,8 +152,9 @@ void MapSources::addNewPresets()
 }
 MapProvider *MapSources::provider(const QJsonObject &source) const
 {
+    const auto id = source.value(QStringLiteral("format")).toString();
     const auto it = std::find_if(providers_.begin(), providers_.end(), [&](const auto *format) {
-        return format->mapId() == source.value(QStringLiteral("format")).toString();
+        return format->mapId() == id || format->legacyIds().contains(id);
     });
     return it == providers_.end() ? nullptr : *it;
 }
@@ -240,7 +249,26 @@ void MapSources::restorePreferences(const QJsonObject &values)
                  QStringLiteral("org.swak.wms")};
     }
     auto restored = sources();
+    auto knownPresets = values.value(QStringLiteral("knownPresets")).toArray();
+    for (auto it = restored.begin(); it != restored.end(); ++it) {
+        auto source = it.value().toObject();
+        const auto *format = provider(source);
+        if (format && source.value(QStringLiteral("format")).toString() != format->mapId()) {
+            source = format->migrate(source);
+            source.insert(QStringLiteral("format"), format->mapId());
+            it.value() = source;
+        }
+    }
     for (const auto *format : providers_) {
+        // A provider that replaced known providers adds no second default entry.
+        for (const auto &legacy : format->legacyIds()) {
+            if (known.contains(legacy) && !known.contains(format->mapId())) {
+                known.append(format->mapId());
+            }
+            if (known.contains(legacy) && !knownPresets.contains(legacy)) {
+                knownPresets.append(legacy);
+            }
+        }
         if (!known.contains(format->mapId())) {
             known.append(format->mapId());
             if (!restored.contains(format->mapId()) && restored.size() < 32) {
@@ -252,6 +280,7 @@ void MapSources::restorePreferences(const QJsonObject &values)
     }
     values_.insert(QStringLiteral("sources"), restored);
     values_.insert(QStringLiteral("knownProviders"), known);
+    values_.insert(QStringLiteral("knownPresets"), knownPresets);
     addNewPresets();
     for (const auto &entry : sources()) {
         const auto source = entry.toObject();

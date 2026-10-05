@@ -1,6 +1,6 @@
 # Data providers
 
-Research date: October 2, 2026. KML is an XML format for geographic features. KMZ is a ZIP archive that contains a KML document. Data feeds draw above map imagery and below CoT events. They do not create or transmit CoT events.
+Research date: October 2, 2026. A data feed is a set of vector features from a URL or a local file. GDAL reads the features. GDAL is the Geospatial Data Abstraction Library. KML is an XML format for geographic features. KMZ is a ZIP archive that contains a KML document. Data feeds draw above map imagery and below CoT events. They do not create or transmit CoT events.
 
 # Open sources
 
@@ -20,11 +20,11 @@ Source documentation: [USGS feed instructions](https://earthquake.usgs.gov/earth
 
 # Manage feeds
 
-Open Tools > Data Providers. Select Add to create a blank feed. Enter its name, direct HTTPS URL, attribution, and refresh interval. Enable the feed when it is ready. Add and Edit use the same form system as Map Providers.
+Open Tools > Data Providers. Select Add to create a blank feed. Enter its name, location, attribution, and refresh interval. The location is a direct HTTPS URL or an absolute local file path, such as `/home/user/sites.shp` or `file:///home/user/sites.gpkg`. Enable the feed when it is ready. Add and Edit use the same form system as Map Providers.
 
 The table checkbox enables or disables each feed. Multiple feeds can draw together. Edit changes the selected entry. Delete removes the selected row and its geometry. Selecting a row does not enable it. Refresh now updates an enabled feed without waiting for its timer.
 
-The refresh interval ranges from 60 through 86400 seconds. Each feed has its own timer. Its next interval starts after a download and parse attempt finishes. Manual refresh does not overlap an update already in progress. Disabled feeds do not download.
+The refresh interval ranges from 60 through 86400 seconds. Each feed has its own timer. Its next interval starts after a download and parse attempt finishes. A local file feed reads the file again at each interval. Manual refresh does not overlap an update already in progress. Disabled feeds do not download.
 
 File > Settings > Data providers contains the same table as the management window. Add and Edit expose all feed parameters. Provider changes apply immediately. The form includes color, opacity, line width, point radius, polygon fill opacity, and labels.
 
@@ -32,43 +32,52 @@ Names sort according to the desktop locale. The application saves feed configura
 
 A failed update retains the previous valid geometry and marks its credit as STALE. The manager shows the failure. A successful empty document clears the old geometry. Disabling, removing, or editing a feed clears its current geometry. Geometry remains in memory, and the application downloads it again after restart. The map combines data credits with its clickable, right-aligned attribution panel.
 
-# Supported geometry
+# Supported formats
 
-The reader supports KML 2.2 and the older Google KML 2.0/2.1/2.2 namespaces. It draws Point, LineString, Polygon with inner rings, and MultiGeometry inside Placemarks. Names appear as plain labels. The reader excludes hidden folders and placemarks when visibility precedes their children. Coordinates use longitude and latitude. The renderer projects them to Web Mercator and clips polar positions.
+The GDAL vector plugin reads these formats from HTTPS and local files: KML and KMZ, GeoJSON and GeoJSON sequences, Esri JSON, TopoJSON, JSON-FG, GPX, GML, GeoRSS, GeoPackage, SQLite, FlatGeobuf, OpenFileGDB, MapInfo, Esri shapefiles, CSV, S-57 charts, OpenStreetMap, DXF, DGN, JML, GTFS, PMTiles, MVT, ODS, and XLSX. A ZIP archive can hold one dataset, such as a shapefile with its sibling files. Local shapefiles and file geodatabase directories open in place.
 
-The map draws flat geometry. It does not apply altitude, terrain, time animation, KML styles, style maps, HTML balloons, external icons, models, tours, or image overlays. Each feed uses its configured appearance. Network links do not trigger downloads. The manager reports counts of skipped links and unsupported overlays or models. A document with only unsupported content can therefore show no shapes.
+GDAL converts each layer from its coordinate reference system to WGS 84 longitude and latitude. A layer without a reference system uses longitude and latitude. The renderer projects the coordinates to Web Mercator and clips polar positions.
 
-Format references: [KML reference](https://developers.google.com/kml/documentation/kmlreference) and [KMZ archive structure](https://developers.google.com/kml/documentation/kmzarchives).
+The map draws points, lines, polygons with holes, and multipart geometry. GDAL converts curves to straight segments. Feature fields named `name` and `description` supply the label and the description. Other fields become read-only properties. The map draws flat geometry. It does not apply altitude, terrain, time animation, styles, HTML balloons, external icons, models, tours, or image overlays. Each feed uses its configured appearance.
+
+KML content has these GDAL behaviors:
+
+- A placemark with visibility 0 stays hidden. GDAL does not report folder visibility, so placemarks in a hidden folder appear.
+- Network links do not trigger downloads. The manager reports counts of skipped links and unsupported overlays or models.
+- A placemark without coordinates, or with coordinates that are not numbers, has no map shape. It does not stop the update.
+- A Point with more than one coordinate uses the first coordinate.
+- An unknown KML namespace does not stop the update.
+
+A document with only unsupported content can show no shapes.
+
+Format references: [GDAL vector drivers](https://gdal.org/drivers/vector/index.html), [KML reference](https://developers.google.com/kml/documentation/kmlreference), and [KMZ archive structure](https://developers.google.com/kml/documentation/kmzarchives).
 
 # Bounds and recovery
 
-Downloads require HTTPS and use normal certificate and hostname checks. A per-feed override starts disabled and appears in the manager status. Each feed owns a separate network manager. The application disables redirects and cookie handling. Requests have a 20-second transfer timeout and a 30-second total deadline. No remote resource can select a local file.
+Remote feeds require HTTPS and use normal certificate and hostname checks. A per-feed override starts disabled and appears in the manager status. Each feed owns a separate network manager. The application disables redirects and cookie handling. Requests have a 20-second transfer timeout and a 30-second total deadline. No remote resource can select a local file. Only the user can enter a local path.
 
 The application limits stored feeds to eight and active work to two downloads or parsers. Parsing uses a private thread pool outside the interface thread. Removal and shutdown cancel work. A replaced feed cannot receive an old parse result. Updates replace complete documents instead of appending duplicate features.
 
 The input bounds are:
 
 - Download bytes: 8 MiB per response.
-- Expanded KML: 16 MiB per archive.
-- Archive entries: 256, with 32 MiB of declared expanded content.
-- XML depth: 32, with 200000 elements and 32 attributes per element.
+- Archive entries: 256, with 16 MiB for each entry and 32 MiB of declared expanded content.
+- Layers: 64 for each dataset.
+- Features read: 100000 for each dataset.
 - Document geometry: 10000 shapes and 100000 coordinate tuples.
+- Nested geometry: 8 levels.
 - Visible text: 100 feature labels across all feeds.
 
-Archive processing accepts complete ZIP archives with a central directory and never extracts files to disk. The reader skips unused entries without stream decompression. It rejects encrypted entries, links, absolute paths, parent traversal, and multiple KML documents. XML processing rejects document types, entity references, and processing instructions. Invalid coordinates and excessive structure fail the whole update. These bounds do not replace dependency security updates.
+GDAL reads ZIP archives in memory and never extracts files to disk. SWAK lists the archive first. It rejects absolute paths, parent traversal, oversized entries, and archives with more than one dataset. SWAK rejects XML document type declarations before GDAL reads KML, GPX, GML, or GeoRSS. Coordinates outside the valid longitude and latitude ranges fail the whole update. Excessive structure also fails the whole update. These bounds do not replace dependency security updates.
 
 # Dependencies
 
-Qt Network supplies HTTPS. QXmlStreamReader supplies XML parsing. Qt Concurrent supplies bounded background work. The KML plugin uses libarchive for ZIP decompression because Qt has no public general-purpose ZIP reader. This avoids a custom archive implementation or private Qt APIs.
+Qt Network supplies HTTPS. GDAL decodes the formats and reads ZIP archives. Qt Concurrent supplies bounded background work. Read `docs/dependencies.md` for the GDAL review and the accepted in-process risk.
 
-SWAK links libarchive dynamically. Libarchive uses a BSD license. The tested Debian packages are `libarchive-dev` and `libarchive13t64`, version `3.7.4-4+deb13u1`. Use distribution security updates. The [Debian tracker](https://security-tracker.debian.org/tracker/source-package/libarchive) records outstanding and fixed issues by package version. This application enables only ZIP support. Other archive readers remain unused.
-
-The October 2 dependency review found open Debian notices for RAR5 reading, TAR sparse headers, and encrypted ZIP writing. The released application does not use these paths. The ZIP writer appears only in tests with small, unencrypted fixtures. The separate ACL notice concerns a text ACL parser that this reader does not call. This scope review does not establish that the library has no other defects.
-
-Review references: [RAR5 notice](https://security-tracker.debian.org/tracker/CVE-2026-14164), [TAR notice](https://security-tracker.debian.org/tracker/CVE-2026-15028), [ZIP writer notice](https://security-tracker.debian.org/tracker/CVE-2026-16517), and [ACL notice](https://security-tracker.debian.org/tracker/CVE-2026-5745).
+Before October 5, 2026, a custom QXmlStreamReader parser read KML, and libarchive read KMZ archives. GDAL replaced both for data feeds. Marker collections still use libarchive.
 
 # Object information
 
-KML descriptions and scalar properties appear in the Information pane. ExtendedData names become property names. Point coordinates also appear in the table. SWAK treats all imported fields as read-only plain text. It does not execute HTML or follow description links.
+Feature descriptions and fields appear in the Information pane. KML ExtendedData names become property names. Point coordinates also appear in the table. SWAK treats all imported fields as read-only plain text. It does not execute HTML or follow description links.
 
-Property names have a 128-character limit. Scalar values and descriptions have a 4096-character limit. Each placemark has at most 256 metadata properties. Each decoded document retains at most 8 MiB of estimated metadata. A limit failure rejects the document and preserves the previous feed data.
+Property names have a 128-character limit. Scalar values and descriptions have a 4096-character limit. Each feature has at most 256 metadata properties. GDAL text values longer than 4096 characters are cut to that length. Each decoded document retains at most 8 MiB of estimated metadata. A limit failure rejects the document and preserves the previous feed data.

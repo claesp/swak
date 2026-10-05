@@ -89,6 +89,7 @@ private:
     void cancel();
     void decodeVector(
         const QString &key, QByteArray bytes, const QUrl &url, QDateTime expires, bool transient);
+    void renderRaster(const TilePlacement &tile);
     void fail(const QString &key, const QString &message, int retrySeconds, bool providerWide);
     QNetworkAccessManager network_;
     QNetworkDiskCache *disk_ = nullptr;
@@ -96,6 +97,8 @@ private:
     MapProvider *provider_ = nullptr;
     QJsonObject source_;
     QByteArray credential_;
+    QString rasterCache_;
+    bool rasterDirty_ = false;
     QCache<QString, Image> images_{256 * 1024};
     QHash<QString, QNetworkReply *> pending_;
     QList<TilePlacement> visible_;

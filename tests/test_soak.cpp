@@ -1,6 +1,7 @@
 #include "app/window.h"
 #include "core/activity.h"
 #include "core/data.h"
+#include "core/gdal_support.h"
 #include "core/graphics.h"
 #include "core/interfaces.h"
 #include "core/map_tools.h"
@@ -401,6 +402,8 @@ int main(int argc, char **argv)
 {
     swak::configureGraphics();
     QApplication app(argc, argv);
+    // Close cached GDAL resources after the tests and before the leak check.
+    swak::GdalShutdownGuard gdal;
     SoakTest test;
     return QTest::qExec(&test, argc, argv);
 }

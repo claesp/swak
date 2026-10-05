@@ -63,17 +63,23 @@ Internal-event history uses bounded memory and plain text. It does not create an
 
 Each built-in plugin declares its API, roles, requirements, and permissions in an embedded MANIFEST. The host rejects incompatible declarations before it uses the plugin features. These declarations do not restrict native-code permissions. Static linkage and the existing trust boundary remain unchanged. See [Plugin API](plugin-api.md).
 
-# KML and KMZ feeds
+# Data feeds and GDAL
 
-Data Providers adds HTTPS feed input and ZIP decompression. Read [Data providers](data-providers.md) for request isolation, cancellation, XML limits, archive limits, and supported content. Feed descriptions and linked resources never execute or load automatically. Libarchive is the only new non-Qt library.
+Data Providers adds HTTPS feeds, local files, and archives. GDAL decodes them in the application process. Read [Data providers](data-providers.md) for request isolation, cancellation, archive limits, and supported content. Feed descriptions and linked resources never execute or load automatically.
 
-MVT tiles cross an additional binary-input boundary. The pinned protozero decoder reads binary fields. Application limits cover wire types, lengths, dictionaries, features, commands, vertices, property storage, and coordinate arithmetic. Worker cancellation and source generations prevent stale results.
+GDAL is a large native boundary. A memory fault in a GDAL driver can stop SWAK. The user accepted this risk on October 5, 2026. SWAK removes drivers that run programs, contact databases, or fetch any URL. Each open call names a fixed list of file format drivers. Read `docs/dependencies.md` for the full list of GDAL limits.
+
+SWAK checks input before GDAL reads it. It rejects XML document type declarations, unsafe archive paths, and archives with more than one dataset. After GDAL reads the data, SWAK limits features, coordinates, properties, and retained metadata. It also rejects coordinates outside the valid longitude and latitude ranges.
+
+Raster maps also cross the GDAL boundary. GDAL fetches XYZ, WMS, and WMTS tiles with libcurl and reads local raster files. Certificate checks stay on unless the user enables the per-source override. GDAL follows redirects and SWAK sets no raster response size limit. Read [Map providers](map-providers.md) for these known gaps.
+
+MVT tiles cross a binary-input boundary. GDAL decodes them from memory. SWAK limits layers, features, vertices, property storage, and coordinate range. Worker cancellation and source generations prevent stale results.
 
 Map information presents plain text without active links. SWAK does not execute or load a remote style expression, script, sprite, or font. Read `docs/dependencies.md` for provenance and advisory review.
 
 # Map information and movement
 
-The Information pane treats remote metadata as plain text. It never loads remote images or executes description markup. Copy actions write only after a user double-click. KML metadata uses limits for names, values, property counts, and total retained bytes. Invalid metadata rejects the new document and leaves the previous feed intact.
+The Information pane treats remote metadata as plain text. It never loads remote images or executes description markup. Copy actions write only after a user double-click. Data feed metadata uses limits for names, values, property counts, and total retained bytes. Invalid metadata rejects the new document and leaves the previous feed intact.
 
 Map selection holds owning values instead of borrowed geometry pointers. Feed changes clear data selection. The host destroys pane widgets before their services. Key panning stops on key release, focus loss, window deactivation, and hiding. Each timer tick limits elapsed movement to 100 milliseconds after a stall.
 

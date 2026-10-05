@@ -56,7 +56,7 @@ Plugins without commands use a direct checkbox action unless they supply a prima
 | `src/plugins/objects` | Objects | Pane |
 | `src/plugins/route_planner` | Route planning | Pane and map tool |
 | `src/plugins/valhalla` | Valhalla | Route provider |
-| `src/plugins/kml` | KML and KMZ data | Data provider |
+| `src/plugins/gdal_vector` | GDAL vector data | Data provider |
 | `src/plugins/cot` | Cursor-on-Target XML | Codec |
 | `src/plugins/basemap` | Map background | Map layer |
 | `src/plugins/map` | OpenGL map | View and toolbar |
@@ -72,9 +72,7 @@ Plugins without commands use a direct checkbox action unless they supply a prima
 | `src/plugins/polygons` | Areas | Pane and map tool |
 | `src/plugins/milstd2525` | MILSTD2525 | Marker collection |
 | `src/plugins/mvt` | MVT vector tiles | Map provider and vector tiles |
-| `src/plugins/xyz` | XYZ image tiles | Map provider |
-| `src/plugins/wmts` | WMTS image tiles | Map provider |
-| `src/plugins/wms` | WMS images | Map provider |
+| `src/plugins/gdal_raster` | GDAL raster maps | Map provider and raster tiles |
 
 The map plugin creates the provider selector through `ToolbarPlugin`. The selector uses `MapSources` and requests the manager through its public signal. The internal-event plugin creates its table and Clear action through `PanePlugin` and `MenuPlugin`. Both use explicit services instead of host widget searches.
 
@@ -141,9 +139,19 @@ Provider forms use the host persistence callback. They keep the form open when a
 
 DataProvider decoders run on at most two background threads. Keep them reentrant and free of QObject or GUI operations. Read the atomic cancellation flag during bounded work. Return complete normalized geometry or an error in `DataDocument`. Keep the plugin instance alive until all windows finish their workers.
 
+`decodeFile(path, cancelled)` reads a local file in place. Formats with sibling files, such as shapefiles, need this method. The default returns an error. `legacyIds()` returns earlier format identifiers. The catalog matches saved entries with these identifiers, so old profiles keep working. The GDAL vector plugin reports `org.swak.kml` as a legacy identifier.
+
 The host owns downloads, per-feed timers, configuration, and rendering. Data plugins supply disabled presets and decode responses. Shared data fields provide endpoint, attribution, timer, and appearance controls. Add forms select one installed format when several data plugins exist. Unknown formats remain in the saved catalog.
 
-Each data plugin declares `data-provider` in its MANIFEST. Its `dataId()` must match the manifest identifier. This version links the KML plugin statically and adds no external plugin discovery. Read [Data providers](data-providers.md) for parser limits and dependency details.
+Each data plugin declares `data-provider` in its MANIFEST. Its `dataId()` must match the manifest identifier. This version links the GDAL vector plugin statically and adds no external plugin discovery. Read [Data providers](data-providers.md) for parser limits and dependency details.
+
+# Raster tile capability
+
+`RasterTileProvider` adds the optional interface `org.swak.RasterTiles/1.0` to a MapProvider. Its manifest declares both `map-provider` and `raster-tiles`. The host rejects the raster role without the map provider role. The renderer calls `renderTile(request, cancelled)` on a worker thread instead of fetching a tile URL. Keep the method reentrant.
+
+`RasterRequest` carries the source, the session credential, the cache directory, the cache size, and the tile address. An empty cache directory means that the provider must not write a disk cache. The renderer passes an empty directory for authenticated sources. Return a 256-pixel image or an error in `RasterTile`. Set `providerWide` when the whole source failed, for example when the dataset does not open.
+
+`MapProvider::legacyIds()` returns earlier format identifiers. `MapProvider::migrate(source)` converts a saved entry with such an identifier. The catalog calls it when it restores a profile and then stores the current identifier. A replaced provider adds no second default entry when the profile already knew one of its legacy identifiers.
 
 # Vector tile capability
 

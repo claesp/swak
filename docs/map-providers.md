@@ -1,6 +1,6 @@
 # Map providers
 
-Research date: October 2, 2026. A provider supplies map images or vector geometry. MVT is the Mapbox Vector Tile format. A format plugin converts the selected source configuration into tile requests. This implementation supports XYZ, WMTS 1.0 KVP, WMS 1.3 images, and MVT vector tiles in Web Mercator, also called EPSG:3857.
+Research date: October 2, 2026. A provider supplies map images or vector geometry. MVT is the Mapbox Vector Tile format. Since October 5, 2026, the GDAL raster provider renders all raster maps. GDAL is the Geospatial Data Abstraction Library. It supports XYZ templates, WMTS 1.0 KVP, WMS 1.3, local raster files, and other GDAL datasets. The MVT provider supplies vector tiles. The map draws everything in Web Mercator, also called EPSG:3857.
 
 # Sources and requirements
 
@@ -16,13 +16,28 @@ Free map data does not mean unlimited free hosting. Review each provider policy 
 
 # Supported formats
 
-XYZ replaces `{z}`, `{x}`, and `{y}` in the configured HTTPS URL. Coordinates use a north-origin square grid with `2^z` rows and columns. The plugin accepts 256-pixel PNG, JPEG, and WebP images. The URL remains editable, so compatible services do not need a new application release.
+The GDAL raster provider has four source types. Select the type in the Source type field. Saved XYZ, WMS, and WMTS entries from earlier versions convert to the matching type when SWAK loads the profile.
+
+XYZ replaces `{z}`, `{x}`, and `{y}` in the configured HTTPS URL. Coordinates use a north-origin square grid with `2^z` rows and columns. GDAL decodes the tile images, which include PNG, JPEG, and WebP. The URL remains editable, so compatible services do not need a new application release.
 
 WMTS uses the `GetTile` KVP request. Configure the layer, style, image format, matrix set, optional time, and optional matrix prefix. The supported matrix grid has a Web Mercator world extent, 256-pixel tiles, and `2^z` rows and columns. Matrix identifiers consist of the configured prefix followed by the zoom integer. The built-in NASA preset follows this grid.
 
-WMS uses `GetMap`, version 1.3.0, `CRS=EPSG:3857`, and a bounding box in meters. SWAK divides the viewport into 256-pixel requests so images can use the same cache and renderer. Configure layer names, style names, and PNG or JPEG output. WMS service URLs and WMTS service URLs must not contain query parameters.
+WMS uses `GetMap`, version 1.3.0, `CRS=EPSG:3857`, and a bounding box in meters. GDAL requests one 256-pixel image for each map tile. Configure layer names, style names, and PNG or JPEG output. WMS service URLs and WMTS service URLs must not contain query parameters. SWAK encodes reserved characters in layer, style, and time values.
 
-Capabilities discovery, arbitrary projections, irregular WMTS grids, and offline map archives are outside this implementation. The plugins reject unsupported images instead of interpreting them as tiles. A WMS XML error response appears as a tile failure. SWAK does not parse remote map XML or execute remote styles.
+For these three service types, SWAK reads exactly one remote tile for each map tile. GDAL does not fetch neighboring tiles.
+
+The GDAL dataset type opens any raster that GDAL reads. Enter one of these locations:
+
+- An absolute local file path, such as `/data/area.tif`.
+- `/vsicurl/` followed by an HTTPS URL, for a cloud-optimized GeoTIFF or another remote file.
+- `WMTS:` followed by an HTTPS capabilities URL and GDAL WMTS options.
+- `WMS:` followed by an HTTPS service URL and GDAL WMS options.
+
+Local files can use GeoTIFF and COG, MBTiles, GeoPackage, PMTiles, JPEG 2000, PNG, JPEG, WebP, GIF, BMP, DTED and SRTM elevation, NITF, CADRG and CIB through RPF table-of-contents files, ADRG, Erdas Imagine, ENVI, NetCDF, HDF5, Arc/Info ASCII grids, USGS DEM, BSB nautical charts, Esri compact caches, MRF, Zarr, PDF, GRIB, and VRT. Remote files use a smaller list without VRT, because a VRT can read other local files.
+
+GDAL warps each dataset tile from its own coordinate reference system to Web Mercator. Palette images keep their colors. Elevation and other data that is not 8-bit appears as gray between the dataset minimum and maximum. Pixels outside the dataset are transparent. Large files without overviews render slowly at low zoom. Add overviews with `gdaladdo` for faster display.
+
+Capabilities discovery and offline map archives are outside this implementation. SWAK does not execute remote styles. A WMS XML error response appears as a tile failure.
 
 # Manage sources
 
@@ -44,32 +59,33 @@ Attribution always remains visible while a provider is active. The text aligns t
 
 SWAK enables certificate and hostname checks by default. Each source has an explicit Ignore invalid HTTPS certificates control. If you enable it, the map and manager show that certificate checks are disabled. This permits interception or replacement of map images. The override applies only to that selected source and is stored in its profile.
 
-SWAK uses the existing Qt Network library for asynchronous HTTPS and Qt image readers for raster decoding. These are existing dependencies. It does not add a browser engine or a GIS runtime. Images render through QPainter on QOpenGLWidget, which uses the OpenGL paint engine for texture upload, scaling, and composition.
+GDAL fetches raster tiles through its libcurl client. Qt Network fetches MVT tiles. Images render through QPainter on QOpenGLWidget, which uses the OpenGL paint engine for texture upload, scaling, and composition.
 
-The renderer permits four active requests and 256 visible tiles. Raster responses have a two MiB limit. Vector responses have an eight MiB limit. Both use ten-second inactivity and fifteen-second total limits. Decoding accepts only 256-by-256 images.
+The renderer permits four active jobs and 256 visible tiles. Raster requests have a ten-second connect limit and a ten-second request limit in GDAL. MVT responses have an eight MiB limit, ten-second inactivity, and fifteen-second total limits.
 
 The decoded-tile cache defaults to 256 MiB. File > Settings > Map exposes Tile memory cache, with limits from 64 through 512 MiB.
 
-Failed requests pause for at least 30 seconds. Integer Retry-After values extend this delay up to one hour.
+GDAL keeps a raster disk cache under `maps/gdal` in the operating system cache directory. On Linux, this is normally `~/.cache/SWAK/swak/maps/gdal`. Entries expire after seven days. File > Settings > Map exposes Tile disk cache, from 16 through 4096 MiB. GDAL removes old entries above that size. MVT tiles use Qt HTTP caching in the `verified` and `unchecked` directories, with a process lock.
 
-The disk cache uses Qt HTTP caching. Entries without an expiry get a seven-day default. Verified and unchecked HTTPS responses use separate caches. Each cache defaults to 128 MiB. File > Settings > Map exposes Tile disk cache, from 16 through 4096 MiB.
+The raster changes have these known gaps compared with the earlier Qt client:
 
-Non-cacheable images remain in memory only while their tiles stay in the view. Cached image and vector responses survive restarts and provider changes. Fresh entries avoid another download, and expired entries require HTTP revalidation.
+- GDAL follows HTTP redirects. A redirect can send a custom API key header to another server.
+- SWAK does not set its own response size limit for raster tiles. GDAL decodes the fixed 256-pixel tiles.
+- GDAL ignores `Retry-After`. Failed tiles use the fixed 30-second retry delay.
+- The GDAL disk cache has no lock between windows.
 
-The cache uses the operating system cache directory, not the portable profile. On Linux, this is normally under `$XDG_CACHE_HOME/SWAK/swak/maps` or `~/.cache/SWAK/swak/maps`. A process lock prevents concurrent writers. If a cache is unavailable or locked, online rendering stops and reports the problem.
-
-Requests reject redirects and do not send or store cookies. Zero opacity stops downloads. A provider can see the requested area and client IP address. Cache files contain unencrypted public imagery and URLs. Do not put credentials or secrets in provider URLs. Security limits remain fixed and do not appear as rendering controls.
+Requests do not store cookies. Zero opacity stops downloads. A provider can see the requested area and client IP address. Cache files contain unencrypted public imagery. Do not put credentials or secrets in provider URLs. Security limits remain fixed and do not appear as rendering controls.
 
 # Development evidence
 
 Automated tests use a local HTTPS server and a public test certificate under `tests/fixtures/`. The matching private key is only a test fixture. It is not an application credential. Installation does not include it. Tests do not download public map tiles or pan public services.
 
-The tests cover format parameters, bounds, missing plugins, certificate rejection, the explicit override, cache isolation, invalid responses, cancellation, and rendering. Native tests inspect the OpenGL framebuffer and provider manager. Development test results remain in the source repository under `docs/`.
+The tests cover format parameters, bounds, missing plugins, certificate rejection, the explicit override, cache isolation, invalid responses, cancellation, and rendering. GDAL raster tests render generated GeoTIFF, palette, and elevation files. They also fetch XYZ, inverted, quadkey, WMS, and WMTS tiles from the local HTTPS server and check the request paths and credentials. Native tests inspect the OpenGL framebuffer and provider manager. Development test results remain in the source repository under `docs/`.
 
 
 # Tile recovery
 
-A failed tile has a bounded retry delay from 30 seconds through one hour. Other visible tiles continue to load. Service rate limits, service outages, and certificate failures pause the provider. Moving the map cancels obsolete requests during that pause.
+A failed tile has a bounded retry delay from 30 seconds through one hour. Other visible tiles continue to load. For MVT, service rate limits, service outages, and certificate failures pause the provider. For GDAL raster sources, a dataset that does not open pauses the provider. Moving the map cancels obsolete requests during that pause.
 
 An expired image remains visible while its replacement loads. Images without usable cache metadata remain only in the current view. Hiding the map releases those images. Failure records have a limit of 256 entries.
 
@@ -81,7 +97,7 @@ OpenFreeMap supplies free vector tiles without registration or an API key. Vecto
 
 The preset uses `https://tiles.openfreemap.org/planet/latest/{z}/{x}/{y}.pbf`. The October 2 catalog identifies zoom levels 0 through 14 and OpenMapTiles schema 3.16.0. The latest alias follows the deployed dataset. The public [TileJSON catalog](https://tiles.openfreemap.org/planet/latest) describes tile URLs, bounds, layers, and properties. SWAK uses that research for its preset. It does not import TileJSON or MapLibre style documents at runtime.
 
-The provider supports the published [MVT format](https://github.com/mapbox/vector-tile-spec), which uses Protocol Buffers to encode binary records. The plugin accepts layer versions 1 and 2. It draws points, lines, polygons, polygon holes, and multiple geometry parts. Feature properties include text, Boolean values, and numbers. Integer properties and identifiers retain their exact decimal representation, including values above the JSON floating-point precision limit.
+The provider supports the published [MVT format](https://github.com/mapbox/vector-tile-spec), which uses Protocol Buffers to encode binary records. GDAL decodes each tile from memory. GDAL drops features with truncated geometry and layers with an unsupported version, and draws the rest of the tile. It draws points, lines, polygons, polygon holes, and multiple geometry parts. Feature properties include text, Boolean values, and numbers. Integer properties and identifiers retain their exact decimal representation, including values above the JSON floating-point precision limit.
 
 The built-in style follows the [OpenMapTiles layer schema](https://openmaptiles.org/docs/schema/). It draws land, water, roads, buildings, boundaries, places, and POIs. A POI is a point of interest. Examples include shops, cafes, and stations. The tile source determines which features appear at each zoom. Unknown layers remain available with a generic geometry style.
 
@@ -117,7 +133,7 @@ Workers paint complete tiles into 512-pixel images for 256 logical pixels. The O
 
 Higher display scaling and reduced-detail fallback can soften the prepared images. Labels and line widths scale with the tile during fallback. Feature inspection follows visible layer choices.
 
-MVT parsing does not fetch linked resources or execute styles. Development tests cover truncated records, malformed commands, oversized numbers, property types, holes, cancellation, replacement, and worker exceptions.
+MVT parsing does not fetch linked resources or execute styles. SWAK limits layers to 64, features to 50000, and vertices to 500000 in each tile. Development tests cover truncated records, malformed commands, oversized numbers, property types, holes, cancellation, replacement, and worker exceptions.
 
 Live research accepted a world tile with 79 features and a Stockholm tile with 4142 features. The Stockholm sample used tile `14/9014/4818` and contained POIs. These counts describe the sampled dataset, not a fixed service guarantee. Automated tests use local synthetic tiles, so they do not depend on public service availability.
 
@@ -127,7 +143,7 @@ Cache files are expendable, not an offline archive or a portable map package. SW
 
 # Additional image addressing
 
-The XYZ image plugin also accepts TMS and quadkey addresses. All three use the existing bounded image decoder, cache, HTTPS client, and GPU map renderer. They require Web Mercator tiles. Read [the ATAK reference review](atak-reference-review.md) for source information and scope.
+The XYZ source type also accepts TMS and quadkey addresses. GDAL fetches and decodes all three. They require Web Mercator tiles. Read [the ATAK reference review](atak-reference-review.md) for source information and scope.
 
 For a south-origin TMS source, enable Invert tile rows (TMS) in the provider editor. The row becomes `2^z - 1 - y`. For a quadkey source, use `{q}` instead of the three coordinate placeholders. SWAK rejects mixed or unknown placeholders. SWAK accepts integer tile zoom levels from zero through 19. Each source can set a smaller range.
 
@@ -143,6 +159,6 @@ For restart use, set Secret environment variable to a name such as `SWAK_MAP_PRI
 
 The application does not store passwords on disk or provide a password vault. Environment values remain available to the process and its launch environment. Session values remain in process memory. Qt containers do not guarantee secure erasure of all copies. Credentials permit printable ASCII values up to 4096 bytes. Non-ASCII Basic passwords require server-specific encoding support that this version does not provide.
 
-Authenticated requests require valid HTTPS certificates and the configured server and port. Redirects cannot forward credentials. Authentication failures use the shared retry delay. Tile errors exclude the request URL and secret. Authenticated tiles bypass the disk cache and fetch only visible tiles. Secret changes cancel requests and clear decoded images. Endpoint and authentication changes clear the session secret.
+Authenticated requests require valid HTTPS certificates. GDAL receives the credential through per-thread HTTP options, not through the dataset description. Query keys appear in the request URL. SWAK replaces URL query values in GDAL messages before it logs or shows them. Authentication failures use the shared retry delay. Authenticated tiles bypass the disk cache and fetch only visible tiles. Read the redirect gap in HTTPS and cache. Secret changes cancel requests and clear decoded images. Endpoint and authentication changes clear the session secret.
 
 The Thunderforest templates use API key query authentication with parameter `apikey`. Set the session credential or supply `SWAK_MAP_THUNDERFOREST_KEY` before launch. Read the service terms and account limits before you select the source. No template activates itself. Credentials do not grant access beyond the service account permissions.

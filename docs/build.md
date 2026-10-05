@@ -1,12 +1,12 @@
 # Build and run
 
-The baseline is Linux, C++20, CMake 3.24, Ninja, and Qt 6.4 or later. The graphics driver must support OpenGL 3.3. The project requires the Qt Core, Gui, Widgets, Network, OpenGLWidgets, Concurrent, and Test components. Marker collections and the KML plugin require libarchive development files. UTM, UPS, and MGRS grids require GeographicLib development files.
+The baseline is Linux, C++20, CMake 3.24, Ninja, and Qt 6.4 or later. The graphics driver must support OpenGL 3.3. The project requires the Qt Core, Gui, Widgets, Network, OpenGLWidgets, Concurrent, and Test components. Marker collections require libarchive development files. Map and data formats require GDAL 3.6 or later development files. UTM, UPS, and MGRS grids require GeographicLib development files.
 
 On Debian 13, install the build packages with these commands. The package manager requires administrator access. Debian 13 includes the OpenGL development files in `qt6-base-dev`.
 
 ```sh
 sudo apt-get update
-sudo apt-get install build-essential cmake ninja-build qt6-base-dev libarchive-dev libgeographiclib-dev
+sudo apt-get install build-essential cmake ninja-build qt6-base-dev libarchive-dev libgeographiclib-dev libgdal-dev
 ```
 
 Run these commands from the repository root. The debug preset uses Ninja and writes generated files under `build/debug`. The test suite opens local UDP sockets.
@@ -67,7 +67,7 @@ The ordinary CTest suite uses the offscreen platform and does not test rendering
 
 Optimized GCC and Clang builds set `_FORTIFY_SOURCE=2` unless the toolchain supplies its own value. This enables supported library bounds diagnostics. Existing stack protection and linker protection remain enabled. Tests and sanitizers remain excluded from the release preset.
 
-The MVT provider uses pinned protozero headers included in the source tree. Builds do not fetch them. Read `docs/dependencies.md` for provenance, licenses, and the security review.
+The MVT provider and the data provider use the system GDAL library. Builds do not fetch it. Read `docs/dependencies.md` for the reason, the accepted in-process risk, and the GDAL limits.
 
 
 # Source revision

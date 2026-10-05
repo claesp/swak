@@ -10,6 +10,10 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Widgets Network OpenGLWidgets Concurrent)
 find_package(LibArchive REQUIRED)
+find_package(GDAL CONFIG REQUIRED)
+if(GDAL_VERSION VERSION_LESS 3.6)
+    message(FATAL_ERROR "SWAK requires GDAL 3.6 or later. Found ${GDAL_VERSION}.")
+endif()
 find_path(GEOGRAPHICLIB_INCLUDE_DIR GeographicLib/UTMUPS.hpp REQUIRED)
 find_library(GEOGRAPHICLIB_LIBRARY NAMES GeographicLib REQUIRED)
 include(CTest)
@@ -110,6 +114,8 @@ add_library(
     src/core/event.h
     src/core/files.cpp
     src/core/files.h
+    src/core/gdal_support.cpp
+    src/core/gdal_support.h
     src/core/interfaces.h
     src/core/single_line_label.h
     src/core/plugin_catalog.cpp
@@ -141,6 +147,7 @@ target_link_libraries(
 )
 
 target_include_directories(swak_core SYSTEM PRIVATE "${GEOGRAPHICLIB_INCLUDE_DIR}")
+target_link_libraries(swak_core PRIVATE GDAL::GDAL)
 target_link_libraries(swak_core PUBLIC "${GEOGRAPHICLIB_LIBRARY}")
 
 function(swak_plugin name file)
@@ -148,12 +155,9 @@ function(swak_plugin name file)
     target_compile_definitions(${name} PRIVATE QT_STATICPLUGIN)
     target_link_libraries(${name} PUBLIC swak_core ${ARGN})
 endfunction()
-swak_plugin(swak_kml src/plugins/kml.cpp LibArchive::LibArchive)
-swak_plugin(swak_mvt src/plugins/mvt.cpp)
-target_include_directories(swak_mvt SYSTEM PRIVATE third_party/protozero/include)
-swak_plugin(swak_xyz src/plugins/xyz.cpp)
-swak_plugin(swak_wmts src/plugins/wmts.cpp)
-swak_plugin(swak_wms src/plugins/wms.cpp)
+swak_plugin(swak_gdal_vector src/plugins/gdal_vector.cpp GDAL::GDAL)
+swak_plugin(swak_mvt src/plugins/mvt.cpp GDAL::GDAL)
+swak_plugin(swak_gdal_raster src/plugins/gdal_raster.cpp GDAL::GDAL)
 swak_plugin(swak_milstd2525 src/plugins/milstd2525.cpp)
 swak_plugin(swak_polygons src/plugins/polygons.cpp)
 swak_plugin(swak_markers src/plugins/markers.cpp)
@@ -197,7 +201,7 @@ target_link_libraries(
             swak_markers
             swak_information
             swak_mvt
-            swak_kml
+            swak_gdal_vector
             swak_activity
             swak_cot
             swak_map
@@ -208,17 +212,12 @@ target_link_libraries(
             swak_tracks
             swak_servers
             swak_editor
-            swak_xyz
-            swak_wmts
-            swak_wms
+            swak_gdal_raster
 )
 install(TARGETS swak RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES packaging/org.swak.Swak.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
 install(FILES packaging/org.swak.Swak.svg
         DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
-)
-install(FILES third_party/protozero/LICENSE.md third_party/protozero/LICENSE.from_folly
-        DESTINATION ${CMAKE_INSTALL_DOCDIR}/protozero
 )
 install(
     FILES docs/GeographicLib-copyright.txt
@@ -256,7 +255,7 @@ if(BUILD_TESTING)
     add_test(NAME vector COMMAND swak_vector_tests)
     set_tests_properties(vector PROPERTIES TIMEOUT 60 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_executable(swak_data_tests tests/test_data.cpp)
-    target_link_libraries(swak_data_tests PRIVATE swak_kml Qt6::Test)
+    target_link_libraries(swak_data_tests PRIVATE swak_gdal_vector Qt6::Test)
     add_test(NAME data COMMAND swak_data_tests)
     set_tests_properties(data PROPERTIES TIMEOUT 60 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_executable(swak_map_tests tests/test_maps.cpp src/app/plugins.cpp)
@@ -270,7 +269,7 @@ if(BUILD_TESTING)
                 swak_markers
                 swak_information
                 swak_mvt
-                swak_kml
+                swak_gdal_vector
                 swak_activity
                 swak_cot
                 swak_map
@@ -281,9 +280,7 @@ if(BUILD_TESTING)
                 swak_tracks
                 swak_servers
                 swak_editor
-                swak_xyz
-                swak_wmts
-                swak_wms
+                swak_gdal_raster
                 Qt6::Test
     )
     add_test(NAME maps COMMAND swak_map_tests)
@@ -299,7 +296,7 @@ if(BUILD_TESTING)
                 swak_markers
                 swak_information
                 swak_mvt
-                swak_kml
+                swak_gdal_vector
                 swak_activity
                 swak_cot
                 swak_map
@@ -310,9 +307,7 @@ if(BUILD_TESTING)
                 swak_tracks
                 swak_servers
                 swak_editor
-                swak_xyz
-                swak_wmts
-                swak_wms
+                swak_gdal_raster
                 Qt6::Test
                 Qt6::Network
     )
@@ -354,7 +349,7 @@ if(BUILD_TESTING)
                 swak_markers
                 swak_information
                 swak_mvt
-                swak_kml
+                swak_gdal_vector
                 swak_activity
                 swak_cot
                 swak_map
@@ -365,9 +360,7 @@ if(BUILD_TESTING)
                 swak_tracks
                 swak_servers
                 swak_editor
-                swak_xyz
-                swak_wmts
-                swak_wms
+                swak_gdal_raster
                 Qt6::Test
                 Qt6::Network
     )
@@ -402,7 +395,7 @@ if(BUILD_TESTING)
                 swak_markers
                 swak_information
                 swak_mvt
-                swak_kml
+                swak_gdal_vector
                 swak_activity
                 swak_cot
                 swak_map
@@ -413,9 +406,7 @@ if(BUILD_TESTING)
                 swak_tracks
                 swak_servers
                 swak_editor
-                swak_xyz
-                swak_wmts
-                swak_wms
+                swak_gdal_raster
                 Qt6::Test
                 Qt6::Network
                 Qt6::OpenGLWidgets

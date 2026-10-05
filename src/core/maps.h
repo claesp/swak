@@ -1,9 +1,12 @@
 #pragma once
 #include "core/settings.h"
 
+#include <QImage>
 #include <QNetworkRequest>
 #include <QObject>
 #include <QUrl>
+
+#include <atomic>
 
 namespace swak {
 class MapExtension
@@ -34,9 +37,47 @@ public:
     virtual QList<SettingField> fields() const = 0;
     virtual QString validate(const QJsonObject &source) const = 0;
     virtual QUrl tileUrl(const QJsonObject &source, int zoom, int x, int y) const = 0;
+    // Earlier format identifiers. The catalog converts their entries with migrate().
+    virtual QStringList legacyIds() const
+    {
+        return {};
+    }
+    virtual QJsonObject migrate(const QJsonObject &source) const
+    {
+        return source;
+    }
+};
+struct RasterRequest
+{
+    QJsonObject source;
+    QByteArray credential;
+    // An empty directory disables the provider disk cache, for example for credentials.
+    QString cacheDirectory;
+    qint64 cacheBytes = 0;
+    int zoom = 0;
+    int x = 0;
+    int y = 0;
+};
+struct RasterTile
+{
+    QImage image;
+    QString error;
+    bool providerWide = false;
+};
+// A provider that renders raster tiles itself instead of returning tile URLs.
+class RasterTileProvider
+{
+public:
+    virtual ~RasterTileProvider() = default;
+    // The host calls this method on a worker thread. Keep it reentrant.
+    virtual RasterTile renderTile(const RasterRequest &request,
+                                  const std::atomic_bool &cancelled) const = 0;
 };
 QList<SettingField> commonMapFields();
 QString validateMapSource(const QJsonObject &source);
+// Checks the name, attribution, location text, zoom, and authentication fields.
+// It does not require an HTTPS location.
+QString validateMapText(const QJsonObject &source);
 QJsonObject mapDefaults(const QString &name,
                         const QString &endpoint,
                         const QString &attribution,
@@ -104,3 +145,4 @@ private:
 } // namespace swak
 Q_DECLARE_INTERFACE(swak::MapExtension, "org.swak.MapExtension/1.0")
 Q_DECLARE_INTERFACE(swak::MapProvider, "org.swak.MapProvider/1.0")
+Q_DECLARE_INTERFACE(swak::RasterTileProvider, "org.swak.RasterTiles/1.0")

@@ -1471,3 +1471,18 @@ The GUI soak with the five-minute warmup also failed after 36 minutes in build/q
 - The sanitizer GUI build passed the full 45 minutes. Its memory moved by 4 to 7 MB between cycles 1041 times. Most of the moving memory belongs to uninstrumented Mesa code that uses the sanitizer allocator.
 
 So one low baseline sample and one high later sample could cross 64 MiB without a trend. The soak test now compares window means. A window is one twentieth of the duration, from 1 to 60 seconds. The log records each window mean. The 64 MiB limit is unchanged. An injected leak of 1 MB per cycle failed the new check in the third window. Quick diagnostics pass in build/quality/20261005-202054-quick-214233.
+
+The final two-hour GUI soak passed in build/quality/20261005-202257-soak-214874. It ran 108511 cycles in 120 one-minute memory windows. The mean memory stayed near 6 MB above the first window for 66 windows. It then rose by about 56 MB within two windows and stayed flat. The peak window growth was 66846252 bytes, with a limit of 67108864 bytes. The maximum heartbeat gap was 206 ms. The step has no known cause. A debug GUI run of 49859 cycles had no step. Investigate it before the limit is used for a release decision.
+
+# 2026-10-05: GDAL for map and data formats
+
+The user decided to replace the custom map and data decoders with GDAL 3.10 and to run GDAL in the application process. docs/dependencies.md records the reason and the accepted crash risk. The user installed libgdal-dev. src/core/gdal_support.cpp starts GDAL once with these limits: removed program, database, and URL drivers, fixed driver lists, no sidecar files, a 64 MiB block cache, and short HTTP limits. GDAL errors go to the shared logger with URL query values masked.
+
+The GDAL vector plugin replaces the KML plugin. It reads KML, KMZ, GeoJSON, GPX, shapefiles, GeoPackage, FlatGeobuf, and other vector formats from HTTPS or local files. Saved org.swak.kml feeds still resolve. SWAK keeps its own limits for archives, XML declarations, features, coordinates, and metadata. GDAL does not report KML folder visibility, so placemarks in hidden folders now appear. GDAL decodes MVT tiles, and the protozero headers are gone.
+
+The GDAL raster plugin replaces the XYZ, WMS, and WMTS plugins. It also opens local raster files and other GDAL datasets. MapProvider gained legacyIds and migrate, so old profiles convert without duplicate defaults. The new RasterTileProvider interface renders tiles on the renderer workers. Service tiles read exactly one remote tile. Datasets warp to Web Mercator. Palette and elevation data have color and gray conversion.
+
+Known raster gaps: GDAL follows redirects, so a custom API key header can reach another server. SWAK sets no raster response size limit. GDAL ignores Retry-After. The GDAL disk cache has no lock between windows. docs/map-providers.md lists these gaps.
+
+The first sanitizer run found a leak of 576 bytes for each expired raster worker thread. A thread-local dataset closed during thread exit, and GDAL then created a PROJ context that nothing freed. A shared dataset pool now closes datasets on ordinary threads, and GdalShutdownGuard runs shutdownGdal from main and the test mains. The dense MVT test now spreads its points over many features. One huge multipoint made GDAL grow its point list one allocation at a time, which was slow only under the address sanitizer.
+

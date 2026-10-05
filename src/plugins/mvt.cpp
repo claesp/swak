@@ -1,3 +1,4 @@
+#include "core/gdal_support.h"
 #include "core/interfaces.h"
 #include "core/maps.h"
 #include "core/vector_tiles.h"
@@ -9,15 +10,14 @@
 #include <algorithm>
 #include <cmath>
 #include <exception>
-#include <limits>
-#include <protozero/pbf_reader.hpp>
+#include <gdal_priv.h>
+#include <ogr_geometry.h>
+#include <ogrsf_frmts.h>
 #include <stdexcept>
 #include <utility>
 
 namespace swak {
 namespace {
-using Reader = protozero::pbf_reader;
-using Wire = protozero::pbf_wire_type;
 struct TileLimit : std::runtime_error
 {
     TileLimit() : std::runtime_error("Vector tile resource limit") {}
@@ -34,21 +34,20 @@ void require(bool valid)
         throw std::runtime_error("Invalid vector tile");
     }
 }
-void wire(const Reader &reader, Wire expected)
+// GDAL places the tile at 0/0/0 in Web Mercator meters. These values map it back to the
+// tile-local unit square with y down. GDAL applies the layer extent itself.
+constexpr double MercatorHalfWorld = 20037508.342789244;
+QPointF tilePoint(const OGRPoint &point)
 {
-    require(reader.has_wire_type(expected));
+    const double x = (point.getX() + MercatorHalfWorld) / (2 * MercatorHalfWorld);
+    const double y = (MercatorHalfWorld - point.getY()) / (2 * MercatorHalfWorld);
+    require(std::isfinite(x) && std::isfinite(y) && std::abs(x) <= 16 && std::abs(y) <= 16);
+    return {x, y};
 }
-quint32 unsigned32(Reader &reader)
+QString printable(const char *text, qsizetype limit)
 {
-    wire(reader, Wire::varint);
-    const auto value = reader.get_uint64();
-    require(value <= std::numeric_limits<quint32>::max());
-    return static_cast<quint32>(value);
-}
-QString string(protozero::data_view value, size_t limit = 2048)
-{
-    bounded(value.size() <= limit);
-    auto result = QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
+    auto result = QString::fromUtf8(text ? text : "");
+    bounded(result.size() <= limit);
     for (auto &character : result) {
         if (!character.isPrint()) {
             character = QLatin1Char(' ');
@@ -56,135 +55,95 @@ QString string(protozero::data_view value, size_t limit = 2048)
     }
     return result;
 }
-QJsonValue property(Reader reader)
+QJsonValue fieldValue(const OGRFeature &feature, int index)
 {
-    QJsonValue result;
-    bool found = false;
-    while (reader.next()) {
-        if (reader.tag() < 1 || reader.tag() > 7) {
-            reader.skip();
-            continue;
-        }
-        require(!found);
-        found = true;
-        switch (reader.tag()) {
-        case 1:
-            wire(reader, Wire::length_delimited);
-            result = string(reader.get_view());
-            break;
-        case 2: {
-            wire(reader, Wire::fixed32);
-            const auto number = reader.get_float();
-            require(std::isfinite(number));
-            result = number;
-            break;
-        }
-        case 3: {
-            wire(reader, Wire::fixed64);
-            const auto number = reader.get_double();
-            require(std::isfinite(number));
-            result = number;
-            break;
-        }
-        case 4:
-            wire(reader, Wire::varint);
-            result = QString::number(reader.get_int64());
-            break;
-        case 5:
-            wire(reader, Wire::varint);
-            result = QString::number(reader.get_uint64());
-            break;
-        case 6:
-            wire(reader, Wire::varint);
-            result = QString::number(reader.get_sint64());
-            break;
-        case 7:
-            wire(reader, Wire::varint);
-            result = reader.get_bool();
-            break;
-        default:
-            break;
-        }
+    const auto *definition = feature.GetFieldDefnRef(index);
+    switch (definition->GetType()) {
+    case OFTReal: {
+        const double number = feature.GetFieldAsDouble(index);
+        require(std::isfinite(number));
+        return number;
     }
-    require(found);
-    return result;
+    case OFTInteger:
+        if (definition->GetSubType() == OFSTBoolean) {
+            return feature.GetFieldAsInteger(index) != 0;
+        }
+        return QString::number(feature.GetFieldAsInteger(index));
+    case OFTInteger64:
+        return QString::number(feature.GetFieldAsInteger64(index));
+    default:
+        return printable(feature.GetFieldAsString(index), 2048);
+    }
 }
-QList<quint32> packed(Reader &reader, int limit)
+void appendLine(QPainterPath &path,
+                const OGRSimpleCurve &curve,
+                int &vertices,
+                const std::atomic_bool &cancelled)
 {
-    QList<quint32> result;
-    if (reader.has_wire_type(Wire::varint)) {
-        result.append(unsigned32(reader));
-        return result;
-    }
-    wire(reader, Wire::length_delimited);
-    for (const auto value : reader.get_packed_uint64()) {
-        bounded(result.size() < limit);
-        require(value <= std::numeric_limits<quint32>::max());
-        result.append(static_cast<quint32>(value));
-    }
-    return result;
-}
-void geometry(VectorFeature &feature,
-              const QList<quint32> &commands,
-              quint32 extent,
-              int &vertices,
-              const std::atomic_bool &cancelled)
-{
-    qint64 x = 0, y = 0;
-    int segment = 0;
-    bool closed = true;
-    const auto delta = [](quint32 value) -> qint64 {
-        return (value & 1U) ? -static_cast<qint64>(value >> 1U) - 1 : value >> 1U;
-    };
-    for (qsizetype offset = 0; offset < commands.size();) {
+    for (int i = 0; i < curve.getNumPoints(); ++i) {
         require(!cancelled.load(std::memory_order_relaxed));
-        const quint32 command = commands.at(offset++);
-        const quint32 operation = command & 7U;
-        const quint32 count = command >> 3U;
-        require(count > 0);
-        bounded(count <= 500000);
-        if (operation == 7) {
-            require(feature.kind == VectorFeature::Kind::Polygon && count == 1 && segment >= 3 &&
-                    !closed);
-            feature.path.closeSubpath();
-            closed = true;
-            segment = 0;
-            continue;
-        }
-        require(operation == 1 || operation == 2);
-        require(count <= static_cast<quint32>((commands.size() - offset) / 2));
-        if (feature.kind == VectorFeature::Kind::Point) {
-            require(operation == 1);
-        } else if (operation == 1) {
-            require(count == 1 &&
-                    (feature.kind == VectorFeature::Kind::Polygon ? closed
-                                                                  : segment == 0 || segment >= 2));
-            segment = 0;
+        bounded(++vertices <= 500000);
+        OGRPoint point;
+        curve.getPoint(i, &point);
+        const auto local = tilePoint(point);
+        if (i == 0) {
+            path.moveTo(local);
         } else {
-            require(segment > 0 && !closed);
-        }
-        for (quint32 i = 0; i < count; ++i) {
-            bounded(++vertices <= 500000);
-            x += delta(commands.at(offset++));
-            y += delta(commands.at(offset++));
-            require(std::abs(x) <= static_cast<qint64>(extent) * 16 &&
-                    std::abs(y) <= static_cast<qint64>(extent) * 16);
-            const QPointF point(static_cast<double>(x) / extent, static_cast<double>(y) / extent);
-            if (feature.kind == VectorFeature::Kind::Point) {
-                feature.points.append(point);
-            } else if (operation == 1) {
-                feature.path.moveTo(point);
-            } else {
-                feature.path.lineTo(point);
-            }
-            ++segment;
-            closed = false;
+            path.lineTo(local);
         }
     }
-    require(feature.kind == VectorFeature::Kind::Point  ? !feature.points.isEmpty()
-            : feature.kind == VectorFeature::Kind::Line ? segment >= 2
-                                                        : closed && !feature.path.isEmpty());
-    feature.path.setFillRule(Qt::OddEvenFill);
+}
+void appendGeometry(VectorFeature &feature,
+                    const OGRGeometry &geometry,
+                    int &vertices,
+                    const std::atomic_bool &cancelled,
+                    int depth = 0)
+{
+    require(depth <= 2);
+    switch (wkbFlatten(geometry.getGeometryType())) {
+    case wkbPoint:
+        require(feature.kind == VectorFeature::Kind::Point);
+        bounded(++vertices <= 500000);
+        feature.points.append(tilePoint(*geometry.toPoint()));
+        break;
+    case wkbLineString:
+        require(feature.kind == VectorFeature::Kind::Line);
+        appendLine(feature.path, *geometry.toLineString(), vertices, cancelled);
+        break;
+    case wkbPolygon:
+        require(feature.kind == VectorFeature::Kind::Polygon);
+        for (const auto *ring : *geometry.toPolygon()) {
+            require(ring->getNumPoints() >= 4);
+            appendLine(feature.path, *ring, vertices, cancelled);
+            feature.path.closeSubpath();
+        }
+        break;
+    case wkbMultiPoint:
+    case wkbMultiLineString:
+    case wkbMultiPolygon:
+        for (const auto *part : *geometry.toGeometryCollection()) {
+            appendGeometry(feature, *part, vertices, cancelled, depth + 1);
+        }
+        break;
+    default:
+        require(false);
+    }
+}
+VectorFeature::Kind featureKind(const OGRGeometry &geometry)
+{
+    switch (wkbFlatten(geometry.getGeometryType())) {
+    case wkbPoint:
+    case wkbMultiPoint:
+        return VectorFeature::Kind::Point;
+    case wkbLineString:
+    case wkbMultiLineString:
+        return VectorFeature::Kind::Line;
+    case wkbPolygon:
+    case wkbMultiPolygon:
+        return VectorFeature::Kind::Polygon;
+    default:
+        throw std::runtime_error("Invalid vector tile");
+    }
 }
 QColor color(const VectorFeature &feature)
 {
@@ -238,104 +197,54 @@ VectorTile decode(const QByteArray &bytes, const std::atomic_bool &cancelled)
 {
     VectorTile result;
     bounded(bytes.size() <= VectorDownloadLimit);
-    Reader tile(bytes.constData(), static_cast<size_t>(bytes.size()));
+    require(!bytes.isEmpty());
+    initializeGdal();
+    const GdalMemoryFile file(bytes, QStringLiteral("pbf"));
+    require(file.isValid());
+    static const char *const drivers[] = {"MVT", nullptr};
+    // Keep the tile buffer. The renderer clips each tile itself.
+    static const char *const options[] = {"X=0", "Y=0", "Z=0", "CLIP=NO", nullptr};
+    CPLErrorReset();
+    GdalDataset dataset(GDALDataset::FromHandle(GDALOpenEx(
+        file.path().constData(), GDAL_OF_VECTOR | GDAL_OF_READONLY, drivers, options, nullptr)));
+    require(dataset != nullptr);
     int vertices = 0;
     qsizetype retained = 0;
-    while (tile.next()) {
+    for (auto *layer : dataset->GetLayers()) {
         require(!cancelled.load(std::memory_order_relaxed));
-        if (tile.tag() != 3) {
-            tile.skip();
-            continue;
-        }
-        wire(tile, Wire::length_delimited);
-        Reader layer(tile.get_view());
-        QString name;
-        quint32 extent = 4096, version = 0;
-        QList<protozero::data_view> features;
-        QStringList keys;
-        QList<QJsonValue> values;
         bounded(result.layers.size() < 64);
-        while (layer.next()) {
-            require(!cancelled.load(std::memory_order_relaxed));
-            switch (layer.tag()) {
-            case 1:
-                wire(layer, Wire::length_delimited);
-                require(name.isEmpty());
-                name = string(layer.get_view(), 100);
-                break;
-            case 2:
-                wire(layer, Wire::length_delimited);
-                bounded(features.size() + result.features.size() < 50000);
-                features.append(layer.get_view());
-                break;
-            case 3:
-                wire(layer, Wire::length_delimited);
-                bounded(keys.size() < 65536);
-                keys.append(string(layer.get_view(), 100));
-                break;
-            case 4:
-                wire(layer, Wire::length_delimited);
-                bounded(values.size() < 65536);
-                values.append(property(Reader(layer.get_view())));
-                break;
-            case 5:
-                wire(layer, Wire::varint);
-                extent = unsigned32(layer);
-                break;
-            case 15:
-                wire(layer, Wire::varint);
-                version = unsigned32(layer);
-                break;
-            default:
-                layer.skip();
-                break;
-            }
-        }
-        require((version == 1 || version == 2) && extent > 0 && extent <= 65536 &&
-                !name.isEmpty() && !result.layers.contains(name));
+        const auto name = printable(layer->GetName(), 100);
+        require(!name.isEmpty() && !result.layers.contains(name));
         result.layers.append(name);
-        for (const auto &view : features) {
+        const auto *definition = layer->GetLayerDefn();
+        const int identifier = definition->GetFieldIndex("mvt_id");
+        layer->ResetReading();
+        while (OGRFeatureUniquePtr input{layer->GetNextFeature()}) {
             require(!cancelled.load(std::memory_order_relaxed));
-            Reader input(view);
+            bounded(result.features.size() < 50000);
+            const auto *geometry = input->GetGeometryRef();
+            if (!geometry || geometry->IsEmpty()) {
+                continue;
+            }
             VectorFeature feature;
             feature.layer = name;
-            QList<quint32> tags, commands;
-            quint32 kind = 0;
-            while (input.next()) {
-                switch (input.tag()) {
-                case 1:
-                    wire(input, Wire::varint);
-                    feature.id = QString::number(input.get_uint64());
-                    break;
-                case 2:
-                    tags.append(packed(input, 512));
-                    bounded(tags.size() <= 512);
-                    break;
-                case 3:
-                    wire(input, Wire::varint);
-                    kind = unsigned32(input);
-                    break;
-                case 4:
-                    commands.append(packed(input, 1500000));
-                    bounded(commands.size() <= 1500000);
-                    break;
-                default:
-                    input.skip();
-                    break;
+            feature.kind = featureKind(*geometry);
+            for (int i = 0; i < definition->GetFieldCount(); ++i) {
+                if (!input->IsFieldSetAndNotNull(i)) {
+                    continue;
                 }
-            }
-            require(kind >= 1 && kind <= 3 && tags.size() % 2 == 0);
-            feature.kind = static_cast<VectorFeature::Kind>(kind);
-            for (qsizetype i = 0; i < tags.size(); i += 2) {
-                require(tags.at(i) < static_cast<quint32>(keys.size()) &&
-                        tags.at(i + 1) < static_cast<quint32>(values.size()));
-                const auto &key = keys.at(tags.at(i));
-                const auto &value = values.at(tags.at(i + 1));
+                if (i == identifier) {
+                    feature.id = QString::number(input->GetFieldAsInteger64(i));
+                    continue;
+                }
+                const auto key = printable(definition->GetFieldDefn(i)->GetNameRef(), 100);
+                const auto value = fieldValue(*input, i);
                 retained += 128 + key.size() * 2 + value.toString().size() * 2;
                 bounded(retained <= 16 * 1024 * 1024);
                 feature.properties.insert(key, value);
             }
-            geometry(feature, commands, extent, vertices, cancelled);
+            appendGeometry(feature, *geometry, vertices, cancelled);
+            feature.path.setFillRule(Qt::OddEvenFill);
             bounded(retained + vertices * 64 + (result.features.size() + 1) * 256 <=
                     64 * 1024 * 1024);
             feature.color = color(feature);

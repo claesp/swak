@@ -1,14 +1,24 @@
-# Decoder dependency
+# GDAL
 
-SWAK includes unmodified protozero 1.8.2 headers under `third_party/protozero`. Protozero is a small Protocol Buffers decoder used by established mapping projects. Qt Core does not provide this decoder. This dependency avoids a custom implementation of binary field and variable-length integer parsing. It adds no separate runtime library, browser engine, or network client.
+SWAK uses GDAL 3.10 for map and data formats. GDAL is the Geospatial Data Abstraction Library. It reads more than 200 raster and vector formats and converts coordinates between reference systems. The user decided on October 5, 2026 to replace the custom KML and MVT decoders with GDAL. This decision also brings local files and the other GDAL formats into SWAK. Qt does not supply these formats.
 
-The upstream [repository](https://github.com/mapbox/protozero) identifies its mapping users. The [change log](https://github.com/mapbox/protozero/blob/master/CHANGELOG.md) records a Boolean reader overrun fix in 1.8.1. The pinned 1.8.2 version includes that fix. The [security page](https://github.com/mapbox/protozero/security) listed no published advisories during the October 2, 2026 review. This result does not establish that the library contains no defects.
+Install `libgdal-dev` to build SWAK. The runtime package is `libgdal36`. On Debian 13 it adds 37 packages, which include PROJ, GEOS, HDF5, NetCDF, and database client libraries. SWAK links GDAL dynamically and bundles no GDAL code. Use distribution security updates for GDAL and its format libraries.
 
-The source archive is `https://codeload.github.com/mapbox/protozero/tar.gz/refs/tags/v1.8.2`. Its SHA-256 digest is `68d1df951b4d8397355c8fc9ffed40d9c06282a877fe847403feac6edcee3ef1`. The import contains upstream headers and both license files. CMake installs the license files with the application documentation. Builds do not download dependencies.
+GDAL runs in the application process. The user selected this design. docs/quality.md asks for a separate worker process when native code can fail with memory corruption. GDAL format drivers are a large native attack surface, and fuzzing regularly finds memory faults in them. A fault in a GDAL driver can therefore stop SWAK. Record this accepted risk in reviews. Do not move GDAL into a worker process without a new user decision.
 
-Protozero uses BSD-2-Clause terms, with Apache-2.0 terms for code identified in `LICENSE.from_folly`. Keep both notices when you distribute binaries or source. Changes to the dependency require a new source digest, license review, advisory review, and parser diagnostics. SWAK supplies separate bounds and wire-type validation around the library. Application tests exercise the decoder under address and undefined behavior sanitizers.
+SWAK limits what GDAL can reach. `initializeGdal` in src/core/gdal_support.cpp sets these limits once:
 
-Qt and libarchive remain system dependencies. Read the build manual for their required components. Read the data provider manual for the libarchive dependency review and its restricted ZIP use.
+- Removed drivers: drivers that run programs, open database connections, or fetch any URL. GPSBabel, HTTP, PostgreSQL, MySQL, ODBC, and the cloud service drivers are examples.
+- Allowed drivers: each open call names a fixed list of file format drivers. The vector list excludes VRT, which can open other files.
+- Files: GDAL writes no `.aux.xml` sidecar files and does not scan directories on open.
+- Memory: the raster block cache is 64 MiB. One GeoJSON object can use at most 16 MiB.
+- Network: certificate checks stay on. Requests time out after 20 seconds and retry once.
+
+SWAK also keeps its own limits around GDAL. Read [Data providers](data-providers.md) for the data limits and [Map providers](map-providers.md) for the vector tile limits. GDAL uses the MIT license. Its linked libraries use their own licenses. Help > Credits lists GDAL and its version.
+
+The earlier versions of SWAK included protozero 1.8.2 headers for MVT decoding. GDAL replaced them, and the source tree no longer contains them.
+
+Qt, libarchive, GeographicLib, and GDAL are system dependencies. Read the build manual for their required components.
 
 Marker collections also use the existing system libarchive dependency. The shared collection service reads ZIP, TAR, and gzip-compressed TAR, and writes ZIP or compressed TAR. It enables no external decompression programs and extracts no files. The additional archive use avoids a separate ZIP implementation or dependency. Read [Marker collections](marker-collections.md) for the one-file format and resource limits.
 
@@ -54,6 +64,6 @@ The grid renderer limits entries, visible lines, sampling points, coordinate for
 
 Help > Credits uses the existing library version APIs and pinned asset versions. It adds no dependencies. The table names direct application dependencies, bundled headers and icons, libarchive compression backends, and the active Qt TLS backend. System graphics and desktop dependencies vary with the host.
 
-The license references include [Qt licensing](https://doc.qt.io/qt-6/licensing.html), [libarchive](https://www.libarchive.org/), and [GeographicLib](https://github.com/geographiclib/geographiclib). Bundled protozero and Lucide notices remain under third_party. The table summarizes license families and does not replace the distributed notices.
+The license references include [Qt licensing](https://doc.qt.io/qt-6/licensing.html), [libarchive](https://www.libarchive.org/), [GeographicLib](https://github.com/geographiclib/geographiclib), and [GDAL](https://gdal.org/license.html). Bundled Lucide notices remain under third_party. The table summarizes license families and does not replace the distributed notices.
 
 Clear commands use an original eraser path in the shared vector icon factory. Delete commands retain the bundled Lucide trash icon.

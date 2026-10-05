@@ -7,6 +7,7 @@
 #include "core/cot.h"
 #include "core/cot_picker.h"
 #include "core/delete_confirmation.h"
+#include "core/gdal_support.h"
 #include "core/graphics.h"
 #include "core/grid_types.h"
 #include "core/identity.h"
@@ -1098,7 +1099,7 @@ private slots:
         window.findChild<swak::GridTypes *>()->select({});
         const auto initial = map->grabFramebuffer();
         QCOMPARE(initial.pixelColor(20, 21), QColor(swak::MapBackgroundRgb));
-        const auto id = QStringLiteral("org.swak.xyz");
+        const auto id = QStringLiteral("org.swak.gdal.raster");
         auto source = sources->sources().value(id).toObject();
         source.insert(
             QStringLiteral("endpoint"),
@@ -1238,7 +1239,8 @@ private slots:
         swak::MapSources seed(QPluginLoader::staticInstances());
         auto values = seed.savePreferences();
         auto sources = seed.sources();
-        sources.insert(QStringLiteral("custom"), sources.value(QStringLiteral("org.swak.xyz")));
+        sources.insert(QStringLiteral("custom"),
+                       sources.value(QStringLiteral("org.swak.gdal.raster")));
         auto invalid = sources.value(QStringLiteral("org.swak.wms")).toObject();
         invalid.insert(QStringLiteral("endpoint"), QStringLiteral("invalid"));
         sources.insert(QStringLiteral("org.swak.wms"), invalid);
@@ -1605,9 +1607,9 @@ private slots:
         auto &window = *owner;
         auto *sources = window.findChild<swak::MapSources *>();
         QVERIFY(sources);
-        QCOMPARE(sources->providers().size(), 4);
+        QCOMPARE(sources->providers().size(), 2);
         QVERIFY(!sources->networkEnabled());
-        const auto id = QStringLiteral("org.swak.xyz");
+        const auto id = QStringLiteral("org.swak.gdal.raster");
         auto source = sources->sources().value(id).toObject();
         source.insert(
             QStringLiteral("endpoint"),
@@ -4932,7 +4934,7 @@ private slots:
     void mapCredentialDialog()
     {
         swak::MapSources maps(QPluginLoader::staticInstances());
-        const auto id = QStringLiteral("org.swak.xyz");
+        const auto id = QStringLiteral("org.swak.gdal.raster");
         auto source = maps.sources().value(id).toObject();
         source.insert(QStringLiteral("authMode"), QStringLiteral("bearer"));
         QVERIFY(maps.put(id, source).isEmpty());
@@ -7555,6 +7557,8 @@ int main(int argc, char **argv)
 {
     swak::configureGraphics();
     QApplication app(argc, argv);
+    // Close cached GDAL resources after the tests and before the leak check.
+    swak::GdalShutdownGuard gdal;
     QTemporaryDir mapCache;
     qputenv("XDG_CACHE_HOME", mapCache.path().toUtf8());
     GuiTest test;

@@ -75,7 +75,7 @@ Review each diagnostic before you change code. If a Qt callback requires an exce
 
 Recoverable input, file, preference, and network failures must leave the interface usable. Bound memory, queues, parsing work, and retry rates. Release resources on every error and shutdown path. Prevent exceptions from escaping Qt callbacks. Test failure recovery followed by a successful operation.
 
-Do not continue after detected memory corruption. Do not catch fatal signals to hide crashes. The application cannot safely recover from C++ memory corruption or failing native libraries inside the same process. Features that require isolation from native crashes need a separate worker process and a restart policy. Current static plugins share the application process. This workflow improves fault detection but does not guarantee that the application cannot crash.
+Do not continue after detected memory corruption. Do not catch fatal signals to hide crashes. The application cannot safely recover from C++ memory corruption or failing native libraries inside the same process. Features that require isolation from native crashes need a separate worker process and a restart policy. Current static plugins share the application process. GDAL also runs in the application process by user decision. docs/dependencies.md records that accepted risk. This workflow improves fault detection but does not guarantee that the application cannot crash.
 
 The compiler documents the [sanitizer and coverage flags](https://gcc.gnu.org/onlinedocs/gcc/Instrumentation-Options.html). Cppcheck documents its [analysis and suppression behavior](https://cppcheck.sourceforge.io/manual.html). Review Qt and dependency security advisories before a release.
 

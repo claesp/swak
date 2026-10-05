@@ -5,12 +5,10 @@ Q_IMPORT_PLUGIN(BasemapPlugin)
 Q_IMPORT_PLUGIN(TracksPlugin)
 Q_IMPORT_PLUGIN(ServersPlugin)
 Q_IMPORT_PLUGIN(EditorPlugin)
-Q_IMPORT_PLUGIN(XyzProvider)
-Q_IMPORT_PLUGIN(WmtsProvider)
-Q_IMPORT_PLUGIN(WmsProvider)
+Q_IMPORT_PLUGIN(GdalRasterProvider)
 Q_IMPORT_PLUGIN(ActivityPlugin)
 
-Q_IMPORT_PLUGIN(KmlPlugin)
+Q_IMPORT_PLUGIN(GdalVectorProvider)
 
 Q_IMPORT_PLUGIN(MvtProvider)
 

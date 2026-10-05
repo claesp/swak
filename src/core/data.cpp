@@ -4,6 +4,7 @@
 #include "core/map_label.h"
 
 #include <QDateTime>
+#include <QDir>
 #include <QFontMetricsF>
 #include <QFutureWatcher>
 #include <QGuiApplication>
@@ -24,6 +25,19 @@
 #include <utility>
 
 namespace swak {
+bool localDataEndpoint(const QString &endpoint)
+{
+    return endpoint.startsWith('/') || endpoint.startsWith(QStringLiteral("file:"));
+}
+QString localDataPath(const QString &endpoint)
+{
+    if (endpoint.startsWith('/')) {
+        return endpoint;
+    }
+    const QUrl url(endpoint, QUrl::StrictMode);
+    return url.isValid() && url.isLocalFile() && url.host().isEmpty() ? url.toLocalFile()
+                                                                      : QString{};
+}
 QJsonObject dataDefaults()
 {
     return {{QStringLiteral("name"), QString{}},
@@ -43,7 +57,7 @@ QList<SettingField> dataFields()
 {
     return {
         textSetting(QStringLiteral("name"), QObject::tr("Name"), 100),
-        textSetting(QStringLiteral("endpoint"), QObject::tr("HTTPS URL"), 2048),
+        textSetting(QStringLiteral("endpoint"), QObject::tr("HTTPS URL or local file path"), 2048),
         textSetting(QStringLiteral("attribution"), QObject::tr("Attribution and license URL"), 300),
         booleanSetting(QStringLiteral("enabled"), QObject::tr("Enabled")),
         numberSetting(
@@ -66,7 +80,7 @@ QString validateDataSource(const QJsonObject &source)
                           : key == QStringLiteral("name")   ? 100
                                                             : 300;
         if (value.trimmed().isEmpty() || value.size() > limit) {
-            return QObject::tr("Enter a name, HTTPS URL, and attribution within their limits.");
+            return QObject::tr("Enter a name, location, and attribution within their limits.");
         }
         if (std::any_of(value.begin(), value.end(), [](QChar ch) {
                 return !ch.isPrint();
@@ -74,10 +88,20 @@ QString validateDataSource(const QJsonObject &source)
             return QObject::tr("Do not use control characters.");
         }
     }
-    const QUrl url(source.value(QStringLiteral("endpoint")).toString(), QUrl::StrictMode);
-    if (!url.isValid() || url.scheme() != QStringLiteral("https") || url.host().isEmpty() ||
-        !url.userInfo().isEmpty() || url.hasFragment()) {
-        return QObject::tr("Use an HTTPS URL without credentials or a fragment.");
+    const auto endpoint = source.value(QStringLiteral("endpoint")).toString();
+    if (localDataEndpoint(endpoint)) {
+        const auto path = localDataPath(endpoint);
+        if (path.isEmpty() || !QDir::isAbsolutePath(path) ||
+            path.split('/').contains(QStringLiteral(".."))) {
+            return QObject::tr("Use an absolute local file path.");
+        }
+    } else {
+        const QUrl url(endpoint, QUrl::StrictMode);
+        if (!url.isValid() || url.scheme() != QStringLiteral("https") || url.host().isEmpty() ||
+            !url.userInfo().isEmpty() || url.hasFragment()) {
+            return QObject::tr("Use an HTTPS URL without credentials or a fragment, or an "
+                               "absolute local file path.");
+        }
     }
     const auto fields = dataFields();
     for (const auto &field : fields) {
@@ -152,7 +176,8 @@ DataProvider *DataSources::provider(const QJsonObject &source) const
 {
     const auto found =
         std::find_if(providers_.begin(), providers_.end(), [&](const auto *candidate) {
-            return candidate->dataId() == source.value(QStringLiteral("format")).toString();
+            const auto format = source.value(QStringLiteral("format")).toString();
+            return candidate->dataId() == format || candidate->legacyIds().contains(format);
         });
     return found == providers_.end() ? nullptr : *found;
 }
@@ -299,13 +324,19 @@ void DataSources::fetch(const QString &id, const std::shared_ptr<Feed> &feed)
     feed->busy = true;
     feed->due = false;
     feed->status = tr("Updating…");
+    const auto endpoint = feed->source.value(QStringLiteral("endpoint")).toString();
+    if (localDataEndpoint(endpoint)) {
+        decodeLocal(id, feed, localDataPath(endpoint));
+        emit contentChanged();
+        return;
+    }
     QNetworkRequest request(QUrl(feed->source.value(QStringLiteral("endpoint")).toString()));
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                          QNetworkRequest::ManualRedirectPolicy);
     request.setAttribute(QNetworkRequest::CookieLoadControlAttribute, QNetworkRequest::Manual);
     request.setAttribute(QNetworkRequest::CookieSaveControlAttribute, QNetworkRequest::Manual);
     request.setRawHeader("Accept-Encoding", "identity");
-    request.setRawHeader("User-Agent", "SWAK/0.1 KML client");
+    request.setRawHeader("User-Agent", "SWAK/0.1 data client");
     request.setRawHeader(
         "Accept",
         "application/vnd.google-earth.kml+xml, application/vnd.google-earth.kmz, application/xml");
@@ -362,6 +393,27 @@ void DataSources::fetch(const QString &id, const std::shared_ptr<Feed> &feed)
         }));
     });
     emit contentChanged();
+}
+void DataSources::decodeLocal(const QString &id,
+                              const std::shared_ptr<Feed> &feed,
+                              const QString &path)
+{
+    auto *watcher = new QFutureWatcher<DataDocument>(this);
+    connect(watcher, &QFutureWatcher<DataDocument>::finished, this, [this, id, feed, watcher] {
+        auto document = watcher->result();
+        watcher->deleteLater();
+        finish(id, feed, std::move(document));
+    });
+    const auto *format = provider(feed->source);
+    watcher->setFuture(QtConcurrent::run(&pool_, [format, path, cancelled = feed->cancelled] {
+        try {
+            return format->decodeFile(path, *cancelled);
+        } catch (const std::exception &) {
+            DataDocument failed;
+            failed.error = QObject::tr("Data decoder failed.");
+            return failed;
+        }
+    }));
 }
 void DataSources::finish(const QString &id,
                          const std::shared_ptr<Feed> &feed,

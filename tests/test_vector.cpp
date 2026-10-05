@@ -1,3 +1,4 @@
+#include "core/gdal_support.h"
 #include "core/maps.h"
 #include "core/tiles.h"
 #include "core/vector_tiles.h"
@@ -165,19 +166,32 @@ private slots:
     }
     void denseTileLimits()
     {
-        for (const int count : {100001, 500001}) {
-            QByteArray geometry = vector_fixture::varint((static_cast<quint64>(count) << 3U) | 1U);
-            geometry.append(QByteArray(count * 2, '\0'));
-            const auto tile = decoder_->decodeTile(
-                vector_fixture::layer("poi", vector_fixture::feature(1, geometry)), cancelled_);
-            if (count == 100001) {
-                QVERIFY2(tile.error.isEmpty(), qPrintable(tile.error));
-                QCOMPARE(tile.features.first().points.size(), count);
-            } else {
-                QVERIFY(!tile.error.isEmpty());
-                QVERIFY(tile.resourceLimit);
+        // Spread the points over many features. One huge multipoint makes the GDAL decoder grow
+        // its point list one allocation at a time, which is slow under the address sanitizer.
+        const auto tile = [](int features, int points) {
+            using namespace vector_fixture;
+            QByteArray geometry = varint((static_cast<quint64>(points) << 3U) | 1U);
+            geometry.append(QByteArray(points * 2, '\0'));
+            const auto one = field(2, feature(1, geometry));
+            QByteArray body = field(1, "poi");
+            for (int i = 0; i < features; ++i) {
+                body += one;
             }
+            body += field(3, "name") + field(3, "class") + field(4, field(1, "Test place")) +
+                    field(4, field(1, "cafe")) + number(5, 4096) + number(15, 2);
+            return field(3, body);
+        };
+        const auto dense = decoder_->decodeTile(tile(100, 1001), cancelled_);
+        QVERIFY2(dense.error.isEmpty(), qPrintable(dense.error));
+        QCOMPARE(dense.features.size(), 100);
+        qsizetype points = 0;
+        for (const auto &feature : dense.features) {
+            points += feature.points.size();
         }
+        QCOMPARE(points, 100100);
+        const auto excessive = decoder_->decodeTile(tile(600, 1001), cancelled_);
+        QVERIFY(!excessive.error.isEmpty());
+        QVERIFY(excessive.resourceLimit);
         const auto oversized =
             decoder_->decodeTile(QByteArray(VectorDownloadLimit + 1, 'x'), cancelled_);
         QVERIFY(oversized.resourceLimit);
@@ -195,12 +209,12 @@ private slots:
                                   "poi", vector_fixture::feature(1, vector_fixture::geometry({0}))),
                               cancelled_)
                  .error.isEmpty());
-        QVERIFY(!decoder_
-                     ->decodeTile(
-                         vector_fixture::layer(
-                             "poi", vector_fixture::feature(1, vector_fixture::geometry({9, 1}))),
-                         cancelled_)
-                     .error.isEmpty());
+        const auto truncated = decoder_->decodeTile(
+            vector_fixture::layer("poi",
+                                  vector_fixture::feature(1, vector_fixture::geometry({9, 1}))),
+            cancelled_);
+        // GDAL drops a feature with a truncated geometry command.
+        QVERIFY(truncated.features.isEmpty());
         QVERIFY(
             !decoder_
                  ->decodeTile(
@@ -671,7 +685,9 @@ private slots:
             QVERIFY(decoded.features.first().properties.contains(QStringLiteral("value")));
         }
         const auto bad = field(3, field(1, "poi") + field(2, point) + number(15, 4294967298ULL));
-        QVERIFY(!decoder_->decodeTile(bad, cancelled_).error.isEmpty());
+        const auto badVersion = decoder_->decodeTile(bad, cancelled_);
+        // GDAL drops a layer with an unsupported version.
+        QVERIFY(badVersion.features.isEmpty());
         QImage canvas(256, 256, QImage::Format_RGB32);
         QPainter painter(&canvas);
         QList<QRectF> labels;
@@ -745,6 +761,8 @@ private slots:
 int main(int argc, char **argv)
 {
     QApplication app(argc, argv);
+    // Close cached GDAL resources after the tests and before the leak check.
+    swak::GdalShutdownGuard gdal;
     if (argc == 3 &&
         (QByteArray(argv[1]) == "--sample" || QByteArray(argv[1]) == "--render-sample" ||
          QByteArray(argv[1]) == "--benchmark-sample")) {

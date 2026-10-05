@@ -1,19 +1,25 @@
 #include "core/data.h"
+#include "core/gdal_support.h"
 #include "tile_server.h"
 
 #include <QGuiApplication>
 #include <QPainter>
 #include <QPluginLoader>
 #include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QTest>
 
+#include <algorithm>
 #include <archive.h>
 #include <archive_entry.h>
 #include <array>
+#include <cmath>
+#include <gdal_priv.h>
+#include <ogrsf_frmts.h>
 #include <optional>
 #include <stdexcept>
 using namespace swak;
-Q_IMPORT_PLUGIN(KmlPlugin)
+Q_IMPORT_PLUGIN(GdalVectorProvider)
 namespace {
 const QByteArray point =
     "<kml "
@@ -61,6 +67,62 @@ QJsonObject source(const TileServer &server)
     value.insert(QStringLiteral("enabled"), true);
     value.insert(QStringLiteral("ignoreTls"), true);
     return value;
+}
+bool writeShapefile(const QString &path)
+{
+    initializeGdal();
+    auto *driver = GetGDALDriverManager()->GetDriverByName("ESRI Shapefile");
+    if (!driver) {
+        return false;
+    }
+    GdalDataset dataset(driver->Create(path.toUtf8().constData(), 0, 0, 0, GDT_Unknown, nullptr));
+    if (!dataset) {
+        return false;
+    }
+    OGRSpatialReference mercator;
+    mercator.importFromEPSG(3857);
+    auto *layer = dataset->CreateLayer("sites", &mercator, wkbPoint, nullptr);
+    OGRFieldDefn name("name", OFTString);
+    OGRFieldDefn kind("kind", OFTString);
+    if (!layer || layer->CreateField(&name) != OGRERR_NONE ||
+        layer->CreateField(&kind) != OGRERR_NONE) {
+        return false;
+    }
+    OGRFeature feature(layer->GetLayerDefn());
+    feature.SetField("name", "Depot");
+    feature.SetField("kind", "supply");
+    // Ten degrees east on the equator in Web Mercator meters.
+    OGRPoint location(1113194.9079327357, 0);
+    feature.SetGeometry(&location);
+    return layer->CreateFeature(&feature) == OGRERR_NONE;
+}
+bool zipDirectory(const QString &path, QByteArray &output)
+{
+    QByteArray buffer(4 * 1024 * 1024, '\0');
+    size_t written = 0;
+    auto *writer = archive_write_new();
+    archive_write_set_format_zip(writer);
+    archive_write_open_memory(writer, buffer.data(), static_cast<size_t>(buffer.size()), &written);
+    for (const auto &name : QDir(path).entryList(QDir::Files)) {
+        QFile file(QDir(path).filePath(name));
+        if (!file.open(QIODevice::ReadOnly)) {
+            return false;
+        }
+        const auto bytes = file.readAll();
+        auto *entry = archive_entry_new();
+        archive_entry_set_pathname(entry, name.toUtf8().constData());
+        archive_entry_set_size(entry, bytes.size());
+        archive_entry_set_filetype(entry, AE_IFREG);
+        archive_entry_set_perm(entry, 0600);
+        archive_write_header(writer, entry);
+        archive_write_data(writer, bytes.constData(), static_cast<size_t>(bytes.size()));
+        archive_entry_free(entry);
+    }
+    archive_write_close(writer);
+    archive_write_free(writer);
+    buffer.resize(static_cast<qsizetype>(written));
+    output = buffer;
+    return written > 0;
 }
 } // namespace
 class FaultyDataProvider final : public QObject, public DataProvider
@@ -131,21 +193,31 @@ private slots:
                               cancelled)
                      .shapes.size(),
                  1);
-        for (const auto &bad :
-             {QByteArray{},
-              QByteArray("no xml"),
-              point.left(50),
-              QByteArray("PKbad"),
-              QByteArray(point).replace("0,0,0", "NaN,0,0"),
-              kmz(point, "../doc.kml"),
-              kmz(point, "doc.kml", true),
-              kmz(point, "image.png"),
-              QByteArray("<!DOCTYPE kml [<!ENTITY x 'bad'>]>") + point,
-              QByteArray(point).replace("<coordinates>0,0,0</coordinates>", ""),
-              QByteArray(point).replace("0,0,0", "200,0,0"),
-              QByteArray(point).replace("0,0,0", "0,0,0 1,1,0"),
+        for (const auto &bad : {QByteArray{},
+                                QByteArray("no xml"),
+                                point.left(50),
+                                QByteArray("PKbad"),
+                                kmz(point, "../doc.kml"),
+                                kmz(point, "doc.kml", true),
+                                kmz(point, "image.png"),
+                                QByteArray("<!DOCTYPE kml [<!ENTITY x 'bad'>]>") + point,
+                                kmz(QByteArray("<!DOCTYPE kml [<!ENTITY x 'bad'>]>") + point),
+                                QByteArray(point).replace("0,0,0", "200,0,0")}) {
+            QVERIFY2(!format()->decode(bad, cancelled).error.isEmpty(), bad.left(80));
+        }
+        // GDAL reads these as empty geometry. The feature has no map shape.
+        for (const auto &empty :
+             {QByteArray(point).replace("0,0,0", "NaN,0,0"),
+              QByteArray(point).replace("<coordinates>0,0,0</coordinates>", "")}) {
+            const auto result = format()->decode(empty, cancelled);
+            QVERIFY2(result.error.isEmpty(), qPrintable(result.error));
+            QVERIFY(result.shapes.isEmpty());
+        }
+        // GDAL accepts an unknown namespace and uses the first point of a point list.
+        for (const auto &loose :
+             {QByteArray(point).replace("0,0,0", "0,0,0 1,1,0"),
               QByteArray(point).replace("http://www.opengis.net/kml/2.2", "bad")}) {
-            QVERIFY(!format()->decode(bad, cancelled).error.isEmpty());
+            QCOMPARE(format()->decode(loose, cancelled).shapes.size(), 1);
         }
         cancelled = true;
         QVERIFY(!format()->decode(point, cancelled).error.isEmpty());
@@ -292,7 +364,8 @@ private slots:
         std::atomic_bool cancelled = false;
         const auto decoded = format()->decode(body, cancelled);
         QVERIFY2(decoded.error.isEmpty(), qPrintable(decoded.error));
-        QCOMPARE(decoded.shapes.size(), 2);
+        // GDAL does not report folder visibility, so the hidden folder point is a third shape.
+        QCOMPARE(decoded.shapes.size(), 3);
         QVERIFY(decoded.shapes[0].path.boundingRect().width() < 0.01);
         QVERIFY(decoded.shapes[1].path.contains(project(5, 5)));
         QVERIFY(!decoded.shapes[1].path.contains(project(0, 0)));
@@ -305,9 +378,10 @@ private slots:
         QVERIFY(!format()->decode(deep, cancelled).error.isEmpty());
         QVERIFY(
             !format()->decode(QByteArray(DataDownloadLimit + 1, 'x'), cancelled).error.isEmpty());
-        QVERIFY(!format()
-                     ->decode(QByteArray(point).replace("0,0,0", QByteArray(200, '1')), cancelled)
-                     .error.isEmpty());
+        // GDAL rejects the oversized number. The feature then has no map shape.
+        QVERIFY(format()
+                    ->decode(QByteArray(point).replace("0,0,0", QByteArray(200, '1')), cancelled)
+                    .shapes.isEmpty());
     }
     void catalog()
     {
@@ -324,9 +398,21 @@ private slots:
         auto bad = values;
         bad.insert(QStringLiteral("interval"), 0);
         QVERIFY(!feeds.put(QStringLiteral("test"), bad).isEmpty());
-        bad = values;
-        bad.insert(QStringLiteral("endpoint"), QStringLiteral("file:///tmp/feed"));
-        QVERIFY(!feeds.put(QStringLiteral("test"), bad).isEmpty());
+        for (const auto &endpoint : {QStringLiteral("feed.kml"),
+                                     QStringLiteral("file://host/feed.kml"),
+                                     QStringLiteral("/tmp/../etc/passwd"),
+                                     QStringLiteral("ftp://example.com/feed.kml"),
+                                     QStringLiteral("http://example.com/feed.kml")}) {
+            bad = values;
+            bad.insert(QStringLiteral("endpoint"), endpoint);
+            QVERIFY2(!feeds.put(QStringLiteral("test"), bad).isEmpty(), qPrintable(endpoint));
+        }
+        for (const auto &endpoint :
+             {QStringLiteral("/tmp/feed.kml"), QStringLiteral("file:///tmp/feed.kml")}) {
+            auto local = values;
+            local.insert(QStringLiteral("endpoint"), endpoint);
+            QVERIFY2(feeds.put(QStringLiteral("test"), local).isEmpty(), qPrintable(endpoint));
+        }
         bad = values;
         bad.insert(QStringLiteral("color"), QStringLiteral("red"));
         QVERIFY(!feeds.put(QStringLiteral("test"), bad).isEmpty());
@@ -477,6 +563,81 @@ private slots:
             QVERIFY(result.shapes.size() <= 1);
         }
     }
+    void otherFormats()
+    {
+        std::atomic_bool cancelled = false;
+        const QByteArray gpx =
+            "<gpx version=\"1.1\" creator=\"test\" xmlns=\"http://www.topografix.com/GPX/1/1\">"
+            "<trk><name>Patrol</name><trkseg><trkpt lat=\"1\" lon=\"1\"/><trkpt lat=\"2\" "
+            "lon=\"2\"/></trkseg></trk></gpx>";
+        const auto track = format()->decode(gpx, cancelled);
+        QVERIFY2(track.error.isEmpty(), qPrintable(track.error));
+        QVERIFY(std::any_of(track.shapes.cbegin(), track.shapes.cend(), [](const auto &shape) {
+            return shape.kind == DataShape::Kind::Line && shape.name == QStringLiteral("Patrol");
+        }));
+        const QByteArray json =
+            R"({"type":"FeatureCollection","features":[{"type":"Feature","properties":)"
+            R"({"name":"Gate","kind":"entry"},"geometry":{"type":"Polygon","coordinates":)"
+            R"([[[0,0],[1,0],[1,1],[0,1],[0,0]]]}}]})";
+        const auto polygon = format()->decode(json, cancelled);
+        QVERIFY2(polygon.error.isEmpty(), qPrintable(polygon.error));
+        QCOMPARE(polygon.shapes.size(), 1);
+        QCOMPARE(polygon.shapes.first().kind, DataShape::Kind::Polygon);
+        QCOMPARE(polygon.shapes.first().name, QStringLiteral("Gate"));
+        QCOMPARE(polygon.shapes.first().properties.value(QStringLiteral("kind")).toString(),
+                 QStringLiteral("entry"));
+        QVERIFY(polygon.shapes.first().path.contains(project(0.5, 0.5)));
+
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const auto shapefile = directory.filePath(QStringLiteral("sites.shp"));
+        QVERIFY(writeShapefile(shapefile));
+        const auto sites = format()->decodeFile(shapefile, cancelled);
+        QVERIFY2(sites.error.isEmpty(), qPrintable(sites.error));
+        QCOMPARE(sites.shapes.size(), 1);
+        QCOMPARE(sites.shapes.first().name, QStringLiteral("Depot"));
+        QCOMPARE(sites.shapes.first().properties.value(QStringLiteral("kind")).toString(),
+                 QStringLiteral("supply"));
+        // The shapefile uses Web Mercator. The decoder converts it to longitude and latitude.
+        QVERIFY(
+            std::abs(sites.shapes.first().properties.value(QStringLiteral("longitude")).toDouble() -
+                     10) < 1e-6);
+        QByteArray archive;
+        QVERIFY(zipDirectory(directory.path(), archive));
+        const auto zipped = format()->decode(archive, cancelled);
+        QVERIFY2(zipped.error.isEmpty(), qPrintable(zipped.error));
+        QCOMPARE(zipped.shapes.size(), 1);
+        QVERIFY(!format()
+                     ->decodeFile(directory.filePath(QStringLiteral("absent.shp")), cancelled)
+                     .error.isEmpty());
+        QVERIFY(!format()->decodeFile(directory.path(), cancelled).error.isEmpty());
+
+        const auto geojson = directory.filePath(QStringLiteral("gate.geojson"));
+        QFile file(geojson);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QCOMPARE(file.write(json), json.size());
+        file.close();
+        DataSources feeds(QPluginLoader::staticInstances());
+        auto values = dataDefaults();
+        values.insert(QStringLiteral("format"), QStringLiteral("org.swak.gdal.vector"));
+        values.insert(QStringLiteral("name"), QStringLiteral("Local gate"));
+        values.insert(QStringLiteral("attribution"), QStringLiteral("Test fixture"));
+        values.insert(QStringLiteral("endpoint"), geojson);
+        values.insert(QStringLiteral("enabled"), true);
+        QVERIFY(feeds.put(QStringLiteral("local"), values).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return feeds.shapeCount(QStringLiteral("local")) == 1;
+            },
+            5000));
+        values.insert(QStringLiteral("endpoint"), directory.filePath(QStringLiteral("gone.json")));
+        QVERIFY(feeds.put(QStringLiteral("local"), values).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return feeds.status(QStringLiteral("local")).contains(QStringLiteral("not exist"));
+            },
+            5000));
+    }
     void tlsAndCancellation()
     {
         TileServer server;
@@ -525,6 +686,8 @@ private slots:
 int main(int argc, char **argv)
 {
     QGuiApplication app(argc, argv);
+    // Close cached GDAL resources after the tests and before the leak check.
+    swak::GdalShutdownGuard gdal;
     if (argc == 3 && QByteArray(argv[1]) == "--sample") {
         QFile file(QString::fromLocal8Bit(argv[2]));
         if (!file.open(QIODevice::ReadOnly)) {

@@ -44,7 +44,24 @@ public:
     virtual QList<QJsonObject> presets() const = 0;
     virtual DataDocument decode(const QByteArray &bytes,
                                 const std::atomic_bool &cancelled) const = 0;
+    // Reads a local file in place. Some formats need sibling files, such as a shapefile.
+    virtual DataDocument decodeFile(const QString &path, const std::atomic_bool &cancelled) const
+    {
+        Q_UNUSED(path)
+        Q_UNUSED(cancelled)
+        DataDocument result;
+        result.error = QObject::tr("This data format cannot read local files.");
+        return result;
+    }
+    // Earlier format identifiers that saved profiles can still contain.
+    virtual QStringList legacyIds() const
+    {
+        return {};
+    }
 };
+// True when the endpoint names a local file instead of an HTTPS resource.
+bool localDataEndpoint(const QString &endpoint);
+QString localDataPath(const QString &endpoint);
 inline constexpr qsizetype DataDownloadLimit = 8 * 1024 * 1024;
 inline constexpr qsizetype DataXmlLimit = 16 * 1024 * 1024;
 QList<SettingField> dataFields();
@@ -97,6 +114,7 @@ private:
     void reconcile();
     void pump();
     void fetch(const QString &id, const std::shared_ptr<Feed> &feed);
+    void decodeLocal(const QString &id, const std::shared_ptr<Feed> &feed, const QString &path);
     void finish(const QString &id, const std::shared_ptr<Feed> &feed, DataDocument document);
     void retire(const std::shared_ptr<Feed> &feed);
     QList<DataProvider *> providers_;

@@ -1,3 +1,4 @@
+#include "core/gdal_support.h"
 #include "core/maps.h"
 #include "core/tiles.h"
 #include "tile_server.h"
@@ -12,12 +13,61 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QUrlQuery>
+#include <QtConcurrentRun>
 
+#include <array>
+#include <cpl_conv.h>
+#include <gdal_priv.h>
 #include <limits>
+#include <ogr_spatialref.h>
+#include <vector>
 using namespace swak;
+// Builds HTTPS tile URLs from a template. The renderer network path still serves URL
+// providers, such as MVT, so these tests keep a small provider of that kind.
+class UrlTemplateProvider final : public QObject, public MapProvider
+{
+    Q_OBJECT
+    Q_INTERFACES(swak::MapExtension swak::MapProvider)
+public:
+    QString mapId() const override
+    {
+        return QStringLiteral("test.url");
+    }
+    QString mapName() const override
+    {
+        return QStringLiteral("URL template fixture");
+    }
+    QJsonObject defaults() const override
+    {
+        return mapDefaults(QStringLiteral("Fixture"),
+                           QStringLiteral("https://tile.openstreetmap.org/{z}/{x}/{y}.png"),
+                           QStringLiteral("Fixture"),
+                           19);
+    }
+    QList<SettingField> fields() const override
+    {
+        return commonMapFields();
+    }
+    QString validate(const QJsonObject &source) const override
+    {
+        return validateMapSource(source);
+    }
+    QUrl tileUrl(const QJsonObject &source, int z, int x, int y) const override
+    {
+        if (!validTile(z, x, y) || !validate(source).isEmpty()) {
+            return {};
+        }
+        return QUrl(source.value(QStringLiteral("endpoint"))
+                        .toString()
+                        .replace(QStringLiteral("{z}"), QString::number(z))
+                        .replace(QStringLiteral("{x}"), QString::number(x))
+                        .replace(QStringLiteral("{y}"), QString::number(y)));
+    }
+};
 class MapTest final : public QObject
 {
     Q_OBJECT
+    UrlTemplateProvider urlTiles_;
     MapProvider *format(const QString &id)
     {
         for (auto *object : QPluginLoader::staticInstances()) {
@@ -37,6 +87,31 @@ class MapTest final : public QObject
         source.insert(QStringLiteral("ignoreTls"), ignore);
         return source;
     }
+    // GDAL waits for HTTP replies. Render on a worker so the test server can answer.
+    RasterTile renderOnWorker(const RasterRequest &request, bool cancel = false)
+    {
+        const auto *raster =
+            dynamic_cast<RasterTileProvider *>(format(QStringLiteral("org.swak.gdal.raster")));
+        auto future = QtConcurrent::run([raster, request, cancel] {
+            std::atomic_bool cancelled = cancel;
+            return raster->renderTile(request, cancelled);
+        });
+        if (!QTest::qWaitFor(
+                [&] {
+                    return future.isFinished();
+                },
+                30000)) {
+            future.waitForFinished();
+        }
+        return future.result();
+    }
+    QJsonObject datasetSource(const QString &path)
+    {
+        auto source = format(QStringLiteral("org.swak.gdal.raster"))->defaults();
+        source.insert(QStringLiteral("service"), QStringLiteral("dataset"));
+        source.insert(QStringLiteral("endpoint"), path);
+        return source;
+    }
     void draw(TileRenderer &renderer, QImage &canvas)
     {
         QPainter painter(&canvas);
@@ -45,7 +120,7 @@ class MapTest final : public QObject
 private slots:
     void mapCredentials()
     {
-        auto *xyz = format(QStringLiteral("org.swak.xyz"));
+        auto *xyz = &urlTiles_;
         QVERIFY(xyz);
         auto source = xyz->defaults();
         source.insert(QStringLiteral("authMode"), QStringLiteral("basic"));
@@ -139,7 +214,7 @@ private slots:
                 QSslConfiguration::setDefaultConfiguration(value);
             }
         } restore{previous};
-        auto *xyz = format(QStringLiteral("org.swak.xyz"));
+        auto *xyz = &urlTiles_;
         auto source = localSource(xyz, server, false);
         source.insert(QStringLiteral("authMode"), QStringLiteral("bearer"));
         TileRenderer renderer;
@@ -189,41 +264,38 @@ private slots:
     }
     void templateAddressingAndPresets()
     {
-        auto *xyz = format(QStringLiteral("org.swak.xyz"));
-        QVERIFY(xyz);
-        auto source = xyz->defaults();
-        source.insert(QStringLiteral("invertY"), true);
-        QCOMPARE(xyz->tileUrl(source, 2, 1, 3).path(), QStringLiteral("/2/1/0.png"));
+        auto *raster = format(QStringLiteral("org.swak.gdal.raster"));
+        QVERIFY(raster);
+        auto source = raster->defaults();
+        QCOMPARE(source.value(QStringLiteral("service")).toString(), QStringLiteral("xyz"));
         source.insert(QStringLiteral("invertY"), QStringLiteral("true"));
-        QVERIFY(!xyz->validate(source).isEmpty());
+        QVERIFY(!raster->validate(source).isEmpty());
         source.insert(QStringLiteral("invertY"), false);
         source.insert(QStringLiteral("endpoint"), QStringLiteral("https://example.test/{q}.png"));
-        QVERIFY(xyz->validate(source).isEmpty());
-        QCOMPARE(xyz->tileUrl(source, 3, 3, 5).path(), QStringLiteral("/213.png"));
-        QCOMPARE(xyz->tileUrl(source, 0, 0, 0).path(), QStringLiteral("/.png"));
-        QCOMPARE(xyz->tileUrl(source, 19, 524287, 524287).path(),
-                 QStringLiteral("/") + QString(19, '3') + QStringLiteral(".png"));
-        QVERIFY(xyz->tileUrl(source, 20, 0, 0).isEmpty());
-        source.insert(QStringLiteral("endpoint"),
-                      QStringLiteral("https://example.test/{q}/{x}.png"));
-        QVERIFY(!xyz->validate(source).isEmpty());
-        source.insert(QStringLiteral("endpoint"), QStringLiteral("https://example.test/{$q}.png"));
-        QVERIFY(!xyz->validate(source).isEmpty());
+        QVERIFY(raster->validate(source).isEmpty());
+        for (const auto &endpoint : {QStringLiteral("https://example.test/{q}/{x}.png"),
+                                     QStringLiteral("https://example.test/{$q}.png"),
+                                     QStringLiteral("https://example.test/${z}/{x}/{y}.png"),
+                                     QStringLiteral("https://example.test/{z}/{x}.png"),
+                                     QStringLiteral("http://example.test/{z}/{x}/{y}.png")}) {
+            source.insert(QStringLiteral("endpoint"), endpoint);
+            QVERIFY2(!raster->validate(source).isEmpty(), qPrintable(endpoint));
+        }
         MapSources sources(QPluginLoader::staticInstances());
         const auto id = QStringLiteral("org.swak.xyz.usgs-topo");
         QVERIFY(sources.sources().contains(id));
         QVERIFY(!sources.networkEnabled());
-        for (const auto &presetId : {QStringLiteral("usgs-imagery"),
-                                     QStringLiteral("usgs-imagery-topo"),
-                                     QStringLiteral("usgs-relief"),
-                                     QStringLiteral("thunderforest-outdoors"),
-                                     QStringLiteral("thunderforest-cycle")}) {
-            const auto item =
-                sources.sources().value(QStringLiteral("org.swak.xyz.") + presetId).toObject();
-            QVERIFY(!item.isEmpty());
-            QVERIFY(xyz->validate(item).isEmpty());
-            QVERIFY(
-                xyz->tileUrl(item, item.value(QStringLiteral("minZoom")).toInt(), 0, 0).isValid());
+        for (const auto &presetId : {QStringLiteral("org.swak.xyz.usgs-imagery"),
+                                     QStringLiteral("org.swak.xyz.usgs-imagery-topo"),
+                                     QStringLiteral("org.swak.xyz.usgs-relief"),
+                                     QStringLiteral("org.swak.xyz.thunderforest-outdoors"),
+                                     QStringLiteral("org.swak.xyz.thunderforest-cycle"),
+                                     QStringLiteral("org.swak.wms"),
+                                     QStringLiteral("org.swak.wmts")}) {
+            const auto item = sources.sources().value(presetId).toObject();
+            QVERIFY2(!item.isEmpty(), qPrintable(presetId));
+            QCOMPARE(item.value(QStringLiteral("format")).toString(), raster->mapId());
+            QVERIFY2(raster->validate(item).isEmpty(), qPrintable(raster->validate(item)));
         }
         QCOMPARE(sources.sources()
                      .value(QStringLiteral("org.swak.xyz.usgs-imagery-topo"))
@@ -231,11 +303,8 @@ private slots:
                      .value(QStringLiteral("minZoom"))
                      .toInt(),
                  1);
-
-        auto preset = sources.sources().value(id).toObject();
-        QCOMPARE(preset.value(QStringLiteral("maxZoom")).toInt(), 8);
-        QCOMPARE(xyz->tileUrl(preset, 3, 2, 4).path(),
-                 QStringLiteral("/arcgis/rest/services/USGSTopo/MapServer/tile/3/4/2"));
+        QCOMPARE(sources.sources().value(id).toObject().value(QStringLiteral("maxZoom")).toInt(),
+                 8);
         sources.remove(id);
         const auto saved = sources.savePreferences();
         MapSources restored(QPluginLoader::staticInstances());
@@ -249,6 +318,235 @@ private slots:
         absent.restorePreferences(restored.savePreferences());
         QVERIFY(absent.sources().contains(id));
         QVERIFY(absent.activeSource().isEmpty());
+    }
+    void legacyProfiles()
+    {
+        // A profile from before GDAL names the removed XYZ, WMS, and WMTS plugins.
+        QJsonObject xyz{{QStringLiteral("format"), QStringLiteral("org.swak.xyz")},
+                        {QStringLiteral("name"), QStringLiteral("OpenStreetMap")},
+                        {QStringLiteral("endpoint"),
+                         QStringLiteral("https://tile.openstreetmap.org/{z}/{x}/{y}.png")},
+                        {QStringLiteral("attribution"), QStringLiteral("OSM")},
+                        {QStringLiteral("minZoom"), 0},
+                        {QStringLiteral("maxZoom"), 19},
+                        {QStringLiteral("ignoreTls"), false},
+                        {QStringLiteral("invertY"), false}};
+        auto wms = xyz;
+        wms.insert(QStringLiteral("format"), QStringLiteral("org.swak.wms"));
+        wms.insert(QStringLiteral("endpoint"), QStringLiteral("https://example.test/wms"));
+        wms.insert(QStringLiteral("layer"), QStringLiteral("base"));
+        wms.insert(QStringLiteral("style"), QString{});
+        wms.insert(QStringLiteral("imageFormat"), QStringLiteral("image/png"));
+        const QJsonObject legacy{
+            {QStringLiteral("knownProviders"),
+             QJsonArray{QStringLiteral("org.swak.xyz"),
+                        QStringLiteral("org.swak.wmts"),
+                        QStringLiteral("org.swak.wms"),
+                        QStringLiteral("org.swak.mvt")}},
+            {QStringLiteral("knownPresets"), QJsonArray{QStringLiteral("org.swak.xyz.usgs-topo")}},
+            {QStringLiteral("network"), true},
+            {QStringLiteral("active"), QStringLiteral("org.swak.xyz")},
+            {QStringLiteral("sources"),
+             QJsonObject{{QStringLiteral("org.swak.xyz"), xyz},
+                         {QStringLiteral("custom-wms"), wms}}}};
+        MapSources sources(QPluginLoader::staticInstances());
+        sources.restorePreferences(legacy);
+        const auto entries = sources.sources();
+        // The old entries migrate. The old defaults and the replacement default do not return.
+        QVERIFY(!entries.contains(QStringLiteral("org.swak.gdal.raster")));
+        QVERIFY(!entries.contains(QStringLiteral("org.swak.wms")));
+        QVERIFY(!entries.contains(QStringLiteral("org.swak.wmts")));
+        QVERIFY(!entries.contains(QStringLiteral("org.swak.xyz.usgs-topo")));
+        const auto migrated = entries.value(QStringLiteral("org.swak.xyz")).toObject();
+        QCOMPARE(migrated.value(QStringLiteral("format")).toString(),
+                 QStringLiteral("org.swak.gdal.raster"));
+        QCOMPARE(migrated.value(QStringLiteral("service")).toString(), QStringLiteral("xyz"));
+        QCOMPARE(entries.value(QStringLiteral("custom-wms"))
+                     .toObject()
+                     .value(QStringLiteral("service"))
+                     .toString(),
+                 QStringLiteral("wms"));
+        QVERIFY(!sources.activeSource().isEmpty());
+        const auto known =
+            sources.savePreferences().value(QStringLiteral("knownProviders")).toArray();
+        QVERIFY(known.contains(QStringLiteral("org.swak.gdal.raster")));
+    }
+    void gdalRasterFiles()
+    {
+        initializeGdal();
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        auto *driver = GetGDALDriverManager()->GetDriverByName("GTiff");
+        QVERIFY(driver);
+        OGRSpatialReference geographic;
+        geographic.SetWellKnownGeogCS("WGS84");
+        const auto create = [&](const QString &name,
+                                int bands,
+                                GDALDataType type,
+                                const std::array<double, 6> &transform) {
+            GdalDataset dataset(driver->Create(
+                directory.filePath(name).toUtf8().constData(), 64, 64, bands, type, nullptr));
+            if (dataset) {
+                auto values = transform;
+                dataset->SetGeoTransform(values.data());
+                dataset->SetSpatialRef(&geographic);
+            }
+            return dataset;
+        };
+        const std::array<double, 6> world{-180, 360.0 / 64, 0, 85, 0, -170.0 / 64};
+        {
+            auto rgb = create(QStringLiteral("rgb.tif"), 3, GDT_Byte, world);
+            QVERIFY(rgb);
+            const std::array<int, 3> color{200, 30, 40};
+            for (int band = 0; band < 3; ++band) {
+                QCOMPARE(rgb->GetRasterBand(band + 1)->Fill(color[size_t(band)]), CE_None);
+            }
+            auto small = create(
+                QStringLiteral("small.tif"), 3, GDT_Byte, {10, 10.0 / 64, 0, 20, 0, -10.0 / 64});
+            QVERIFY(small);
+            for (int band = 1; band <= 3; ++band) {
+                QCOMPARE(small->GetRasterBand(band)->Fill(250), CE_None);
+            }
+            auto palette = create(QStringLiteral("palette.tif"), 1, GDT_Byte, world);
+            QVERIFY(palette);
+            GDALColorTable table;
+            const GDALColorEntry green{20, 180, 60, 255};
+            table.SetColorEntry(1, &green);
+            QCOMPARE(palette->GetRasterBand(1)->SetColorTable(&table), CE_None);
+            QCOMPARE(palette->GetRasterBand(1)->Fill(1), CE_None);
+            auto elevation = create(QStringLiteral("elevation.tif"), 1, GDT_Int16, world);
+            QVERIFY(elevation);
+            std::vector<qint16> heights(64 * 64);
+            for (int i = 0; i < 64 * 64; ++i) {
+                heights[size_t(i)] = static_cast<qint16>((i % 64) * 100);
+            }
+            QCOMPARE(elevation->GetRasterBand(1)->RasterIO(
+                         GF_Write, 0, 0, 64, 64, heights.data(), 64, 64, GDT_Int16, 0, 0, nullptr),
+                     CE_None);
+        }
+        const auto tile = [&](const QString &name, int z = 0, int x = 0, int y = 0) {
+            return renderOnWorker(
+                RasterRequest{datasetSource(directory.filePath(name)), {}, {}, 0, z, x, y});
+        };
+        const auto rgb = tile(QStringLiteral("rgb.tif"));
+        QVERIFY2(rgb.error.isEmpty(), qPrintable(rgb.error));
+        QCOMPARE(rgb.image.size(), QSize(256, 256));
+        QCOMPARE(rgb.image.pixelColor(128, 128), QColor(200, 30, 40));
+        const auto small = tile(QStringLiteral("small.tif"), 4, 8, 7);
+        QVERIFY2(small.error.isEmpty(), qPrintable(small.error));
+        const auto inside = QPointF((15 + 180.0) / 360 * 16 - 8, project(15, 15).y() * 16 - 7);
+        QCOMPARE(small.image.pixelColor(QPoint(int(inside.x() * 256), int(inside.y() * 256))),
+                 QColor(250, 250, 250));
+        // Pixels outside the dataset are transparent.
+        QCOMPARE(small.image.pixelColor(2, 2).alpha(), 0);
+        const auto palette = tile(QStringLiteral("palette.tif"));
+        QVERIFY2(palette.error.isEmpty(), qPrintable(palette.error));
+        QCOMPARE(palette.image.pixelColor(128, 128), QColor(20, 180, 60));
+        const auto elevation = tile(QStringLiteral("elevation.tif"));
+        QVERIFY2(elevation.error.isEmpty(), qPrintable(elevation.error));
+        const auto west = elevation.image.pixelColor(20, 128);
+        const auto east = elevation.image.pixelColor(236, 128);
+        QCOMPARE(west.red(), west.blue());
+        QVERIFY(west.red() < east.red());
+        const auto missing = tile(QStringLiteral("absent.tif"));
+        QVERIFY(!missing.error.isEmpty());
+        QVERIFY(missing.providerWide);
+        QVERIFY(!renderOnWorker(
+                     RasterRequest{datasetSource(directory.filePath(QStringLiteral("rgb.tif"))),
+                                   {},
+                                   {},
+                                   0,
+                                   0,
+                                   0,
+                                   0},
+                     true)
+                     .error.isEmpty());
+        QVERIFY(!tile(QStringLiteral("rgb.tif"), 20).error.isEmpty());
+        TileRenderer renderer;
+        auto *raster = format(QStringLiteral("org.swak.gdal.raster"));
+        renderer.setSource(raster, datasetSource(directory.filePath(QStringLiteral("rgb.tif"))));
+        QImage canvas(256, 256, QImage::Format_ARGB32);
+        draw(renderer, canvas);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return renderer.coverage().rendered == 1;
+            },
+            10000));
+        draw(renderer, canvas);
+        QCOMPARE(canvas.pixelColor(128, 128), QColor(200, 30, 40));
+        renderer.setSource(raster, datasetSource(directory.filePath(QStringLiteral("absent.tif"))));
+        draw(renderer, canvas);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return !renderer.status().isEmpty();
+            },
+            10000));
+        QCOMPARE(renderer.coverage().rendered, 0);
+    }
+    void gdalRasterServices()
+    {
+        TileServer server;
+        QVERIFY(server.load(QFINDTESTDATA("fixtures")));
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        auto *raster = format(QStringLiteral("org.swak.gdal.raster"));
+        auto source = raster->defaults();
+        source.insert(
+            QStringLiteral("endpoint"),
+            QStringLiteral("https://localhost:%1/{z}/{x}/{y}.png").arg(server.serverPort()));
+        source.insert(QStringLiteral("ignoreTls"), true);
+        source.insert(QStringLiteral("maxZoom"), 3);
+        const auto path = [&] {
+            const auto request = server.requests.last();
+            return request.mid(4, request.indexOf(" HTTP/") - 4);
+        };
+        auto tile = renderOnWorker(RasterRequest{source, {}, {}, 0, 2, 1, 3});
+        QVERIFY2(tile.error.isEmpty(), qPrintable(tile.error));
+        QCOMPARE(path(), QByteArray("/2/1/3.png"));
+        QCOMPARE(tile.image.pixelColor(128, 128), QColor("#eb426a"));
+        QVERIFY(server.requests.last().toLower().contains("user-agent: swak/"));
+        source.insert(QStringLiteral("invertY"), true);
+        tile = renderOnWorker(RasterRequest{source, {}, {}, 0, 2, 1, 3});
+        QVERIFY2(tile.error.isEmpty(), qPrintable(tile.error));
+        QCOMPARE(path(), QByteArray("/2/1/0.png"));
+        source.insert(QStringLiteral("invertY"), false);
+        source.insert(QStringLiteral("endpoint"),
+                      QStringLiteral("https://localhost:%1/{q}.png").arg(server.serverPort()));
+        tile = renderOnWorker(RasterRequest{source, {}, {}, 0, 3, 3, 5});
+        QVERIFY2(tile.error.isEmpty(), qPrintable(tile.error));
+        QCOMPARE(path(), QByteArray("/213.png"));
+        // Without the override, GDAL rejects the test certificate.
+        source.insert(QStringLiteral("ignoreTls"), false);
+        tile = renderOnWorker(RasterRequest{source, {}, {}, 0, 3, 3, 5});
+        QVERIFY(!tile.error.isEmpty());
+        // Trust the test certificate and send credentials.
+        CPLSetConfigOption("CURL_CA_BUNDLE",
+                           QFINDTESTDATA("fixtures/map-test-cert.pem").toUtf8().constData());
+        struct RestoreBundle
+        {
+            ~RestoreBundle()
+            {
+                CPLSetConfigOption("CURL_CA_BUNDLE", nullptr);
+            }
+        } restore;
+        source.insert(
+            QStringLiteral("endpoint"),
+            QStringLiteral("https://localhost:%1/{z}/{x}/{y}.png").arg(server.serverPort()));
+        source.insert(QStringLiteral("authMode"), QStringLiteral("bearer"));
+        QVERIFY(raster->validate(source).isEmpty());
+        tile = renderOnWorker(RasterRequest{source, "map-token", {}, 0, 1, 0, 0});
+        QVERIFY2(tile.error.isEmpty(), qPrintable(tile.error));
+        QVERIFY(server.requests.last().toLower().contains("authorization: bearer map-token"));
+        source.insert(QStringLiteral("authMode"), QStringLiteral("query"));
+        source.insert(QStringLiteral("authParameter"), QStringLiteral("apikey"));
+        tile = renderOnWorker(RasterRequest{source, "a&b", {}, 0, 1, 1, 0});
+        QVERIFY2(tile.error.isEmpty(), qPrintable(tile.error));
+        QCOMPARE(path(), QByteArray("/1/1/0.png?apikey=a%26b"));
+        QCOMPARE(redactQueryValues(QStringLiteral("GET https://x.test/t.png?apikey=secret&b=2")),
+                 QStringLiteral("GET https://x.test/t.png?apikey=***&b=***"));
+        server.headers = "HTTP/1.1 401 Unauthorized\r\n";
+        tile = renderOnWorker(RasterRequest{source, "secret-key", {}, 0, 1, 1, 1});
+        QVERIFY(!tile.error.isEmpty());
+        QVERIFY(!tile.error.contains(QStringLiteral("secret-key")));
     }
     void nearbyTiles()
     {
@@ -274,7 +572,7 @@ private slots:
         TileServer server;
         QVERIFY(server.load(QFINDTESTDATA("fixtures")));
         QVERIFY(server.listen(QHostAddress::LocalHost));
-        auto *xyz = format(QStringLiteral("org.swak.xyz"));
+        auto *xyz = &urlTiles_;
         TileRenderer renderer;
         renderer.setSource(xyz, localSource(xyz, server, true));
         QImage canvas(256, 256, QImage::Format_RGB32);
@@ -341,7 +639,7 @@ private slots:
     void formats()
     {
         MapSources sources(QPluginLoader::staticInstances());
-        QCOMPARE(sources.providers().size(), 4);
+        QCOMPARE(sources.providers().size(), 2);
         QVERIFY(!sources.networkEnabled());
         QVERIFY(sources.activeSource().isEmpty());
         for (auto *provider : sources.providers()) {
@@ -352,12 +650,6 @@ private slots:
             QVERIFY(provider->tileUrl(source, 1, 2, 0).isEmpty());
             QVERIFY(provider->tileUrl(source, 20, 0, 0).isEmpty());
             QVERIFY(!provider->mapName().isEmpty());
-            auto invalidFormat = source;
-            invalidFormat.insert(QStringLiteral("imageFormat"), QStringLiteral("unknown"));
-            if (provider->mapId() == QStringLiteral("org.swak.wms") ||
-                provider->mapId() == QStringLiteral("org.swak.wmts")) {
-                QVERIFY(!provider->validate(invalidFormat).isEmpty());
-            }
             auto bad = source;
             bad.insert(QStringLiteral("endpoint"), QStringLiteral("http://example.com"));
             QVERIFY(!provider->validate(bad).isEmpty());
@@ -366,34 +658,60 @@ private slots:
             bad.insert(QStringLiteral("maxZoom"), 1);
             QVERIFY(!provider->validate(bad).isEmpty());
         }
-        auto *xyz = format(QStringLiteral("org.swak.xyz"));
-        QCOMPARE(xyz->tileUrl(xyz->defaults(), 2, 1, 3).toString(),
-                 QStringLiteral("https://tile.openstreetmap.org/2/1/3.png"));
-        auto *wmts = format(QStringLiteral("org.swak.wmts"));
-        auto invalidWmts = wmts->defaults();
-        invalidWmts.insert(QStringLiteral("layer"), QString{});
-        QVERIFY(!wmts->validate(invalidWmts).isEmpty());
-        invalidWmts = wmts->defaults();
-        invalidWmts.insert(QStringLiteral("style"), QString(101, 'x'));
-        QVERIFY(!wmts->validate(invalidWmts).isEmpty());
-        QUrlQuery tile(wmts->tileUrl(wmts->defaults(), 2, 1, 3));
-        QCOMPARE(tile.queryItemValue(QStringLiteral("TILEROW")), QStringLiteral("3"));
-        QCOMPARE(tile.queryItemValue(QStringLiteral("TILECOL")), QStringLiteral("1"));
-        auto *wms = format(QStringLiteral("org.swak.wms"));
-        QUrlQuery image(wms->tileUrl(wms->defaults(), 1, 1, 0));
-        QCOMPARE(image.queryItemValue(QStringLiteral("CRS")), QStringLiteral("EPSG:3857"));
-        const auto bbox = image.queryItemValue(QStringLiteral("BBOX")).split(',');
-        QCOMPARE(bbox.size(), 4);
-        QCOMPARE(bbox.at(0).toDouble(), 0.0);
-        QCOMPARE(bbox.at(1).toDouble(), 0.0);
-        QVERIFY(bbox.at(2).toDouble() > 20037508);
+        auto *raster = format(QStringLiteral("org.swak.gdal.raster"));
+        // The raster provider renders tiles itself and returns no URL.
+        QVERIFY(raster->tileUrl(raster->defaults(), 2, 1, 3).isEmpty());
+        QVERIFY(dynamic_cast<RasterTileProvider *>(raster));
+        for (const auto &id : {QStringLiteral("org.swak.wms"), QStringLiteral("org.swak.wmts")}) {
+            const auto service = sources.sources().value(id).toObject();
+            auto invalid = service;
+            invalid.insert(QStringLiteral("imageFormat"), QStringLiteral("unknown"));
+            QVERIFY(!raster->validate(invalid).isEmpty());
+            invalid = service;
+            invalid.insert(QStringLiteral("layer"), QString{});
+            QVERIFY(!raster->validate(invalid).isEmpty());
+            invalid = service;
+            invalid.insert(QStringLiteral("style"), QString(101, 'x'));
+            QVERIFY(!raster->validate(invalid).isEmpty());
+            invalid = service;
+            invalid.insert(QStringLiteral("endpoint"),
+                           service.value(QStringLiteral("endpoint")).toString() +
+                               QStringLiteral("?SERVICE=WMS"));
+            QVERIFY(!raster->validate(invalid).isEmpty());
+        }
+        auto dataset = raster->defaults();
+        dataset.insert(QStringLiteral("service"), QStringLiteral("dataset"));
+        for (const auto &endpoint : {QStringLiteral("/data/map.tif"),
+                                     QStringLiteral("/vsicurl/https://example.test/map.tif"),
+                                     QStringLiteral("WMTS:https://example.test/caps.xml,layer=a"),
+                                     QStringLiteral("WMS:https://example.test/wms")}) {
+            dataset.insert(QStringLiteral("endpoint"), endpoint);
+            QVERIFY2(raster->validate(dataset).isEmpty(), qPrintable(endpoint));
+        }
+        for (const auto &endpoint : {QStringLiteral("relative/map.tif"),
+                                     QStringLiteral("/data/../etc/map.tif"),
+                                     QStringLiteral("/vsicurl/http://example.test/map.tif"),
+                                     QStringLiteral("/vsizip//data/map.zip"),
+                                     QStringLiteral("<GDAL_WMS></GDAL_WMS>"),
+                                     QStringLiteral("PG:dbname=maps")}) {
+            dataset.insert(QStringLiteral("endpoint"), endpoint);
+            QVERIFY2(!raster->validate(dataset).isEmpty(), qPrintable(endpoint));
+        }
+        dataset.insert(QStringLiteral("endpoint"), QStringLiteral("/data/map.tif"));
+        dataset.insert(QStringLiteral("authMode"), QStringLiteral("bearer"));
+        QVERIFY(!raster->validate(dataset).isEmpty());
+        dataset.insert(QStringLiteral("authMode"), QStringLiteral("none"));
+        dataset.insert(QStringLiteral("service"), QStringLiteral("unknown"));
+        QVERIFY(!raster->validate(dataset).isEmpty());
     }
     void portableProviders()
     {
         MapSources sources(QPluginLoader::staticInstances());
         const auto id = QStringLiteral("custom.xyz");
-        QVERIFY(sources.put(id, sources.sources().value(QStringLiteral("org.swak.xyz")).toObject())
-                    .isEmpty());
+        QVERIFY(
+            sources
+                .put(id, sources.sources().value(QStringLiteral("org.swak.gdal.raster")).toObject())
+                .isEmpty());
         sources.select(id);
         QVERIFY(!sources.activeSource().isEmpty());
         const auto saved = sources.savePreferences();
@@ -420,7 +738,8 @@ private slots:
         MapSources maps(QPluginLoader::staticInstances());
         auto saved = maps.savePreferences();
         auto entries = maps.sources();
-        entries.insert(QStringLiteral("custom"), entries.value(QStringLiteral("org.swak.xyz")));
+        entries.insert(QStringLiteral("custom"),
+                       entries.value(QStringLiteral("org.swak.gdal.raster")));
         auto invalid = entries.value(QStringLiteral("org.swak.wms")).toObject();
         invalid.insert(QStringLiteral("endpoint"), QStringLiteral("invalid"));
         entries.insert(QStringLiteral("org.swak.wms"), invalid);
@@ -432,14 +751,29 @@ private slots:
         QVERIFY(
             maps.put(QStringLiteral("custom"), entries.value(QStringLiteral("custom")).toObject())
                 .isEmpty());
+        TileServer server;
+        QVERIFY(server.load(QFINDTESTDATA("fixtures")));
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        auto *raster = format(QStringLiteral("org.swak.gdal.raster"));
         for (const auto &id : {QStringLiteral("org.swak.wms"), QStringLiteral("org.swak.wmts")}) {
-            auto *provider = format(id);
-            auto values = provider->defaults();
+            auto values =
+                MapSources(QPluginLoader::staticInstances()).sources().value(id).toObject();
+            values.insert(QStringLiteral("endpoint"),
+                          QStringLiteral("https://localhost:%1/service").arg(server.serverPort()));
+            values.insert(QStringLiteral("ignoreTls"), true);
             values.insert(QStringLiteral("layer"), QStringLiteral("a+b"));
             values.insert(QStringLiteral("time"), QStringLiteral("12:00:00+02:00"));
-            const auto url = provider->tileUrl(values, 0, 0, 0);
-            QVERIFY(url.toEncoded().contains("a%2Bb"));
-            QVERIFY(!url.toEncoded().contains('+'));
+            values.insert(QStringLiteral("maxZoom"), 2);
+            const auto before = server.requests.size();
+            std::atomic_bool cancelled = false;
+            Q_UNUSED(cancelled)
+            Q_UNUSED(raster)
+            const auto tile = renderOnWorker(RasterRequest{values, {}, {}, 0, 1, 1, 0});
+            QVERIFY2(tile.error.isEmpty(), qPrintable(tile.error));
+            QVERIFY(server.requests.size() > before);
+            const auto request = server.requests.last().left(server.requests.last().indexOf('\r'));
+            QVERIFY2(request.contains("a%2Bb"), request.constData());
+            QVERIFY2(!request.contains('+'), request.constData());
         }
     }
     void failedTilesDoNotStarveNeighbors()
@@ -448,7 +782,7 @@ private slots:
         QVERIFY(server.load(QFINDTESTDATA("fixtures")));
         QVERIFY(server.listen(QHostAddress::LocalHost, 0));
         server.failFirst = 4;
-        auto *xyz = format(QStringLiteral("org.swak.xyz"));
+        auto *xyz = &urlTiles_;
         TileRenderer renderer;
         renderer.setSource(xyz, localSource(xyz, server, true));
         QImage canvas(1024, 1024, QImage::Format_RGB32);
@@ -479,7 +813,7 @@ private slots:
         server.failFirst = 1;
         server.failureHeaders = "HTTP/1.1 429 Too Many Requests\r\nRetry-After: 60\r\n";
         server.holdRequests = {2, 3, 4};
-        auto *xyz = format(QStringLiteral("org.swak.xyz"));
+        auto *xyz = &urlTiles_;
         TileRenderer renderer;
         renderer.setSource(xyz, localSource(xyz, server, true));
         QImage canvas(1024, 1024, QImage::Format_RGB32);
@@ -534,7 +868,7 @@ private slots:
         TileServer server;
         QVERIFY(server.load(QFINDTESTDATA("fixtures")));
         QVERIFY(server.listen(QHostAddress::LocalHost, 0));
-        auto *xyz = format(QStringLiteral("org.swak.xyz"));
+        auto *xyz = &urlTiles_;
         QImage canvas(256, 256, QImage::Format_RGB32);
         canvas.fill(Qt::black);
         {
@@ -591,7 +925,7 @@ private slots:
     }
     void cacheLockRetry()
     {
-        auto *xyz = format(QStringLiteral("org.swak.xyz"));
+        auto *xyz = &urlTiles_;
         TileRenderer first;
         TileRenderer second;
         first.setSource(xyz, xyz->defaults());
@@ -609,7 +943,7 @@ private slots:
         QVERIFY(server.listen(QHostAddress::LocalHost, 0));
         server.headers = "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: "
                          "max-age=1\r\nETag: \"fixture\"\r\n";
-        auto *xyz = format(QStringLiteral("org.swak.xyz"));
+        auto *xyz = &urlTiles_;
         TileRenderer renderer;
         renderer.setSource(xyz, localSource(xyz, server, true));
         QImage canvas(256, 256, QImage::Format_RGB32);
@@ -640,7 +974,7 @@ private slots:
         QVERIFY(server.listen(QHostAddress::LocalHost, 0));
         server.headers =
             "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: no-store\r\n";
-        auto *xyz = format(QStringLiteral("org.swak.xyz"));
+        auto *xyz = &urlTiles_;
         TileRenderer renderer;
         renderer.setSource(xyz, localSource(xyz, server, true));
         QImage canvas(256, 256, QImage::Format_RGB32);
@@ -693,7 +1027,7 @@ private slots:
         QVERIFY(server.listen(QHostAddress::LocalHost, 0));
         server.headers = headers;
         server.body = body;
-        auto *xyz = format(QStringLiteral("org.swak.xyz"));
+        auto *xyz = &urlTiles_;
         TileRenderer renderer;
         renderer.setSource(xyz, localSource(xyz, server, true));
         QImage canvas(256, 256, QImage::Format_RGB32);
@@ -720,7 +1054,7 @@ private slots:
         QVERIFY(server.load(QFINDTESTDATA("fixtures")));
         QVERIFY(server.listen(QHostAddress::LocalHost, 0));
         server.hold = true;
-        auto *xyz = format(QStringLiteral("org.swak.xyz"));
+        auto *xyz = &urlTiles_;
         TileRenderer renderer;
         renderer.setSource(xyz, localSource(xyz, server, true));
         QImage canvas(1024, 1024, QImage::Format_RGB32);
@@ -763,7 +1097,7 @@ private slots:
         TileServer server;
         QVERIFY(server.load(QFINDTESTDATA("fixtures")));
         QVERIFY(server.listen(QHostAddress::LocalHost, 0));
-        auto *xyz = format(QStringLiteral("org.swak.xyz"));
+        auto *xyz = &urlTiles_;
         server.headers = "HTTP/1.1 302 Found\r\nLocation: https://example.org/\r\n";
         QImage canvas(256, 256, QImage::Format_RGB32);
         TileRenderer renderer;
@@ -794,6 +1128,8 @@ private slots:
 int main(int argc, char **argv)
 {
     QGuiApplication app(argc, argv);
+    // Close cached GDAL resources after the tests and before the leak check.
+    swak::GdalShutdownGuard gdal;
     QTemporaryDir cache;
     qputenv("XDG_CACHE_HOME", cache.path().toUtf8());
     app.setApplicationName(QStringLiteral("swak-map-tests"));

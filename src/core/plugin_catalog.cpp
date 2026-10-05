@@ -108,6 +108,12 @@ QString validatePluginManifest(const QJsonObject &manifest, QObject *instance)
         }
         roles.insert(QStringLiteral("vector-tiles"));
     }
+    if (qobject_cast<RasterTileProvider *>(instance)) {
+        if (!qobject_cast<MapProvider *>(instance)) {
+            return QStringLiteral("Raster tiles require a map provider.");
+        }
+        roles.insert(QStringLiteral("raster-tiles"));
+    }
     if (auto *provider = qobject_cast<RouteProvider *>(instance)) {
         if (provider->routeId() != manifest.value(QStringLiteral("id")).toString()) {
             return QStringLiteral("Route plugin identifier mismatch.");

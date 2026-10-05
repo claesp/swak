@@ -5,6 +5,7 @@
 
 #include <QBuffer>
 #include <QDir>
+#include <QDirIterator>
 #include <QFutureWatcher>
 #include <QImageReader>
 #include <QJsonArray>
@@ -156,6 +157,20 @@ void TileRenderer::setPrefetchMargin(int margin)
         schedule_.start(0);
     }
 }
+namespace {
+// Sums file sizes below a cache directory. The entry limit bounds the work on large caches.
+qint64 directoryBytes(const QString &path)
+{
+    qint64 total = 0;
+    int entries = 0;
+    QDirIterator files(path, QDir::Files | QDir::NoSymLinks, QDirIterator::Subdirectories);
+    while (files.hasNext() && ++entries <= 50000) {
+        files.next();
+        total += files.fileInfo().size();
+    }
+    return total;
+}
+} // namespace
 TileRenderer::TileRenderer(QObject *parent) : QObject(parent)
 {
     workers_.setMaxThreadCount(2);
@@ -165,7 +180,14 @@ TileRenderer::TileRenderer(QObject *parent) : QObject(parent)
             !schedule_.isActive()) {
             schedule_.start(0);
         }
-        const qint64 bytes = disk_ ? disk_->cacheSize() : -1;
+        qint64 bytes = disk_ ? disk_->cacheSize() : -1;
+        if (!rasterCache_.isEmpty()) {
+            if (!rasterDirty_) {
+                return;
+            }
+            rasterDirty_ = false;
+            bytes = directoryBytes(rasterCache_);
+        }
         if (bytes == diskBytes_) {
             return;
         }
@@ -330,10 +352,29 @@ void TileRenderer::setSource(MapProvider *provider,
         emit changed();
         return;
     }
+    rasterCache_.clear();
+    workers_.setMaxThreadCount(dynamic_cast<RasterTileProvider *>(provider_) ? 4 : 2);
     if (authenticatedMap(source_)) {
         QNetworkRequest probe(QUrl(source_.value(QStringLiteral("endpoint")).toString()));
         status_ = authorizeMapRequest(probe, source_, credential_);
         ready_ = status_.isEmpty();
+        emit changed();
+        return;
+    }
+    if (dynamic_cast<RasterTileProvider *>(provider_)) {
+        // GDAL waits for network replies on the workers. It keeps its own disk cache. Each window keeps a separate directory.
+        rasterCache_ = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) +
+                       QStringLiteral("/maps/gdal");
+        if (!QDir().mkpath(rasterCache_)) {
+            rasterCache_.clear();
+        } else {
+            QFile::setPermissions(rasterCache_,
+                                  QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                                      QFileDevice::ExeOwner);
+            // The statistics timer measures the directory on its next tick.
+            rasterDirty_ = true;
+        }
+        ready_ = true;
         emit changed();
         return;
     }
@@ -523,6 +564,10 @@ void TileRenderer::pump()
         const auto *cached = images_.object(tile.key);
         if ((cached && (cached->transient || cached->expires > now)) ||
             pending_.contains(tile.key) || decoding_.contains(tile.key)) {
+            continue;
+        }
+        if (dynamic_cast<RasterTileProvider *>(provider_)) {
+            renderRaster(tile);
             continue;
         }
         const auto url = provider_->tileUrl(source_, tile.z, tile.x, tile.y);
@@ -762,6 +807,82 @@ void TileRenderer::decodeVector(
             }
             return prepared;
         }));
+}
+void TileRenderer::renderRaster(const TilePlacement &tile)
+{
+    const auto *renderer = dynamic_cast<RasterTileProvider *>(provider_);
+    const auto generation = generation_;
+    const auto key = tile.key;
+    auto flag = std::make_shared<std::atomic_bool>(false);
+    decoding_.insert(key, flag);
+    ++activeJobs_;
+    RasterRequest request{source_,
+                          credential_,
+                          rasterCache_,
+                          qint64(diskLimitMiB_) * 1024 * 1024,
+                          tile.z,
+                          tile.x,
+                          tile.y};
+    auto *watcher = new QFutureWatcher<RasterTile>(this);
+    connect(watcher,
+            &QFutureWatcher<RasterTile>::finished,
+            this,
+            [this, watcher, key, flag, generation] {
+                --activeJobs_;
+                const auto result = watcher->result();
+                watcher->deleteLater();
+                if (generation != generation_) {
+                    return;
+                }
+                decoding_.remove(key);
+                const bool needed =
+                    std::any_of(needed_.begin(), needed_.end(), [&](const TilePlacement &item) {
+                        return item.key == key;
+                    });
+                if (flag->load(std::memory_order_relaxed) || !needed) {
+                    schedule_.start(150);
+                    return;
+                }
+                if (!result.error.isEmpty() || result.image.isNull()) {
+                    fail(key,
+                         result.error.isEmpty() ? tr("Map tile failed.") : result.error,
+                         30,
+                         result.providerWide);
+                } else {
+                    failures_.remove(key);
+                    rasterDirty_ = true;
+                    const int cost = static_cast<int>(result.image.sizeInBytes() / 1024);
+                    const bool onScreen = std::any_of(
+                        visible_.begin(), visible_.end(), [&](const TilePlacement &item) {
+                            return item.key == key;
+                        });
+                    if (!onScreen && images_.totalCost() + cost > images_.maxCost()) {
+                        prefetchSkipped_.insert(key);
+                    } else {
+                        images_.insert(key,
+                                       new Image{result.image,
+                                                 {},
+                                                 false,
+                                                 QDateTime::currentDateTimeUtc().addDays(1),
+                                                 false},
+                                       cost);
+                    }
+                    if (failures_.isEmpty()) {
+                        status_.clear();
+                    }
+                    emit changed();
+                }
+                schedule_.start(150);
+            });
+    watcher->setFuture(QtConcurrent::run(&workers_, [renderer, request, flag] {
+        try {
+            return renderer->renderTile(request, *flag);
+        } catch (const std::exception &) {
+            RasterTile failed;
+            failed.error = tr("Map tile rendering failed.");
+            return failed;
+        }
+    }));
 }
 QStringList TileRenderer::layers() const
 {

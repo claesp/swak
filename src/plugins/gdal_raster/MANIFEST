@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "org.swak.gdal.raster",
+  "name": "GDAL raster maps",
+  "description": "Render XYZ, WMS, and WMTS services, local raster files, and other GDAL datasets as Web Mercator tiles.",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entryPoint": "GdalRasterProvider",
+  "linkage": "static",
+  "platforms": ["linux"],
+  "qtMajor": 6,
+  "qtMinimum": "6.4.0",
+  "interfaces": ["map-provider", "raster-tiles"],
+  "requires": [],
+  "permissions": [],
+  "settingsSchemaVersion": 1
+}

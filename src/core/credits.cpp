@@ -1,5 +1,7 @@
 #include "core/credits.h"
 
+#include "core/gdal_support.h"
+
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QHeaderView>
@@ -74,11 +76,11 @@ void showCredits(QWidget *parent)
         QStringLiteral("MIT"),
         QStringLiteral("Charles Karney"),
         QStringLiteral("https://geographiclib.sourceforge.io/"));
-    add(QStringLiteral("protozero"),
-        QStringLiteral("1.8.2"),
-        QStringLiteral("BSD-2-Clause; Apache-2.0 for Folly portions"),
-        QStringLiteral("Mapbox, Jochen Topf, and contributors"),
-        QStringLiteral("https://github.com/mapbox/protozero"));
+    add(QStringLiteral("GDAL"),
+        gdalVersion(),
+        QStringLiteral("MIT; bundled and linked notices apply"),
+        QStringLiteral("Frank Warmerdam, Even Rouault, and contributors"),
+        QStringLiteral("https://gdal.org/"));
     add(QStringLiteral("Lucide icons"),
         QStringLiteral("0.468.0"),
         QStringLiteral("ISC; MIT for Feather portions"),

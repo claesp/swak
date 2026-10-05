@@ -1,4 +1,5 @@
 #include "app/window.h"
+#include "core/gdal_support.h"
 #include "core/graphics.h"
 #include "core/logging.h"
 #include "core/plugin_catalog.h"
@@ -40,6 +41,8 @@ int main(int argc, char **argv)
                                         ? parser.value(preferencesOption)
                                         : swak::Preferences::defaultPath();
     swak::configureLoggingFromFile(preferencesPath);
+    // The window and its GDAL workers close first. Then GDAL releases its cached resources.
+    const swak::GdalShutdownGuard gdal;
     try {
         QOffscreenSurface surface;
         surface.setFormat(format);

@@ -112,7 +112,7 @@ Help > About opens one dialog per window and releases it on close. The dialog us
 
 # Map registration
 
-`MapExtension` registers a stable map identifier, a name, and a kind: Provider or Tool. A provider also implements `MapProvider`, which supplies defaults, editable fields, validation, and a tile URL builder. The XYZ, WMTS, and WMS plugins register both interfaces. The marker plugin registers as a map tool. The green background remains an internal map layer.
+`MapExtension` registers a stable map identifier, a name, and a kind: Provider or Tool. A provider also implements `MapProvider`, which supplies defaults, editable fields, validation, and a tile URL builder. A provider that renders its own tiles also implements `RasterTileProvider`. The GDAL raster plugin registers all three interfaces and replaces the earlier XYZ, WMTS, and WMS plugins. The marker plugin registers as a map tool. The green background remains an internal map layer.
 
 `MapSources` owns the per-window catalog and implements `SettingsParticipant`. The host discovers participants among its QObject children as well as plugin roots. `PluginServices` supplies the catalog to the view and toolbar callbacks. Only registered providers enter the manager format list. Missing providers retain their saved configuration.
 
