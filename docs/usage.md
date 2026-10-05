@@ -147,7 +147,7 @@ The receiver updates its pane for each batch. Events contain at most one traffic
 
 # Map background and zoom
 
-The map uses NATO-style green (`#303D2B`) beneath its tiles. No map provider clears the selection. This version removes the old schematic map.
+The map uses NATO-style green (`#303D2B`) beneath its tiles. To clear the provider selection, select No map provider in the map toolbar dropdown. The map then shows only the green background. This version removes the old schematic map.
 
 Each missing tile shows faint MISSING TILE text at 45 degrees and a faint edge. File > Settings > Map controls Missing tile marker opacity. A loaded tile replaces its marker. Missing providers and unavailable tiles use the same background.
 

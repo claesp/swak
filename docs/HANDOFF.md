@@ -1412,9 +1412,7 @@ Documentation now uses STE100 terms more consistently. Pane replaces panel for p
 
 Source analysis passes in build/quality/20261005-120437-analyze-162936. Quick sanitizer diagnostics pass in build/quality/20261005-120437-quick-162937. The native sanitizer suite passes 102 cases in build/quality/20261005-120738-gui-164375.
 
-Open items from the review:
-
-- docs/usage.md says "No map provider clears the selection." The sentence has two possible meanings.
+Later sections on October 5 resolve every open item from this review.
 
 # 2026-10-05: Modal dialog ownership
 
@@ -1441,3 +1439,7 @@ gridTypesAndCoordinates now covers rejected and accepted colors, including non-A
 # 2026-10-05: PluginServices lifetimes
 
 src/core/interfaces.h now documents the owner and lifetime of each PluginServices member. It also gives the Window teardown order. docs/plugin-api.md has a short summary. The struct is a local value in the Window constructor, and plugins must not keep it. Objects that menu and toolbar plugins create outlive Store and all services, so their destructors must not use a service. No code changed.
+
+# 2026-10-05: Map background wording
+
+docs/usage.md said "No map provider clears the selection." A reader could take No map provider as a statement instead of a command name. The text now tells the user to select No map provider in the map toolbar dropdown. That command calls MapSources::select with an empty identifier, which clears the active provider and disables map network access.
