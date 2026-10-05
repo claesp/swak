@@ -22,13 +22,24 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QTimer>
+#include <QToolBar>
 #include <QUuid>
 
+#include <algorithm>
+#include <array>
 #include <cmath>
+#include <functional>
+#include <limits>
 #include <optional>
 #include <utility>
 namespace swak {
 namespace {
+// An area is a closed outline with a fill. A route is an open line with several points.
+enum class Outline
+{
+    Area,
+    Route
+};
 QPointF screenPoint(QPointF point, const Viewport &view)
 {
     return (point - view.center) * view.scale() +
@@ -47,55 +58,90 @@ QPolygonF screenPolygon(const QPolygonF &points, const Viewport &view)
     }
     return result;
 }
+// Distance from a point to the nearest segment of a screen polyline.
+double lineDistance(const QPolygonF &line, QPointF point)
+{
+    double nearest = std::numeric_limits<double>::infinity();
+    for (qsizetype i = 1; i < line.size(); ++i) {
+        const auto a = line.at(i - 1), d = line.at(i) - a;
+        const double length = QPointF::dotProduct(d, d);
+        const double t =
+            length > 0 ? std::clamp(QPointF::dotProduct(point - a, d) / length, 0.0, 1.0) : 0;
+        nearest = std::min(nearest, QLineF(point, a + t * d).length());
+    }
+    return nearest;
+}
 class PolygonEditor final : public ObjectEditor, public SettingsParticipant
 {
 public:
-    PolygonEditor(UserObjects &objects, MarkerCollections &collections, QWidget *parent)
-        : ObjectEditor(objects, collections, parent)
+    PolygonEditor(UserObjects &objects,
+                  MarkerCollections &collections,
+                  QWidget *parent,
+                  Outline kind = Outline::Area)
+        : ObjectEditor(objects, collections, parent), outline(kind)
     {
-        setObjectName(QStringLiteral("polygonEditor"));
+        setObjectName(route() ? QStringLiteral("routeEditor") : QStringLiteral("polygonEditor"));
+        key_ = defaultKey();
     }
     QString preferenceId() const override
     {
-        return QStringLiteral("org.swak.polygons");
+        return route() ? QStringLiteral("org.swak.routes") : QStringLiteral("org.swak.polygons");
     }
     QString settingsTitle() const override
     {
-        return tr("Areas");
+        return route() ? tr("Routes") : tr("Areas");
     }
     QList<SettingField> settingsFields() const override
     {
-        return {keySetting(QStringLiteral("createKey"), tr("Create area")),
-                numberSetting(QStringLiteral("vertexRadius"), tr("Corner radius (pixels)"), 1, 6),
-                numberSetting(QStringLiteral("lineWidth"), tr("Outline width (pixels)"), 1, 6),
-                numberSetting(QStringLiteral("fillOpacity"), tr("Fill opacity"), 0, 1, 2),
-                numberSetting(QStringLiteral("guideOpacity"), tr("Guide line opacity"), 0, 1, 2)};
+        QList<SettingField> fields{
+            keySetting(QStringLiteral("createKey"),
+                       route() ? tr("Create route") : tr("Create area")),
+            numberSetting(QStringLiteral("vertexRadius"),
+                          route() ? tr("Point radius (pixels)") : tr("Corner radius (pixels)"),
+                          1,
+                          6),
+            numberSetting(QStringLiteral("lineWidth"),
+                          route() ? tr("Line width (pixels)") : tr("Outline width (pixels)"),
+                          1,
+                          6)};
+        if (!route()) {
+            fields.append(
+                numberSetting(QStringLiteral("fillOpacity"), tr("Fill opacity"), 0, 1, 2));
+        }
+        fields.append(
+            numberSetting(QStringLiteral("guideOpacity"), tr("Guide line opacity"), 0, 1, 2));
+        return fields;
     }
     QJsonObject savePreferences() const override
     {
         auto state = editorState();
         state.insert(QStringLiteral("createKey"),
                      QKeySequence(key_).toString(QKeySequence::PortableText));
-        state.insert(QStringLiteral("areaShortcutVersion"), 3);
+        if (!route()) {
+            state.insert(QStringLiteral("areaShortcutVersion"), 3);
+            state.insert(QStringLiteral("fillOpacity"), fillOpacity);
+        }
         state.insert(QStringLiteral("vertexRadius"), radius);
         state.insert(QStringLiteral("lineWidth"), lineWidth);
-        state.insert(QStringLiteral("fillOpacity"), fillOpacity);
         state.insert(QStringLiteral("guideOpacity"), guideOpacity);
         return state;
     }
     QString validateSettings(const QJsonObject &values) const override
     {
-        return readKey(values) ? QString{}
-                               : tr("Use one letter, with optional Shift, to create an area.");
+        if (readKey(values)) {
+            return {};
+        }
+        return route() ? tr("Use one letter, with optional Shift, to create a route.")
+                       : tr("Use one letter, with optional Shift, to create an area.");
     }
     void restorePreferences(const QJsonObject &values) override
     {
         key_ = readKey(values);
         if (!key_) {
-            key_ = QKeyCombination(Qt::ShiftModifier, Qt::Key_A).toCombined();
+            key_ = defaultKey();
         }
         radius = preferenceNumber(values, QStringLiteral("vertexRadius"), 3, 1, 6);
-        lineWidth = preferenceNumber(values, QStringLiteral("lineWidth"), 2, 1, 6);
+        lineWidth = preferenceNumber(values, QStringLiteral("lineWidth"), route() ? 3 : 2, 1, 6);
         fillOpacity = preferenceNumber(values, QStringLiteral("fillOpacity"), 0.3, 0, 1);
         guideOpacity = preferenceNumber(values, QStringLiteral("guideOpacity"), 0.5, 0, 1);
         restoreEditorState(values);
@@ -105,20 +151,33 @@ public:
     {
         return key_;
     }
+    bool route() const
+    {
+        return outline == Outline::Route;
+    }
+    const Outline outline;
     double radius = 3, lineWidth = 2, fillOpacity = 0.3, guideOpacity = 0.5;
 
 private:
-    static int readKey(const QJsonObject &values)
+    int defaultKey() const
     {
-        auto text =
-            preferenceText(values, QStringLiteral("createKey"), QStringLiteral("Shift+A"), 32);
-        if (values.value(QStringLiteral("areaShortcutVersion")).toInt() < 2 &&
-            text == QStringLiteral("P")) {
-            text = QStringLiteral("A");
-        }
-        if (values.value(QStringLiteral("areaShortcutVersion")).toInt() < 3 &&
-            text == QStringLiteral("A")) {
-            text = QStringLiteral("Shift+A");
+        return QKeyCombination(Qt::ShiftModifier, route() ? Qt::Key_R : Qt::Key_A).toCombined();
+    }
+    int readKey(const QJsonObject &values) const
+    {
+        auto text = preferenceText(values,
+                                   QStringLiteral("createKey"),
+                                   route() ? QStringLiteral("Shift+R") : QStringLiteral("Shift+A"),
+                                   32);
+        if (!route()) {
+            if (values.value(QStringLiteral("areaShortcutVersion")).toInt() < 2 &&
+                text == QStringLiteral("P")) {
+                text = QStringLiteral("A");
+            }
+            if (values.value(QStringLiteral("areaShortcutVersion")).toInt() < 3 &&
+                text == QStringLiteral("A")) {
+                text = QStringLiteral("Shift+A");
+            }
         }
         const auto key = QKeySequence::fromString(text, QKeySequence::PortableText);
         if (key.count() != 1 || (key[0].keyboardModifiers() != Qt::NoModifier &&
@@ -127,7 +186,7 @@ private:
         }
         return key[0].key() >= Qt::Key_A && key[0].key() <= Qt::Key_Z ? key[0].toCombined() : 0;
     }
-    int key_ = QKeyCombination(Qt::ShiftModifier, Qt::Key_A).toCombined();
+    int key_ = 0;
 };
 class PolygonTool final : public MapTool
 {
@@ -136,6 +195,8 @@ public:
         : MapTool(&editor), objects_(*services.objects), selection_(*services.selection),
           store_(services.store), tools_(*services.mapTools), editor_(editor)
     {
+        setObjectName(editor_.route() ? QStringLiteral("routeTool")
+                                      : QStringLiteral("polygonTool"));
         connect(&editor_, &ObjectEditor::applied, this, [this](const QString &id) {
             resetPointer();
             select(id);
@@ -170,7 +231,7 @@ public:
         });
         connect(&objects_, &UserObjects::restored, this, [this](const QString &id) {
             const auto item = objects_.find(id);
-            if (item && item->type == QStringLiteral("polygon")) {
+            if (item && item->type == type()) {
                 cancel();
                 select(id);
             }
@@ -188,19 +249,28 @@ public:
     }
     bool interactionActive() const override
     {
-        return drawing_ || moving_ >= 0 || editor_.draft().has_value();
+        return drawing_ || moving_ >= 0 || movingObject_.has_value() || editor_.draft().has_value();
     }
     std::optional<double> areaFillOpacity() const override
     {
+        if (editor_.route()) {
+            return std::nullopt;
+        }
         return editor_.fillOpacity;
     }
     bool guidesActive() const override
     {
-        return drawing_ || moving_ >= 0;
+        return drawing_ || moving_ >= 0 || movingObject_.has_value();
     }
     QString statusText() const override
     {
-        return drawing_ || moving_ >= 0 ? QStringLiteral("A") : QString{};
+        if (!guidesActive()) {
+            return {};
+        }
+        // Areas keep their earlier short status text.
+        return editor_.route()
+                   ? QKeySequence(editor_.createKey()).toString(QKeySequence::NativeText)
+                   : QStringLiteral("A");
     }
     bool cancel() override
     {
@@ -236,6 +306,7 @@ public:
     bool handle(QEvent &event, const Viewport &view, QWidget &map) override
     {
         map_ = &map;
+        view_ = view;
         if (event.type() == QEvent::KeyPress) {
             auto &key = static_cast<QKeyEvent &>(event);
             if (key.keyCombination().toCombined() == editor_.createKey()) {
@@ -264,7 +335,7 @@ public:
             if (drawing_ && (key.key() == Qt::Key_Return || key.key() == Qt::Key_Enter)) {
                 if (!key.isAutoRepeat() && points_.size() >= 2) {
                     auto candidate = points_;
-                    if (candidate.size() == 2) {
+                    if (!editor_.route() && candidate.size() == 2) {
                         candidate.append(worldPoint(pointer_, view));
                     }
                     complete(candidate);
@@ -279,7 +350,7 @@ public:
             moving_ < 0) {
             auto &mouse = static_cast<QMouseEvent &>(event);
             if (mouse.button() == Qt::LeftButton) {
-                const auto points = polygonVertices(editor_.draft()->geometry);
+                const auto points = vertices(editor_.draft()->geometry);
                 for (qsizetype i = 0; i < points.size(); ++i) {
                     if (near(screenPoint(points.at(i), view), mouse.position())) {
                         moving_ = static_cast<int>(i);
@@ -295,15 +366,14 @@ public:
         }
         if (event.type() == QEvent::MouseMove) {
             pointer_ = static_cast<QMouseEvent &>(event).position();
-            if (drawing_ || moving_ >= 0) {
+            if (guidesActive()) {
                 emit overlayChanged();
                 return true;
             }
         }
         if ((event.type() == QEvent::MouseButtonPress ||
              event.type() == QEvent::MouseButtonDblClick) &&
-            (drawing_ || moving_ >= 0) &&
-            static_cast<QMouseEvent &>(event).button() == Qt::LeftButton) {
+            guidesActive() && static_cast<QMouseEvent &>(event).button() == Qt::LeftButton) {
             return true;
         }
         if (event.type() == QEvent::MouseButtonRelease) {
@@ -317,29 +387,24 @@ public:
                 return true;
             }
             if (drawing_) {
-                map.setCursor(Qt::CrossCursor);
-                if (points_.size() >= 3 && near(screenPoint(points_.first(), view), pointer_)) {
-                    complete(points_);
+                addPoint(view, map);
+                return true;
+            }
+            if (movingObject_) {
+                auto item = *movingObject_;
+                item.geometry = polygonGeometry(movedPoints(worldPoint(pointer_, view)));
+                const auto problem = objects_.put(item);
+                if (problem.isEmpty()) {
+                    resetPointer();
+                    select(item.id);
+                    emit changed();
                 } else {
-                    const auto point = worldPoint(pointer_, view);
-                    if (!QRectF(0, 0, 1, 1).contains(point)) {
-                        return true;
-                    }
-                    if (points_.contains(point)) {
-                        error(tr("Choose a different polygon corner."));
-                        return true;
-                    }
-                    if (points_.size() >= MaxPolygonVertices) {
-                        error(tr("Use at most 64 polygon corners."));
-                        return true;
-                    }
-                    points_.append(point);
-                    emit overlayChanged();
+                    error(problem);
                 }
                 return true;
             }
             if (moving_ >= 0 && editor_.draft()) {
-                auto candidate = polygonVertices(editor_.draft()->geometry);
+                auto candidate = vertices(editor_.draft()->geometry);
                 if (moving_ >= candidate.size()) {
                     dismiss();
                     return true;
@@ -362,7 +427,7 @@ public:
         if (event.type() == QEvent::ContextMenu) {
             auto &context = static_cast<QContextMenuEvent &>(event);
             pointer_ = context.pos();
-            if (drawing_ || moving_ >= 0) {
+            if (guidesActive()) {
                 return true;
             }
             if (editor_.draft()) {
@@ -380,7 +445,7 @@ public:
             return false;
         }
         const auto record = objects_.find(item.id);
-        if (!record || record->type != QStringLiteral("polygon")) {
+        if (!record || record->type != type()) {
             return true;
         }
         map_ = &map;
@@ -396,13 +461,24 @@ public:
         auto &context = static_cast<QContextMenuEvent &>(event);
         tools_.cancel();
         select(id);
+        const auto names = editor_.route() ? std::array{QStringLiteral("routeContextMenu"),
+                                                        QStringLiteral("editRoute"),
+                                                        QStringLiteral("moveRoute"),
+                                                        QStringLiteral("deleteRoute")}
+                                           : std::array{QStringLiteral("polygonContextMenu"),
+                                                        QStringLiteral("editPolygon"),
+                                                        QStringLiteral("movePolygon"),
+                                                        QStringLiteral("deletePolygon")};
         Modal<QMenu> menu(&map);
-        menu->setObjectName(QStringLiteral("polygonContextMenu"));
+        menu->setObjectName(names[0]);
         auto *edit = menu->addAction(uiIcon(UiIcon::Edit), tr("Edit"));
-        edit->setObjectName(QStringLiteral("editPolygon"));
+        edit->setObjectName(names[1]);
+        auto *move = menu->addAction(uiIcon(UiIcon::Move), tr("Move"));
+        move->setObjectName(names[2]);
         auto *remove = menu->addAction(uiIcon(UiIcon::Delete), tr("Delete ..."));
-        remove->setObjectName(QStringLiteral("deletePolygon"));
-        edit->setProperty("menuOrder", -2);
+        remove->setObjectName(names[3]);
+        edit->setProperty("menuOrder", -3);
+        move->setProperty("menuOrder", -2);
         remove->setProperty("menuOrder", -1);
         sortMenuActions(*menu);
         connect(edit, &QAction::triggered, this, [this, id] {
@@ -411,6 +487,17 @@ public:
                 selection_.clear();
                 editor_.edit(*currentObject);
                 editingVertices_ = true;
+                emit changed();
+            }
+        });
+        const auto anchor = worldPoint(QPointF(context.pos()), view_);
+        connect(move, &QAction::triggered, this, [this, id, anchor] {
+            movingObject_ = objects_.find(id);
+            if (movingObject_ && map_) {
+                anchor_ = anchor;
+                selection_.clear();
+                map_->setCursor(Qt::CrossCursor);
+                map_->setFocus();
                 emit changed();
             }
         });
@@ -425,25 +512,32 @@ public:
     {
         QList<MapItem> result;
         for (const auto &record : objects_.items()) {
-            if (record.type != QStringLiteral("polygon")) {
+            if (record.type != type()) {
                 continue;
             }
+            const auto points = vertices(record.geometry);
             const QFontMetrics metrics(QGuiApplication::font());
-            const auto text = metrics.elidedText(record.title, Qt::ElideRight, 240);
-            const auto baseline =
-                screenPoint(polygonLabelPoint(polygonVertices(record.geometry)), view) +
-                QPointF(-metrics.horizontalAdvance(text) / 2.0, metrics.ascent() / 2.0);
-            if (!polygonVertices(record.geometry)
-                     .containsPoint(worldPoint(pointer, view), Qt::OddEvenFill) &&
-                !mapLabelBounds(metrics, baseline, record.title).contains(pointer)) {
+            const auto text = label(record, points);
+            const auto anchor = labelAnchor(points, metrics, text, view);
+            bool hit = mapLabelBounds(metrics, anchor, text).contains(pointer);
+            if (editor_.route()) {
+                for (int wrap = -1; wrap <= 1 && !hit; ++wrap) {
+                    auto line = screenPolygon(unwrappedRoute(points), view);
+                    line.translate(wrap * view.scale(), 0);
+                    hit = lineDistance(line, pointer) <= editor_.lineWidth / 2 + 5;
+                }
+            } else {
+                hit = hit || points.containsPoint(worldPoint(pointer, view), Qt::OddEvenFill);
+            }
+            if (!hit) {
                 continue;
             }
             MapItem item;
             item.owner = owner();
             item.id = record.id;
             item.label = record.title;
-            item.type = tr("Area");
-            item.kind = MapItem::Kind::Polygon;
+            item.type = typeName();
+            item.kind = editor_.route() ? MapItem::Kind::Line : MapItem::Kind::Polygon;
             result.append(std::move(item));
         }
         return result;
@@ -451,25 +545,23 @@ public:
     void paint(QPainter &painter, const Viewport &view) const override
     {
         for (const auto &item : objects_.items()) {
-            if (item.type != QStringLiteral("polygon") ||
-                (editor_.draft() && editor_.draft()->id == item.id)) {
+            if (item.type != type() || (editor_.draft() && editor_.draft()->id == item.id) ||
+                (movingObject_ && movingObject_->id == item.id)) {
                 continue;
             }
-            const auto points = polygonVertices(item.geometry);
-            draw(painter, screenPolygon(points, view), QColor(item.color), item.restricted);
-            const auto text = painter.fontMetrics().elidedText(item.title, Qt::ElideRight, 240);
-            const auto baseline = screenPoint(polygonLabelPoint(points), view) +
-                                  QPointF(-painter.fontMetrics().horizontalAdvance(text) / 2.0,
-                                          painter.fontMetrics().ascent() / 2.0);
+            const auto points = vertices(item.geometry);
+            draw(painter, points, view, QColor(item.color), item.restricted);
+            const auto text = label(item, points);
             paintMapLabel(painter,
-                          baseline,
-                          item.title,
+                          labelAnchor(points, painter.fontMetrics(), text, view),
+                          text,
                           selection_.item() && selection_.item()->owner == owner() &&
                               selection_.item()->id == item.id);
         }
         if (editor_.draft() && moving_ < 0) {
             draw(painter,
-                 screenPolygon(polygonVertices(editor_.draft()->geometry), view),
+                 vertices(editor_.draft()->geometry),
+                 view,
                  QColor(editor_.draft()->color),
                  editor_.draft()->restricted);
         }
@@ -477,29 +569,33 @@ public:
     void paintOverlay(QPainter &painter, const Viewport &view, QPointF pointer) const override
     {
         if (drawing_) {
-            auto polygon = screenPolygon(points_, view);
-            polygon.append(pointer);
-            draw(painter, polygon, QColor("#1e88e5"));
-            dots(painter, screenPolygon(points_, view), QColor("#1e88e5"));
             auto measured = points_;
             measured.append(worldPoint(pointer, view));
+            draw(painter, measured, view, QColor("#1e88e5"));
+            dots(painter, screenPolygon(points_, view), QColor("#1e88e5"));
             lengthLabels(painter, measured, view);
+        } else if (movingObject_) {
+            draw(painter,
+                 movedPoints(worldPoint(pointer, view)),
+                 view,
+                 QColor(movingObject_->color),
+                 movingObject_->restricted);
         } else if (editor_.draft() && editingVertices_) {
-            auto polygon = screenPolygon(polygonVertices(editor_.draft()->geometry), view);
-            // The draft can change while a corner moves. Check the index on each use.
-            const bool movable = moving_ >= 0 && moving_ < polygon.size();
-            if (movable) {
-                polygon[moving_] = pointer;
-                draw(painter, polygon, QColor(editor_.draft()->color), editor_.draft()->restricted);
-            }
-            dots(painter, polygon, QColor(editor_.draft()->color));
-            auto measured = polygonVertices(editor_.draft()->geometry);
+            auto measured = vertices(editor_.draft()->geometry);
+            // The draft can change while a point moves. Check the index on each use.
+            const bool movable = moving_ >= 0 && moving_ < measured.size();
             if (movable) {
                 measured[moving_] = worldPoint(pointer, view);
+                draw(painter,
+                     measured,
+                     view,
+                     QColor(editor_.draft()->color),
+                     editor_.draft()->restricted);
             }
+            dots(painter, screenPolygon(measured, view), QColor(editor_.draft()->color));
             lengthLabels(painter, measured, view);
         }
-        if (drawing_ || moving_ >= 0) {
+        if (guidesActive()) {
             painter.setRenderHint(QPainter::Antialiasing, false);
             painter.setPen(QPen(QColor(0, 0, 0, qRound(editor_.guideOpacity * 255)), 1));
             painter.drawLine(QPointF(0, pointer.y()), QPointF(view.size.width(), pointer.y()));
@@ -508,15 +604,60 @@ public:
     }
 
 private:
-    static void lengthLabels(QPainter &painter, const QPolygonF &points, const Viewport &view)
+    QString type() const
+    {
+        return editor_.route() ? QStringLiteral("route") : QStringLiteral("polygon");
+    }
+    QString owner() const
+    {
+        return editor_.route() ? QStringLiteral("org.swak.routes")
+                               : QStringLiteral("org.swak.polygons");
+    }
+    QString typeName() const
+    {
+        return editor_.route() ? tr("Route") : tr("Area");
+    }
+    QPolygonF vertices(const QJsonObject &geometry) const
+    {
+        return editor_.route() ? routePoints(geometry) : polygonVertices(geometry);
+    }
+    QString validate(const QPolygonF &points) const
+    {
+        return editor_.route() ? validateRoute(points) : validatePolygon(points);
+    }
+    QString label(const UserObject &item, const QPolygonF &points) const
+    {
+        if (!editor_.route()) {
+            return item.title;
+        }
+        const auto length = formatDistance(routeLength(points));
+        return item.title.isEmpty() ? length : item.title + QStringLiteral(" · ") + length;
+    }
+    // Areas show the label at the center. Routes show it beside the middle point.
+    QPointF labelAnchor(const QPolygonF &points,
+                        const QFontMetrics &metrics,
+                        const QString &text,
+                        const Viewport &view) const
+    {
+        if (editor_.route()) {
+            const auto line = unwrappedRoute(points);
+            return line.isEmpty() ? QPointF{}
+                                  : screenPoint(line.at(line.size() / 2), view) + QPointF(6, -8);
+        }
+        const auto shown = metrics.elidedText(text, Qt::ElideRight, 240);
+        return screenPoint(polygonLabelPoint(points), view) +
+               QPointF(-metrics.horizontalAdvance(shown) / 2.0, metrics.ascent() / 2.0);
+    }
+    void lengthLabels(QPainter &painter, const QPolygonF &points, const Viewport &view) const
     {
         const auto count = points.size();
         if (count < 2) {
             return;
         }
-        const auto segments = count == 2 ? 1 : count;
+        const auto line = editor_.route() ? unwrappedRoute(points) : points;
+        const auto segments = editor_.route() || count == 2 ? count - 1 : count;
         for (qsizetype i = 0; i < segments; ++i) {
-            const auto &a = points[i], &b = points[(i + 1) % count];
+            const auto &a = line[i], &b = line[(i + 1) % count];
             const auto start = screenPoint(a, view), end = screenPoint(b, view);
             if (QLineF(start, end).length() < 1) {
                 continue;
@@ -524,10 +665,11 @@ private:
             paintMapLabel(
                 painter, (start + end) / 2 + QPointF(4, -8), formatDistance(groundDistance(a, b)));
         }
-    }
-    static QString owner()
-    {
-        return QStringLiteral("org.swak.polygons");
+        if (editor_.route() && count > 2) {
+            paintMapLabel(painter,
+                          screenPoint(line.last(), view) + QPointF(8, 16),
+                          tr("Total: %1").arg(formatDistance(routeLength(points))));
+        }
     }
     bool near(QPointF a, QPointF b) const
     {
@@ -538,6 +680,7 @@ private:
         drawing_ = false;
         editingVertices_ = false;
         moving_ = -1;
+        movingObject_.reset();
         skipMoveRelease_ = false;
         points_.clear();
         if (map_) {
@@ -547,43 +690,98 @@ private:
     void error(const QString &message)
     {
         editor_.reportError(message);
-        logMessage(Severity::Warning, Urgency::Attention, QStringLiteral("swak.polygons"), message);
+        logMessage(Severity::Warning,
+                   Urgency::Attention,
+                   editor_.route() ? QStringLiteral("swak.routes")
+                                   : QStringLiteral("swak.polygons"),
+                   message);
+    }
+    void addPoint(const Viewport &view, QWidget &map)
+    {
+        map.setCursor(Qt::CrossCursor);
+        if (!editor_.route() && points_.size() >= 3 &&
+            near(screenPoint(points_.first(), view), pointer_)) {
+            complete(points_);
+            return;
+        }
+        auto point = worldPoint(pointer_, view);
+        if (editor_.route()) {
+            point.rx() -= std::floor(point.x());
+        }
+        if (!QRectF(0, 0, 1, 1).contains(point)) {
+            return;
+        }
+        if (editor_.route() ? !points_.isEmpty() && points_.last() == point
+                            : points_.contains(point)) {
+            error(editor_.route() ? tr("Choose a different route point.")
+                                  : tr("Choose a different polygon corner."));
+            return;
+        }
+        const int limit = editor_.route() ? MaxRoutePoints : MaxPolygonVertices;
+        if (points_.size() >= limit) {
+            error(editor_.route() ? tr("Use at most %1 route points.").arg(limit)
+                                  : tr("Use at most 64 polygon corners."));
+            return;
+        }
+        points_.append(point);
+        emit overlayChanged();
     }
     void complete(const QPolygonF &candidate)
     {
-        const auto problem = validatePolygon(candidate);
+        const auto problem = validate(candidate);
         if (!problem.isEmpty()) {
             error(problem);
             return;
         }
         UserObject item;
         item.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
-        item.type = QStringLiteral("polygon");
-        item.title = tr("New Area");
+        item.type = type();
+        item.title = editor_.route() ? tr("New Route") : tr("New Area");
         item.color = QStringLiteral("#1e88e5");
         item.geometry = polygonGeometry(candidate);
         resetPointer();
         editor_.edit(item);
         emit changed();
     }
+    QPolygonF movedPoints(QPointF point) const
+    {
+        auto points = vertices(movingObject_->geometry);
+        points.translate(point - anchor_);
+        if (editor_.route()) {
+            for (auto &p : points) {
+                p.setX(p.x() - std::floor(p.x()));
+            }
+        }
+        return points;
+    }
     void draw(QPainter &painter,
               const QPolygonF &points,
+              const Viewport &view,
               const QColor &color,
               bool restricted = false) const
     {
+        painter.setPen(QPen(color, editor_.lineWidth, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        if (editor_.route()) {
+            painter.setBrush(Qt::NoBrush);
+            const auto line = screenPolygon(unwrappedRoute(points), view);
+            for (int wrap = -1; wrap <= 1; ++wrap) {
+                painter.drawPolyline(line.translated(wrap * view.scale(), 0));
+            }
+            return;
+        }
+        const auto polygon = screenPolygon(points, view);
         auto fill = color;
         fill.setAlpha(qRound(editor_.fillOpacity * 255));
-        painter.setPen(QPen(color, editor_.lineWidth));
-        painter.setBrush(points.size() >= 3 ? QBrush(fill) : Qt::NoBrush);
-        if (points.size() >= 3) {
-            painter.drawPolygon(points);
+        painter.setBrush(polygon.size() >= 3 ? QBrush(fill) : Qt::NoBrush);
+        if (polygon.size() >= 3) {
+            painter.drawPolygon(polygon);
             if (restricted) {
                 painter.setPen(Qt::NoPen);
                 painter.setBrush(QBrush(color, Qt::BDiagPattern));
-                painter.drawPolygon(points);
+                painter.drawPolygon(polygon);
             }
         } else {
-            painter.drawPolyline(points);
+            painter.drawPolyline(polygon);
         }
     }
     void dots(QPainter &painter, const QPolygonF &points, const QColor &color) const
@@ -596,7 +794,7 @@ private:
     }
     void vertexMenu(QContextMenuEvent &context, const Viewport &view, QWidget &map)
     {
-        const auto points = polygonVertices(editor_.draft()->geometry);
+        const auto points = vertices(editor_.draft()->geometry);
         int index = -1;
         for (qsizetype i = 0; i < points.size(); ++i) {
             if (near(screenPoint(points.at(i), view), context.pos())) {
@@ -610,15 +808,18 @@ private:
         auto reduced = points;
         reduced.removeAt(index);
         Modal<QMenu> menu(&map);
-        menu->setObjectName(QStringLiteral("polygonVertexMenu"));
+        menu->setObjectName(editor_.route() ? QStringLiteral("routePointMenu")
+                                            : QStringLiteral("polygonVertexMenu"));
         auto *move = menu->addAction(uiIcon(UiIcon::Move), tr("Move"));
-        move->setObjectName(QStringLiteral("movePolygonVertex"));
+        move->setObjectName(editor_.route() ? QStringLiteral("moveRoutePoint")
+                                            : QStringLiteral("movePolygonVertex"));
         move->setProperty("menuOrder", -1);
         auto *remove = menu->addAction(uiIcon(UiIcon::Delete), tr("Delete ..."));
-        remove->setObjectName(QStringLiteral("deletePolygonVertex"));
-        remove->setEnabled(validatePolygon(reduced).isEmpty());
+        remove->setObjectName(editor_.route() ? QStringLiteral("deleteRoutePoint")
+                                              : QStringLiteral("deletePolygonVertex"));
+        remove->setEnabled(validate(reduced).isEmpty());
         connect(move, &QAction::triggered, this, [this, index, &map] {
-            if (!editor_.draft() || index >= polygonVertices(editor_.draft()->geometry).size()) {
+            if (!editor_.draft() || index >= vertices(editor_.draft()->geometry).size()) {
                 return;
             }
             moving_ = index;
@@ -627,7 +828,8 @@ private:
             emit changed();
         });
         connect(remove, &QAction::triggered, this, [this, reduced] {
-            if (confirmDeletion(&editor_, tr("this area corner"))) {
+            if (confirmDeletion(
+                    &editor_, editor_.route() ? tr("this route point") : tr("this area corner"))) {
                 editor_.setGeometry(polygonGeometry(reduced));
             }
         });
@@ -636,26 +838,36 @@ private:
     void select(const QString &id)
     {
         const auto record = objects_.find(id);
-        if (!record || record->type != QStringLiteral("polygon")) {
+        if (!record || record->type != type()) {
             return;
         }
-        const auto points = polygonVertices(record->geometry);
+        const auto points = vertices(record->geometry);
         MapItem item;
-        item.kind = MapItem::Kind::Polygon;
+        item.kind = editor_.route() ? MapItem::Kind::Line : MapItem::Kind::Polygon;
         item.owner = owner();
         item.id = id;
         item.label = record->title;
-        item.type = tr("Area");
+        item.type = typeName();
+        item.icon = uiIcon(editor_.route() ? UiIcon::Route : UiIcon::Area);
         item.description = record->description;
         item.color = QColor(record->color);
         item.lineWidth = editor_.lineWidth;
         item.outlineStyle = Qt::SolidLine;
-        item.path.addPolygon(points);
-        item.path.closeSubpath();
+        if (editor_.route()) {
+            item.path.addPolygon(unwrappedRoute(points));
+        } else {
+            item.path.addPolygon(points);
+            item.path.closeSubpath();
+        }
         item.properties = record->properties;
         item.properties.insert(QStringLiteral("ID"), id);
-        item.properties.insert(QStringLiteral("Area"), formatArea(polygonArea(points)));
-        item.properties.insert(tr("Restricted"), record->restricted ? tr("Yes") : tr("No"));
+        if (editor_.route()) {
+            item.properties.insert(QStringLiteral("Length"), formatDistance(routeLength(points)));
+            item.properties.insert(tr("Points"), QString::number(points.size()));
+        } else {
+            item.properties.insert(QStringLiteral("Area"), formatArea(polygonArea(points)));
+            item.properties.insert(tr("Restricted"), record->restricted ? tr("Yes") : tr("No"));
+        }
         store_.select({});
         selection_.select(std::move(item));
     }
@@ -663,8 +875,11 @@ private:
     bool editingVertices_ = false;
     int moving_ = -1;
     bool skipMoveRelease_ = false;
+    std::optional<UserObject> movingObject_;
+    QPointF anchor_;
     QPolygonF points_;
     QPointF pointer_;
+    Viewport view_;
     QPointer<QWidget> map_;
     UserObjects &objects_;
     MapSelection &selection_;
@@ -673,11 +888,17 @@ private:
     PolygonEditor &editor_;
 };
 } // namespace
-class PolygonPlugin final : public QObject, public Plugin, public PanePlugin, public MapExtension
+class PolygonPlugin final : public QObject,
+                            public Plugin,
+                            public PanePlugin,
+                            public MenuPlugin,
+                            public ToolbarPlugin,
+                            public MapExtension
 {
     Q_OBJECT
     Q_PLUGIN_METADATA(IID "org.swak.Plugin/2.0" FILE "polygons/MANIFEST")
-    Q_INTERFACES(swak::Plugin swak::PanePlugin swak::MapExtension)
+    Q_INTERFACES(
+        swak::Plugin swak::PanePlugin swak::MenuPlugin swak::ToolbarPlugin swak::MapExtension)
 public:
     QString name() const override
     {
@@ -701,22 +922,54 @@ public:
     }
     QWidget *create(PluginServices &services, QWidget *parent) override
     {
+        return createEditor(services, parent, Outline::Area);
+    }
+    QList<PluginPane> additionalPanes(PluginServices &services, QWidget *parent) override
+    {
+        auto *editor = createEditor(services, parent, Outline::Route);
+        routeEditors_.insert(services.mapTools, editor);
+        return {{QStringLiteral("org.swak.routes.pane"), tr("Edit route"), editor}};
+    }
+    bool rootActions() const override
+    {
+        return true;
+    }
+    void populateMenu(PluginServices &services, QMenu &menu) override
+    {
+        addRouteAction(services, [&menu](QAction *action) {
+            menu.addAction(action);
+        });
+    }
+    void populateToolbar(PluginServices &services, QToolBar &toolbar, QMenu *) override
+    {
+        addRouteAction(services, [&toolbar](QAction *action) {
+            toolbar.addAction(action);
+        });
+    }
+
+private:
+    QWidget *createEditor(PluginServices &services, QWidget *parent, Outline outline)
+    {
         if (!services.objects || !services.selection || !services.mapTools ||
             !services.collections) {
             return new QWidget(parent);
         }
-        auto *editor = new PolygonEditor(*services.objects, *services.collections, parent);
+        const bool route = outline == Outline::Route;
+        auto *editor = new PolygonEditor(*services.objects, *services.collections, parent, outline);
         auto *tool = new PolygonTool(services, *editor);
         services.mapTools->add(tool);
-        auto *action = new QAction(uiIcon(UiIcon::Area), tr("Area"), editor);
-        action->setObjectName(QStringLiteral("polygonModeAction"));
-        setToolbarSection(*action, ToolbarSection::Creation, 1);
+        auto *action = new QAction(
+            uiIcon(route ? UiIcon::Route : UiIcon::Area), route ? tr("Route") : tr("Area"), editor);
+        action->setObjectName(route ? QStringLiteral("routeModeAction")
+                                    : QStringLiteral("polygonModeAction"));
+        // Route follows Line in the creation section.
+        setToolbarSection(*action, ToolbarSection::Creation, route ? 4 : 1);
         action->setCheckable(true);
-        const auto updateAction = [action, editor, tool] {
+        const auto updateAction = [action, editor, tool, route] {
             action->setChecked(!tool->statusText().isEmpty());
-            action->setToolTip(
-                tr("Area mode (%1)")
-                    .arg(QKeySequence(editor->createKey()).toString(QKeySequence::NativeText)));
+            const auto key = QKeySequence(editor->createKey()).toString(QKeySequence::NativeText);
+            action->setToolTip(route ? tr("Route mode (%1)").arg(key)
+                                     : tr("Area mode (%1)").arg(key));
         };
         connect(tool, &MapTool::changed, action, updateAction);
         connect(editor, &ObjectEditor::configurationChanged, action, updateAction);
@@ -733,6 +986,15 @@ public:
         });
         return editor;
     }
+    void addRouteAction(const PluginServices &services, const std::function<void(QAction *)> &add)
+    {
+        if (const auto editor = routeEditors_.value(services.mapTools)) {
+            if (auto *action = editor->findChild<QAction *>(QStringLiteral("routeModeAction"))) {
+                add(action);
+            }
+        }
+    }
+    QHash<MapTools *, QPointer<QWidget>> routeEditors_;
 };
 } // namespace swak
 #include "polygons.moc"

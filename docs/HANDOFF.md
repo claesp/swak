@@ -1489,3 +1489,13 @@ The first sanitizer run found a leak of 576 bytes for each expired raster worker
 # 2026-10-05: Route planner layout
 
 The Route planning pane docks on the right by default. The travel mode is the first control. Start and Destination each have a list of local markers and a target button. The button activates a cross hair, and the next map click sets a map point. The pane has no provider list, no Route providers button, no coordinate fields, and no Pick buttons. File > Settings > Route providers selects the provider. Clear ... uses the clear icon, asks for confirmation, and clears the route and both endpoints. Preferences save each endpoint as a marker identifier or a map point. Earlier four-number coordinate preferences migrate when they are not zero. The new Target icon comes from tools/generate_icons.py.
+
+# 2026-10-05: Route markers, planner toolbar, and Credits
+
+Route is a new marker type. The polygons plugin now handles areas and routes with one editor and tool class, selected by an Outline value. Route uses Shift+R, sits after Line on the toolbar, adds a point for each click, and finishes with Enter. The Edit route pane then opens. A route has two to 250 points, draws as an open line, and shows its title and total length. Information shows Length and Points. Routes and areas both have Edit, Move, and Delete ... with the shared context tools. Areas gained Move in this change. The Area status text stays A.
+
+UserObjects now measures objects as compact JSON. The limit is 16 KiB for each object, up from 8 KiB of indented JSON, and 128 KiB in total. A route with 250 full-precision points fits. polygon.cpp adds routePoints, validateRoute, unwrappedRoute, routeLength, and simplifiedRoute. Simplification uses Douglas-Peucker with a growing tolerance and keeps both end points.
+
+Route planning results now become Route markers. The purple preview and the route width setting are gone. The marker keeps travel mode, provider distance, estimated time, and provider name. The provider attribution stays on the map while the latest planned route exists. Clear ... clears the start, the destination, and the status, and keeps route markers. The Route planning toolbar button uses a new signpost icon in the measurement section and shows or hides the pane.
+
+Help > Credits adds PROJ, GEOS, and libcurl with versions from the GDAL build information. One row names the other GDAL format libraries.

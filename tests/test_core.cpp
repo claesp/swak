@@ -1174,6 +1174,55 @@ private slots:
         object.properties.insert(QStringLiteral("Distance"), QStringLiteral("bad"));
         QVERIFY(!UserObjects::validate(object).isEmpty());
     }
+    void routes()
+    {
+        const QPolygonF line{project(0, 0), project(0, 1), project(1, 1)};
+        QVERIFY(validateRoute(line).isEmpty());
+        QVERIFY(!validateRoute({project(0, 0)}).isEmpty());
+        QVERIFY(!validateRoute({project(0, 0), project(0, 0)}).isEmpty());
+        QVERIFY(!validateRoute({QPointF(0.5, 0.5), QPointF(1.5, 0.5)}).isEmpty());
+        QVERIFY(!validateRoute({QPointF(0.5, 0.5), QPointF(qQNaN(), 0.5)}).isEmpty());
+        // Two one-degree legs near the equator are about 111 km each.
+        QVERIFY(std::abs(routeLength(line) - 2 * 111195) < 400);
+        // A segment across the date line takes the short way.
+        const QPolygonF across{project(0, 179.5), project(0, -179.5)};
+        QVERIFY(std::abs(routeLength(across) - 111195) < 400);
+        QVERIFY(std::abs(unwrappedRoute(across).last().x() - unwrappedRoute(across).first().x()) <
+                0.01);
+        QCOMPARE(routePoints(polygonGeometry(line)), line);
+        QPolygonF dense;
+        for (int i = 0; i <= 2000; ++i) {
+            const double longitude = i * 0.001;
+            dense.append(project(std::sin(i / 100.0), longitude));
+        }
+        const auto simple = simplifiedRoute(dense);
+        QVERIFY(simple.size() <= MaxRoutePoints);
+        QVERIFY(simple.size() >= 2);
+        QCOMPARE(simple.first(), dense.first());
+        QCOMPARE(simple.last(), dense.last());
+        QVERIFY(validateRoute(simple).isEmpty());
+        QVERIFY(std::abs(routeLength(simple) / routeLength(dense) - 1) < 0.01);
+        QCOMPARE(simplifiedRoute(line), line);
+        UserObjects objects;
+        UserObject route;
+        route.id = QStringLiteral("route-test");
+        route.type = QStringLiteral("route");
+        route.title = QStringLiteral("Patrol");
+        route.geometry = polygonGeometry(simple);
+        // A route with the full point limit fits in one object.
+        QPolygonF full;
+        for (int i = 0; i < MaxRoutePoints; ++i) {
+            full.append(QPointF(0.123456789 + i * 1e-5, 0.987654321 - i * 1e-5));
+        }
+        route.geometry = polygonGeometry(full);
+        QVERIFY2(objects.put(route).isEmpty(), qPrintable(objects.put(route)));
+        full.append(QPointF(0.2, 0.2));
+        route.geometry = polygonGeometry(full);
+        QVERIFY(!objects.put(route).isEmpty());
+        route.geometry = polygonGeometry(line);
+        route.properties.insert(QStringLiteral("Length"), QStringLiteral("1 km"));
+        QVERIFY(!objects.put(route).isEmpty());
+    }
     void polygons()
     {
         const QPolygonF square{project(0, 0), project(0, 1), project(1, 1), project(1, 0)};

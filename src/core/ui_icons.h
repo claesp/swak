@@ -21,7 +21,9 @@ enum class UiIcon
     Data,
     Confirm,
     Apply,
-    Target
+    Target,
+    Route,
+    RoutePlanning
 };
 QIcon uiIcon(UiIcon icon);
 QIcon collectionIcon(const CollectionSymbol &symbol, const QColor &color);

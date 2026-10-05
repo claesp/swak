@@ -1,11 +1,16 @@
 #include "core/polygon.h"
 
+#include "core/measure.h"
+
 #include <QJsonArray>
+#include <QLineF>
 #include <QObject>
 
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <utility>
+#include <vector>
 namespace swak {
 namespace {
 double cross(QPointF a, QPointF b)
@@ -24,11 +29,10 @@ bool intersects(QPointF a, QPointF b, QPointF c, QPointF d)
     }
     return abC * abD <= 0 && cdA * cdB <= 0;
 }
-} // namespace
-QPolygonF polygonVertices(const QJsonObject &geometry)
+QPolygonF readVertices(const QJsonObject &geometry, int limit)
 {
     const auto array = geometry.value(QStringLiteral("vertices")).toArray();
-    if (array.size() > MaxPolygonVertices) {
+    if (array.size() > limit) {
         return {};
     }
     QPolygonF result;
@@ -38,6 +42,111 @@ QPolygonF polygonVertices(const QJsonObject &geometry)
             return {};
         }
         result.append({point.at(0).toDouble(), point.at(1).toDouble()});
+    }
+    return result;
+}
+} // namespace
+QPolygonF polygonVertices(const QJsonObject &geometry)
+{
+    return readVertices(geometry, MaxPolygonVertices);
+}
+QPolygonF routePoints(const QJsonObject &geometry)
+{
+    return readVertices(geometry, MaxRoutePoints);
+}
+QString validateRoute(const QPolygonF &points)
+{
+    if (points.size() < 2 || points.size() > MaxRoutePoints) {
+        return QObject::tr("Use 2 to %1 route points.").arg(MaxRoutePoints);
+    }
+    for (qsizetype i = 0; i < points.size(); ++i) {
+        const auto point = points.at(i);
+        if (!std::isfinite(point.x()) || !std::isfinite(point.y()) || point.x() < 0 ||
+            point.x() > 1 || point.y() < 0 || point.y() > 1) {
+            return QObject::tr("The route position is outside the map.");
+        }
+        if (i > 0 && points.at(i - 1) == point) {
+            return QObject::tr("Neighboring route points must be distinct.");
+        }
+    }
+    return {};
+}
+QPolygonF unwrappedRoute(const QPolygonF &points)
+{
+    QPolygonF result;
+    for (auto point : points) {
+        if (!result.isEmpty()) {
+            point.rx() += std::round(result.last().x() - point.x());
+        }
+        result.append(point);
+    }
+    return result;
+}
+double routeLength(const QPolygonF &points)
+{
+    const auto line = unwrappedRoute(points);
+    double total = 0;
+    for (qsizetype i = 1; i < line.size(); ++i) {
+        total += groundDistance(line.at(i - 1), line.at(i));
+    }
+    return total;
+}
+QPolygonF simplifiedRoute(const QPolygonF &points, int limit)
+{
+    if (points.size() <= limit || limit < 2) {
+        return points;
+    }
+    const auto line = unwrappedRoute(points);
+    // Douglas-Peucker with a growing tolerance in world units. The loop stops after 64 steps.
+    double tolerance = 1e-9;
+    QPolygonF result = line;
+    for (int step = 0; step < 64 && result.size() > limit; ++step, tolerance *= 2) {
+        std::vector<bool> keep(static_cast<size_t>(line.size()), false);
+        keep.front() = keep.back() = true;
+        std::vector<std::pair<qsizetype, qsizetype>> spans{{0, line.size() - 1}};
+        while (!spans.empty()) {
+            const auto [first, last] = spans.back();
+            spans.pop_back();
+            const QLineF chord(line.at(first), line.at(last));
+            double farthest = -1;
+            qsizetype index = -1;
+            for (qsizetype i = first + 1; i < last; ++i) {
+                const auto point = line.at(i);
+                const auto d = chord.p2() - chord.p1();
+                const double length = QPointF::dotProduct(d, d);
+                const double t =
+                    length > 0
+                        ? std::clamp(QPointF::dotProduct(point - chord.p1(), d) / length, 0.0, 1.0)
+                        : 0;
+                const double distance = QLineF(point, chord.p1() + t * d).length();
+                if (distance > farthest) {
+                    farthest = distance;
+                    index = i;
+                }
+            }
+            if (index > 0 && farthest > tolerance) {
+                keep[static_cast<size_t>(index)] = true;
+                spans.emplace_back(first, index);
+                spans.emplace_back(index, last);
+            }
+        }
+        result.clear();
+        for (qsizetype i = 0; i < line.size(); ++i) {
+            if (keep[static_cast<size_t>(i)]) {
+                result.append(line.at(i));
+            }
+        }
+    }
+    if (result.size() > limit) {
+        // A very dense line can stay above the limit. Keep evenly spaced points.
+        QPolygonF sparse;
+        for (int i = 0; i < limit; ++i) {
+            sparse.append(result.at(i * (result.size() - 1) / (limit - 1)));
+        }
+        result = sparse;
+    }
+    for (auto &point : result) {
+        point.rx() -= std::floor(point.x());
     }
     return result;
 }

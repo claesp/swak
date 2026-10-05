@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "org.swak.polygons",
   "name": "Areas",
-  "description": "Create and edit local areas.",
+  "description": "Create and edit local areas and routes.",
   "version": "0.3.8",
   "apiVersion": 2,
   "entryPoint": "PolygonPlugin",
@@ -14,6 +14,8 @@
   "qtMinimum": "6.4.0",
   "interfaces": [
     "pane",
+    "menu",
+    "toolbar",
     "map-tool"
   ],
   "requires": [],

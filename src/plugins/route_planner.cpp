@@ -5,15 +5,18 @@
 #include "core/maps.h"
 #include "core/measure.h"
 #include "core/modal.h"
+#include "core/polygon.h"
 #include "core/provider_table.h"
 #include "core/routing.h"
 #include "core/settings_dialog.h"
+#include "core/toolbar.h"
 #include "core/ui_icons.h"
 #include "core/user_objects.h"
 
 #include <QCollator>
 #include <QComboBox>
 #include <QDialogButtonBox>
+#include <QDockWidget>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QKeyEvent>
@@ -23,6 +26,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QSignalBlocker>
+#include <QTimer>
 #include <QToolButton>
 #include <QUuid>
 
@@ -40,9 +44,10 @@ public:
     std::function<void(QPointF)> picked;
     bool picking = false;
     QPointer<QWidget> map;
-    QPainterPath path;
-    double width = 3;
+    // The provider attribution stays visible while the last planned route exists.
     QString attribution;
+    QString routeId;
+    QPointer<UserObjects> objects;
     void activate(QWidget &target) override
     {
         picking = true;
@@ -100,19 +105,9 @@ public:
     }
     void paint(QPainter &painter, const Viewport &view) const override
     {
-        if (path.isEmpty()) {
+        if (attribution.isEmpty() || routeId.isEmpty() || !objects || !objects->find(routeId)) {
             return;
         }
-        QTransform transform;
-        transform.translate(view.size.width() / 2, view.size.height() / 2);
-        transform.scale(view.scale(), view.scale());
-        transform.translate(-view.center.x(), -view.center.y());
-        painter.save();
-        painter.setRenderHint(QPainter::Antialiasing);
-        painter.setPen(QPen(QColor("#8b5cf6"), width, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        painter.setBrush(Qt::NoBrush);
-        painter.drawPath(transform.map(path));
-        painter.restore();
         painter.save();
         painter.setPen(Qt::white);
         const QRectF attributionBox(
@@ -134,6 +129,7 @@ public:
           tool_(new RouteTool(this))
     {
         setObjectName(QStringLiteral("routePlanner"));
+        tool_->objects = objects_;
         if (services.mapTools) {
             services.mapTools->add(tool_);
         }
@@ -195,7 +191,8 @@ public:
         calculate->setObjectName(QStringLiteral("calculateRoute"));
         auto *clear = new QPushButton(uiIcon(UiIcon::Clear), tr("Clear ..."), this);
         clear->setObjectName(QStringLiteral("clearRoute"));
-        clear->setToolTip(tr("Clear the route, the start, and the destination."));
+        clear->setToolTip(tr("Clear the start, the destination, and the status. Route markers "
+                             "stay on the map."));
         row->addWidget(calculate);
         row->addWidget(clear);
         layout->addLayout(row);
@@ -209,6 +206,33 @@ public:
         attribution_->setWordWrap(true);
         layout->addWidget(attribution_);
         layout->addStretch();
+        // The window adds this action to the main toolbar and the Plugins menu.
+        auto *show = new QAction(uiIcon(UiIcon::RoutePlanning), tr("Route planning"), this);
+        show->setObjectName(QStringLiteral("routePlanningAction"));
+        show->setToolTip(tr("Route planning"));
+        show->setCheckable(true);
+        setToolbarSection(*show, ToolbarSection::Measurement, 4);
+        connect(show, &QAction::triggered, this, [this](bool visible) {
+            auto *dock = this->dock();
+            if (!dock) {
+                return;
+            }
+            dock->setVisible(visible);
+            if (visible) {
+                dock->raise();
+                mode_->setFocus(Qt::OtherFocusReason);
+            }
+        });
+        // The dock exists after the window places this pane.
+        QTimer::singleShot(0, this, [this, show] {
+            if (auto *dock = this->dock()) {
+                const auto sync = [show, dock] {
+                    show->setChecked(!dock->isHidden());
+                };
+                connect(dock, &QDockWidget::visibilityChanged, show, sync);
+                sync();
+            }
+        });
         connect(calculate, &QPushButton::clicked, this, [this] {
             if (sources_.busy()) {
                 return;
@@ -225,10 +249,8 @@ public:
                 *start, *destination, mode_->currentData().toString(), runningSpeed_);
         });
         connect(clear, &QPushButton::clicked, this, [this] {
-            if (!confirmAction(this,
-                               tr("Clear"),
-                               tr("Clear the route, the start, and the destination?"),
-                               tr("Clear"))) {
+            if (!confirmAction(
+                    this, tr("Clear"), tr("Clear the start and the destination?"), tr("Clear"))) {
                 return;
             }
             tool_->cancel();
@@ -240,25 +262,17 @@ public:
             invalidate();
         });
         connect(&sources_, &RouteSources::completed, this, [this] {
-            tool_->path = {};
             const auto &result = sources_.result();
-            status_->setText(result.error.isEmpty()
-                                 ? tr("%1. Estimated time: %2 minutes. Server limits can affect "
-                                      "shortest-path accuracy.")
-                                       .arg(formatDistance(result.meters))
-                                       .arg(QLocale().toString(result.seconds / 60, 'f', 1))
-                                 : result.error);
-            QPointF previous;
-            for (int i = 0; i < result.coordinates.size(); ++i) {
-                const auto point = project(result.coordinates[i].y(), result.coordinates[i].x());
-                if (i == 0 || std::abs(point.x() - previous.x()) > 0.5) {
-                    tool_->path.moveTo(point);
-                } else {
-                    tool_->path.lineTo(point);
-                }
-                previous = point;
+            if (!result.error.isEmpty()) {
+                status_->setText(result.error);
+                return;
             }
-            emit tool_->changed();
+            const auto summary = tr("%1. Estimated time: %2 minutes. Server limits can affect "
+                                    "shortest-path accuracy.")
+                                     .arg(formatDistance(result.meters))
+                                     .arg(QLocale().toString(result.seconds / 60, 'f', 1));
+            const auto error = addRouteMarker(result);
+            status_->setText(error.isEmpty() ? summary : error);
         });
         connect(&sources_, &RouteSources::changed, this, [this] {
             refreshAttribution();
@@ -293,8 +307,7 @@ public:
         return {{"start", endpointJson(endpoints_[0])},
                 {"destination", endpointJson(endpoints_[1])},
                 {"mode", mode_->currentData().toString()},
-                {"runningSpeed", runningSpeed_},
-                {"lineWidth", tool_->width}};
+                {"runningSpeed", runningSpeed_}};
     }
     void restorePreferences(const QJsonObject &values) override
     {
@@ -329,7 +342,6 @@ public:
         const int mode = mode_->findData(values.value("mode").toString(QStringLiteral("driving")));
         mode_->setCurrentIndex(mode < 0 ? 1 : mode);
         runningSpeed_ = preferenceNumber(values, QStringLiteral("runningSpeed"), 10, 0.5, 25);
-        tool_->width = preferenceNumber(values, QStringLiteral("lineWidth"), 3, 1, 8);
         invalidate();
     }
     QWidget *createSettingsWidget(QWidget *parent) override
@@ -447,14 +459,6 @@ public:
             runningSpeed_ = value;
             invalidate();
         });
-        auto *width = new QDoubleSpinBox(widget);
-        width->setRange(1, 8);
-        width->setValue(tool_->width);
-        form->addRow(tr("Route width (pixels)"), width);
-        connect(width, &QDoubleSpinBox::valueChanged, this, [this](double value) {
-            tool_->width = value;
-            emit tool_->changed();
-        });
         layout->addLayout(form);
         for (auto *label : widget->findChildren<QLabel *>()) {
             if (label->buddy()) {
@@ -466,15 +470,6 @@ public:
     }
 
 private:
-    void invalidate()
-    {
-        sources_.cancel();
-        tool_->path = {};
-        if (status_) {
-            status_->clear();
-        }
-        emit tool_->changed();
-    }
     struct Endpoint
     {
         QComboBox *choice = nullptr;
@@ -482,6 +477,84 @@ private:
         // Longitude and latitude from the last map pick.
         std::optional<QPointF> mapPoint;
     };
+    QDockWidget *dock() const
+    {
+        for (auto *widget = parentWidget(); widget; widget = widget->parentWidget()) {
+            if (auto *found = qobject_cast<QDockWidget *>(widget)) {
+                return found;
+            }
+        }
+        return nullptr;
+    }
+    void invalidate()
+    {
+        sources_.cancel();
+        if (status_) {
+            status_->clear();
+        }
+        emit tool_->changed();
+    }
+    QString endpointName(const Endpoint &endpoint) const
+    {
+        const auto key = endpoint.choice->currentData().toString();
+        if (key.startsWith(QStringLiteral("marker:")) && objects_) {
+            if (const auto marker = objects_->find(key.mid(7))) {
+                return marker->title;
+            }
+        }
+        return tr("map point");
+    }
+    // Stores a planned route as a Route marker. The marker keeps the provider values.
+    QString addRouteMarker(const RouteResult &result)
+    {
+        if (!objects_) {
+            return tr("Route markers are not available in this window.");
+        }
+        QPolygonF points;
+        for (const auto &coordinate : result.coordinates) {
+            if (!std::isfinite(coordinate.x()) || !std::isfinite(coordinate.y()) ||
+                std::abs(coordinate.y()) > 85.051129) {
+                continue;
+            }
+            const auto point = project(coordinate.y(), coordinate.x());
+            if (points.isEmpty() || points.last() != point) {
+                points.append(point);
+            }
+        }
+        points = simplifiedRoute(points);
+        // Simplification can join the last points. Keep neighbors distinct.
+        QPolygonF distinct;
+        for (const auto &point : points) {
+            if (distinct.isEmpty() || distinct.last() != point) {
+                distinct.append(point);
+            }
+        }
+        UserObject item;
+        item.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        item.type = QStringLiteral("route");
+        item.title = tr("Route from %1 to %2")
+                         .arg(endpointName(endpoints_[0]), endpointName(endpoints_[1]))
+                         .left(128);
+        item.color = QStringLiteral("#8b5cf6");
+        item.geometry = polygonGeometry(distinct);
+        item.description = attribution_->text().left(2048);
+        item.properties.insert(tr("Travel mode"), mode_->currentText());
+        item.properties.insert(tr("Provider distance"), formatDistance(result.meters));
+        item.properties.insert(
+            tr("Estimated time"),
+            tr("%1 minutes").arg(QLocale().toString(result.seconds / 60, 'f', 1)));
+        const auto provider =
+            sources_.sources().value(sources_.activeId()).toObject().value("name").toString();
+        if (!provider.isEmpty()) {
+            item.properties.insert(tr("Route provider"), provider.left(256));
+        }
+        const auto error = objects_->put(item);
+        if (error.isEmpty()) {
+            tool_->routeId = item.id;
+            emit tool_->changed();
+        }
+        return error;
+    }
     static bool validCoordinate(double longitude, double latitude)
     {
         return std::isfinite(longitude) && std::isfinite(latitude) && std::abs(longitude) <= 180 &&
@@ -595,6 +668,10 @@ public:
     QString name() const override
     {
         return tr("Route planning");
+    }
+    QAction *primaryAction(QWidget *pane) override
+    {
+        return pane->findChild<QAction *>(QStringLiteral("routePlanningAction"));
     }
     QWidget *create(PluginServices &services, QWidget *parent) override
     {

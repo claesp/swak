@@ -469,6 +469,23 @@ private slots:
             5000));
         QVERIFY(routes->result().error.isEmpty());
         QCOMPARE(routes->result().coordinates.size(), 3);
+        // The planner stores the result as a Route marker.
+        std::optional<swak::UserObject> planned;
+        for (const auto &item : objects->items()) {
+            if (item.type == QStringLiteral("route")) {
+                planned = item;
+            }
+        }
+        QVERIFY(planned);
+        QCOMPARE(planned->title, QStringLiteral("Route from map point to Depot"));
+        QCOMPARE(swak::routePoints(planned->geometry).size(), 3);
+        QCOMPARE(planned->properties.value(QStringLiteral("Travel mode")).toString(),
+                 QStringLiteral("Driving"));
+        QCOMPARE(planned->properties.value(QStringLiteral("Route provider")).toString(),
+                 QStringLiteral("Local routing test"));
+        QVERIFY(
+            !planned->properties.value(QStringLiteral("Provider distance")).toString().isEmpty());
+        QVERIFY(status->text().contains(QStringLiteral("Estimated time")));
         QImage rendered;
         QVERIFY(QTest::qWaitFor(
             [&] {
@@ -4128,8 +4145,10 @@ private slots:
         QCOMPARE(actions.at(index + 1)->objectName(), QStringLiteral("polygonModeAction"));
         QCOMPARE(actions.at(index + 2)->objectName(), QStringLiteral("shapeMode0"));
         QCOMPARE(actions.at(index + 3)->objectName(), QStringLiteral("shapeMode2"));
-        QVERIFY(actions.at(index + 4)->isSeparator());
-        QCOMPARE(actions.at(index + 5)->objectName(), QStringLiteral("shapeMode1"));
+        QCOMPARE(actions.at(index + 4)->objectName(), QStringLiteral("routeModeAction"));
+        QVERIFY(actions.at(index + 5)->isSeparator());
+        QCOMPARE(actions.at(index + 6)->objectName(), QStringLiteral("shapeMode1"));
+        QCOMPARE(actions.at(index + 7)->objectName(), QStringLiteral("routePlanningAction"));
         const auto bounds =
             swak::mapLabelBounds(map->fontMetrics(), point + QPointF(16, -8), marker.title);
         const auto before = map->grabFramebuffer();
@@ -4663,6 +4682,118 @@ private slots:
         markerEditor->edit(marker);
         QVERIFY(
             markerEditor->findChild<QCheckBox *>(QStringLiteral("objectRestricted"))->isHidden());
+    }
+    void routeMarkerWorkflow()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("routes.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        window.activateWindow();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *map = window.findChild<QOpenGLWidget *>();
+        auto *editor = window.findChild<swak::ObjectEditor *>(QStringLiteral("routeEditor"));
+        auto *tools = window.findChild<swak::MapTools *>();
+        auto *objects = window.findChild<swak::UserObjects *>();
+        auto *selection = window.findChild<swak::MapSelection *>();
+        auto *action = window.findChild<QAction *>(QStringLiteral("routeModeAction"));
+        QVERIFY(map && editor && tools && objects && selection && action);
+        QVERIFY(!action->icon().isNull());
+        for (auto *pane : window.findChildren<QDockWidget *>()) {
+            pane->hide();
+        }
+        const auto click = [&](QPoint point) {
+            QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, point);
+        };
+        action->trigger();
+        QVERIFY(action->isChecked());
+        QCOMPARE(map->cursor().shape(), Qt::CrossCursor);
+        QTest::keyClick(map, Qt::Key_Escape);
+        QVERIFY(!action->isChecked());
+        QTest::keyClick(map, Qt::Key_R, Qt::ShiftModifier);
+        QVERIFY(action->isChecked());
+        const QPoint a(100, 200), b(250, 120), c(400, 220);
+        click(a);
+        // One point is not a route. Enter waits for a second point.
+        QTest::keyClick(map, Qt::Key_Return);
+        QVERIFY(!editor->draft());
+        click(b);
+        click(c);
+        QTest::keyClick(map, Qt::Key_Return);
+        QVERIFY(editor->draft());
+        QVERIFY(editor->isVisible());
+        QCOMPARE(swak::routePoints(editor->draft()->geometry).size(), 3);
+        QCOMPARE(editor->findChild<QComboBox *>(QStringLiteral("objectType"))->currentText(),
+                 QStringLiteral("Route"));
+        auto *title = editor->findChild<QLineEdit *>(QStringLiteral("objectTitle"));
+        QCOMPARE(title->placeholderText(), QStringLiteral("New Route"));
+        title->setText(QStringLiteral("Patrol route"));
+        QTest::keyClick(title, Qt::Key_Return);
+        QCOMPARE(objects->items().size(), 1);
+        const auto id = objects->items().firstKey();
+        QCOMPARE(objects->find(id)->type, QStringLiteral("route"));
+        QVERIFY(QTest::qWaitFor([&] {
+            return map->isValid();
+        }));
+        click((a + b) / 2);
+        QVERIFY(selection->item());
+        QCOMPARE(selection->item()->id, id);
+        QCOMPARE(selection->item()->type, QStringLiteral("Route"));
+        const auto length =
+            selection->item()->properties.value(QStringLiteral("Length")).toString();
+        QVERIFY(!length.isEmpty());
+        QCOMPARE(selection->item()->properties.value(QStringLiteral("Points")).toString(),
+                 QStringLiteral("3"));
+        QStringList names;
+        QTimer::singleShot(0, map, [&names] {
+            auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget());
+            QVERIFY(menu);
+            for (auto *entry : menu->actions()) {
+                names.append(entry->objectName());
+            }
+            menu->close();
+        });
+        const QPoint middle = (b + c) / 2;
+        QContextMenuEvent context(QContextMenuEvent::Mouse, middle, map->mapToGlobal(middle));
+        QApplication::sendEvent(map, &context);
+        for (const auto &name : {QStringLiteral("editRoute"),
+                                 QStringLiteral("moveRoute"),
+                                 QStringLiteral("deleteRoute")}) {
+            QVERIFY2(names.contains(name), qPrintable(names.join(',')));
+        }
+        // Move the route by 40 pixels to the right.
+        const auto before = swak::routePoints(objects->find(id)->geometry);
+        QTimer::singleShot(0, map, [] {
+            auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget());
+            QVERIFY(menu);
+            for (auto *entry : menu->actions()) {
+                if (entry->objectName() == QStringLiteral("moveRoute")) {
+                    entry->trigger();
+                }
+            }
+            menu->close();
+        });
+        QApplication::sendEvent(map, &context);
+        QCOMPARE(map->cursor().shape(), Qt::CrossCursor);
+        click(middle + QPoint(40, 0));
+        const auto after = swak::routePoints(objects->find(id)->geometry);
+        QCOMPARE(after.size(), before.size());
+        QVERIFY(after.first().x() > before.first().x());
+        QVERIFY(std::abs(after.first().y() - before.first().y()) < 1e-9);
+        QVERIFY(map->grabFramebuffer().save(QStringLiteral("route-marker.png")));
+        auto *planning = window.findChild<QAction *>(QStringLiteral("routePlanningAction"));
+        auto *routeDock =
+            window.findChild<QDockWidget *>(QStringLiteral("org.swak.route-planner.pane"));
+        QVERIFY(planning && routeDock);
+        QVERIFY(!planning->isChecked());
+        planning->trigger();
+        QVERIFY(QTest::qWaitFor([&] {
+            return routeDock->isVisible() && planning->isChecked();
+        }));
+        planning->trigger();
+        QVERIFY(QTest::qWaitFor([&] {
+            return !routeDock->isVisible() && !planning->isChecked();
+        }));
     }
     void polygonWorkflow()
     {
@@ -6177,7 +6308,7 @@ private slots:
                 auto *tabs = dialog->findChild<QTabWidget *>();
                 auto *panes =
                     dialog->findChild<QListWidget *>(QStringLiteral("paneSettingsSections"));
-                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 13) {
+                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 14) {
                     dialog->reject();
                     QFAIL("The pane tab is incomplete.");
                     return;
@@ -7463,7 +7594,7 @@ private slots:
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         const auto docks = window.findChildren<QDockWidget *>();
-        QCOMPARE(docks.size(), 13);
+        QCOMPARE(docks.size(), 14);
         QVERIFY(!window.findChild<QWidget *>(QStringLiteral("toolsDock")));
         auto *viewMenu = window.findChild<QMenu *>(QStringLiteral("viewMenu"));
         auto *fileMenu = window.findChild<QMenu *>(QStringLiteral("fileMenu"));

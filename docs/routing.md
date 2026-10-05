@@ -1,13 +1,19 @@
 # Route planning
 
-Open Tools > Plugins > Route planning. The pane opens on the right side of the window by default. Do these steps to find a route:
+Select Route planning on the main toolbar, or open Tools > Plugins > Route planning. The pane opens on the right side of the window by default. The toolbar button also hides the pane. Do these steps to find a route:
 
 1. Choose the travel mode in the list at the top of the pane.
 2. In Start, choose a marker from the list. Or select the target button next to the list, then click the map. The map shows a cross hair until you click.
 3. Set Destination the same way.
 4. Select Calculate.
 
-A map point appears in the list as Map point with its latitude and longitude. Escape cancels point placement. Clear ... asks for confirmation. Then it stops the request and removes the route, the start, and the destination.
+A map point appears in the list as Map point with its latitude and longitude. Escape cancels point placement.
+
+Each result becomes a Route marker named after the start and the destination. The marker keeps the travel mode, the provider distance, the estimated time, and the provider name as properties. Its description holds the provider attribution. The map shows that attribution while the latest planned route exists. Edit, move, or delete the route like other routes. Read Create and edit routes in [the user manual](usage.md).
+
+A route marker holds at most 250 points. SWAK simplifies longer provider geometry and keeps the first and last points. The marker Length then measures the simplified line. Provider distance keeps the value from the server.
+
+Clear ... asks for confirmation. Then it stops the request and clears the start, the destination, and the status. Route markers stay on the map.
 
 File > Settings > Route providers selects the active provider. The pane has no provider list.
 

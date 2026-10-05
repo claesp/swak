@@ -17,8 +17,10 @@ namespace swak {
 namespace {
 qsizetype bytes(const UserObject &item)
 {
-    return QJsonDocument(item.json()).toJson(QJsonDocument::Indented).size();
+    return QJsonDocument(item.json()).toJson(QJsonDocument::Compact).size();
 }
+// One route with the full point limit fits in one object.
+constexpr qsizetype MaxObjectBytes = 16 * 1024;
 constexpr qsizetype MaxBytes = 128 * 1024;
 constexpr int MaxObjects = 256;
 bool boundedGeometry(const QJsonValue &value, int depth = 0)
@@ -170,7 +172,8 @@ QString UserObjects::validate(const UserObject &item)
         item.properties.contains(QStringLiteral("Longitude"))) {
         return tr("ID, Latitude, and Longitude are reserved property names.");
     }
-    if (item.geometry.isEmpty() || !boundedGeometry(item.geometry) || bytes(item) > 8192) {
+    if (item.geometry.isEmpty() || !boundedGeometry(item.geometry) ||
+        bytes(item) > MaxObjectBytes) {
         return tr("The object exceeds the storage limit.");
     }
     if (item.type == QStringLiteral("circle")) {
@@ -188,6 +191,12 @@ QString UserObjects::validate(const UserObject &item)
             return tr("Area and Distance are reserved shape properties.");
         }
         return validateTwoPointShape(item.type, item.geometry);
+    }
+    if (item.type == QStringLiteral("route")) {
+        if (item.properties.contains(QStringLiteral("Length"))) {
+            return tr("Length is a reserved route property.");
+        }
+        return validateRoute(routePoints(item.geometry));
     }
     if (item.type == QStringLiteral("polygon")) {
         if (item.properties.contains(QStringLiteral("Area"))) {

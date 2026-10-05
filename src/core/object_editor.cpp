@@ -224,6 +224,7 @@ void ObjectEditor::edit(const UserObject &item)
     title_->setPlaceholderText(marker                                        ? tr("New Marker")
                                : item.type == QStringLiteral("line")         ? tr("New Line")
                                : item.type == QStringLiteral("range-circle") ? tr("New Circle")
+                               : item.type == QStringLiteral("route")        ? tr("New Route")
                                                                              : tr("New Area"));
     if (marker) {
         refreshCollections(effectiveMarkerCollection(item.collection, item.symbol));
@@ -233,6 +234,7 @@ void ObjectEditor::edit(const UserObject &item)
         type_->clear();
         type_->addItem(item.type == QStringLiteral("line")           ? tr("Line")
                        : item.type == QStringLiteral("range-circle") ? tr("Circle")
+                       : item.type == QStringLiteral("route")        ? tr("Route")
                                                                      : tr("Area"),
                        item.type);
     }
@@ -496,6 +498,7 @@ void ObjectEditor::apply()
         item.title = item.type == QStringLiteral("polygon")        ? tr("New Area")
                      : item.type == QStringLiteral("line")         ? tr("New Line")
                      : item.type == QStringLiteral("range-circle") ? tr("New Circle")
+                     : item.type == QStringLiteral("route")        ? tr("New Route")
                                                                    : tr("New Marker");
     }
     if (item.type == QStringLiteral("circle")) {

@@ -289,6 +289,16 @@ A toggles Area mode. M switches to marker creation. A tool switch discards an un
 
 Information formats area with the system locale and measurement system. Metric locales use m² below 1000 m² and km² from that threshold. Imperial locales use ft², acres, and mi² as the area increases. Area uses a spherical Earth radius of 6371008.8 meters and integrates along the straight map edges. It is an estimate, not an ellipsoidal survey measurement. The shape follows the displayed world and does not wrap across the date line.
 
+# Create and edit routes
+
+A route is a line with several points, such as a patrol path. Press Shift+R while the map has focus, or select Route on the toolbar. The Route button is next to Line. Click the map to place each point. Each click adds a new segment from the previous point. The preview shows the length of each segment and the total length.
+
+Press Enter to finish the route. A route needs at least two points and can have at most 250. The Edit route pane then opens. Enter the title, description, color, and properties, and select Apply. Escape cancels an unfinished route.
+
+Right-click a route for the same commands as other markers: Edit, Move, Delete ..., and the shared tools such as Information. Move follows the pointer until you click the new position. In Edit, double-click a point to move it, or right-click a point to move or delete it. The map shows the route title and its total length. Information shows Length and the number of points.
+
+File > Settings > Keybindings contains the route shortcut. The Routes section controls point size, line width, and guide opacity. Route planning stores its results as routes. Read [Route planning](routing.md).
+
 # Select overlapping objects
 
 When objects overlap, click their shared area to open the object chooser. Select the required object from the list. Each row shows its label and icon. Tooltips provide type and source details. Use More objects to reach another page. Press Escape to cancel without changing selection.
@@ -298,7 +308,7 @@ For object commands, right-click the overlap and choose an object first. Its con
 
 The main toolbar uses icons and separators. Hover over a button to read its command and shortcut. Marker and Area buttons show their active state. Click an active mode button again to stop it. The globe button opens the map provider list. Its tooltip names the current provider. Clear CoT Messages remains in its plugin menu.
 
-Older profiles migrate default arrow pan keys to W/A/S/D. Area, Circle, Line, and Distance use Shift+A, Shift+C, Shift+L, and Shift+D. Older default tool keys migrate to these combinations. Other custom keys remain unchanged.
+Older profiles migrate default arrow pan keys to W/A/S/D. Area, Circle, Line, Distance, and Route use Shift+A, Shift+C, Shift+L, Shift+D, and Shift+R. Older default tool keys migrate to these combinations. Other custom keys remain unchanged.
 
 Area, Circle, Line, and Distance accept letters with optional Shift. File > Settings > Keybindings can change these assignments. Saved geometry still uses the polygon type internally.
 
@@ -371,7 +381,7 @@ Apply or OK saves the value. A new dialog starts with UID locked. Cancel discard
 
 Space freezes both displayed CoT positions and traces. Incoming messages and bounded trace history continue updating internally. Resume shows the latest positions and trace history immediately.
 
-The main toolbar groups Marker, Area, Circle, and Line in one creation section. A separator places Distance in its own measurement section.
+The main toolbar groups Marker, Area, Circle, Line, and Route in one creation section. A separator places Distance and Route planning in the measurement section.
 
 
 # Menus and provider controls

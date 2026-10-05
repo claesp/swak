@@ -69,7 +69,7 @@ Plugins without commands use a direct checkbox action unless they supply a prima
 | `src/plugins/predict` | Predict | Menu and map tool |
 | `src/plugins/shapes` | Circles and Lines | Pane, menu, toolbar, and map tool |
 | `src/plugins/markers` | Markers | Pane, map tool, and Core collection |
-| `src/plugins/polygons` | Areas | Pane and map tool |
+| `src/plugins/polygons` | Areas and routes | Pane, menu, toolbar, and map tool |
 | `src/plugins/milstd2525` | MILSTD2525 | Marker collection |
 | `src/plugins/mvt` | MVT vector tiles | Map provider and vector tiles |
 | `src/plugins/gdal_raster` | GDAL raster maps | Map provider and raster tiles |
@@ -299,6 +299,8 @@ ObjectEditor supports circle and polygon metadata. Polygon editing hides marker 
 
 Polygon objects use type polygon and geometry.vertices, an array of normalized [x, y] pairs. The closing corner is implicit. The shared model accepts 3 to 64 distinct corners and rejects crossing edges, overlapping edges, and zero area. The existing object and profile budgets still apply. Unknown plugin records remain in the shared store.
 
+The polygons plugin also creates `route` objects through a second editor pane, `org.swak.routes.pane`. A route stores two to 250 points in the same `vertices` geometry as a polygon. `Length` is a reserved route property. UserObjects measures each object as compact JSON, with a limit of 16 KiB for each object and 128 KiB in total.
+
 MapItem::outlineStyle controls the selected polygon outline. Imported areas retain dashed outlines by default. Local polygons request a solid white outline. Polygon tools require no new external dependency.
 
 ## Overlapping map objects
@@ -502,4 +504,4 @@ RouteProvider/1.0 supplies routeId, routeName, presets, request, and decode. Its
 
 The host supplies RouteSources through PluginServices::routes. RouteSources owns provider configuration, bounded HTTPS requests, cancellation, and result notification. It retains unavailable provider entries.
 
-The Route planning plugin uses PanePlugin and MapExtension with the tool role. Its MapTool handles endpoint picking and route painting. Its SettingsWidgetProvider exposes provider management through the shared Settings host. Valhalla supplies the first route-provider format. Read routing.md for protocol bounds and routing limits.
+The Route planning plugin uses PanePlugin and MapExtension with the tool role. Its MapTool handles endpoint picking and draws the provider attribution. Its primaryAction is the Route planning toolbar button, which shows or hides the pane. Results become `route` objects in UserObjects, which the polygons plugin draws and edits. Its SettingsWidgetProvider exposes provider management through the shared Settings host. Valhalla supplies the first route-provider format. Read routing.md for protocol bounds and routing limits.
