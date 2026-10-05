@@ -1443,3 +1443,15 @@ src/core/interfaces.h now documents the owner and lifetime of each PluginService
 # 2026-10-05: Map background wording
 
 docs/usage.md said "No map provider clears the selection." A reader could take No map provider as a statement instead of a command name. The text now tells the user to select No map provider in the map toolbar dropdown. That command calls MapSources::select with an empty identifier, which clears the active provider and disables map network access.
+
+# 2026-10-05: Two-hour soak diagnosis
+
+The first two-hour soak stopped at 300 seconds. Qt Test stops a test function after 300 seconds by default. The runner now sets QTEST_FUNCTION_TIMEOUT above its external limit.
+
+The second run failed after 51 minutes in build/quality/20261005-130649-soak-180028. Resident memory grew by 64 MiB after warmup. LeakSanitizer reported no leak. Three 30-second memory samples identified the cause:
+
+- The debug build without sanitizers grew 0.8 MB over 15 minutes and 18053 cycles. It was flat after warmup.
+- The sanitizer build with the runner options grew 54 MB over 15 minutes. The rate fell in each five-minute period: 38 MB, 10 MB, then 6 MB.
+- The sanitizer build with malloc_context_size=0 grew 0.6 MB over five minutes.
+
+AddressSanitizer keeps each unique allocation stack. The random parser mutations reach new stacks for hours. The application memory stays flat. The soak mode now sets malloc_context_size=0. It still detects memory faults and leaks, but reports omit allocation stacks. Quick, GUI, and coverage modes keep full stacks.

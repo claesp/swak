@@ -45,7 +45,7 @@ The workload fills the event store to its limit, then exercises bounded parsing 
 - The event loop responds within two seconds.
 - The idle process consumes less than half of one CPU core over one second.
 
-Resident memory means memory currently held in RAM. Allocator caches and sanitizer overhead affect this measurement. The threshold detects large growth, while LeakSanitizer detects unreleased allocations at exit. A smaller leak can pass a short run. Logs record cycles, peak growth, heartbeat delay, and idle CPU time. Compare reports on the same host before you change thresholds.
+AddressSanitizer keeps each unique allocation stack and never frees that record. The random parser input reaches new stacks for hours. During a two-hour run, this record passed the 64 MiB limit after 51 minutes. The soak mode therefore sets malloc_context_size=0. It still detects the same memory faults and leaks, but its reports omit allocation stacks. Repeat the failing work in a quick run to get those stacks. Resident memory means memory currently held in RAM. Allocator caches and sanitizer overhead affect this measurement. The threshold detects large growth, while LeakSanitizer detects unreleased allocations at exit. A smaller leak can pass a short run. Logs record cycles, peak growth, heartbeat delay, and idle CPU time. Compare reports on the same host before you change thresholds.
 
 The default workload does not render the map. Add `--gui` to run the workload with the actual application window and GPU map under Xvfb. This mode also preserves leak failures from the graphics driver. Exercise the actual desktop for hours with representative traffic before release. Hardware graphics, Wayland, screen changes, and driver behavior require that desktop run.
 

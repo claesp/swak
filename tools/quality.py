@@ -101,6 +101,16 @@ def coverage_report(build, report, env):
     (report / "coverage.md").write_text("\n".join(lines))
 
 
+def asan_options(mode):
+    """Return AddressSanitizer options for a diagnostic mode."""
+    options = "detect_leaks=1:halt_on_error=1:detect_stack_use_after_return=1:quarantine_size_mb=16"
+    # AddressSanitizer keeps each unique allocation stack and never frees it. Random input
+    # reaches new stacks for hours, so resident memory grows without an application fault.
+    # Soak runs measure application memory. They still detect faults, but reports omit the
+    # allocation stack. Repeat a short quick run to get that stack.
+    return options + (":malloc_context_size=0" if mode == "soak" else "")
+
+
 def soak_limits(seconds):
     """Return the external limit in seconds and the Qt Test limit in milliseconds."""
     external = seconds + 60
@@ -154,9 +164,7 @@ def main():
     print(f"Reports: {report}", flush=True)
     env = os.environ.copy()
     env["QT_QPA_PLATFORM"] = "offscreen"
-    env["ASAN_OPTIONS"] = (
-        "detect_leaks=1:halt_on_error=1:detect_stack_use_after_return=1:quarantine_size_mb=16"
-    )
+    env["ASAN_OPTIONS"] = asan_options(args.mode)
     env["UBSAN_OPTIONS"] = "halt_on_error=1:print_stacktrace=1"
     env["LSAN_OPTIONS"] = "exitcode=23"
     env["SWAK_SOAK_SECONDS"] = str(args.seconds if args.mode == "soak" else 5)

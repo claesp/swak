@@ -35,6 +35,14 @@ class RunnerTest(unittest.TestCase):
             self.assertLess(time.monotonic() - start, 5)
             self.assertIn("time limit", log.read_text())
 
+    def test_soak_omits_allocation_stacks(self):
+        for mode in ("quick", "gui", "coverage", "analyze"):
+            self.assertNotIn("malloc_context_size", quality.asan_options(mode))
+        soak = quality.asan_options("soak")
+        self.assertIn("malloc_context_size=0", soak)
+        self.assertIn("detect_leaks=1", soak)
+        self.assertIn("halt_on_error=1", soak)
+
     def test_soak_limits_exceed_qt_default(self):
         for seconds in (1, 7200, 86400):
             external, qt_limit = quality.soak_limits(seconds)
