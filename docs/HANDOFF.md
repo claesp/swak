@@ -1415,7 +1415,6 @@ Source analysis passes in build/quality/20261005-120437-analyze-162936. Quick sa
 Open items from the review:
 
 - GridTypes::validate builds a regular expression on each frame.
-- No test checks the escaped tooltips in the map and data provider tables.
 - PluginServices does not document the lifetime of its service pointers.
 - docs/usage.md says "No map provider clears the selection." The sentence has two possible meanings.
 
@@ -1430,3 +1429,7 @@ The native test modalParentDestroyed deletes the parent during a dialog, a menu,
 Source analysis passes in build/quality/20261005-122845-analyze-172292 with a narrow suppression. Cppcheck cannot see that a QPointer becomes null during a nested loop. Quick sanitizer diagnostics pass in build/quality/20261005-122030-quick-167793. The native sanitizer suite passes 103 cases in build/quality/20261005-122856-gui-172359.
 
 The sanitizer build delivered the Escape paint in markerPointerLatency after 80 ms. The test now waits until paints stop, then expects no further paint. The same failure occurred on the previous commit, so the Modal change did not cause it.
+
+# 2026-10-05: Provider tooltip test
+
+The native test providerEndpointToolTips restores a map entry and a data entry with markup in the endpoint. Both entries have an absent format, so validation does not remove them. The test checks that each table tooltip contains the escaped text and not the raw markup. The test fails when plainToolTip returns the raw text. The native sanitizer suite passes 104 cases in build/quality/20261005-123426-gui-173826.

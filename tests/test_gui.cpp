@@ -4879,6 +4879,39 @@ private slots:
         QTest::keyClick(map, Qt::Key_M);
         QVERIFY(tools->statusText().isEmpty());
     }
+    void providerEndpointToolTips()
+    {
+        // Restored profiles keep entries that fail validation. Their endpoints stay plain text.
+        const auto markup = QStringLiteral("<img src='file:///private' />");
+        const QJsonObject values{
+            {QStringLiteral("sources"),
+             QJsonObject{{QStringLiteral("raw"),
+                          QJsonObject{{QStringLiteral("name"), QStringLiteral("Raw")},
+                                      {QStringLiteral("format"), QStringLiteral("absent")},
+                                      {QStringLiteral("endpoint"), markup}}}}}};
+        const auto check = [&](QWidget &manager, const QString &table) {
+            auto *list = manager.findChild<QTableWidget *>(table);
+            QVERIFY(list);
+            QCOMPARE(list->rowCount(), 1);
+            const auto tip = list->item(0, 1)->toolTip();
+            QVERIFY(Qt::mightBeRichText(tip));
+            QVERIFY(tip.contains(markup.toHtmlEscaped()));
+            QVERIFY(!tip.contains(markup));
+        };
+        swak::MapSources maps({});
+        maps.restorePreferences(values);
+        QCOMPARE(maps.sources().value(QStringLiteral("raw")).toObject().value("endpoint"), markup);
+        swak::MapManager mapManager(maps);
+        check(mapManager, QStringLiteral("mapProviderList"));
+        if (QTest::currentTestFailed()) {
+            return;
+        }
+        swak::DataSources feeds({});
+        feeds.restorePreferences(values);
+        QCOMPARE(feeds.sources().value(QStringLiteral("raw")).toObject().value("endpoint"), markup);
+        swak::DataManager dataManager(feeds);
+        check(dataManager, QStringLiteral("dataProviderList"));
+    }
     void mapCredentialDialog()
     {
         swak::MapSources maps(QPluginLoader::staticInstances());
