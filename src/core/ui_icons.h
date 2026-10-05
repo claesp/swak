@@ -20,7 +20,8 @@ enum class UiIcon
     Server,
     Data,
     Confirm,
-    Apply
+    Apply,
+    Target
 };
 QIcon uiIcon(UiIcon icon);
 QIcon collectionIcon(const CollectionSymbol &symbol, const QColor &color);

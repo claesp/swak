@@ -1,10 +1,19 @@
 # Route planning
 
-Open Tools > Plugins > Route planning. Choose a provider and travel mode. Select Pick start, then click the map. Select Pick end, then click the map. You can also enter coordinates directly. Select Calculate to request a route. Cancel / clear stops the request and removes the preview. Escape cancels point placement.
+Open Tools > Plugins > Route planning. The pane opens on the right side of the window by default. Do these steps to find a route:
+
+1. Choose the travel mode in the list at the top of the pane.
+2. In Start, choose a marker from the list. Or select the target button next to the list, then click the map. The map shows a cross hair until you click.
+3. Set Destination the same way.
+4. Select Calculate.
+
+A map point appears in the list as Map point with its latitude and longitude. Escape cancels point placement. Clear ... asks for confirmation. Then it stops the request and removes the route, the start, and the destination.
+
+File > Settings > Route providers selects the active provider. The pane has no provider list.
 
 The first version supports driving, walking, running, and cycling. Running uses pedestrian access rules and the configured running speed. The preview shows distance and estimated time. The route stays until you clear it, change its inputs, or close the application. Endpoints and configuration survive restart. This version does not save routes as editable map objects.
 
-Route providers uses the same table and Add, Edit, Delete ... workflow as the other provider managers. Radio buttons select one active provider. New entries start with an empty name and URL. File > Settings > Route providers opens the same controls. Width and running speed apply immediately.
+File > Settings > Route providers uses the same table and Add, Edit, Delete ... workflow as the other provider managers. Radio buttons select one active provider. New entries start with an empty name and URL. Width and running speed apply immediately.
 
 Calculate sends the two coordinates to the selected server. The bundled FOSSGIS demo entry has fair-use limits and no application availability guarantee. No request runs at startup, during panning, or after a configuration change. Use a private server for regular work. The client checks HTTPS certificates. It allows plain HTTP only for literal loopback addresses, such as 127.0.0.1.
 

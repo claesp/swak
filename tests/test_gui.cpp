@@ -368,22 +368,66 @@ private slots:
         window.store().clear();
         QVERIFY(!selection->item());
         QCOMPARE(table->model()->rowCount(), 0);
-        auto *pick = window.findChild<QPushButton *>(QStringLiteral("routePickStart"));
-        QVERIFY(pick);
+        auto *routePane = window.findChild<QWidget *>(QStringLiteral("routePlanner"));
+        auto *routeDock =
+            window.findChild<QDockWidget *>(QStringLiteral("org.swak.route-planner.pane"));
+        QVERIFY(routePane && routeDock);
+        QCOMPARE(window.dockWidgetArea(routeDock), Qt::RightDockWidgetArea);
+        auto *routeSettings = dynamic_cast<swak::SettingsParticipant *>(routePane);
+        QVERIFY(routeSettings);
+        // The pane has no provider choice. Settings selects the provider.
+        QVERIFY(!routePane->findChild<QComboBox *>(QStringLiteral("routeProviderChoice")));
+        QVERIFY(!routePane->findChild<QDoubleSpinBox *>());
+        auto *startChoice = routePane->findChild<QComboBox *>(QStringLiteral("routeStart"));
+        auto *destinationChoice =
+            routePane->findChild<QComboBox *>(QStringLiteral("routeDestination"));
+        auto *pick = routePane->findChild<QToolButton *>(QStringLiteral("routeStartPick"));
+        QVERIFY(startChoice && destinationChoice && pick &&
+                routePane->findChild<QToolButton *>(QStringLiteral("routeDestinationPick")));
+        auto *modeChoice = routePane->findChild<QComboBox *>(QStringLiteral("routeMode"));
+        QVERIFY(modeChoice);
+        // The travel mode is the first control in the pane.
+        QCOMPARE(qobject_cast<QVBoxLayout *>(routePane->layout())->itemAt(0)->widget(),
+                 static_cast<QWidget *>(modeChoice));
+        auto *objects = window.findChild<swak::UserObjects *>();
+        QVERIFY(objects);
+        swak::UserObject depot;
+        depot.id = QStringLiteral("route-depot");
+        depot.type = QStringLiteral("circle");
+        depot.title = QStringLiteral("Depot");
+        const auto depotPoint = swak::project(20.1, 20.5);
+        depot.geometry = {{QStringLiteral("x"), depotPoint.x()},
+                          {QStringLiteral("y"), depotPoint.y()}};
+        QVERIFY(objects->put(depot).isEmpty());
+        const int depotIndex = destinationChoice->findData(QStringLiteral("marker:route-depot"));
+        QVERIFY(depotIndex > 0);
+        QCOMPARE(destinationChoice->itemText(depotIndex), QStringLiteral("Depot"));
         for (auto *pane : window.findChildren<QDockWidget *>()) {
             pane->hide();
         }
         pick->click();
         QVERIFY(tools->guidesActive());
+        QCOMPARE(map->cursor().shape(), Qt::CrossCursor);
         QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
         QVERIFY(!tools->guidesActive());
-        const auto latitude =
-            window.findChild<QDoubleSpinBox *>(QStringLiteral("routeCoordinate0"))->value();
+        QVERIFY(map->cursor().shape() != Qt::CrossCursor);
+        QCOMPARE(startChoice->currentData().toString(), QStringLiteral("map"));
+        const auto latitude = routeSettings->savePreferences()
+                                  .value(QStringLiteral("start"))
+                                  .toObject()
+                                  .value(QStringLiteral("latitude"))
+                                  .toDouble();
         const swak::Viewport pickedView{map->size(), center, 6};
         QVERIFY(std::abs(latitude - pickedView.coordinate(map->rect().center()).y()) < 0.000002);
         pick->click();
         QTest::keyClick(map, Qt::Key_Escape);
         QVERIFY(!tools->guidesActive());
+        QVERIFY(map->cursor().shape() != Qt::CrossCursor);
+        auto *status = routePane->findChild<QLabel *>(QStringLiteral("routeStatus"));
+        QVERIFY(status);
+        destinationChoice->setCurrentIndex(0);
+        routePane->findChild<QPushButton *>(QStringLiteral("calculateRoute"))->click();
+        QVERIFY(status->text().contains(QStringLiteral("destination")));
         auto *routes = window.findChild<swak::RouteSources *>();
         QVERIFY(routes && !routes->busy());
         QTcpServer server;
@@ -410,11 +454,12 @@ private slots:
                            {"attribution", "Test route"}})
                     .isEmpty());
         routes->select("local");
-        const std::array<double, 4> coordinates{20, 19.5, 20.1, 20.5};
-        for (int i = 0; i < 4; ++i) {
-            window.findChild<QDoubleSpinBox *>(QStringLiteral("routeCoordinate%1").arg(i))
-                ->setValue(coordinates[static_cast<size_t>(i)]);
-        }
+        routeSettings->restorePreferences(
+            {{QStringLiteral("start"),
+              QJsonObject{{QStringLiteral("longitude"), 19.5}, {QStringLiteral("latitude"), 20}}},
+             {QStringLiteral("destination"),
+              QJsonObject{{QStringLiteral("marker"), QStringLiteral("route-depot")}}}});
+        QCOMPARE(destinationChoice->currentText(), QStringLiteral("Depot"));
         QSignalSpy finished(routes, &swak::RouteSources::completed);
         window.findChild<QPushButton *>(QStringLiteral("calculateRoute"))->click();
         QVERIFY(QTest::qWaitFor(
@@ -442,13 +487,23 @@ private slots:
             },
             5000));
         QVERIFY(rendered.save(QStringLiteral("route-preview.png")));
-        auto *routePane = window.findChild<QWidget *>(QStringLiteral("routePlanner"));
-        auto *routeDock =
-            window.findChild<QDockWidget *>(QStringLiteral("org.swak.route-planner.pane"));
-        QVERIFY(routePane && routeDock);
         routeDock->show();
         routeDock->raise();
         QVERIFY(routePane->grab().save(QStringLiteral("route-pane.png")));
+        auto *clearRoute = routePane->findChild<QPushButton *>(QStringLiteral("clearRoute"));
+        QVERIFY(clearRoute);
+        QCOMPARE(clearRoute->text(), QStringLiteral("Clear ..."));
+        QVERIFY(!clearRoute->icon().isNull());
+        answerAction(Qt::Key_Escape);
+        clearRoute->click();
+        QVERIFY(!status->text().isEmpty());
+        QCOMPARE(destinationChoice->currentText(), QStringLiteral("Depot"));
+        answerAction();
+        clearRoute->click();
+        QVERIFY(status->text().isEmpty());
+        QCOMPARE(startChoice->currentIndex(), 0);
+        QCOMPARE(destinationChoice->currentIndex(), 0);
+        QCOMPARE(startChoice->findData(QStringLiteral("map")), -1);
         auto *providerWidget =
             dynamic_cast<swak::SettingsWidgetProvider *>(routePane)->createSettingsWidget(&window);
         providerWidget->setWindowFlag(Qt::Window);

@@ -8,6 +8,8 @@
 #include "core/provider_table.h"
 #include "core/routing.h"
 #include "core/settings_dialog.h"
+#include "core/ui_icons.h"
+#include "core/user_objects.h"
 
 #include <QCollator>
 #include <QComboBox>
@@ -18,12 +20,17 @@
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPointer>
 #include <QPushButton>
+#include <QSignalBlocker>
+#include <QToolButton>
 #include <QUuid>
 
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <optional>
+#include <utility>
 
 namespace swak {
 class RouteTool final : public MapTool
@@ -32,12 +39,17 @@ public:
     explicit RouteTool(QObject *parent) : MapTool(parent) {}
     std::function<void(QPointF)> picked;
     bool picking = false;
+    QPointer<QWidget> map;
     QPainterPath path;
     double width = 3;
     QString attribution;
-    void activate(QWidget &) override
+    void activate(QWidget &target) override
     {
         picking = true;
+        // The cross hair shows that the next map click sets a route point, as in Marker mode.
+        map = &target;
+        target.setCursor(Qt::CrossCursor);
+        target.setFocus(Qt::OtherFocusReason);
         emit overlayChanged();
     }
     bool guidesActive() const override
@@ -54,6 +66,9 @@ public:
             return false;
         }
         picking = false;
+        if (map) {
+            map->unsetCursor();
+        }
         emit overlayChanged();
         return true;
     }
@@ -115,66 +130,17 @@ class RoutePane final : public PaneContent,
 {
 public:
     RoutePane(PluginServices &services, QWidget *parent)
-        : PaneContent(parent), sources_(*services.routes), tool_(new RouteTool(this))
+        : PaneContent(parent), sources_(*services.routes), objects_(services.objects),
+          tool_(new RouteTool(this))
     {
         setObjectName(QStringLiteral("routePlanner"));
         if (services.mapTools) {
             services.mapTools->add(tool_);
         }
         auto *layout = new QVBoxLayout(this);
-        auto *notice = new QLabel(tr("Choose two points and a travel mode. Calculate sends those "
-                                     "points to the selected route provider."),
-                                  this);
-        notice->setWordWrap(true);
-        layout->addWidget(notice);
-        providers_ = new QComboBox(this);
-        providers_->setObjectName(QStringLiteral("routeProviderChoice"));
-        layout->addWidget(providers_);
-        auto *manage = new QPushButton(tr("Route providers ..."), this);
-        layout->addWidget(manage);
-        connect(manage, &QPushButton::clicked, this, [this] {
-            Modal<QDialog> dialog(this);
-            dialog->setWindowTitle(tr("Route Providers"));
-            auto *box = new QVBoxLayout(dialog.get());
-            box->addWidget(createSettingsWidget(dialog.get()));
-            auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, dialog.get());
-            box->addWidget(buttons);
-            connect(buttons, &QDialogButtonBox::rejected, dialog.get(), &QDialog::reject);
-            dialog->exec();
-        });
-        auto *form = new QFormLayout;
-        for (int i = 0; i < 4; ++i) {
-            points_[i] = new QDoubleSpinBox(this);
-            points_[i]->setRange(i % 2 == 0 ? -85.051129 : -180, i % 2 == 0 ? 85.051129 : 180);
-            points_[i]->setDecimals(6);
-            points_[i]->setObjectName(QStringLiteral("routeCoordinate%1").arg(i));
-            const QStringList names{tr("Start latitude"),
-                                    tr("Start longitude"),
-                                    tr("End latitude"),
-                                    tr("End longitude")};
-            form->addRow(names[i], points_[i]);
-            connect(points_[i], &QDoubleSpinBox::valueChanged, this, [this] {
-                invalidate();
-            });
-        }
-        layout->addLayout(form);
-        auto *pickRow = new QHBoxLayout;
-        for (int i = 0; i < 2; ++i) {
-            auto *pick = new QPushButton(i == 0 ? tr("Pick start") : tr("Pick end"), this);
-            pick->setObjectName(i == 0 ? QStringLiteral("routePickStart")
-                                       : QStringLiteral("routePickEnd"));
-            pickRow->addWidget(pick);
-            connect(pick, &QPushButton::clicked, this, [this, i] {
-                tool_->picked = [this, i](QPointF point) {
-                    points_[i * 2]->setValue(point.y());
-                    points_[i * 2 + 1]->setValue(point.x());
-                };
-                emit tool_->activationRequested();
-            });
-        }
-        layout->addLayout(pickRow);
         mode_ = new QComboBox(this);
         mode_->setObjectName(QStringLiteral("routeMode"));
+        mode_->setAccessibleName(tr("Travel mode"));
         mode_->addItem(tr("Cycling"), QStringLiteral("cycling"));
         mode_->addItem(tr("Driving"), QStringLiteral("driving"));
         mode_->addItem(tr("Running"), QStringLiteral("running"));
@@ -184,14 +150,57 @@ public:
         connect(mode_, &QComboBox::currentIndexChanged, this, [this] {
             invalidate();
         });
+        auto *notice = new QLabel(tr("Choose a start and a destination. Calculate sends them to "
+                                     "the route provider selected in Settings."),
+                                  this);
+        notice->setWordWrap(true);
+        layout->addWidget(notice);
+        auto *form = new QFormLayout;
+        for (int i = 0; i < 2; ++i) {
+            auto &endpoint = endpoints_[i];
+            const auto name =
+                i == 0 ? QStringLiteral("routeStart") : QStringLiteral("routeDestination");
+            endpoint.choice = new QComboBox(this);
+            endpoint.choice->setObjectName(name);
+            endpoint.choice->setAccessibleName(i == 0 ? tr("Start") : tr("Destination"));
+            endpoint.choice->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+            endpoint.choice->setMinimumContentsLength(12);
+            endpoint.pick = new QToolButton(this);
+            endpoint.pick->setObjectName(name + QStringLiteral("Pick"));
+            endpoint.pick->setIcon(uiIcon(UiIcon::Target));
+            endpoint.pick->setAccessibleName(i == 0 ? tr("Pick the start on the map")
+                                                    : tr("Pick the destination on the map"));
+            endpoint.pick->setToolTip(endpoint.pick->accessibleName());
+            auto *row = new QHBoxLayout;
+            row->addWidget(endpoint.choice, 1);
+            row->addWidget(endpoint.pick);
+            form->addRow(i == 0 ? tr("Start") : tr("Destination"), row);
+            connect(endpoint.choice, &QComboBox::activated, this, [this] {
+                invalidate();
+            });
+            connect(endpoint.pick, &QToolButton::clicked, this, [this, i] {
+                tool_->picked = [this, i](QPointF point) {
+                    endpoints_[i].mapPoint = point;
+                    refreshEndpoints();
+                    endpoints_[i].choice->setCurrentIndex(
+                        endpoints_[i].choice->findData(QStringLiteral("map")));
+                    invalidate();
+                };
+                emit tool_->activationRequested();
+            });
+        }
+        layout->addLayout(form);
         auto *row = new QHBoxLayout;
         auto *calculate = new QPushButton(tr("Calculate"), this);
         calculate->setObjectName(QStringLiteral("calculateRoute"));
-        auto *clear = new QPushButton(tr("Cancel / clear"), this);
+        auto *clear = new QPushButton(uiIcon(UiIcon::Clear), tr("Clear ..."), this);
+        clear->setObjectName(QStringLiteral("clearRoute"));
+        clear->setToolTip(tr("Clear the route, the start, and the destination."));
         row->addWidget(calculate);
         row->addWidget(clear);
         layout->addLayout(row);
         status_ = new QLabel(this);
+        status_->setObjectName(QStringLiteral("routeStatus"));
         status_->setTextFormat(Qt::PlainText);
         status_->setWordWrap(true);
         layout->addWidget(status_);
@@ -205,14 +214,29 @@ public:
                 return;
             }
             invalidate();
+            const auto start = coordinate(endpoints_[0]);
+            const auto destination = coordinate(endpoints_[1]);
+            if (!start || !destination) {
+                status_->setText(tr("Choose a start and a destination."));
+                return;
+            }
             status_->setText(tr("Finding a distance-based route ..."));
-            sources_.calculate({points_[1]->value(), points_[0]->value()},
-                               {points_[3]->value(), points_[2]->value()},
-                               mode_->currentData().toString(),
-                               runningSpeed_);
+            sources_.calculate(
+                *start, *destination, mode_->currentData().toString(), runningSpeed_);
         });
         connect(clear, &QPushButton::clicked, this, [this] {
+            if (!confirmAction(this,
+                               tr("Clear"),
+                               tr("Clear the route, the start, and the destination?"),
+                               tr("Clear"))) {
+                return;
+            }
             tool_->cancel();
+            for (auto &endpoint : endpoints_) {
+                endpoint.mapPoint.reset();
+                endpoint.choice->setCurrentIndex(0);
+            }
+            refreshEndpoints();
             invalidate();
         });
         connect(&sources_, &RouteSources::completed, this, [this] {
@@ -237,13 +261,20 @@ public:
             emit tool_->changed();
         });
         connect(&sources_, &RouteSources::changed, this, [this] {
-            refreshProviders();
+            refreshAttribution();
             invalidate();
         });
-        connect(providers_, &QComboBox::activated, this, [this] {
-            sources_.select(providers_->currentData().toString());
-        });
-        refreshProviders();
+        if (objects_) {
+            connect(objects_, &UserObjects::changed, this, [this] {
+                refreshEndpoints();
+            });
+        }
+        refreshEndpoints();
+        refreshAttribution();
+    }
+    Qt::DockWidgetArea preferredDockArea() const override
+    {
+        return Qt::RightDockWidgetArea;
     }
     QString preferenceId() const override
     {
@@ -259,11 +290,8 @@ public:
     }
     QJsonObject savePreferences() const override
     {
-        QJsonArray points;
-        for (auto *point : points_) {
-            points.append(point->value());
-        }
-        return {{"points", points},
+        return {{"start", endpointJson(endpoints_[0])},
+                {"destination", endpointJson(endpoints_[1])},
                 {"mode", mode_->currentData().toString()},
                 {"runningSpeed", runningSpeed_},
                 {"lineWidth", tool_->width}};
@@ -271,10 +299,32 @@ public:
     void restorePreferences(const QJsonObject &values) override
     {
         const auto points = values.value("points").toArray();
-        for (int i = 0; i < 4 && i < points.size(); ++i) {
-            if (points[i].isDouble() && std::isfinite(points[i].toDouble())) {
-                points_[i]->setValue(points[i].toDouble());
+        for (int i = 0; i < 2; ++i) {
+            auto &endpoint = endpoints_[i];
+            endpoint.mapPoint.reset();
+            QString selected;
+            const auto saved = values.value(i == 0 ? "start" : "destination").toObject();
+            const auto marker = saved.value("marker").toString();
+            const double latitude = saved.value("latitude").toDouble(NAN);
+            const double longitude = saved.value("longitude").toDouble(NAN);
+            if (!marker.isEmpty() && marker.size() <= 128) {
+                selected = QStringLiteral("marker:") + marker;
+            } else if (validCoordinate(longitude, latitude)) {
+                endpoint.mapPoint = QPointF(longitude, latitude);
+                selected = QStringLiteral("map");
+            } else if (points.size() == 4) {
+                // Earlier versions saved four coordinate fields. Zero pairs were the defaults.
+                const double oldLatitude = points[i * 2].toDouble(NAN);
+                const double oldLongitude = points[i * 2 + 1].toDouble(NAN);
+                if (validCoordinate(oldLongitude, oldLatitude) &&
+                    (oldLatitude != 0 || oldLongitude != 0)) {
+                    endpoint.mapPoint = QPointF(oldLongitude, oldLatitude);
+                    selected = QStringLiteral("map");
+                }
             }
+            refreshEndpoints();
+            const int index = endpoint.choice->findData(selected);
+            endpoint.choice->setCurrentIndex(index < 0 ? 0 : index);
         }
         const int mode = mode_->findData(values.value("mode").toString(QStringLiteral("driving")));
         mode_->setCurrentIndex(mode < 0 ? 1 : mode);
@@ -425,30 +475,98 @@ private:
         }
         emit tool_->changed();
     }
-    void refreshProviders()
+    struct Endpoint
     {
-        providers_->clear();
-        const auto entries = sources_.sources();
-        auto ids = entries.keys();
-        const QCollator collator;
-        std::sort(ids.begin(), ids.end(), [&](const auto &a, const auto &b) {
-            return collator.compare(entries[a].toObject().value("name").toString(),
-                                    entries[b].toObject().value("name").toString()) < 0;
-        });
-        for (const auto &id : ids) {
-            providers_->addItem(entries[id].toObject().value("name").toString(), id);
+        QComboBox *choice = nullptr;
+        QToolButton *pick = nullptr;
+        // Longitude and latitude from the last map pick.
+        std::optional<QPointF> mapPoint;
+    };
+    static bool validCoordinate(double longitude, double latitude)
+    {
+        return std::isfinite(longitude) && std::isfinite(latitude) && std::abs(longitude) <= 180 &&
+               std::abs(latitude) <= 85.051129;
+    }
+    static QJsonObject endpointJson(const Endpoint &endpoint)
+    {
+        const auto key = endpoint.choice->currentData().toString();
+        if (key.startsWith(QStringLiteral("marker:"))) {
+            return {{"marker", key.mid(7)}};
         }
-        providers_->setCurrentIndex(providers_->findData(sources_.activeId()));
-        tool_->attribution =
-            entries.value(sources_.activeId()).toObject().value("attribution").toString();
-        attribution_->setText(
-            entries.value(sources_.activeId()).toObject().value("attribution").toString());
+        if (key == QStringLiteral("map") && endpoint.mapPoint) {
+            return {{"longitude", endpoint.mapPoint->x()}, {"latitude", endpoint.mapPoint->y()}};
+        }
+        return {};
+    }
+    // Markers are local objects with one point position.
+    static bool isMarker(const UserObject &item)
+    {
+        return item.geometry.value(QStringLiteral("x")).isDouble() &&
+               item.geometry.value(QStringLiteral("y")).isDouble();
+    }
+    std::optional<QPointF> coordinate(const Endpoint &endpoint) const
+    {
+        const auto key = endpoint.choice->currentData().toString();
+        if (key == QStringLiteral("map")) {
+            return endpoint.mapPoint;
+        }
+        if (!key.startsWith(QStringLiteral("marker:")) || !objects_) {
+            return std::nullopt;
+        }
+        const auto marker = objects_->find(key.mid(7));
+        if (!marker || !isMarker(*marker)) {
+            return std::nullopt;
+        }
+        const auto location = unproject({marker->geometry.value(QStringLiteral("x")).toDouble(),
+                                         marker->geometry.value(QStringLiteral("y")).toDouble()});
+        return validCoordinate(location.x(), location.y()) ? std::optional<QPointF>(location)
+                                                           : std::nullopt;
+    }
+    void refreshEndpoints()
+    {
+        QList<std::pair<QString, QString>> markers;
+        if (objects_) {
+            for (const auto &item : objects_->items()) {
+                if (isMarker(item)) {
+                    markers.append({item.title.isEmpty() ? item.type : item.title, item.id});
+                }
+            }
+        }
+        const QCollator collator;
+        std::sort(markers.begin(), markers.end(), [&](const auto &a, const auto &b) {
+            return collator.compare(a.first, b.first) < 0;
+        });
+        for (auto &endpoint : endpoints_) {
+            const auto selected = endpoint.choice->currentData().toString();
+            const QSignalBlocker block(endpoint.choice);
+            endpoint.choice->clear();
+            endpoint.choice->addItem(tr("Choose a marker or a map point"), QString{});
+            if (endpoint.mapPoint) {
+                endpoint.choice->addItem(uiIcon(UiIcon::Target),
+                                         tr("Map point %1, %2")
+                                             .arg(endpoint.mapPoint->y(), 0, 'f', 5)
+                                             .arg(endpoint.mapPoint->x(), 0, 'f', 5),
+                                         QStringLiteral("map"));
+            }
+            for (const auto &[title, id] : markers) {
+                endpoint.choice->addItem(
+                    uiIcon(UiIcon::Marker), title, QStringLiteral("marker:") + id);
+            }
+            const int index = endpoint.choice->findData(selected);
+            endpoint.choice->setCurrentIndex(index < 0 ? 0 : index);
+        }
+    }
+    void refreshAttribution()
+    {
+        const auto source = sources_.sources().value(sources_.activeId()).toObject();
+        tool_->attribution = source.value("attribution").toString();
+        attribution_->setText(tool_->attribution);
     }
     RouteSources &sources_;
+    QPointer<UserObjects> objects_;
     RouteTool *tool_ = nullptr;
-    QComboBox *providers_ = nullptr;
     QComboBox *mode_ = nullptr;
-    QDoubleSpinBox *points_[4]{};
+    Endpoint endpoints_[2];
     QLabel *status_ = nullptr;
     QLabel *attribution_ = nullptr;
     double runningSpeed_ = 10;

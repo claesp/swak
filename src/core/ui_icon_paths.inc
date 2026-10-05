@@ -126,6 +126,11 @@ QPainterPath iconPath(UiIcon icon)
         path.moveTo(4, 3); path.lineTo(17, 3); path.lineTo(21, 7); path.lineTo(21, 21); path.lineTo(3, 21); path.lineTo(3, 3); path.closeSubpath();
         path.addRect(QRectF(7, 3, 9, 6)); path.addRect(QRectF(7, 14, 10, 7));
         break;
+    case UiIcon::Target:
+        path.addEllipse(QPointF(12, 12), 7, 7); path.addEllipse(QPointF(12, 12), 1.5, 1.5);
+        path.moveTo(12, 1); path.lineTo(12, 5); path.moveTo(12, 19); path.lineTo(12, 23);
+        path.moveTo(1, 12); path.lineTo(5, 12); path.moveTo(19, 12); path.lineTo(23, 12);
+        break;
     }
     return path;
 }

@@ -1486,3 +1486,6 @@ Known raster gaps: GDAL follows redirects, so a custom API key header can reach 
 
 The first sanitizer run found a leak of 576 bytes for each expired raster worker thread. A thread-local dataset closed during thread exit, and GDAL then created a PROJ context that nothing freed. A shared dataset pool now closes datasets on ordinary threads, and GdalShutdownGuard runs shutdownGdal from main and the test mains. The dense MVT test now spreads its points over many features. One huge multipoint made GDAL grow its point list one allocation at a time, which was slow only under the address sanitizer.
 
+# 2026-10-05: Route planner layout
+
+The Route planning pane docks on the right by default. The travel mode is the first control. Start and Destination each have a list of local markers and a target button. The button activates a cross hair, and the next map click sets a map point. The pane has no provider list, no Route providers button, no coordinate fields, and no Pick buttons. File > Settings > Route providers selects the provider. Clear ... uses the clear icon, asks for confirmation, and clears the route and both endpoints. Preferences save each endpoint as a marker identifier or a map point. Earlier four-number coordinate preferences migrate when they are not zero. The new Target icon comes from tools/generate_icons.py.
