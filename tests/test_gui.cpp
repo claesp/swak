@@ -587,6 +587,18 @@ private slots:
         auto *table = credits->findChild<QTableWidget *>(QStringLiteral("creditsTable"));
         QVERIFY(table && table->rowCount() >= 5);
         QCOMPARE(table->columnCount(), 5);
+        QStringList libraries;
+        for (int row = 0; row < table->rowCount(); ++row) {
+            libraries.append(table->item(row, 0)->text());
+        }
+        for (const auto &name : {QStringLiteral("GDAL"),
+                                 QStringLiteral("PROJ"),
+                                 QStringLiteral("GEOS"),
+                                 QStringLiteral("libcurl"),
+                                 QStringLiteral("GDAL format libraries")}) {
+            QVERIFY2(libraries.contains(name), qPrintable(name));
+        }
+        QVERIFY(!libraries.contains(QStringLiteral("protozero")));
         QCOMPARE(table->editTriggers(), QAbstractItemView::NoEditTriggers);
         help->actions().first()->trigger();
         QCOMPARE(window.findChildren<QDialog *>(QStringLiteral("creditsDialog")).size(), 1);

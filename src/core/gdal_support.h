@@ -13,6 +13,8 @@ namespace swak {
 // The call is thread-safe. GDAL runs in the application process; see docs/dependencies.md.
 void initializeGdal();
 QString gdalVersion();
+// Reads one value from the GDAL build information, such as PROJ_RUNTIME_VERSION.
+QString gdalBuildValue(const QString &key);
 // Adds work for shutdownGdal, such as closing cached datasets.
 void addGdalShutdownTask(std::function<void()> task);
 // Closes cached GDAL resources on the calling thread. Call it once from the main thread after

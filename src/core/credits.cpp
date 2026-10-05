@@ -30,10 +30,11 @@ void showCredits(QWidget *parent)
     dialog->setWindowTitle(QObject::tr("Credits"));
     dialog->resize(960, 460);
     auto *layout = new QVBoxLayout(dialog);
-    auto *notice =
-        new QLabel(QObject::tr("SWAK uses these libraries and icon assets. System libraries and "
-                               "graphics drivers depend on your Linux installation."),
-                   dialog);
+    auto *notice = new QLabel(
+        QObject::tr("SWAK uses these libraries and icon assets. GDAL loads further format "
+                    "libraries from your Linux installation. System libraries and "
+                    "graphics drivers also depend on that installation."),
+        dialog);
     notice->setWordWrap(true);
     layout->addWidget(notice);
     auto *table = new QTableWidget(0, 5, dialog);
@@ -81,6 +82,38 @@ void showCredits(QWidget *parent)
         QStringLiteral("MIT; bundled and linked notices apply"),
         QStringLiteral("Frank Warmerdam, Even Rouault, and contributors"),
         QStringLiteral("https://gdal.org/"));
+    // GDAL reports the versions of the libraries it uses for coordinates and network access.
+    const auto linked = [&](const QString &name,
+                            const QString &key,
+                            const QString &license,
+                            const QString &credit,
+                            const QString &url) {
+        const auto version = gdalBuildValue(key);
+        if (!version.isEmpty()) {
+            add(name, version, license, credit, url);
+        }
+    };
+    linked(QStringLiteral("PROJ"),
+           QStringLiteral("PROJ_RUNTIME_VERSION"),
+           QStringLiteral("MIT"),
+           QStringLiteral("PROJ contributors"),
+           QStringLiteral("https://proj.org/"));
+    linked(QStringLiteral("GEOS"),
+           QStringLiteral("GEOS_VERSION"),
+           QStringLiteral("LGPL-2.1"),
+           QStringLiteral("GEOS contributors"),
+           QStringLiteral("https://libgeos.org/"));
+    linked(QStringLiteral("libcurl"),
+           QStringLiteral("CURL_VERSION"),
+           QStringLiteral("curl (MIT-style)"),
+           QStringLiteral("Daniel Stenberg and contributors"),
+           QStringLiteral("https://curl.se/"));
+    add(QObject::tr("GDAL format libraries"),
+        QObject::tr("Installed system packages"),
+        QObject::tr("Several; see each package"),
+        QObject::tr("libkml, libtiff, libgeotiff, OpenJPEG, SQLite, SpatiaLite, Expat, "
+                    "Xerces-C, HDF5, NetCDF, libpng, libjpeg-turbo, libwebp, and others"),
+        QStringLiteral("https://gdal.org/en/stable/development/building_from_source.html"));
     add(QStringLiteral("Lucide icons"),
         QStringLiteral("0.468.0"),
         QStringLiteral("ISC; MIT for Feather portions"),

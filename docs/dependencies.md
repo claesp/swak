@@ -62,7 +62,7 @@ The grid renderer limits entries, visible lines, sampling points, coordinate for
 
 # Credits inventory
 
-Help > Credits uses the existing library version APIs and pinned asset versions. It adds no dependencies. The table names direct application dependencies, bundled headers and icons, libarchive compression backends, and the active Qt TLS backend. System graphics and desktop dependencies vary with the host.
+Help > Credits uses the existing library version APIs and pinned asset versions. It adds no dependencies. GDAL reports the PROJ, GEOS, and libcurl versions through its build information. One row names the other format libraries that GDAL loads from the system. The table names direct application dependencies, bundled headers and icons, libarchive compression backends, and the active Qt TLS backend. System graphics and desktop dependencies vary with the host.
 
 The license references include [Qt licensing](https://doc.qt.io/qt-6/licensing.html), [libarchive](https://www.libarchive.org/), [GeographicLib](https://github.com/geographiclib/geographiclib), and [GDAL](https://gdal.org/license.html). Bundled Lucide notices remain under third_party. The table summarizes license families and does not replace the distributed notices.
 

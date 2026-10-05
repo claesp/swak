@@ -4,6 +4,7 @@
 
 #include <QRegularExpression>
 
+#include <algorithm>
 #include <atomic>
 #include <cpl_conv.h>
 #include <cpl_error.h>
@@ -87,6 +88,15 @@ void shutdownGdal()
 QString gdalVersion()
 {
     return QString::fromLatin1(GDALVersionInfo("RELEASE_NAME"));
+}
+QString gdalBuildValue(const QString &key)
+{
+    const auto lines = QString::fromLatin1(GDALVersionInfo("BUILD_INFO")).split('\n');
+    const auto prefix = key + QLatin1Char('=');
+    const auto found = std::find_if(lines.cbegin(), lines.cend(), [&prefix](const QString &line) {
+        return line.startsWith(prefix);
+    });
+    return found == lines.cend() ? QString{} : found->mid(prefix.size()).trimmed().left(64);
 }
 const std::vector<const char *> &gdalVectorDrivers()
 {
