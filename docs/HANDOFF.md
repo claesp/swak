@@ -1387,3 +1387,36 @@ The focused suite passes five cases at 200 percent scaling in build/routing-revi
 Remaining new coverage gaps include the twenty-second deadline, request cooldown rejection, full provider capacity, some manager cancellation paths, and empty route arrays. TLS failures use Qt behavior but lack a routing-specific certificate fixture. Hardware graphics, native Wayland, and two-hour endurance remain unqualified. Existing coverage gaps and the earlier Qt dependency advisory still apply. This is a development release.
 
 The release rebuild after the commit uses build/routing-review/release-committed.log. The executable is build/release/swak. No application dependency was added. The research sample and generated test images remain in ignored build directories.
+
+# 2026-10-05: Safety and language review
+
+A review used the cpp-skill-focused-on-safety skill at Tier C and the ASD-STE100 skill. No qualified MISRA or CERT analyzer ran. The results are advisory and are not compliance evidence.
+
+The review fixed these defect types:
+
+- Members without initializers in plugins, managers, editors, and core records.
+- Unchecked indexes in polygon corner moves, vector hit tests, and the settings dialog.
+- Null dereferences in map tool activation, credits, provider tables, image cache compaction, and pane setup.
+- A float to int conversion that overflowed for labels at deep zoom.
+- Loops over the map tool list that a destroyed tool could invalidate.
+- Chained QString::arg calls that substituted markers inside socket error text.
+- Provider endpoint tooltips that Qt could show as rich text.
+- A pane check box that deleted itself during its own click signal.
+- An unchecked optional in XML import and in marker collection symbols.
+- Compose key presses that matched disabled map keys.
+- Repeated provider validation during map painting. The map now caches the active source on MapSources::changed.
+- Plugin classes with external linkage. They now use unnamed namespaces.
+- Division by zero and an invalid printf format in the CoT emulator.
+
+Documentation now uses STE100 terms more consistently. Pane replaces panel for plugin panes. Long paragraphs and steps became lists. AGENTS.md now contains Git rules. Commit messages are short and do not contain attribution trailers. docs/README.md records tool attribution.
+
+Source analysis passes in build/quality/20261005-120437-analyze-162936. Quick sanitizer diagnostics pass in build/quality/20261005-120437-quick-162937. The native sanitizer suite passes 102 cases in build/quality/20261005-120738-gui-164375.
+
+Open items from the review:
+
+- Stack dialogs with a parent call exec(). Destruction of the parent during exec() deletes the dialog twice. The fix is a project-wide change to heap dialogs or open().
+- Route planner settings lambdas capture the pane but use the table as context.
+- GridTypes::validate builds a regular expression on each frame.
+- No test checks the escaped tooltips in the map and data provider tables.
+- PluginServices does not document the lifetime of its service pointers.
+- docs/usage.md says "No map provider clears the selection." The sentence has two possible meanings.

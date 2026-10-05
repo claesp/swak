@@ -4,17 +4,17 @@ A collection is a catalog of marker names, colors, and vector icons. It does not
 
 Tools > Marker Collections opens the collection manager. File > Settings > Marker collections opens the same controls. The table sorts names with the OS locale. Checkboxes enable collections for new markers. An unchecked collection still supplies icons for existing markers. These controls do not change received CoT messages.
 
-Add creates a collection from an explicit template choice. Enter a name and select the collection whose symbols you want to copy. Edit changes the name, description, and version of a user collection. Built-in collections are read-only. Add a copy before changing their metadata. The manager does not include a vector drawing editor.
+Add creates a collection from an explicit template choice. Enter a name. Select the collection whose symbols you want to copy. Edit changes the name, description, and version of a user collection. Built-in collections are read-only. Add a copy before you change their metadata. The manager does not include a vector drawing editor.
 
 Delete removes a user collection from the catalog. Placed markers keep their collection and symbol identifiers. A missing icon appears as a circle with the saved color. The editor shows the unavailable collection and symbol. Import the original collection to restore those icons. Disable a built-in collection to remove it from new-marker choices.
 
-After placing a marker, select Collection before Type. Core offers Generic marker. MILSTD2525 offers the military types. Apply stores both identifiers with the marker. The editor remembers the last chosen collection and type for future placement. The next marker uses Core or another enabled collection if the previous choice becomes unavailable.
+After you place a marker, select Collection before Type. Core offers Generic marker. MILSTD2525 offers the military types. Apply stores both identifiers with the marker. The editor remembers the last chosen collection and type for future placement. The next marker uses Core or another enabled collection if the previous choice becomes unavailable.
 
 Existing records without a collection identifier retain their previous meaning. An empty symbol belongs to Core. A nonempty legacy symbol belongs to MILSTD2525. Undo, movement, and restart preserve the collection reference. All-disabled catalogs reject new placement and return the map tool to idle.
 
 # Import and export
 
-Import accepts ZIP, TAR, and gzip-compressed TAR through the existing libarchive dependency. Export creates ZIP or gzip-compressed TAR according to the destination extension. The archive contains exactly one regular file named `collection.json`. No files are extracted to disk during import. Imported collections contain data only, without executable plugins, scripts, fonts, raster images, or external resources.
+Import accepts ZIP, TAR, and gzip-compressed TAR through the existing libarchive dependency. Export creates ZIP or gzip-compressed TAR according to the destination extension. The archive contains exactly one regular file named `collection.json`. Import extracts no files to disk. Imported collections contain data only, without executable plugins, scripts, fonts, raster images, or external resources.
 
 Select a collection row before Export. Select Import to load an archive. The importer rejects duplicate identifiers without replacing the existing collection. Exported built-in collections retain their identifiers. Use Add to create a separate copy for import into a workspace that already contains the built-in collection. Exports replace their destination atomically and use owner-only permissions.
 
@@ -22,7 +22,7 @@ The compressed input limit is one MiB. The expanded JSON limit is 256 KiB. The c
 
 # Archive schema
 
-The JSON root uses `schemaVersion: 1`. Required metadata includes `id`, `name`, `description`, `version`, `enabled`, and `symbols`. Identifiers contain at most 64 letters, digits, periods, or hyphens. Collection identifiers cannot be empty. Names contain at most 100 characters, descriptions 1024, and versions 32. Metadata must contain printable text.
+The JSON root uses `schemaVersion: 1`. Required metadata includes `id`, `name`, `description`, `version`, `enabled`, and `symbols`. Identifiers contain at most 64 letters, digits, periods, or hyphens. Collection identifiers cannot be empty. Names contain at most 100 characters. Descriptions contain at most 1024 characters, and versions contain at most 32 characters. Metadata must contain printable text.
 
 Each symbol supplies `id`, `name`, `color`, `frame`, and `glyph`. Symbol identifiers are unique within their collection. An empty symbol identifier represents the generic type in Core. Colors use `#RRGGBB`. The frame contains a filled vector outline, and the glyph contains optional dark internal lines. The renderer uses the current marker radius, which preserves existing marker sizes.
 

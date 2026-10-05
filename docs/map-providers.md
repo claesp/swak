@@ -32,13 +32,17 @@ Open Tools > Map Providers. The list contains registered provider presets and sa
 2. Select the provider radio button to enable online requests for that source.
 3. Select Clear selection to stop requests and show the plain green background.
 
-Select Add to open a blank provider form. Select the format in that form. Enter the source details, then select OK. Cancel discards the form. Delete removes the selected row. Selecting a row does not activate it. Changes save through the portable preferences file. An absent plugin does not erase its source configuration. Online maps start disabled in a fresh profile.
+Select Add to open a blank provider form. Select the format in that form. Enter the source details. Then select OK. Cancel discards the form.
 
-File > Settings > Map providers contains the same table, radio buttons, and Add, Edit, Delete, and Clear selection controls. Provider changes apply immediately. File > Settings > Map contains center, zoom, provider opacity, image filtering, and vector edge smoothing. Source zoom limits, layers, styles, image format, matrix set, and time also affect rendering. Attribution always remains visible while a provider is active. The text aligns to the right over a translucent background. Select the attribution link to open its license URL in the default browser. The map configuration includes attribution background opacity.
+Delete removes the selected row. Selecting a row does not activate it. Changes save through the portable preferences file. An absent plugin does not erase its source configuration. Online maps start disabled in a fresh profile.
+
+File > Settings > Map providers contains the same table, radio buttons, and Add, Edit, Delete, and Clear selection controls. Provider changes apply immediately. File > Settings > Map contains center, zoom, provider opacity, image filtering, and vector edge smoothing. Source zoom limits, layers, styles, image format, matrix set, and time also affect rendering.
+
+Attribution always remains visible while a provider is active. The text aligns to the right over a translucent background. Select the attribution link to open its license URL in the default browser. The map configuration includes attribution background opacity.
 
 # HTTPS and cache
 
-Certificate and hostname checks are enabled by default. Each source has an explicit Ignore invalid HTTPS certificates control. If you enable it, the map and manager show that certificate checks are disabled. This permits interception or replacement of map images. The override applies only to that selected source and is stored in its profile.
+SWAK enables certificate and hostname checks by default. Each source has an explicit Ignore invalid HTTPS certificates control. If you enable it, the map and manager show that certificate checks are disabled. This permits interception or replacement of map images. The override applies only to that selected source and is stored in its profile.
 
 SWAK uses the existing Qt Network library for asynchronous HTTPS and Qt image readers for raster decoding. These are existing dependencies. It does not add a browser engine or a GIS runtime. Images render through QPainter on QOpenGLWidget, which uses the OpenGL paint engine for texture upload, scaling, and composition.
 
@@ -48,7 +52,9 @@ The decoded-tile cache defaults to 256 MiB. File > Settings > Map exposes Tile m
 
 Failed requests pause for at least 30 seconds. Integer Retry-After values extend this delay up to one hour.
 
-The disk cache uses Qt HTTP caching. Entries without an expiry get a seven-day default. Verified and unchecked HTTPS responses use separate caches. Each cache defaults to 128 MiB. File > Settings > Map exposes Tile disk cache, from 16 through 4096 MiB. Non-cacheable images remain in memory only while their tiles stay in the view. Cached image and vector responses survive restarts and provider changes. Fresh entries avoid another download, and expired entries require HTTP revalidation.
+The disk cache uses Qt HTTP caching. Entries without an expiry get a seven-day default. Verified and unchecked HTTPS responses use separate caches. Each cache defaults to 128 MiB. File > Settings > Map exposes Tile disk cache, from 16 through 4096 MiB.
+
+Non-cacheable images remain in memory only while their tiles stay in the view. Cached image and vector responses survive restarts and provider changes. Fresh entries avoid another download, and expired entries require HTTP revalidation.
 
 The cache uses the operating system cache directory, not the portable profile. On Linux, this is normally under `$XDG_CACHE_HOME/SWAK/swak/maps` or `~/.cache/SWAK/swak/maps`. A process lock prevents concurrent writers. If a cache is unavailable or locked, online rendering stops and reports the problem.
 
@@ -56,7 +62,7 @@ Requests reject redirects and do not send or store cookies. Zero opacity stops d
 
 # Development evidence
 
-Automated tests use a local HTTPS server and a public test certificate under `tests/fixtures/`. The matching private key is only a test fixture. It is not an application credential and is not installed. Tests do not download public map tiles or pan public services.
+Automated tests use a local HTTPS server and a public test certificate under `tests/fixtures/`. The matching private key is only a test fixture. It is not an application credential. Installation does not include it. Tests do not download public map tiles or pan public services.
 
 The tests cover format parameters, bounds, missing plugins, certificate rejection, the explicit override, cache isolation, invalid responses, cancellation, and rendering. Native tests inspect the OpenGL framebuffer and provider manager. Development test results remain in the source repository under `docs/`.
 
@@ -79,9 +85,9 @@ The provider supports the published [MVT format](https://github.com/mapbox/vecto
 
 The built-in style follows the [OpenMapTiles layer schema](https://openmaptiles.org/docs/schema/). It draws land, water, roads, buildings, boundaries, places, and POIs. A POI is a point of interest. Examples include shops, cafes, and stations. The tile source determines which features appear at each zoom. Unknown layers remain available with a generic geometry style.
 
-Select OpenFreeMap in Tools > Map Providers or the main toolbar. Online access stays disabled until a provider is selected. Existing profiles receive the new preset once. Removing the preset keeps it removed after restart. An unavailable plugin preserves its saved configuration.
+Select OpenFreeMap in Tools > Map Providers or the main toolbar. Online access stays disabled until you select a provider. Existing profiles receive the new preset once. Removing the preset keeps it removed after restart. An unavailable plugin preserves its saved configuration.
 
-Right-click the map, then open Map layers to show or hide individual layers. The keyboard Menu key opens the same controls at the map center. Right-click a feature and select Map information to inspect its layer, identifier, and properties. The information window shows up to twelve matching features. It treats all properties as plain text and does not follow embedded URLs.
+To show or hide individual layers, right-click the map. Then open Map layers. The keyboard Menu key opens the same controls at the map center. To inspect the layer, identifier, and properties of a feature, right-click the feature. Then select Map information. The information window shows up to twelve matching features. It treats all properties as plain text and does not follow embedded URLs.
 
 File > Settings > Map providers > Edit contains layer visibility, labels, label size, preferred language, line width, and point radius. The provider editor exposes the same controls. An empty language code uses local names. A language such as `en` or `sv` selects the corresponding name when available. The context menu lists known layers and additional layers from loaded tiles. Layer choices and the information window geometry survive restarts.
 
@@ -91,9 +97,13 @@ Keep the OpenFreeMap, OpenMapTiles, and OpenStreetMap credits visible. The prese
 
 # Vector input limits
 
-Vector requests use the same HTTPS, cache, timeout, and retry controls as image tiles. Responses must contain raw MVT bytes. SWAK requests identity encoding and does not open gzip archives as tiles. Downloads and pending decode tasks share a limit of four. Two background workers decode and paint tiles. Source changes, hiding, and shutdown cancel obsolete work. The renderer discards results from earlier source generations.
+Vector requests use the same HTTPS, cache, timeout, and retry controls as image tiles. Responses must contain raw MVT bytes. SWAK requests identity encoding and does not open gzip archives as tiles. Downloads and pending decode tasks share a limit of four.
 
-A vector tile has limits of eight MiB, 64 layers, 50000 features, and 500000 vertices. Each feature accepts up to 256 property pairs. Each layer dictionary accepts up to 65536 keys and values. The parser also bounds text, geometry commands, coordinate ranges, and retained properties. Retained properties have a 16 MiB limit. The estimated geometry and property total has a 64 MiB limit per tile. Invalid tiles enter the normal retry path.
+Two background workers decode and paint tiles. Source changes, hiding, and shutdown cancel obsolete work. The renderer discards results from earlier source generations.
+
+A vector tile has limits of eight MiB, 64 layers, 50000 features, and 500000 vertices. Each feature accepts up to 256 property pairs. Each layer dictionary accepts up to 65536 keys and values.
+
+The parser also bounds text, geometry commands, coordinate ranges, and retained properties. Retained properties have a 16 MiB limit. The estimated geometry and property total has a 64 MiB limit per tile. Invalid tiles enter the normal retry path.
 
 The cache accounts for decoded geometry, properties, and prepared images within the configured memory budget. It first removes tiles outside the view. If visible geometry still exceeds the budget, SWAK retains 256-pixel images and releases the geometry. This keeps all visible tiles drawable, including at the provider minimum zoom. Object inspection is unavailable for these compact tiles. KML data and CoT inspection remain available.
 
@@ -103,17 +113,23 @@ A parser resource limit requests the next lower tile level, down to the provider
 
 The renderer counts visible tiles and cached images after each view change. Missing coverage appears as a rendered/total count. A two-second audit schedules unfinished work while respecting existing retry delays and request limits. Coverage measures available images, including stale cached images. It does not establish data freshness. A failed service or invalid minimum-level tile can still leave missing coverage.
 
-Workers paint complete tiles into 512-pixel images for 256 logical pixels. The OpenGL map view reuses these images during panning. The parser limits still bound geometry work per tile. There is no shared frame limit that discards later tiles. Higher display scaling and reduced-detail fallback can soften the prepared images. Labels and line widths scale with the tile during fallback. Feature inspection follows visible layer choices. MVT parsing does not fetch linked resources or execute styles. Development tests cover truncated records, malformed commands, oversized numbers, property types, holes, cancellation, replacement, and worker exceptions.
+Workers paint complete tiles into 512-pixel images for 256 logical pixels. The OpenGL map view reuses these images during panning. The parser limits still bound geometry work per tile. There is no shared frame limit that discards later tiles.
+
+Higher display scaling and reduced-detail fallback can soften the prepared images. Labels and line widths scale with the tile during fallback. Feature inspection follows visible layer choices.
+
+MVT parsing does not fetch linked resources or execute styles. Development tests cover truncated records, malformed commands, oversized numbers, property types, holes, cancellation, replacement, and worker exceptions.
 
 Live research accepted a world tile with 79 features and a Stockholm tile with 4142 features. The Stockholm sample used tile `14/9014/4818` and contained POIs. These counts describe the sampled dataset, not a fixed service guarantee. Automated tests use local synthetic tiles, so they do not depend on public service availability.
 
-The map shows disk usage below the attribution. The value covers the active certificate-policy cache across its providers. The host refreshes this value every two seconds, outside map painting. The memory-cache limit remains separate. With no open provider cache, the label shows inactive. Cache files are expendable, not an offline archive or a portable map package. SWAK does not bulk-download tiles or ignore HTTP cache restrictions.
+The map shows disk usage below the attribution. The value covers the active certificate-policy cache across its providers. The host refreshes this value every two seconds, outside map painting. The memory-cache limit remains separate. With no open provider cache, the label shows inactive.
+
+Cache files are expendable, not an offline archive or a portable map package. SWAK does not bulk-download tiles or ignore HTTP cache restrictions.
 
 # Additional image addressing
 
 The XYZ image plugin also accepts TMS and quadkey addresses. All three use the existing bounded image decoder, cache, HTTPS client, and GPU map renderer. They require Web Mercator tiles. Read [the ATAK reference review](atak-reference-review.md) for source information and scope.
 
-For a south-origin TMS source, enable Invert tile rows (TMS) in the provider editor. The row becomes `2^z - 1 - y`. For a quadkey source, use `{q}` instead of the three coordinate placeholders. Mixed or unknown placeholders are rejected. SWAK accepts integer tile zoom levels from zero through 19. Each source can set a smaller range.
+For a south-origin TMS source, enable Invert tile rows (TMS) in the provider editor. The row becomes `2^z - 1 - y`. For a quadkey source, use `{q}` instead of the three coordinate placeholders. SWAK rejects mixed or unknown placeholders. SWAK accepts integer tile zoom levels from zero through 19. Each source can set a smaller range.
 
 The USGS Topo preset uses `https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}`. This swaps row and column positions without inverting rows. The preset uses zoom levels zero through 8 and links the published service credits. It remains inactive until the user selects it and enables online maps. A deleted preset stays deleted after restart.
 
@@ -121,7 +137,7 @@ The USGS Topo preset uses `https://basemap.nationalmap.gov/arcgis/rest/services/
 
 Edit a provider to select Authentication. The common controls support None, Basic username and password, Bearer token, API key header, and API key query. Basic uses the Authentication username field. API keys use the named parameter. Custom headers must start with `X-`, such as `X-API-Key`.
 
-Select the provider row, then click Credentials. Enter its password or token in the masked field. The value stays in memory for this session. Cancel preserves the previous value. An empty accepted value clears the session secret. This then permits a configured environment variable to supply the secret.
+Select the provider row. Then select Credentials. Enter its password or token in the masked field. The value stays in memory for this session. Cancel preserves the previous value. An empty accepted value clears the session secret. This then permits a configured environment variable to supply the secret.
 
 For restart use, set Secret environment variable to a name such as `SWAK_MAP_PRIVATE_TOKEN`. Supply that variable through your trusted launch environment. Names must start with `SWAK_MAP_` and contain uppercase letters, digits, or underscores. The profile saves the variable name, not its value. Do not enter secrets in the HTTPS URL or other ordinary fields. These fields appear in profiles and tooltips.
 
@@ -129,4 +145,4 @@ The application does not store passwords on disk or provide a password vault. En
 
 Authenticated requests require valid HTTPS certificates and the configured server and port. Redirects cannot forward credentials. Authentication failures use the shared retry delay. Tile errors exclude the request URL and secret. Authenticated tiles bypass the disk cache and fetch only visible tiles. Secret changes cancel requests and clear decoded images. Endpoint and authentication changes clear the session secret.
 
-The Thunderforest templates use API key query authentication with parameter `apikey`. Set the session credential or supply `SWAK_MAP_THUNDERFOREST_KEY` before launch. Read the service terms and account limits before selecting the source. No template activates itself. Credentials do not grant access beyond the service account permissions.
+The Thunderforest templates use API key query authentication with parameter `apikey`. Set the session credential or supply `SWAK_MAP_THUNDERFOREST_KEY` before launch. Read the service terms and account limits before you select the source. No template activates itself. Credentials do not grant access beyond the service account permissions.

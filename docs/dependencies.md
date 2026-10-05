@@ -6,27 +6,27 @@ The upstream [repository](https://github.com/mapbox/protozero) identifies its ma
 
 The source archive is `https://codeload.github.com/mapbox/protozero/tar.gz/refs/tags/v1.8.2`. Its SHA-256 digest is `68d1df951b4d8397355c8fc9ffed40d9c06282a877fe847403feac6edcee3ef1`. The import contains upstream headers and both license files. CMake installs the license files with the application documentation. Builds do not download dependencies.
 
-Protozero uses BSD-2-Clause terms, with Apache-2.0 terms for code identified in `LICENSE.from_folly`. Keep both notices when distributing binaries or source. Changes to the dependency require a new source digest, license review, advisory review, and parser diagnostics. SWAK supplies separate bounds and wire-type validation around the library. Application tests exercise the decoder under address and undefined behavior sanitizers.
+Protozero uses BSD-2-Clause terms, with Apache-2.0 terms for code identified in `LICENSE.from_folly`. Keep both notices when you distribute binaries or source. Changes to the dependency require a new source digest, license review, advisory review, and parser diagnostics. SWAK supplies separate bounds and wire-type validation around the library. Application tests exercise the decoder under address and undefined behavior sanitizers.
 
 Qt and libarchive remain system dependencies. Read the build manual for their required components. Read the data provider manual for the libarchive dependency review and its restricted ZIP use.
 
 Marker collections also use the existing system libarchive dependency. The shared collection service reads ZIP, TAR, and gzip-compressed TAR, and writes ZIP or compressed TAR. It enables no external decompression programs and extracts no files. The additional archive use avoids a separate ZIP implementation or dependency. Read [Marker collections](marker-collections.md) for the one-file format and resource limits.
 
-Local polygon tools add no external dependency. Qt paints and stores the geometry. The application calculates a spherical area estimate internally. [Turf area documentation](https://turfjs.org/docs/api/area) informed the review of geographic area conventions. No Turf code or package is included.
+Local polygon tools add no external dependency. Qt paints and stores the geometry. The application calculates a spherical area estimate internally. [Turf area documentation](https://turfjs.org/docs/api/area) informed the review of geographic area conventions. SWAK includes no Turf code or package.
 
 
 ## Command icons
 
 The application includes six SVG assets from [Lucide 0.468.0](https://github.com/lucide-icons/lucide/tree/0.468.0/icons). Lucide provides a consistent 24-unit grid with two-unit strokes. The included license covers Lucide and identifies Feather-derived icons. The source assets and notices are under `third_party/lucide`. Installation includes the notices.
 
-The checked-in Qt paths are generated from those SVG assets. FontTools 4.55.3 is a development-only converter. Normal builds and releases do not need it. This conversion avoids a new runtime SVG library and preserves vector scaling. Run `python3 tools/generate_icons.py` with that FontTools version available to regenerate the paths. The script reads only the bundled assets and performs no downloads.
+`tools/generate_icons.py` generates the checked-in Qt paths from those SVG assets. FontTools 4.55.3 is a development-only converter. Normal builds and releases do not need it. This conversion avoids a new runtime SVG library and preserves vector scaling. Run `python3 tools/generate_icons.py` with that FontTools version available to regenerate the paths. The script reads only the bundled assets and performs no downloads.
 
 Application branding, marker symbols, and color swatches retain their own meanings. The shared command set covers Clear, Marker, Area, Map, Edit, and Move.
 
 
 ## CoT transport and diagnostics
 
-CoT connections use the existing Qt Network and Core libraries. TLS and PKCS12 support use the Qt TLS backend installed on the host. This change adds no runtime dependency or copied TAK Server implementation. The CoT and LAN harnesses use the Python standard library. Isolated LAN tests also use the development tools unshare and ip. None of these harnesses are installed with the application.
+CoT connections use the existing Qt Network and Core libraries. TLS and PKCS12 support use the Qt TLS backend installed on the host. This change adds no runtime dependency or copied TAK Server implementation. The CoT and LAN harnesses use the Python standard library. Isolated LAN tests also use the development tools unshare and ip. Installation includes none of these harnesses.
 
 Circle, Distance, and Line use original vector paths in tools/generate_icons.py. They share the application icon renderer and its stroke style. They add no library dependency.
 
@@ -36,7 +36,7 @@ The Server, Data providers, OK, and Apply icons use original vector paths in the
 
 # Source formatters
 
-Development uses clang-format 19, Black 25.1.0, and cmake-format 0.6.13 to enforce the documented source style. These tools provide repeatable formatting across the repository. They are not linked, packaged, or installed with SWAK. Read [Coding style](coding-style.md) for commands and exclusions.
+Development uses clang-format 19, Black 25.1.0, and cmake-format 0.6.13 to enforce the documented source style. These tools provide repeatable formatting across the repository. SWAK does not link, package, or install them. Read [Coding style](coding-style.md) for commands and exclusions.
 
 
 # Coordinate conversion

@@ -18,7 +18,7 @@ The core suite covers these behaviors:
 
 The GUI suite ran in Xvfb with Mesa llvmpipe. LlvmPipe renders OpenGL through the CPU when hardware acceleration is unavailable. The tests exercised generation, replacement, selected-event updates, map keys, resizing, and window closure.
 
-The GUI runs covered normal and 200 percent display scaling. Captured images were inspected for map content and panel layout. The tests used the desktop theme and an explicit light palette.
+The GUI runs covered normal and 200 percent display scaling. Captured images were inspected for map content and pane layout. The tests used the desktop theme and an explicit light palette.
 
 Installation into a temporary prefix succeeded. The installed executable reported version 0.1.0 using system Qt libraries without a build-directory runtime path. It also opened in Xvfb and remained active until the startup test terminated it.
 
@@ -62,7 +62,7 @@ A ten-second native workload passed its behavior and resource assertions under X
 
 The coverage mode passed the core, preferences, workload, and 13 native GUI cases. GCC 14.2 recorded 948 of 1081 source lines and 137 of 153 functions as executed. It recorded 1498 of 3104 compiler branches as executed. Branch totals include generated exception paths within source expressions. These figures are evidence of gaps, not a claim of complete path coverage.
 
-Uncovered areas include application startup, file-dialog interaction, several map input handlers, preference-directory failures, and short-read failures. Native hardware and Wayland runs remain outstanding. No multi-hour run occurred in this session. Run the documented two-hour workload and desktop tests before claiming long-session stability.
+Uncovered areas include application startup, file-dialog interaction, several map input handlers, preference-directory failures, and short-read failures. Native hardware and Wayland runs remain outstanding. No multi-hour run occurred in this session. Run the documented two-hour workload and desktop tests before you claim long-session stability.
 
 The release preset built successfully with tests, sanitizers, and coverage disabled. Its compiler commands contain no sanitizer or coverage flags. Its executable does not link sanitizer or Qt Test libraries. Python, Cppcheck, and coverage tools remain development-only dependencies.
 
@@ -78,4 +78,4 @@ The release startup test used a fresh temporary profile with `QT_DEBUG_PLUGINS=1
 
 The native sanitizer GUI cases passed their assertions. LeakSanitizer still reported the known 240732-byte Mesa leak in 1073 allocations, and the runner retained the failure. The logging handler runs only in the application and logging probes. It does not suppress test framework or sanitizer reports.
 
-The warning about mouse capture was located in Qt 6.8 Wayland source. Its exact triggering gesture was not reproduced in a native Wayland session. Hardware graphics, native Wayland placement, and Qt 6.4 remain untested.
+The review located the mouse capture warning in Qt 6.8 Wayland source. It did not reproduce the exact triggering gesture in a native Wayland session. Hardware graphics, native Wayland placement, and Qt 6.4 remain untested.

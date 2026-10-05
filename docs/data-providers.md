@@ -26,13 +26,15 @@ The table checkbox enables or disables each feed. Multiple feeds can draw togeth
 
 The refresh interval ranges from 60 through 86400 seconds. Each feed has its own timer. Its next interval starts after a download and parse attempt finishes. Manual refresh does not overlap an update already in progress. Disabled feeds do not download.
 
-File > Settings > Data providers contains the same table as the management window. Add and Edit expose all feed parameters. Provider changes apply immediately. The form includes color, opacity, line width, point radius, polygon fill opacity, and labels. Names sort according to the desktop locale. The application saves feed configuration and manager geometry across restarts. Missing plugins retain their configuration but do not download data.
+File > Settings > Data providers contains the same table as the management window. Add and Edit expose all feed parameters. Provider changes apply immediately. The form includes color, opacity, line width, point radius, polygon fill opacity, and labels.
 
-A failed update retains the previous valid geometry and marks its credit as STALE. The manager shows the failure. A successful empty document clears the old geometry. Disabling, removing, or editing a feed clears its current geometry. Geometry remains in memory and is downloaded again after restart. The map combines data credits with its clickable, right-aligned attribution panel.
+Names sort according to the desktop locale. The application saves feed configuration and manager geometry across restarts. Missing plugins retain their configuration but do not download data.
+
+A failed update retains the previous valid geometry and marks its credit as STALE. The manager shows the failure. A successful empty document clears the old geometry. Disabling, removing, or editing a feed clears its current geometry. Geometry remains in memory, and the application downloads it again after restart. The map combines data credits with its clickable, right-aligned attribution panel.
 
 # Supported geometry
 
-The reader supports KML 2.2 and the older Google KML 2.0/2.1/2.2 namespaces. It draws Point, LineString, Polygon with inner rings, and MultiGeometry inside Placemarks. Names appear as plain labels. Hidden folders and placemarks are excluded when visibility precedes their children. Coordinates use longitude and latitude. The renderer projects them to Web Mercator and clips polar positions.
+The reader supports KML 2.2 and the older Google KML 2.0/2.1/2.2 namespaces. It draws Point, LineString, Polygon with inner rings, and MultiGeometry inside Placemarks. Names appear as plain labels. The reader excludes hidden folders and placemarks when visibility precedes their children. Coordinates use longitude and latitude. The renderer projects them to Web Mercator and clips polar positions.
 
 The map draws flat geometry. It does not apply altitude, terrain, time animation, KML styles, style maps, HTML balloons, external icons, models, tours, or image overlays. Each feed uses its configured appearance. Network links do not trigger downloads. The manager reports counts of skipped links and unsupported overlays or models. A document with only unsupported content can therefore show no shapes.
 
@@ -59,9 +61,9 @@ Archive processing accepts complete ZIP archives with a central directory and ne
 
 Qt Network supplies HTTPS. QXmlStreamReader supplies XML parsing. Qt Concurrent supplies bounded background work. The KML plugin uses libarchive for ZIP decompression because Qt has no public general-purpose ZIP reader. This avoids a custom archive implementation or private Qt APIs.
 
-Libarchive is dynamically linked and uses a BSD license. The tested Debian packages are `libarchive-dev` and `libarchive13t64`, version `3.7.4-4+deb13u1`. Use distribution security updates. The [Debian tracker](https://security-tracker.debian.org/tracker/source-package/libarchive) records outstanding and fixed issues by package version. Only ZIP support is enabled in this application. Other archive readers remain unused.
+SWAK links libarchive dynamically. Libarchive uses a BSD license. The tested Debian packages are `libarchive-dev` and `libarchive13t64`, version `3.7.4-4+deb13u1`. Use distribution security updates. The [Debian tracker](https://security-tracker.debian.org/tracker/source-package/libarchive) records outstanding and fixed issues by package version. This application enables only ZIP support. Other archive readers remain unused.
 
-The October 2 dependency review found open Debian notices for RAR5 reading, TAR sparse headers, and encrypted ZIP writing. These paths are not used by the released application. The ZIP writer appears only in tests with small, unencrypted fixtures. The separate ACL notice concerns a text ACL parser that this reader does not call. This scope review does not establish that the library has no other defects.
+The October 2 dependency review found open Debian notices for RAR5 reading, TAR sparse headers, and encrypted ZIP writing. The released application does not use these paths. The ZIP writer appears only in tests with small, unencrypted fixtures. The separate ACL notice concerns a text ACL parser that this reader does not call. This scope review does not establish that the library has no other defects.
 
 Review references: [RAR5 notice](https://security-tracker.debian.org/tracker/CVE-2026-14164), [TAR notice](https://security-tracker.debian.org/tracker/CVE-2026-15028), [ZIP writer notice](https://security-tracker.debian.org/tracker/CVE-2026-16517), and [ACL notice](https://security-tracker.debian.org/tracker/CVE-2026-5745).
 

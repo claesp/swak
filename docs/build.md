@@ -24,7 +24,7 @@ For a nonstandard Qt installation, set `CMAKE_PREFIX_PATH` during configuration.
 cmake --preset debug -DCMAKE_PREFIX_PATH=/path/to/qt
 ```
 
-Always rebuild the release executable after application changes, before completing the task. The release preset uses a separate directory. Run the following commands from the repository root. Installation includes the executable, desktop entry, icon, and user guides. Developer reviews and session notes stay in the source repository.
+Always rebuild the release executable after application changes, before you complete the task. The release preset uses a separate directory. Run the following commands from the repository root. Installation includes the executable, desktop entry, icon, and user guides. Developer reviews and session notes stay in the source repository.
 
 ```sh
 cmake --preset release
@@ -76,7 +76,7 @@ Each build refreshes `generated/swak/version.h` through `cmake/version.cmake`. T
 
 Ninja runs the metadata task on every build. CMake changes the header only when its contents change. This updates the version after a commit or tag change without requiring manual configuration. Git is a build-time tool only. A source archive without Git metadata uses `+unknown`.
 
-After committing release sources, rebuild the release preset. Run `build/release/swak --version` to read its source identity. Development diagnostics test metadata generation in a temporary Git repository.
+After you commit release sources, rebuild the release preset. Run `build/release/swak --version` to read its source identity. Development diagnostics test metadata generation in a temporary Git repository.
 
 # CoT emulator
 
@@ -84,7 +84,7 @@ Build the separate development tool with `cmake --build --preset debug --target 
 
 # Graphics startup
 
-SWAK prefers EGL for the Qt X11 graphics connection. EGL and GLX connect OpenGL rendering to the window system. This avoids the Mesa GLX allocation leak reproduced during KDE theme startup on the development host. Rendering still uses OpenGL and the installed driver. Qt tries GLX if its EGL integration cannot initialize. Native Wayland selection remains unchanged.
+SWAK prefers EGL for the Qt X11 graphics connection. EGL and GLX connect OpenGL rendering to the window system. This avoids a GLX allocation leak in Mesa. The project reproduced this leak during KDE theme startup on the development host. Rendering still uses OpenGL and the installed driver. Qt tries GLX if its EGL integration cannot initialize. Native Wayland selection remains unchanged.
 
 SWAK preserves an explicit QT_XCB_GL_INTEGRATION environment value. For a GLX comparison, run this command from the repository root:
 
@@ -92,4 +92,4 @@ SWAK preserves an explicit QT_XCB_GL_INTEGRATION environment value. For a GLX co
 QT_XCB_GL_INTEGRATION=xcb_glx ./build/release/swak
 ```
 
-To use the SWAK default again, unset QT_XCB_GL_INTEGRATION before startup. No system driver changes or leak suppressions are required. GPU and desktop combinations outside the tested host still require native testing.
+To use the SWAK default again, unset QT_XCB_GL_INTEGRATION before startup. This default requires no system driver changes or leak suppressions. GPU and desktop combinations outside the tested host still require native testing.

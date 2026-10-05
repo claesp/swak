@@ -7,10 +7,10 @@ The plugin interfaces live in `src/core/interfaces.h`. The common plugin API is 
 The extension levels are:
 
 - `Codec` converts bounded messages to events and events to XML.
-- `SourcePlugin` creates a receiver panel that submits decoded events to the store.
+- `SourcePlugin` creates a receiver pane that submits decoded events to the store.
 - `ViewPlugin` creates a presentation widget and receives the available map layers.
 - `MapLayer` draws one part of the map in a defined order.
-- `ToolPlugin` creates a workspace panel for event interaction.
+- `ToolPlugin` creates a workspace pane for event interaction.
 - `PanePlugin` creates a pane without a codec.
 - `MenuPlugin` adds commands under Tools > Plugins.
 - `ToolbarPlugin` adds icon actions to the main toolbar.
@@ -40,11 +40,11 @@ To add a built-in feature, use this sequence:
 
 A plugin can implement more than one interface. The tracks plugin demonstrates this arrangement. In this host, a tool that also implements `MapLayer` appears in the bottom dock.
 
-Each tool and source has an independent dock with a Tools > Plugins activation action. The host groups the side docks as tabs initially. All docks share a content container and a resize handle that appears when detached.
+Each tool and source has an independent dock with a Tools > Plugins activation action. The host groups the side docks as tabs initially. All docks share a content container and a resize handle that appears when the user detaches a dock.
 
 Create widgets with the supplied parent. Keep widgets and painter calls on the GUI thread. Keep each map layer free of retained painter or store references beyond the call.
 
-The host keeps plugin instances alive for the process lifetime. It destroys panels and the map before destroying the event store. Source panels must close their sockets and timers when Qt destroys them.
+The host keeps plugin instances alive for the process lifetime. It destroys panes and the map before it destroys the event store. Source panes must close their sockets and timers when Qt destroys them.
 
 Use a separate process for untrusted extensions. Native plugins have full application permissions and cannot provide an isolation boundary. Runtime plugin discovery requires a separate design for trust, compatibility, and process isolation.
 
@@ -56,13 +56,13 @@ Keep each identifier stable across plugin releases. The host derives persistent 
 
 The document has root schema version 1. It contains `window`, `panes`, and `components` objects. Unknown root fields and absent plugin sections remain intact when the host saves available features.
 
-Each plugin owns its component keys and must bound restored values. Keep compatible keys stable when adding fields. An incompatible document format requires a new schema version and an explicit migration.
+Each plugin owns its component keys and must bound restored values. Keep compatible keys stable when you add fields. An incompatible document format requires a new schema version and an explicit migration.
 
-The host uses versioned Qt layout data for dock relationships and separate records for individual panes. Qt retains placeholders for absent panes across saves. If the Qt layout cannot be restored, the host restores available pane records instead.
+The host uses versioned Qt layout data for dock relationships and separate records for individual panes. Qt retains placeholders for absent panes across saves. If the host cannot restore the Qt layout, it restores available pane records instead.
 
 A missing map plugin produces an empty-state message. A missing codec disables the tools that require it. Both cases preserve the absent component preferences for a later launch.
 
-Preferences use `QStandardPaths`, `QJsonDocument`, `QLockFile`, and `QSaveFile`. No additional library is required. Read [Use the workspace](usage.md) for profile portability and recovery behavior.
+Preferences use `QStandardPaths`, `QJsonDocument`, `QLockFile`, and `QSaveFile`. Preferences require no additional library. Read [Use the workspace](usage.md) for profile portability and recovery behavior.
 
 # References
 
@@ -94,9 +94,9 @@ The Settings dialog separates General sections from pane customization. The host
 
 # Plugin menus
 
-`MenuPlugin` is an optional interface with identifier `org.swak.Menu/2.0`. A plugin implements `name()` and `populateMenu(PluginServices &, QMenu &)`. The host creates a submenu under Tools > Plugins and calls the provider once for each window. Plugins do not need a panel or codec to provide commands. The host removes empty submenus and adds pane activation actions. The built-in Plugins pane remains available.
+`MenuPlugin` is an optional interface with identifier `org.swak.Menu/2.0`. A plugin implements `name()` and `populateMenu(PluginServices &, QMenu &)`. The host creates a submenu under Tools > Plugins and calls the provider once for each window. Plugins do not need a pane or codec to provide commands. The host removes empty submenus and adds pane activation actions. The built-in Plugins pane remains available.
 
-Create actions with the supplied menu as their parent. Connect callbacks with a QObject context that owns the state they use. Do not retain window menus or store references in static plugin objects. Keep callbacks bounded and do not let exceptions escape them. Qt removes connections when the action or its context is destroyed.
+Create actions with the supplied menu as their parent. Connect callbacks with a QObject context that owns the state they use. Do not retain window menus or store references in static plugin objects. Keep callbacks bounded. Do not let exceptions escape them. Qt removes connections when it destroys the action or its context.
 
 The CoT Messages plugin adds Clear and connects it directly to the window event store. The host contains no event-specific menu code. This interface adds no external dependency and does not load external plugin files.
 

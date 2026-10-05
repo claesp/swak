@@ -34,7 +34,7 @@ Create a local JSON profile with two client configurations. Use separate test ce
 }
 ```
 
-For PKCS12 credentials, set certificate to the archive path and omit key. Use passwordEnv with a dedicated SWAK_COT_ environment variable. For plaintext TCP, use protocol stcp and its configured port. Plaintext tests do not establish certificate authentication.
+For PKCS12 credentials, set certificate to the archive path. Omit key. Use passwordEnv with a dedicated SWAK_COT_ environment variable. For plaintext TCP, use protocol stcp and its configured port. Plaintext tests do not establish certificate authentication.
 
 Run the probe from the repository root after the server starts:
 
@@ -48,7 +48,7 @@ The probe remains outside the release executable and installation. It requires n
 
 The test used official TAK Server 5.7-RELEASE-14, source commit 5187abd46d827d37cfc5708805eced197a837e49. The [official build guide](https://github.com/TAK-Product-Center/Server/blob/5187abd46d827d37cfc5708805eced197a837e49/README.md) supplied the deployment approach. Java 17 built the configuration and messaging services in a disposable container. The test excluded web dashboards and the API service. PostgreSQL 15 with PostGIS 3.3 used the official schema manager. It applied 94 database updates.
 
-Both test clients used the same SWAK core as commit 306120f8d22f. The server used normal persistence and a shared test group. TLS used a temporary private CA and two separate client identities. Only loopback ports 18088 and 18089 were published. The database and service network remained private.
+Both test clients used the same SWAK core as commit 306120f8d22f. The server used normal persistence and a shared test group. TLS used a temporary private CA and two separate client identities. The test published only loopback ports 18088 and 18089. The database and service network remained private.
 
 | Test | Result | Evidence |
 | --- | --- | --- |

@@ -10,7 +10,7 @@ Use clang-format 19 for C++. Put function and type opening braces on a new line.
 
 Group local includes before Qt includes, then other system includes. Include the matching header first in implementation files when one exists. Sort each group. Use self-contained headers with pragma once. Do not depend on a different header to supply a required standard-library declaration.
 
-Use Black 25.1.0 for Python and cmake-format 0.6.13 for CMake. The Python baseline remains 3.9. Keep CMake targets, dependencies, and source lists explicit. Use the repository Ninja presets and keep machine paths out of committed files.
+Use Black 25.1.0 for Python and cmake-format 0.6.13 for CMake. The Python baseline remains 3.9. Keep CMake targets, dependencies, and source lists explicit. Use the repository Ninja presets. Keep machine paths out of committed files.
 
 Third-party source, test fixtures, and generated files retain their source format. In particular, ui_icon_paths.inc comes from tools/generate_icons.py. Change its generator when icon behavior changes. Do not reformat vendor code or generated Qt code. MANIFEST and other JSON files use two-space indentation.
 
@@ -46,7 +46,7 @@ Keep animation configuration in typed runtime fields. Update those fields during
 
 Use asynchronous network APIs. Bound work per event-loop pass. Keep GUI callbacks free of sleep, processEvents loops, and blocking network waits. Tests can use bounded Qt waits. Shutdown can wait for a cancelled, bounded worker to finish before it destroys resources.
 
-Use a worker QObject for threaded services. Create sockets on their owning thread. Define cancellation, timeout, stale-result rejection, and shutdown before adding asynchronous work. Release locks before calling external callbacks or updating widgets.
+Use a worker QObject for threaded services. Create sockets on their owning thread. Define cancellation, timeout, stale-result rejection, and shutdown before you add asynchronous work. Release locks before you call external callbacks or update widgets.
 
 ## Input and failures
 

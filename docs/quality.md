@@ -2,9 +2,11 @@
 
 Run `tools/quality.py` when a change affects memory ownership, input handling, callbacks, networking, or repeated work. Run all modes before a release. Run the analysis and coverage modes regularly during development, including after plugin changes.
 
-The runner uses Python 3.9 or later and its standard library. It saves logs and `result.json` under `build/quality/`. A failed test, missing tool, crash, or timeout returns a nonzero status. Each mode tests the current source in a separate development build. Run modes that execute the application one at a time. Test caches use shared per-user paths, even across different build directories. Parallel runs can fail during cache locking.
+The runner uses Python 3.9 or later and its standard library. It saves logs and `result.json` under `build/quality/`. A failed test, missing tool, crash, or timeout returns a nonzero status. Each mode tests the current source in a separate development build.
 
-Sanitizers are tools that detect faults during program execution. The sanitizer build detects use-after-free, invalid access, some undefined behavior, and leaks. Leak detection stays enabled. The runner does not suppress graphics-driver leaks or accept them as success. The release preset does not enable diagnostic instrumentation. No diagnostic tool or test executable is installed with the application.
+Run modes that execute the application one at a time. Test caches use shared per-user paths, even across different build directories. Parallel runs can fail during cache locking.
+
+Sanitizers are tools that detect faults during program execution. The sanitizer build detects use-after-free, invalid access, some undefined behavior, and leaks. Leak detection stays enabled. The runner does not suppress graphics-driver leaks or accept them as success. The release preset does not enable diagnostic instrumentation. Installation includes no diagnostic tool or test executable.
 
 On Debian 13, install the development tools with administrator access:
 
@@ -43,7 +45,7 @@ The workload fills the event store to its limit, then exercises bounded parsing 
 - The event loop responds within two seconds.
 - The idle process consumes less than half of one CPU core over one second.
 
-Resident memory means memory currently held in RAM. Allocator caches and sanitizer overhead affect this measurement. The threshold detects large growth, while LeakSanitizer detects unreleased allocations at exit. A smaller leak can pass a short run. Logs record cycles, peak growth, heartbeat delay, and idle CPU time. Compare reports on the same host before changing thresholds.
+Resident memory means memory currently held in RAM. Allocator caches and sanitizer overhead affect this measurement. The threshold detects large growth, while LeakSanitizer detects unreleased allocations at exit. A smaller leak can pass a short run. Logs record cycles, peak growth, heartbeat delay, and idle CPU time. Compare reports on the same host before you change thresholds.
 
 The default workload does not render the map. Add `--gui` to run the workload with the actual application window and GPU map under Xvfb. This mode also preserves leak failures from the graphics driver. Exercise the actual desktop for hours with representative traffic before release. Hardware graphics, Wayland, screen changes, and driver behavior require that desktop run.
 
@@ -55,7 +57,9 @@ Coverage records which code the tests execute. This mode requires GCC and a matc
 python3 tools/quality.py coverage --gui
 ```
 
-Read the unexecuted lines and functions in the report. Add tests for reachable success, error, cancellation, and shutdown paths. Remove unused code only after reference review and analysis. An unexecuted function is not proof that the function is dead. Qt callbacks and plugin entry points require particular care. Record remaining gaps and reasons in the test report. Line and branch counts do not establish that every possible input or path works.
+Read the unexecuted lines and functions in the report. Add tests for reachable success, error, cancellation, and shutdown paths. Remove unused code only after reference review and analysis. An unexecuted function is not proof that the function is dead. Qt callbacks and plugin entry points require particular care.
+
+Record remaining gaps and reasons in the test report. Line and branch counts do not establish that every possible input or path works.
 
 Static analysis examines source without executing it. This mode uses Cppcheck 2.17 or later with the application compilation database and Qt library descriptions. It examines unused functions, warnings, style, performance, and portability. It requests exhaustive branch analysis and fails when Cppcheck reports a diagnostic. Source analysis can produce false alarms and miss faults.
 
@@ -65,13 +69,13 @@ The runner replaces generated Qt `.moc` includes with empty files for source ana
 python3 tools/quality.py analyze
 ```
 
-Review each diagnostic before changing code. If a Qt callback requires an exception, use a narrow suppression with a source comment that explains the reason. Do not suppress whole defect classes. Run compiler warnings and coverage alongside analysis because no single tool finds all dead code or faults.
+Review each diagnostic before you change code. If a Qt callback requires an exception, use a narrow suppression with a source comment that explains the reason. Do not suppress whole defect classes. Run compiler warnings and coverage alongside analysis because no single tool finds all dead code or faults.
 
 # Resilience rules
 
 Recoverable input, file, preference, and network failures must leave the interface usable. Bound memory, queues, parsing work, and retry rates. Release resources on every error and shutdown path. Prevent exceptions from escaping Qt callbacks. Test failure recovery followed by a successful operation.
 
-Do not continue after detected memory corruption or catch fatal signals to hide crashes. C++ memory corruption and failing native libraries cannot be safely recovered inside the same process. Features that require isolation from native crashes need a separate worker process and a restart policy. Current static plugins share the application process. This workflow improves fault detection but does not guarantee that the application cannot crash.
+Do not continue after detected memory corruption. Do not catch fatal signals to hide crashes. The application cannot safely recover from C++ memory corruption or failing native libraries inside the same process. Features that require isolation from native crashes need a separate worker process and a restart policy. Current static plugins share the application process. This workflow improves fault detection but does not guarantee that the application cannot crash.
 
 The compiler documents the [sanitizer and coverage flags](https://gcc.gnu.org/onlinedocs/gcc/Instrumentation-Options.html). Cppcheck documents its [analysis and suppression behavior](https://cppcheck.sourceforge.io/manual.html). Review Qt and dependency security advisories before a release.
 
@@ -81,7 +85,7 @@ The data suite tests KML and KMZ decoding, malformed inputs, local HTTPS failure
 
 For a downloaded research sample, run `QT_QPA_PLATFORM=offscreen build/debug/swak_data_tests --sample /path/to/sample.kml` from the repository root. This development-only command also accepts KMZ. It reads at most the download limit plus one byte and reports shape counts or a parsing error.
 
-The vector suite tests MVT decoding, property types, polygon holes, malformed records, numeric bounds, background cancellation, source replacement, and decoder exceptions. The native GUI suite tests layer controls, persisted choices, feature inspection, and OpenGL rendering. The workload also decodes a vector tile on each cycle. A downloaded sample can be decoded with `QT_QPA_PLATFORM=offscreen build/debug/swak_vector_tests --sample /path/to/tile.pbf`.
+The vector suite tests MVT decoding, property types, polygon holes, malformed records, numeric bounds, background cancellation, source replacement, and decoder exceptions. The native GUI suite tests layer controls, persisted choices, feature inspection, and OpenGL rendering. The workload also decodes a vector tile on each cycle. To decode a downloaded sample, use `QT_QPA_PLATFORM=offscreen build/debug/swak_vector_tests --sample /path/to/tile.pbf`.
 
 The vector suite includes four dense tiles with more than 200000 vertices in total. It tests complete rendering, cached panning, and image replacement after layer changes. For a local research sample, run `QT_QPA_PLATFORM=offscreen build/debug/swak_vector_tests --benchmark-sample /path/to/tile.pbf`. This development command compares direct painting with cached image composition for 16 tiles across ten pan frames. The comparison uses software painting, not hardware GPU timing.
 
@@ -135,7 +139,7 @@ Menu tests cover locale ordering, direct plugin actions, provider toggles, and m
 
 # Source style
 
-Read [Coding style](coding-style.md) for the project standard and formatter versions. Run python3 tools/quality.py style to report format differences without changing source. Run python3 tools/style.py --fix to apply the format. Review inserted braces and include changes before committing.
+Read [Coding style](coding-style.md) for the project standard and formatter versions. Run python3 tools/quality.py style to report format differences without changing source. Run python3 tools/style.py --fix to apply the format. Review inserted braces and include changes before you commit.
 
 The style pass covers first-party C++, Python, and CMake code. It excludes vendor code, generated files, and fixtures. The source-analysis pass also covers the C++ development tools. Formatter tests exercise file selection, version rejection, and command failure.
 
@@ -147,7 +151,7 @@ Restricted Area tests cover fill and stripes, draft preview, cancellation, Apply
 
 Grid tests cover saved definitions, invalid values, catalog bounds, canceled edits, deletion, and legacy migration. Known coordinates cover Norway, Svalbard, the equator, and both polar systems. Rendering tests cover all angle formats, broad zone views, close views, and the date line. Native tests exercise tab switching, provider grouping, decoration visibility, and live resizing of existing markers.
 
-The trace workload uses an explicit clock after timestamp mutation. It extends the synthetic expiry before advancing the trace. This keeps generated trace samples valid without weakening the application parser or store rules. Rejected samples report their exact error.
+The trace workload uses an explicit clock after timestamp mutation. It extends the synthetic expiry before it advances the trace. This keeps generated trace samples valid without weakening the application parser or store rules. Rejected samples report their exact error.
 
 # Graphics leak regression
 
@@ -167,6 +171,6 @@ QT_QPA_PLATFORM=xcb QT_XCB_GL_INTEGRATION=xcb_glx xvfb-run -a build/sanitize/swa
 
 On the development host, the GLX path reports 240732 leaked bytes in 1073 allocations. An empty Qt application reports the same amount without a map widget. The extended allocation stack reaches Mesa through glXChooseFBConfig and the KDE platform theme during QApplication construction. These results identify a startup-path leak, not growth per map widget. The default EGL path avoids these allocations and passes leak detection.
 
-Qt retains a fallback from EGL integration initialization to GLX. Its source defines this order in [QXcbConnection](https://github.com/qt/qtbase/blob/v6.4.3/src/plugins/platforms/xcb/qxcbconnection.cpp#L1090-L1121). Hardware graphics, Wayland, and fallback behavior on systems without EGL require separate host testing. Do not disable leak detection when testing those systems.
+Qt retains a fallback from EGL integration initialization to GLX. Its source defines this order in [QXcbConnection](https://github.com/qt/qtbase/blob/v6.4.3/src/plugins/platforms/xcb/qxcbconnection.cpp#L1090-L1121). Hardware graphics, Wayland, and fallback behavior on systems without EGL require separate host testing. Do not disable leak detection when you test those systems.
 
 The workload waits for 500 milliseconds without model updates, animation updates, or rendered frames before its idle CPU measurement. This wait has a twenty-second limit. A continuously active map fails the wait. The default stale-marker fade and gray retention last about 11 seconds. This activity no longer counts as idle work. The CPU threshold remains unchanged.

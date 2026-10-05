@@ -6,7 +6,9 @@ The application links plugins into the executable. Qt embeds each `src/plugins/<
 
 # Host services
 
-`PluginServices` supplies references to the event store, internal-event model, and map catalog. Its optional `data` pointer supplies the data catalog. Its optional `selection` pointer supplies the shared map selection. The optional `mapTools` and `objects` pointers supply map interaction and local object storage. The host passes this context to each UI factory and menu or toolbar callback. The context exists only during the call. Plugins can capture its service pointers in callbacks whose QObject context limits their lifetime.
+`PluginServices` supplies references to the event store, internal-event model, and map catalog. Its optional `data` pointer supplies the data catalog. Its optional `selection` pointer supplies the shared map selection. The optional `mapTools` and `objects` pointers supply map interaction and local object storage.
+
+The host passes this context to each UI factory and menu or toolbar callback. The context exists only during the call. Plugins can capture its service pointers in callbacks whose QObject context limits their lifetime.
 
 The host owns the services for each window. Plugins must not save service pointers, menus, or widgets in their static plugin objects. Qt parents own created widgets and actions. The host destroys plugin widgets before the event store. All model and widget operations use the GUI thread.
 
@@ -35,13 +37,15 @@ Plugins implement the feature interfaces that they need. Their manifests declare
 | `PreferenceParticipant` | C++ interface, no Qt identifier | Saves and restores bounded JSON under a stable component identifier. |
 | `SettingsParticipant` | `/1.0` | Adds a title, editable fields, and optional validation to preferences. |
 
-The unchanged data and map interfaces retain version 1.0. Most UI interfaces use version 2.0 because their service arguments changed. ToolbarPlugin uses version 3.0 because it now requires `name()`. The former `MapConsumer` interface is removed. The view now receives the map catalog through the shared context.
+The unchanged data and map interfaces retain version 1.0. Most UI interfaces use version 2.0 because their service arguments changed. ToolbarPlugin uses version 3.0 because it now requires `name()`. This version removes the former `MapConsumer` interface. The view now receives the map catalog through the shared context.
 
 The host uses icon-only toolbar sections with separators. Plugin names remain available through the API but do not consume toolbar space. The host calls menu callbacks before toolbar callbacks. A toolbar callback receives its plugin menu or null. Plugins can share one action between their menu and toolbar. Plugins must not assume that a menu exists.
 
 Tools and sources require a codec for their panes. The host leaves those panes unavailable when no codec exists. Codec-free panes, menus, and independent map layers remain available. Pane visibility does not unload plugin code or stop a receiver.
 
-The host owns pane placement, visibility actions, and layout persistence. Plugins with commands receive a submenu under Tools > Plugins. The plugin entry has a checkbox that shows or hides its pane. Return and Space also toggle the pane. Hover and Right open the command submenu. Plugins without commands use a direct checkbox action unless they supply a primaryAction. Marker and Area use direct creation commands. Closing a pane hides it.
+The host owns pane placement, visibility actions, and layout persistence. Plugins with commands receive a submenu under Tools > Plugins. The plugin entry has a checkbox that shows or hides its pane. Return and Space also toggle the pane. Hover and Right open the command submenu.
+
+Plugins without commands use a direct checkbox action unless they supply a primaryAction. Marker and Area use direct creation commands. Closing a pane hides it.
 
 # Implemented plugins
 
@@ -76,7 +80,7 @@ The editor, receiver, and event table report operations through `logMessage`. Th
 
 # Manifest schema
 
-Each MANIFEST contains a JSON object. Its schema version is 1. Qt embeds the object as `MetaData`, so no separate manifest file is needed beside the executable.
+Each MANIFEST contains a JSON object. Its schema version is 1. Qt embeds the object as `MetaData`, so SWAK needs no separate manifest file beside the executable.
 
 | Field | Required value or meaning |
 | --- | --- |
@@ -114,11 +118,11 @@ The status bar shows CoT and retained internal-event counts with separators. Inc
 
 # Add a plugin
 
-Create a QObject plugin class and its MANIFEST under `src/plugins`. Implement `Plugin` and the required feature interfaces. Add the metadata file to `Q_PLUGIN_METADATA` and list all interfaces in `Q_INTERFACES`.
+Create a QObject plugin class and its MANIFEST under `src/plugins`. Implement `Plugin` and the required feature interfaces. Add the metadata file to `Q_PLUGIN_METADATA`. List all interfaces in `Q_INTERFACES`.
 
 Register the static target with `swak_plugin` in `CMakeLists.txt`. Link it to the executable and relevant test targets. Add `Q_IMPORT_PLUGIN` in `src/app/plugins.cpp`. Add tests for malformed input, missing services, cancellation, and shutdown as applicable.
 
-Keep callbacks bounded and do not let exceptions escape Qt calls. Use shared preference and field helpers for saved values. Update the manifest and this inventory when roles change. Run the applicable diagnostics and rebuild the release executable before completing the task.
+Keep callbacks bounded. Do not let exceptions escape Qt calls. Use shared preference and field helpers for saved values. Update the manifest and this inventory when roles change. Run the applicable diagnostics and rebuild the release executable before you complete the task.
 
 
 # Recovery and table order
@@ -143,7 +147,9 @@ Each data plugin declares `data-provider` in its MANIFEST. Its `dataId()` must m
 
 `VectorTileProvider` adds the optional interface `org.swak.VectorTiles/1.0` to a MapProvider. Its manifest declares both `map-provider` and `vector-tiles`. The host rejects the vector role without the map provider role. The common Plugin API remains version 2, and MapProvider remains version 1. All plugins still use the same toolchain and Qt installation.
 
-`decodeTile(bytes, cancelled)` runs on a host worker and returns an owning VectorTile value. The provider must support concurrent calls and cooperative cancellation. It must bound input, output, and work. It must not retain borrowed input or access widgets. An error produces a nonempty error string. A valid empty tile has no features and no error. The host converts standard exceptions into a controlled tile failure.
+`decodeTile(bytes, cancelled)` runs on a host worker and returns an owning VectorTile value. The provider must support concurrent calls and cooperative cancellation. It must bound input, output, and work. It must not retain borrowed input or access widgets.
+
+An error produces a nonempty error string. A valid empty tile has no features and no error. The host converts standard exceptions into a controlled tile failure.
 
 VectorFeature stores a layer name, an exact identifier string, properties, a geometry kind, and tile-local coordinates normalized by the tile extent. The provider also supplies each feature color and a label-only flag. Polygon paths use odd-even filling for holes. The renderer clips buffered geometry to its tile. The cache adds the prepared image size to the provider's conservative `costKiB` estimate. The static provider must outlive its host workers.
 
@@ -165,7 +171,7 @@ A pane can derive from `PaneContent` and emit `visibilityRequested(bool)`. The h
 
 The pane can override preferredDockArea() to select its initial dock area. The default is the bottom area. Information uses the right area. Saved layouts take precedence. This optional base class leaves existing PanePlugin factories unchanged.
 
-The Information plugin implements PanePlugin and PreferenceParticipant. Its MANIFEST declares `clipboard-write`, a permission for user-requested copies to the OS clipboard. The common Plugin API remains version 2. All built-in plugins compile against the same extended service structure. No external binary compatibility is promised.
+The Information plugin implements PanePlugin and PreferenceParticipant. Its MANIFEST declares `clipboard-write`, a permission for user-requested copies to the OS clipboard. The common Plugin API remains version 2. All built-in plugins compile against the same extended service structure. SWAK promises no external binary compatibility.
 
 # Vector recovery and coverage
 
@@ -193,15 +199,21 @@ The view updates its status widget on the interface thread. It must use a guarde
 
 `PluginServices` supplies per-window `UserObjects` and `MapTools` pointers. The host owns both services. Static plugins use these shared interfaces rather than searching for host widgets. The marker plugin registers `MapExtension::Kind::Tool` and `PanePlugin`. Its MANIFEST declares `map-tool` and `pane`. It does not enter the map provider catalog.
 
-`UserObject` separates identity, type, title, description, text properties, geometry, and color. Color uses the seven-character `#RRGGBB` format. Older records without color use orange (`#ffc857`). `UserObjects` owns committed records and portable preferences. Geometry is a bounded JSON object. The circle type uses normalized Mercator coordinates named `x` and `y`. Unknown object types retain their bounded records for future tools. New geometry types can reuse the metadata editor and deletion commands.
+`UserObject` separates identity, type, title, description, text properties, geometry, and color. Color uses the seven-character `#RRGGBB` format. Older records without color use orange (`#ffc857`). `UserObjects` owns committed records and portable preferences.
 
-`ObjectEditor` works on a copy of a record. Apply validates the whole copy before it writes through `UserObjects::put`. Cancellation drops that copy. `MapSelection` carries an owner identifier and object identifier for editable selections. CoT selections use owner org.swak.events and their UID. Imported map features without stable identities leave these fields empty. The regular Information pane remains read-only. It asks `MapTools::deleteSelection` to handle deletion, without knowing the owning plugin.
+Geometry is a bounded JSON object. The circle type uses normalized Mercator coordinates named `x` and `y`. Unknown object types retain their bounded records for future tools. New geometry types can reuse the metadata editor and deletion commands.
 
-A `MapTool` receives map input events, a viewport, and the map widget. Returning true consumes the event. The map paints registered tools after imported layers and before selection outlines. Each tool receives a saved painter state. `changed` requests another frame. `cancel` stops a pending operation. Tools must reject events outside their scope and avoid changing committed state during previews.
+`ObjectEditor` works on a copy of a record. Apply validates the whole copy before it writes through `UserObjects::put`. Cancellation drops that copy.
+
+`MapSelection` carries an owner identifier and object identifier for editable selections. CoT selections use owner org.swak.events and their UID. Imported map features without stable identities leave these fields empty. The regular Information pane remains read-only. It asks `MapTools::deleteSelection` to handle deletion, without knowing the owning plugin.
+
+A `MapTool` receives map input events, a viewport, and the map widget. Returning true consumes the event. The map paints registered tools after imported layers and before selection outlines. Each tool receives a saved painter state.
+
+`changed` requests another frame. `cancel` stops a pending operation. Tools must reject events outside their scope and avoid changing committed state during previews.
 
 The tool registry holds guarded pointers. Pane ownership controls each tool lifetime. The marker tool draws circles through the existing OpenGL painter. Its move preview leaves stored geometry unchanged until the click that commits it. Esc cancels an active tool before it dismisses Information. Hiding the map also cancels pending tool operations.
 
-`UserObjects::undoStack` supplies the application Edit > Undo action. Shared deletion commands retain complete records. Their history is bounded to 100 commands and is not serialized. Deleted records reserve model capacity until restoration or history removal. This reserve keeps a full model from blocking undo. GUI input, drawing, and model updates remain on the interface thread.
+`UserObjects::undoStack` supplies the application Edit > Undo action. Shared deletion commands retain complete records. Their history holds at most 100 commands. The host does not serialize this history. Deleted records reserve model capacity until restoration or history removal. This reserve keeps a full model from blocking undo. GUI input, drawing, and model updates remain on the interface thread.
 
 
 `MapTool::paintOverlay` draws transient content above the map. Its pointer argument contains the cursor position sampled at paint time, in logical map coordinates. Tools must use that argument for pointer-following previews. The host uses a transparent, mouse-transparent child widget for this content.
@@ -219,7 +231,7 @@ Overlay painting does not request map tile painting. The view refreshes the over
 `MapTool::guidesActive` reports active placement or movement guides. `MapTools` combines these requests for cursor behavior. Grids controls coordinate grids independently of tools.
 
 
-# Map overlay panels
+# Map overlay panes
 
 The host places all attached panes above the map in `MapPanels`. Panes cover map pixels without changing the map viewport. Plugins keep the same `PanePlugin` and `PaneContent` interfaces. They must use the supplied widget parent. Detached panes remain separate native windows.
 
@@ -239,7 +251,7 @@ Preset identifiers use the same bounded syntax as user source identifiers. Plugi
 
 # Marker collection providers
 
-`MarkerCollectionProvider` declares `org.swak.MarkerCollection/1.0`. Its `markerCollection()` method returns one bounded collection definition. The manifest declares the `marker-collection` role alongside any other roles. The host validates this definition before accepting the plugin. Collection identifiers are independent of plugin identifiers and must remain stable and unique.
+`MarkerCollectionProvider` declares `org.swak.MarkerCollection/1.0`. Its `markerCollection()` method returns one bounded collection definition. The manifest declares the `marker-collection` role alongside any other roles. The host validates this definition before it accepts the plugin. Collection identifiers are independent of plugin identifiers and must remain stable and unique.
 
 The Markers plugin supplies Core through this interface. The separate MILSTD2525 plugin supplies the military catalog. Both use the same schema as imported archives. `PluginServices::collections` points to the per-window `MarkerCollections` service. The host owns this service, and all mutations occur on the interface thread. The same-build static plugin contract still applies.
 
@@ -247,7 +259,7 @@ The Markers plugin supplies Core through this interface. The separate MILSTD2525
 
 `UserObject::collection` stores the collection identifier beside `symbol`. Empty legacy references resolve to Core for an empty symbol and MILSTD2525 otherwise. Explicit unknown references remain intact. `MapItem::markerOutline` carries normalized geometry for the selected local symbol. The selection renderer scales that geometry at the current marker radius. Missing symbols use a circle without changing the saved record.
 
-`ObjectEditor` receives the collection service and stores its last collection and type choices in its existing preferences. The collection manager uses the same provider-table control as map and data management. Settings embeds that manager without pane controls. No new external dependency or dynamic-code loader is added.
+`ObjectEditor` receives the collection service and stores its last collection and type choices in its existing preferences. The collection manager uses the same provider-table control as map and data management. Settings embeds that manager without pane controls. This change adds no new external dependency or dynamic-code loader.
 
 # Map authentication
 
@@ -277,7 +289,7 @@ ObjectEditor supports circle and polygon metadata. Polygon editing hides marker 
 
 Polygon objects use type polygon and geometry.vertices, an array of normalized [x, y] pairs. The closing corner is implicit. The shared model accepts 3 to 64 distinct corners and rejects crossing edges, overlapping edges, and zero area. The existing object and profile budgets still apply. Unknown plugin records remain in the shared store.
 
-MapItem::outlineStyle controls the selected polygon outline. Imported areas retain dashed outlines by default. Local polygons request a solid white outline. No new external dependency is required.
+MapItem::outlineStyle controls the selected polygon outline. Imported areas retain dashed outlines by default. Local polygons request a solid white outline. Polygon tools require no new external dependency.
 
 ## Overlapping map objects
 
@@ -287,10 +299,12 @@ MapItem::outlineStyle controls the selected polygon outline. Imported areas reta
 
 `MapTools` collects hits and routes chosen objects through this API. Markers and Areas both use it. The view also collects CoT, data feed, and vector feature hits. `DataSources::itemsAt` and `TileRenderer::itemsAt` return all hits. These methods replace the former first-hit `itemAt` methods.
 
-The host opens a chooser when more than one object matches. Menu rows show a label and icon. Tooltips show type and source details. More objects appear on pages of 30. Pages allocate their actions only when opened. Cancellation preserves selection. Content changes close the chooser before an old result can act. No saved schema changes. These shared C++ classes require all static plugins to rebuild together.
+The host opens a chooser when more than one object matches. Menu rows show a label and icon. Tooltips show type and source details. More objects appear on pages of 30. Pages allocate their actions only when the user opens them.
+
+Cancellation preserves selection. Content changes close the chooser before an old result can act. No saved schema changes. These shared C++ classes require all static plugins to rebuild together.
 
 
-`MapItem::icon` optionally supplies a chooser icon. The marker tool uses `collectionIcon` to preserve its actual symbol and color. The host uses shared UI icons for area and point fallbacks. `uiIcon` provides the application command icons. Plugins must use these factories for matching commands. The icon engine uses Qt vector paths and the active palette. No runtime icon theme or SVG parser is required.
+`MapItem::icon` optionally supplies a chooser icon. The marker tool uses `collectionIcon` to preserve its actual symbol and color. The host uses shared UI icons for area and point fallbacks. `uiIcon` provides the application command icons. Plugins must use these factories for matching commands. The icon engine uses Qt vector paths and the active palette, and requires no runtime icon theme or SVG parser.
 
 # Server services and reusable forms
 
@@ -316,7 +330,9 @@ TracePlugin uses the existing menu and map-tool roles. Its MANIFEST declares org
 
 PaneContent::watchPane attaches the host dock to the content. PaneContent::paneClosed receives an explicit close event from that dock. The default method does nothing. Information clears both map selection and CoT selection. Child dialogs and tab changes do not count as pane closure.
 
-SettingField supports enabledBy and enabledValue. A field names a choice field in the same configuration page and its required value. An enabledValue array accepts any listed value. SettingsDialog disables the editor and label when the value differs. Disabled fields retain their values. The Servers form uses this for TLS credentials. These additions retain plugin API version 2 because this build links and rebuilds all native plugins together.
+SettingField supports enabledBy and enabledValue. A field names a choice field in the same configuration page and its required value. An enabledValue array accepts any listed value. SettingsDialog disables the editor and label when the value differs. Disabled fields retain their values.
+
+The Servers form uses this for TLS credentials. These additions retain plugin API version 2 because this build links and rebuilds all native plugins together.
 
 Store::eventAccepted emits each accepted authoritative Event on the GUI thread, including events inside a batch. A receiver must copy any data that it retains. Trace uses this signal so a batch cannot hide intermediate accepted positions. Store::changed still marks the completed batch for drawing and disappearance handling.
 
@@ -324,7 +340,9 @@ MapTool::itemsChanged marks changed local object membership or properties. MapTo
 
 # Restoring section defaults
 
-The host captures standard SettingsPage values before it loads saved preferences. Plugins must expose their startup defaults through savePreferences at that point. SettingsPage.defaults carries this snapshot to the shared dialog. Restore section defaults updates only the fields in the current section and tab. Apply and OK use the existing validation and save callbacks. Cancel discards staged values. Hidden fields and plugin records remain intact. Custom management widgets keep their own actions and do not receive a generic reset button.
+The host captures standard SettingsPage values before it loads saved preferences. Plugins must expose their startup defaults through savePreferences at that point. SettingsPage.defaults carries this snapshot to the shared dialog.
+
+Restore section defaults updates only the fields in the current section and tab. Apply and OK use the existing validation and save callbacks. Cancel discards staged values. Hidden fields and plugin records remain intact. Custom management widgets keep their own actions and do not receive a generic reset button.
 
 # Information actions and paused positions
 
@@ -334,9 +352,11 @@ TrackMotion::setPaused freezes its displayed snapshot. Store continues accepting
 
 TrackMotion::pauseChanged reports pause transitions. TraceTool retains a bounded display snapshot during pause while its live history continues recording. Resume discards the snapshot and draws the latest retained history.
 
-The shared mapLabelBounds and paintMapLabel helpers use the same shortened text and padding. The selected argument inverts foreground and background colors. Plugins must use matching bounds for label clicks. DataSources::paint accepts the selected MapItem to style feed labels. Feed items use a provider owner and a shape index for session selection. Vector labels retain normalized cachedLabelBounds in MapItem. MapItem also retains cachedLabelText and its normalized font height. MapSelection redraws selected vector labels with white text on black after the selection geometry. It does not rebuild tile images.
+The shared mapLabelBounds and paintMapLabel helpers use the same shortened text and padding. The selected argument inverts foreground and background colors. Plugins must use matching bounds for label clicks. DataSources::paint accepts the selected MapItem to style feed labels.
 
-SettingField::unlockToEdit makes a text field read-only until the user selects its lock button. The lock state belongs to the dialog and is not saved. Section reset preserves these fields. Identity uses this shared contract for UID in both Identity and Settings.
+Feed items use a provider owner and a shape index for session selection. Vector labels retain normalized cachedLabelBounds in MapItem. MapItem also retains cachedLabelText and its normalized font height. MapSelection redraws selected vector labels with white text on black after the selection geometry. It does not rebuild tile images.
+
+SettingField::unlockToEdit makes a text field read-only until the user selects its lock button. The dialog owns the lock state and does not save it. Section reset preserves these fields. Identity uses this shared contract for UID in both Identity and Settings.
 
 setToolbarSection assigns a shared toolbar section and order to a QAction. The host groups tagged actions after plugin registration. Creation contains Marker, Area, Circle, and Line. Measurement contains Distance. Plugins reuse their existing actions, so menus and toolbar controls retain the same state and callbacks.
 
@@ -346,18 +366,24 @@ cotFieldDescription uses the same category catalog as the CoT selectors. Informa
 
 ShapesPlugin uses one shared ObjectEditor and MapTool for its three creation modes. Its menu and toolbar reuse the same QAction objects. Each host owns its editor and tool instances. The plugin tracks editors with QPointer and removes destroyed instances.
 
-UserObject type range-circle stores a center and radius control point in geometry.vertices. Type line stores two endpoints. The existing circle type remains a point marker. Shared validation bounds coordinates and rejects duplicate points. Circles must fit inside the projected world. ID, Area, and Distance remain computed properties for these shapes. ObjectEditor retains the common title, description, colors, and property table.
+UserObject type range-circle stores a center and radius control point in geometry.vertices. Type line stores two endpoints. The existing circle type remains a point marker. Shared validation bounds coordinates and rejects duplicate points. Circles must fit inside the projected world.
+
+ID, Area, and Distance remain computed properties for these shapes. ObjectEditor retains the common title, description, colors, and property table.
 
 MapTool::areaFillOpacity optionally supplies the shared area fill value. MapTools uses the first provider, or 0.3 without one. PolygonTool supplies the configured Area value. ShapesTool uses it for circles. The provider must return a finite value between zero and one.
 
 Distance measurements stay inside ShapesTool and never enter UserObjects. The tool keeps at most 64 measurements. A monotonic clock controls duration and fading. The timer stops when the list becomes empty. Circles and lines use the existing preference store and deletion undo history.
 
 
-MenuPlugin::rootActions returns true when a plugin contributes direct entries to Tools > Plugins. The host omits that plugin submenu and its editor toggle. ShapesPlugin uses this for Circle, Distance, and Line. Other plugins retain their pane actions. Shared menu ordering uses QCollator and ignores mnemonic markers. It sorts dropdown and popup menus and removes ordinary separators. Actions with a positive menuTailOrder follow the sorted entries. File uses this property for the separator and Quit action. The menu bar keeps File, Edit, View, Tools, Help in that order. Toolbar separators remain intact.
+MenuPlugin::rootActions returns true when a plugin contributes direct entries to Tools > Plugins. The host omits that plugin submenu and its editor toggle. ShapesPlugin uses this for Circle, Distance, and Line. Other plugins retain their pane actions.
 
-The shared addProviderToolbar helper adds a multi-select source menu with the existing management action. The host uses it for Servers and Data providers. Each toggle reads the latest source record before updating its enabled field. Recoverable errors use the shared logger. These controls keep provider management in the host and use the existing source services.
+Shared menu ordering uses QCollator and ignores mnemonic markers. It sorts dropdown and popup menus and removes ordinary separators. Actions with a positive menuTailOrder follow the sorted entries. File uses this property for the separator and Quit action. The menu bar keeps File, Edit, View, Tools, Help in that order. Toolbar separators remain intact.
 
-SettingField::describeCode displays CoT descriptions while retaining the raw code. cotFieldValue and setCotFieldValue read and write that value. Identity uses this for Type, Location method, Team, and Role. The description field is read-only. The shared picker supports selection and custom raw values. UiBehavior uses disabled palette colors for read-only text fields while preserving selection and copying. It restores the original palette when editing resumes. Standard OK and Apply buttons use distinct shared icons.
+The shared addProviderToolbar helper adds a multi-select source menu with the existing management action. The host uses it for Servers and Data providers. Each toggle reads the latest source record before it updates its enabled field. Recoverable errors use the shared logger. These controls keep provider management in the host and use the existing source services.
+
+SettingField::describeCode displays CoT descriptions while retaining the raw code. cotFieldValue and setCotFieldValue read and write that value. Identity uses this for Type, Location method, Team, and Role. The description field is read-only.
+
+The shared picker supports selection and custom raw values. UiBehavior uses disabled palette colors for read-only text fields while preserving selection and copying. It restores the original palette when editing resumes. Standard OK and Apply buttons use distinct shared icons.
 
 MapPanels consumes unhandled wheel events at the overlay boundary. Child controls receive wheel events first. The map filter also rejects wheel events over the visible overlay mask. Floating panes remain separate windows.
 
@@ -369,11 +395,13 @@ Viewport carries markerScalePercent with a default of 100. Its markerSize helper
 
 MapItem.radius stores the unscaled symbol radius. MapSelection applies the viewport scale when MapItem.scaleIcon is true. Basemap features set scaleIcon to false because their symbols belong to the tile renderer. Geographic geometry does not use the icon scale. These additions retain API version 2 because all static plugins rebuild together.
 
-PredictPlugin uses MenuPlugin, MapExtension, MapTool, and SettingsParticipant. Its MANIFEST declares org.swak.predict. Its context and Information actions share the same implementation through the existing MapTool hooks. The menu owns the tool. No window-specific code or new dependency is required.
+PredictPlugin uses MenuPlugin, MapExtension, MapTool, and SettingsParticipant. Its MANIFEST declares org.swak.predict. Its context and Information actions share the same implementation through the existing MapTool hooks. The menu owns the tool. Predict requires no window-specific code or new dependency.
 
-PredictionHistory derives current speed and bearing from the latest segment. The preceding segment supplies acceleration and heading change. Acceleration is bounded to five meters per second squared. Heading change is bounded to five degrees per second. Both trends decay with a 30-second time constant. Five-second integration steps follow great-circle segments, with speed bounded to 1000 meters per second. The model accepts horizons through 1800 seconds. It does not use the animation estimate as input.
+PredictionHistory derives current speed and bearing from the latest segment. The preceding segment supplies acceleration and heading change. The model bounds acceleration to five meters per second squared. It bounds heading change to five degrees per second. Both trends decay with a 30-second time constant.
 
-PredictTool listens to Store::eventAccepted and keeps history only for enabled CoT identities. It uses a private TrackMotion instance for forecast endpoints. That member has no QObject parent because it is not a separate configuration participant. It inherits movement duration, teleport distance, and fade duration from the store animation. Its short movement extrapolation is disabled because the endpoints already represent forecasts.
+Five-second integration steps follow great-circle segments, with speed bounded to 1000 meters per second. The model accepts horizons through 1800 seconds. It does not use the animation estimate as input.
+
+PredictTool listens to Store::eventAccepted and keeps history only for enabled CoT identities. It uses a private TrackMotion instance for forecast endpoints. That member has no QObject parent because it is not a separate configuration participant. It inherits movement duration, teleport distance, and fade duration from the store animation. The tool disables its short movement extrapolation because the endpoints already represent forecasts.
 
 The source TrackMotion snapshot supplies the line origin, stale color, and opacity. pauseChanged freezes the private animation too. Resume snaps both engines to their latest positions. Predict records do not alter Store events, object selection, or outgoing messages.
 
@@ -390,7 +418,9 @@ The swakToolbarTrailing action property places controls after an expanding space
 
 MapPanels consumes unhandled keyboard and wheel events after child controls process them. Overlay boundaries must not forward navigation events to the map.
 
-The shared confirmDeletion helper uses plain text and bounds the displayed name to 256 characters. Enter activates Delete. Escape activates Cancel. deleteObject captures the object identity before the dialog and delegates accepted deletion to UserObjects. Model removal remains available without a dialog for noninteractive work. Interactive deletion paths must use the shared helper. Context actions use menuOrder to place Edit before Delete ... while other entries retain locale ordering.
+The shared confirmDeletion helper uses plain text and bounds the displayed name to 256 characters. Enter activates Delete. Escape activates Cancel. deleteObject captures the object identity before the dialog and delegates accepted deletion to UserObjects.
+
+Model removal remains available without a dialog for noninteractive work. Interactive deletion paths must use the shared helper. Context actions use menuOrder to place Edit before Delete ... while other entries retain locale ordering.
 
 Predict draws successive segments from the source to 30 seconds, then 1 minute, then 5 minutes. The final segment ends at its tick with a flat cap and a short solid connection. Perpendicular endpoint marks measure 14, 10, and 6 logical pixels. Forecast labels are absent. Areas expose their Restricted flag as a derived Information property.
 
@@ -403,7 +433,9 @@ PluginServices::viewActions publishes optional view-owned actions for the View m
 
 ToolbarSection::Providers groups map, server, and data selectors before creation and measurement actions. CoT Messages retains MenuPlugin but no longer implements ToolbarPlugin. Its MANIFEST matches these roles.
 
-GridTypes is a map-owned SettingsParticipant and SettingsWidgetProvider. Its component identifier is org.swak.grids. It stores at most 32 validated named records, one active identifier, and the last selected identifier. The geographic, utm, and mgrs system identifiers select renderers. All records use the same editor and catalog operations. Missing active identifiers hide the grid. GridTypes::setVisible restores the last selected type or a remaining default. The lastSelected preference preserves that choice while the grid is hidden. Legacy map grid values migrate only before the catalog receives restored or explicit user state.
+GridTypes is a map-owned SettingsParticipant and SettingsWidgetProvider. Its component identifier is org.swak.grids. It stores at most 32 validated named records, one active identifier, and the last selected identifier. The geographic, utm, and mgrs system identifiers select renderers. All records use the same editor and catalog operations.
+
+Missing active identifiers hide the grid. GridTypes::setVisible restores the last selected type or a remaining default. The lastSelected preference preserves that choice while the grid is hidden. Legacy map grid values migrate only before the catalog receives restored or explicit user state.
 
 Each record contains name, system, color, opacity, spacing, width, and format. The renderer bounds zones, per-axis lines, and line samples. GeographicLib supplies UTM/UPS conversion and MGRS notation. Drawing uses the current Viewport and logical pixels. This extends the same-build static API without a new plugin loading mechanism.
 
@@ -425,7 +457,9 @@ TrackKinematics holds speed, heading, and flags that identify calculated speed a
 
 The shared groundMotion helper calculates ground speed and initial bearing from two positions and message timestamps. PredictionHistory uses the same helper. Estimates require intervals from 50 milliseconds through 10 minutes and speeds no greater than 1000 meters per second. TrackMotion also rejects estimates across its configured teleport distance or an expired track.
 
-The CoT layer draws a heading cone at the animated position. The cone uses the same opacity and stale color as its marker. Reported course takes priority over estimated heading. HeadingConeStyle exposes visibility, angle, length, and opacity through CoT animation configuration. Its length uses logical pixels and marker scaling. The cone indicates direction, not a measured sensor field of view. The Information pane shows speed, heading, and their sources. Static objects without motion history receive no invented velocity.
+The CoT layer draws a heading cone at the animated position. The cone uses the same opacity and stale color as its marker. Reported course takes priority over estimated heading. HeadingConeStyle exposes visibility, angle, length, and opacity through CoT animation configuration. Its length uses logical pixels and marker scaling.
+
+The cone indicates direction, not a measured sensor field of view. The Information pane shows speed, heading, and their sources. Static objects without motion history receive no invented velocity.
 
 ObjectEditor exposes Restricted for polygon and range-circle records. Both tools draw the saved flag as diagonal fill lines. Circle Information includes the flag. The polygon tool handles a corner double-click as Move and consumes the final release. Its corner menu gives Move priority through menuOrder.
 
@@ -454,6 +488,8 @@ Objects is a PanePlugin with a sorted proxy over Store. It shows one row per cur
 
 MapTools::centerRequested carries projected world coordinates. The map clamps the center and preserves zoom and selection. Explicit centering works while manual navigation is locked. Objects uses this signal for double-clicks. Its context menu uses the same MapTools contributions as the map, plus Information.
 
-RouteProvider/1.0 supplies routeId, routeName, presets, request, and decode. Its stable routeId matches its MANIFEST id. The manifest role is route-provider. RouteResult contains longitude/latitude pairs, meters, seconds, and an error. The host supplies RouteSources through PluginServices::routes. RouteSources owns provider configuration, bounded HTTPS requests, cancellation, and result notification. It retains unavailable provider entries.
+RouteProvider/1.0 supplies routeId, routeName, presets, request, and decode. Its stable routeId matches its MANIFEST id. The manifest role is route-provider. RouteResult contains longitude/latitude pairs, meters, seconds, and an error.
+
+The host supplies RouteSources through PluginServices::routes. RouteSources owns provider configuration, bounded HTTPS requests, cancellation, and result notification. It retains unavailable provider entries.
 
 The Route planning plugin uses PanePlugin and MapExtension with the tool role. Its MapTool handles endpoint picking and route painting. Its SettingsWidgetProvider exposes provider management through the shared Settings host. Valhalla supplies the first route-provider format. Read routing.md for protocol bounds and routing limits.

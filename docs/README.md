@@ -13,3 +13,7 @@ Local markers support editable text, colors, and a limited set of original milit
 Read [Build and run](build.md) for setup. Read [Development diagnostics](quality.md) and [the handoff](HANDOFF.md) for tests and current limits. Read [Use the workspace](usage.md) for controls. Read [Plugin architecture](architecture.md) and [Security boundaries](security.md) before adding features.
 
 The separate [CoT emulator](cot-emulator.md) generates two teams with ground and air units. It sends configurable traffic directly to SWAK or through a TAK Server.
+
+# Attribution
+
+Development of SWAK uses AI coding assistants, including Claude Code by Anthropic. Commit messages do not contain attribution trailers.

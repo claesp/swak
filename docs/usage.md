@@ -2,7 +2,7 @@
 
 A fresh profile starts with an empty map and no receiver socket. Later launches restore the saved interface and receiver state. CoT Event Generator opens beside the map in the default layout.
 
-Tools > Plugins restores hidden docks, which are movable tool panels. Select a plugin checkbox to show or hide its pane. A checked box means that the pane is open. Hover over its name, or press Right, to open its command submenu. Return or Space also toggles the selected pane. Close the pane to hide it.
+Tools > Plugins restores hidden docks, which are movable containers for tool panes. Select a plugin checkbox to show or hide its pane. A checked box means that the pane is open. Hover over its name, or press Right, to open its command submenu. Return or Space also toggles the selected pane. Close the pane to hide it.
 
 CoT Messages, CoT Event Generator, Servers, and Plugins each have an independent dock. The three tool docks start as tabs beside the map. Drag a dock title or tab to detach that pane.
 
@@ -10,7 +10,7 @@ Each detached pane has a resize handle in its lower-right corner. Close a pane t
 
 Use Tools > Plugins > CoT Messages > Clear to remove all current events and clear the selection. Plugins add their commands under Tools > Plugins.
 
-The top toolbar groups plugin icons with separators. Map Providers, Servers, and Data Providers share one toolbar section. Clear remains in Tools > Plugins > CoT Messages. Point to an icon to read its tooltip. Use View > Toolbar to hide or show the toolbar. The application saves this choice across restarts.
+The top toolbar groups plugin icons with separators. Map Providers, Servers, and Data Providers share one toolbar section. Clear remains in Tools > Plugins > CoT Messages. Hover over an icon to read its tooltip. Use View > Toolbar to hide or show the toolbar. The application saves this choice across restarts.
 
 Use Help > About to read the application version and general information.
 
@@ -20,7 +20,7 @@ To create a local event, use this sequence:
 2. Set the event lifetime in seconds.
 3. Select Generate event.
 
-The identity names one tracked object. Reusing an identity replaces its stored event when the new timestamp is equal or newer. Select New identity before creating another object.
+The identity names one tracked object. Reusing an identity replaces its stored event when the new timestamp is equal or newer. Select New identity before you create another object.
 
 Latitude and longitude use degrees on WGS 84. Altitude is height above the WGS 84 reference surface, in meters. The default location method is `h-e`, which indicates a human estimate. File > Identity can change that default.
 
@@ -28,7 +28,9 @@ The sender identity supplies the default event type, initially `a-f-G-U`. CoT ma
 
 Select a table row or map marker to focus that event. The XML preview then shows that event. Selection changes the preview but keeps the editor fields unchanged.
 
-Drag the map with the left mouse button to move it. Double-click with the left button to center that point without changing zoom. Use the wheel to zoom around the pointer. With map focus, hold W, A, S, and D to pan north, west, south, and east. Diagonal movement keeps the same speed. Release the keys to stop. Losing focus also stops movement. Q and E zoom in and out. Plus and minus also change zoom, and Home resets the view.
+Drag the map with the left mouse button to move it. Double-click with the left button to center that point without changing zoom. Use the wheel to zoom around the pointer.
+
+With map focus, hold W, A, S, and D to pan north, west, south, and east. Diagonal movement keeps the same speed. Release the keys to stop. Losing focus also stops movement. Q and E zoom in and out. Plus and minus also change zoom, and Home resets the view.
 
 The map uses Web Mercator, a rectangular map projection. It clips positions near the poles to approximately 85.05 degrees. The event table retains the original coordinates, including polar positions.
 
@@ -42,11 +44,11 @@ A UDP bind address of `127.0.0.1` accepts local traffic only. Binding `0.0.0.0` 
 
 Select Import XML to read one event from a regular file. Select Export XML to save the current preview. Canceling either file dialog leaves the current data unchanged.
 
-The preview contains supported fields only. Unknown detail fields are discarded during import and are absent from exported XML. The application retains no original message archive.
+The preview contains supported fields only. Import discards unknown detail fields, so exported XML does not contain them. The application retains no original message archive.
 
 Expired events leave the live table within approximately one second. Their map symbols fade to gray before removal, according to CoT animation configuration. Events with a future start time appear on the map when that time arrives. The table includes these pending events before their start time.
 
-The application stores up to 4096 identities in memory. Closing the application discards those events. Export any required events before closing the window.
+The application stores up to 4096 identities in memory. Closing the application discards those events. Export any required events before you close the window.
 
 # Preferences
 
@@ -68,19 +70,19 @@ Use View > Reset Layout ... to return panes to their initial arrangement. This c
 
 The default file is `preferences.json` in the Qt application configuration directory. On Linux, Qt uses the user configuration location under `XDG_CONFIG_HOME` or `~/.config`. The application identifies itself with organization `SWAK` and name `swak`.
 
-To use a portable profile, launch the application with an explicit file path. Run this example from the repository root after building the release executable. The application creates the parent directory when needed.
+To use a portable profile, launch the application with an explicit file path. Run this example from the repository root after you build the release executable. The application creates the parent directory when needed.
 
 ```sh
 ./build/release/swak --preferences /path/to/profile/preferences.json
 ```
 
-Close SWAK before copying its preferences file to another computer. Copy only the JSON file, not its `.lock` file. Launch SWAK with `--preferences` and the copied file path on the destination computer.
+Close SWAK before you copy its preferences file to another computer. Copy only the JSON file, not its `.lock` file. Launch SWAK with `--preferences` and the copied file path on the destination computer.
 
 Unavailable plugins keep their saved preferences. When a plugin returns, its controls and pane can recover their previous state. New panes use their default layout when no saved state exists.
 
 Windows from disconnected screens move onto an available screen. Qt stores geometry independently of CPU byte order. On Wayland, the compositor controls window placement and can limit exact position restoration.
 
-A preferences error appears in the status bar. If a file is invalid or uses an unsupported version, keep a copy before replacing it. Use a different `--preferences` file to start a fresh profile.
+A preferences error appears in the status bar. If a file is invalid or uses an unsupported version, keep a copy before you replace it. Use a different `--preferences` file to start a fresh profile.
 
 Only one running instance can write a given profile. A second instance reports the conflict and uses defaults without saving. Different profile paths support independent instances.
 
@@ -88,7 +90,9 @@ If a saved input cannot bind its endpoint, Servers reports the error and retries
 
 # Settings
 
-Open File > Settings to edit application and plugin configuration. Apply saves changes and keeps the dialog open. OK saves changes and closes the dialog. Cancel discards unapplied form changes. Provider tables apply and save their changes immediately. Invalid input prevents all pending changes from applying. A save error stays visible, and changes remain active for the current session.
+Open File > Settings to edit application and plugin configuration. Apply saves changes and keeps the dialog open. OK saves changes and closes the dialog. Cancel discards unapplied form changes.
+
+Provider tables apply and save their changes immediately. Invalid input prevents all pending changes from applying. A save error stays visible, and changes remain active for the current session.
 
 The General tab contains application and plugin configuration. The Panes tab contains pane visibility, placement, and dimensions. Pane entries use their names without a prefix. Section lists and dropdown choices follow the system locale for alphabetical ordering.
 
@@ -100,13 +104,15 @@ The dialog stores values in the same portable preferences file as the workspace 
 
 Text logging starts disabled in every build of the application. To enable it, select Enable text logging to standard error in the Logging section. The choice survives restarts through the selected profile. Qt diagnostics before profile loading remain silent.
 
-Severity describes the type of message: Debug, Info, Warning, Error, or Fatal. Urgency describes the required response: Routine, Attention, or Immediate. Both minimum thresholds must match before a message is written. Qt Debug and Info messages use Routine urgency. Qt Warning messages use Attention. Qt Critical and Fatal messages use Immediate urgency.
+Severity describes the type of message: Debug, Info, Warning, Error, or Fatal. Urgency describes the required response: Routine, Attention, or Immediate. Both minimum thresholds must match before the logger writes a message. Qt Debug and Info messages use Routine urgency. Qt Warning messages use Attention. Qt Critical and Fatal messages use Immediate urgency.
 
 The category identifies the source of a message. Application categories start with `swak.`, and Qt categories start with `qt.`. Use the category prefix field to restrict output, for example `swak.preferences` or `qt.qpa`. An empty prefix accepts all categories. Include Qt diagnostics controls Qt output independently of the thresholds. Existing Qt category rules can restrict output further, but cannot enable logging when the application disables it.
 
-The message-rate limit bounds output each second. The logger drops excess messages and bounds each message to 2048 characters. It escapes line breaks and removes terminal control characters. It drops output when a pipe or socket cannot accept it immediately. Output to regular files still depends on filesystem performance. The application does not create or rotate log files. A terminal or service manager can capture standard error after logging is enabled.
+The message-rate limit bounds output each second. The logger drops excess messages and bounds each message to 2048 characters. It escapes line breaks and removes terminal control characters. It drops output when a pipe or socket cannot accept it immediately.
 
-Logs can contain private information from Qt or future plugins. Review captured output before sharing it. Application messages do not include event payloads or editor drafts. Interactive error labels remain visible when text logging is off. Help, version, and command-line usage responses are interactive output rather than logs.
+Output to regular files still depends on filesystem performance. The application does not create or rotate log files. A terminal or service manager can capture standard error after you enable logging.
+
+Logs can contain private information from Qt or future plugins. Review captured output before you share it. Application messages do not include event payloads or editor drafts. Interactive error labels remain visible when text logging is off. Help, version, and command-line usage responses are interactive output rather than logs.
 
 A fatal Qt diagnostic still terminates the process when its text is disabled. Logging does not replace error handling or recover memory corruption. Development test and sanitizer output remains independent of application logging. Libraries that write directly to file descriptors bypass the Qt handler and cannot receive severity metadata from this logger.
 
@@ -141,7 +147,7 @@ The receiver updates its pane for each batch. Events contain at most one traffic
 
 # Map background and zoom
 
-The map uses NATO-style green (`#303D2B`) beneath its tiles. No map provider clears the selection. The old schematic map is removed.
+The map uses NATO-style green (`#303D2B`) beneath its tiles. No map provider clears the selection. This version removes the old schematic map.
 
 Each missing tile shows faint MISSING TILE text at 45 degrees and a faint edge. File > Settings > Map controls Missing tile marker opacity. A loaded tile replaces its marker. Missing providers and unavailable tiles use the same background.
 
@@ -161,11 +167,15 @@ The bottom status bar shows separate map fields for cache size, zoom, pointer co
 
 File > Settings > Map contains the Tile disk cache limit. The default is 128 MiB, with a range from 16 through 4096 MiB. The size describes the active HTTPS cache, which is separate from decoded memory. An inactive cache label means that no usable map provider cache is open.
 
-File > Settings contains tables for Map providers and Data providers. The same tables appear in Tools > Map Providers and Tools > Data Providers. A map radio button selects one provider. Data checkboxes enable independent feeds. Row selection controls Edit and Delete without changing activation. Clear selection turns off map providers. Table names follow the operating system sort order.
+File > Settings contains tables for Map providers and Data providers. The same tables appear in Tools > Map Providers and Tools > Data Providers. A map radio button selects one provider. Data checkboxes enable independent feeds.
+
+Row selection controls Edit and Delete without changing activation. Clear selection turns off map providers. Table names follow the operating system sort order.
 
 # Map movement and selection
 
-File > Settings > Keybindings contains the keyboard controls for Map and Information. General > Map contains speed, wheel controls, and tile margin. Keys must differ and must not use modifiers. Letters, digits, function keys, and arrow keys are supported. The default speed is 300 logical pixels per second. Wheel zoom works only over the map. You can disable it, reverse it, or change its step size.
+File > Settings > Keybindings contains the keyboard controls for Map and Information. General > Map contains speed, wheel controls, and tile margin. Keys must differ and must not use modifiers. Keys can be letters, digits, function keys, or arrow keys. The default speed is 300 logical pixels per second.
+
+Wheel zoom works only over the map. You can disable it, reverse it, or change its step size.
 
 The lowest zoom fills the map area. Zoom uses whole levels. Panning stops at the world edges. A window resize can raise the lowest zoom. The cropped part of the world remains reachable by panning. If the viewport exceeds the provider limit, SWAK enlarges tiles from the highest available level.
 
@@ -187,7 +197,7 @@ Tiles that exceed parser limits use a lower detail level when the provider suppo
 
 # Keyboard configuration
 
-Open File > Settings > Keybindings. Select a plugin section. Select a key field and press the replacement key. Select Apply to save the changes. The saved keys survive restarts. Existing custom movement keys remain unchanged during migration.
+Open File > Settings > Keybindings. Select a plugin section. Select a key field. Press the replacement key. Select Apply to save the changes. The saved keys survive restarts. Existing custom movement keys remain unchanged during migration.
 
 Map controls require map focus. Q zooms in, and E zooms out. The four movement keys remain required and distinct. Zoom, reset, alternate zoom, and step keys can be empty to disable them. Conflicting map keys prevent Apply. The standard shortcuts for text fields and application menus remain unchanged.
 
@@ -197,17 +207,23 @@ The map keeps clickable attribution at its bottom-right edge. Status text uses a
 
 # Local markers
 
-Focus the map and press M to create a marker. The pointer changes to the standard crosshair. Black horizontal and vertical guide lines follow the pointer at 50 percent opacity. Click a map position to place a draft circle. The Edit marker pane opens with editable title, description, and properties. An empty title uses New Marker.
+To create a marker, focus the map. Then press M. The pointer changes to the standard crosshair. Black horizontal and vertical guide lines follow the pointer at 50 percent opacity.
+
+Click a map position to place a draft circle. The Edit marker pane opens with editable title, description, and properties. An empty title uses New Marker.
 
 Use Add property and Remove property to change the property table. Property names must be unique. Select Apply to store the marker. The regular Information pane then shows its saved values. Cancel, Esc, or closing the editor discards the draft. Committed markers survive application restarts in the portable preferences file.
 
-Click a saved marker to select it. Right-click it for Edit, Move, or Delete. Edit opens the editable pane again. Move attaches a preview to the pointer until the next left click. Esc cancels the move and restores the original position. It also restores the marker selection. Guide lines remain visible during a move.
+Click a saved marker to select it. Right-click it for Edit, Move, or Delete. Edit opens the editable pane again. Move attaches a preview to the pointer until the next left click.
+
+Esc cancels the move and restores the original position. It also restores the marker selection. Guide lines remain visible during a move.
 
 With the map or Information pane focused, Backspace or Delete removes the selected local marker. Imported objects remain read-only. Ctrl+Z and Edit > Undo restore deleted markers, including their position and properties. The history keeps the last 100 deletions during the current session. It does not survive a restart. Creation, editing, and movement do not enter this deletion history.
 
 Undo stays available while the history contains deletions to restore. After the last restore, the menu item becomes gray and Ctrl+Z does nothing. A new deletion enables Undo again.
 
-File > Settings > General > Markers changes circle color, radius, and guide opacity. File > Settings > Keybindings > Markers changes the creation key. It accepts one letter without modifiers. A tool activation key takes priority over a map navigation key with the same value. Choose different keys for these actions. The model allows at most 256 objects and reserves storage for undo. ID, Latitude, and Longitude are reserved property names.
+File > Settings > General > Markers changes circle color, radius, and guide opacity. File > Settings > Keybindings > Markers changes the creation key. It accepts one letter without modifiers.
+
+A tool activation key takes priority over a map navigation key with the same value. Choose different keys for these actions. The model allows at most 256 objects and reserves storage for undo. ID, Latitude, and Longitude are reserved property names.
 
 
 The coordinate grid operates independently of marker modes. File > Settings > General > Grids manages its appearance and coordinate system.
@@ -234,17 +250,24 @@ Orange is the default color. File > Settings > Markers changes the default for n
 
 # Ground-unit symbols
 
-The marker editor separates Core and MILSTD2525 types through its Collection field. Select a type before Apply. Each military type starts with its identity color. The color buttons can override that color. The normal Information panel shows the saved symbol name.
+The marker editor separates Core and MILSTD2525 types through its Collection field. Select a type before Apply. Each military type starts with its identity color. The color buttons can override that color. The normal Information pane shows the saved symbol name.
 
-Received CoT events use the same vector symbols for supported exact ground-unit types. Other types remain circles. Read [the symbol scope](atak-reference-review.md) before using these symbols for operational interpretation. The implementation is a limited subset of MIL-STD-2525C.
+Received CoT events use the same vector symbols for supported exact ground-unit types. Other types remain circles. Read [the symbol scope](atak-reference-review.md) before you use these symbols for operational interpretation. The implementation is a limited subset of MIL-STD-2525C.
 
 # Marker collections
 
-Tools > Marker Collections manages Core, MILSTD2525, and imported symbol collections. File > Settings > Marker collections provides the same table. After placing a marker, choose Collection before Type. Add copies a collection, Edit changes its metadata, and Delete removes a user collection. Import and Export exchange bounded ZIP or TAR archives. Read [Marker collections](marker-collections.md) for formats, limits, and behavior when a collection disappears.
+Tools > Marker Collections manages Core, MILSTD2525, and imported symbol collections. File > Settings > Marker collections provides the same table. After you place a marker, choose Collection before Type. Add copies a collection, Edit changes its metadata, and Delete removes a user collection. Import and Export exchange bounded ZIP or TAR archives. Read [Marker collections](marker-collections.md) for formats, limits, and behavior when a collection disappears.
 
 # Authenticated maps
 
-In Map Providers, select a row and click Edit to choose its authentication method. Apply the provider configuration, then click Credentials to enter a session password or token. The dialog masks the value and never writes it into the profile. Read [Map providers](map-providers.md#credentials) for restart use through environment variables and the Thunderforest templates.
+To use an authenticated map, do these steps in Map Providers:
+
+1. Select a row.
+2. Select Edit to choose its authentication method.
+3. Apply the provider configuration.
+4. Select Credentials to enter a session password or token.
+
+The dialog masks the value and never writes it into the profile. Read [Map providers](map-providers.md#credentials) for restart use through environment variables and the Thunderforest templates.
 
 Tools > Plugins > Marker activates marker placement. Click the map to open the marker editor. Press Escape to cancel placement. The configured marker key still toggles marker mode.
 
@@ -252,11 +275,11 @@ Tools > Plugins > Marker activates marker placement. Click the map to open the m
 
 Press Shift+A while the map has focus, or select Area on the toolbar or under Tools > Plugins. The crosshair and black guide lines follow the pointer. Click to place each blue corner. After two corners, the preview fills the area through the current pointer position with 30 percent blue.
 
-Click the first corner after placing at least three corners to close the polygon. Enter closes the placed outline. With exactly two placed corners, Enter adds the current pointer position as the third corner. A polygon needs three distinct corners and a nonzero area. Crossing or overlapping edges prevent completion. Each polygon supports at most 64 corners.
+To close the polygon, click the first corner after you place at least three corners. Enter closes the placed outline. With exactly two placed corners, Enter adds the current pointer position as the third corner. A polygon needs three distinct corners and a nonzero area. Crossing or overlapping edges prevent completion. Each polygon supports at most 64 corners.
 
 The editor contains Title, Type, Color, Description, and properties. Apply saves the polygon. Enter in Title also saves it. The map shows the title at the center of the area. For concave shapes whose center lies outside the area, the label uses an interior span. Completed polygons hide their corner dots.
 
-Click inside a saved polygon to open Information. The selected area has a white outline at the configured polygon line width. Right-click inside it and select Edit to show its corners again. Right-click a corner to Move or Delete it. Delete is disabled when it creates an invalid polygon. A move that creates an invalid polygon remains a preview until you choose a valid position.
+Click inside a saved polygon to open Information. The selected area has a white outline at the configured polygon line width. Right-click inside it and select Edit to show its corners again. Right-click a corner to Move or Delete it. SWAK disables Delete when the deletion creates an invalid polygon. A move that creates an invalid polygon remains a preview until you choose a valid position.
 
 Escape during a corner move restores its previous position in the draft. Escape again cancels the edit. Apply saves all corner and metadata changes together. Delete or Backspace removes the selected polygon. Edit > Undo or Ctrl+Z restores a deleted polygon.
 
@@ -275,7 +298,9 @@ For object commands, right-click the overlap and choose an object first. Its con
 
 The main toolbar uses icons and separators. Hover over a button to read its command and shortcut. Marker and Area buttons show their active state. Click an active mode button again to stop it. The globe button opens the map provider list. Its tooltip names the current provider. Clear CoT Messages remains in its plugin menu.
 
-Older profiles migrate default arrow pan keys to W/A/S/D. Area, Circle, Line, and Distance use Shift+A, Shift+C, Shift+L, and Shift+D. Older default tool keys migrate to these combinations. Other custom keys remain unchanged. Area, Circle, Line, and Distance accept letters with optional Shift. File > Settings > Keybindings can change these assignments. Saved geometry still uses the polygon type internally.
+Older profiles migrate default arrow pan keys to W/A/S/D. Area, Circle, Line, and Distance use Shift+A, Shift+C, Shift+L, and Shift+D. Older default tool keys migrate to these combinations. Other custom keys remain unchanged.
+
+Area, Circle, Line, and Distance accept letters with optional Shift. File > Settings > Keybindings can change these assignments. Saved geometry still uses the polygon type internally.
 
 
 # Servers, Identity, and CoT animation
@@ -290,7 +315,9 @@ In File > Settings > CoT animation, set Prediction limit to zero to disable pred
 
 Right-click a CoT or local marker and select Trace. The checked action starts a history of distinct received or saved positions. Select Trace again to stop and remove that history. Tools > Plugins > Trace > Clear traces removes all histories and tracing choices.
 
-A trace retains at most 50 positions. The default opacity is 70 percent. Older segments appear more faintly, with a minimum of one-quarter of the configured opacity. File > Settings > Trace controls the position count, opacity, and line width. At most 128 markers can have tracing enabled. Tracing choices survive restart. Position histories last only for the session and clear when the source marker disappears. Imported map features without stable marker identities do not offer Trace.
+A trace retains at most 50 positions. The default opacity is 70 percent. Older segments appear more faintly, with a minimum of one-quarter of the configured opacity. File > Settings > Trace controls the position count, opacity, and line width.
+
+At most 128 markers can have tracing enabled. Tracing choices survive restart. Position histories last only for the session and clear when the source marker disappears. Imported map features without stable marker identities do not offer Trace.
 
 Close Information with its top-right button to clear selection. Incoming updates cannot reopen it until you select another object. In Servers, use the Active column to control connections. The server editor does not repeat that checkbox. TLS credential fields remain gray until you select TLS.
 
@@ -302,7 +329,9 @@ For Trace, the defaults are 50 positions, 0.70 maximum opacity, and 1.5 pixels o
 
 # Pause CoT positions
 
-With the map focused, press Space to pause displayed CoT positions. Press Space again to resume. The status bar shows CoT positions paused during the pause. Reception and the message store continue operating. Resume places each current marker at its latest received position without animation. Later updates use normal animation. New markers appear after resume. Stale records continue aging and disappear according to the configured retention rules.
+With the map focused, press Space to pause displayed CoT positions. Press Space again to resume. The status bar shows CoT positions paused during the pause. Reception and the message store continue operating.
+
+Resume places each current marker at its latest received position without animation. Later updates use normal animation. New markers appear after resume. Stale records continue aging and disappear according to the configured retention rules.
 
 File > Settings > Keybindings > Map controls the pause shortcut. Holding the key does not repeatedly toggle pause. A restart starts with updates enabled. Pause does not change local marker editing or provider refreshes.
 
@@ -314,13 +343,21 @@ Information describes CoT Type and How with names from the shared selector catal
 
 Click an object label to select its object. Selected labels invert their foreground and background colors. Overlapping labels use the same object chooser as overlapping symbols.
 
-With the map focused, press C to start Circle. Click the center. Move the pointer to set the radius. The preview shows the current radius in local units. Click again to open the object editor. Enter the title, description, color, and properties. Select Apply to save the circle. Circle uses the fill opacity from File > Settings > Areas.
+With the map focused, press C to start Circle. Click the center. Move the pointer to set the radius. The preview shows the current radius in local units. Click again to open the object editor.
 
-Press Shift+D to start Distance. Click the first point. Move the pointer to read the distance. Click the second point to finish. The measurement stays for ten seconds, then fades for one second and disappears. Measurements are temporary and do not survive restart. The tool retains at most 64 measurements.
+Enter the title, description, color, and properties. Select Apply to save the circle. Circle uses the fill opacity from File > Settings > Areas.
 
-Press Shift+L to start Line. Click each endpoint. Complete the object editor and select Apply. The saved line shows its title and distance. Information shows Distance for lines and Area for circles. Measurements use the operating-system locale and unit system. Distances use meters or feet and change to kilometers or miles at the corresponding threshold.
+Press Shift+D to start Distance. Click the first point. Move the pointer to read the distance. Click the second point to finish. The measurement stays for ten seconds, then fades for one second and disappears.
 
-Right-click a saved circle or line to select Edit, Move, or Delete. During editing, right-click a control point to move it. Both control points are required, so their Delete action stays disabled. Moving a circle center retains its radius. Moving its edge control changes its radius. Esc cancels a pending move. Delete and Backspace delete the selected saved object. Ctrl+Z restores a deleted object.
+Measurements are temporary and do not survive restart. The tool retains at most 64 measurements.
+
+Press Shift+L to start Line. Click each endpoint. Complete the object editor. Then select Apply. The saved line shows its title and distance.
+
+Information shows Distance for lines and Area for circles. Measurements use the operating-system locale and unit system. Distances use meters or feet and change to kilometers or miles at the corresponding threshold.
+
+Right-click a saved circle or line to select Edit, Move, or Delete. During editing, right-click a control point to move it. Both control points are required, so their Delete action stays disabled. Moving a circle center retains its radius. Moving its edge control changes its radius.
+
+Esc cancels a pending move. Delete and Backspace delete the selected saved object. Ctrl+Z restores a deleted object.
 
 The toolbar and Tools > Plugins provide the same creation actions. File > Settings > Keybindings configures C, D, and L. The Circle and line tools section controls line width, control-point size, measurement duration, and fade time.
 
@@ -328,7 +365,9 @@ Circles remain circular on the projected map. Their area estimate integrates a 1
 
 # Identity and paused traces
 
-The application generates a UID on first startup and saves it in the profile. Open File > Identity to view it. Select the lock button beside UID before editing it. Select the button again to lock it. Apply or OK saves the value. A new dialog starts with UID locked. Cancel discards unapplied changes. Section reset preserves UID.
+The application generates a UID on first startup and saves it in the profile. Open File > Identity to view it. Select the lock button beside UID before you edit it. Select the button again to lock it.
+
+Apply or OK saves the value. A new dialog starts with UID locked. Cancel discards unapplied changes. Section reset preserves UID.
 
 Space freezes both displayed CoT positions and traces. Incoming messages and bounded trace history continue updating internally. Resume shows the latest positions and trace history immediately.
 
@@ -337,11 +376,11 @@ The main toolbar groups Marker, Area, Circle, and Line in one creation section. 
 
 # Menus and provider controls
 
-The menu bar uses File, Edit, View, Tools, Help in that order. Dropdown menus sort alphabetically with the operating-system locale. File keeps Quit last, with a separator before it. Circle, Distance, and Line appear directly under Tools > Plugins. Other menu separators are removed so each menu stays sorted. Toolbar sections retain separators.
+The menu bar uses File, Edit, View, Tools, Help in that order. Dropdown menus sort alphabetically with the operating-system locale. File keeps Quit last, with a separator before it. Circle, Distance, and Line appear directly under Tools > Plugins. SWAK removes other menu separators so each menu stays sorted. Toolbar sections retain separators.
 
 Use the Servers toolbar button to enable or disable configured servers. Use its Servers command to open management. Use the Data providers button to enable or disable feeds. Its Data Providers command opens management. Multiple servers and feeds can stay active together.
 
-Scrolling inside an overlay pane affects that pane. At either scrollbar limit, wheel events do not zoom the map. Move the pointer onto the uncovered map before zooming.
+Scrolling inside an overlay pane affects that pane. At either scrollbar limit, wheel events do not zoom the map. Move the pointer onto the uncovered map before you zoom.
 
 Identity shows Type, Location method, and Team descriptions with their original codes in parentheses. Use Select to change these fields or enter a custom code. Read-only text fields appear muted and still support selection and copying. The UID button shows a closed lock when it offers Unlock and an open lock when it offers Lock. OK uses a checkmark. Apply uses a disk icon and keeps the dialog open.
 
@@ -391,13 +430,15 @@ Open File > Settings > General > Grids to manage coordinate grids. Longitude/lat
 
 View > Grid also hides or shows the grid. Showing it restores the last selected type. Both the hidden state and the remembered type survive restart. The menu item is disabled when no grid types remain.
 
-Select Add to create a named type. Select a row before Edit or Delete .... Each type stores its coordinate system, color, opacity, target spacing, line width, and angle-label format. The angle format applies to longitude/latitude grids. Edits apply immediately after the editor accepts them. Delete requires confirmation. A deleted active type leaves the grid hidden.
+Select Add to create a named type. Select a row before Edit or Delete .... Each type stores its coordinate system, color, opacity, target spacing, line width, and angle-label format. The angle format applies to longitude/latitude grids.
+
+Edits apply immediately after the editor accepts them. Delete requires confirmation. A deleted active type leaves the grid hidden.
 
 Longitude/latitude labels support decimal degrees, degrees and minutes, or degrees, minutes, and seconds. UTM and MGRS use WGS 84 and include the Norway and Svalbard zone exceptions. Polar regions use UPS. At broad zoom levels, these grids show zone boundaries. Closer views add lines in meters or MGRS subdivisions. Target spacing adapts to rounded intervals and bounded drawing work.
 
 Grid types and the active choice survive restart. The catalog holds at most 32 types. Existing longitude/latitude appearance values migrate from older map profiles. Marker icon scaling applies to existing local markers, CoT symbols, and data points. Marker radius applies to existing local markers. Active previews also repaint after these changes.
 
-To use serverless communication, add a server with the Local LAN protocol and select its IPv4 interface. Enable its Active checkbox. Tools > Plugins > Local LAN shows discovery status and peer connections. The Interface field also selects a local address for TCP, TLS, and UDP entries.
+To use serverless communication, add a server with the Local LAN protocol. Select its IPv4 interface. Enable its Active checkbox. Tools > Plugins > Local LAN shows discovery status and peer connections. The Interface field also selects a local address for TCP, TLS, and UDP entries.
 
 # Heading and editing controls
 
@@ -405,7 +446,7 @@ Identity shows Role as a description with its code, like Type, Location method, 
 
 Circle includes the same Restricted flag as Area. Select this flag to add diagonal lines to the fill. The Information pane shows the saved flag.
 
-While editing an Area, double-click a corner to start Move. Click its new location to place it. Press Escape to cancel that move. The corner menu places Move before Delete.
+While you edit an Area, double-click a corner to start Move. Click its new location to place it. Press Escape to cancel that move. The corner menu places Move before Delete.
 
 Grid lines use antialiasing to soften their edges. New grids use 30 percent opacity. Existing grids keep their saved opacity. Change the opacity under Grids in Settings.
 
@@ -433,6 +474,8 @@ Help > Credits lists library and icon versions, licenses, attributions, and proj
 
 # Objects and routes
 
-Tools > Plugins > Objects lists current CoT objects by title and type. The list includes objects outside the viewport. Repeated messages update the same UID row. Expired or cleared messages disappear. Double-click a row to center the map without selecting the object. Right-click a row to use Information, Trace, Predict, and FOV cone actions. Table column arrangement and sorting survive restart.
+Tools > Plugins > Objects lists current CoT objects by title and type. The list includes objects outside the viewport. Repeated messages update the same UID row. Expired or cleared messages disappear.
+
+Double-click a row to center the map without selecting the object. Right-click a row to use Information, Trace, Predict, and FOV cone actions. Table column arrangement and sorting survive restart.
 
 Tools > Plugins > Route planning opens the routing preview. Read [Route planning](routing.md) for provider management, map picking, transport modes, and current limits.

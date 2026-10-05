@@ -2,11 +2,11 @@
 
 Open Tools > Plugins > Route planning. Choose a provider and travel mode. Select Pick start, then click the map. Select Pick end, then click the map. You can also enter coordinates directly. Select Calculate to request a route. Cancel / clear stops the request and removes the preview. Escape cancels point placement.
 
-The first version supports driving, walking, running, and cycling. Running uses pedestrian access rules and the configured running speed. The preview shows distance and estimated time. The route stays until you clear it, change its inputs, or close the application. Endpoints and configuration survive restart. Routes are not saved as editable map objects in this version.
+The first version supports driving, walking, running, and cycling. Running uses pedestrian access rules and the configured running speed. The preview shows distance and estimated time. The route stays until you clear it, change its inputs, or close the application. Endpoints and configuration survive restart. This version does not save routes as editable map objects.
 
 Route providers uses the same table and Add, Edit, Delete ... workflow as the other provider managers. Radio buttons select one active provider. New entries start with an empty name and URL. File > Settings > Route providers opens the same controls. Width and running speed apply immediately.
 
-Calculate sends the two coordinates to the selected server. The bundled FOSSGIS demo entry has fair-use limits and no application availability guarantee. No request runs at startup, during panning, or after a configuration change. Use a private server for regular work. HTTPS certificates remain checked. Plain HTTP is allowed only for literal loopback addresses, such as 127.0.0.1.
+Calculate sends the two coordinates to the selected server. The bundled FOSSGIS demo entry has fair-use limits and no application availability guarantee. No request runs at startup, during panning, or after a configuration change. Use a private server for regular work. The client checks HTTPS certificates. It allows plain HTTP only for literal loopback addresses, such as 127.0.0.1.
 
 # Research and design
 
@@ -26,7 +26,7 @@ Sources: [Valhalla route API](https://valhalla.github.io/valhalla/api/route/api-
 
 RouteProvider constructs the request body and decodes the response. RouteSources manages saved entries and asynchronous network requests. The route planner supplies endpoints and draws the result through MapTool. The client does not link a routing engine or import a new application library.
 
-The client permits one request at a time, with a two-second request interval and a twenty-second deadline. Replies cannot exceed 4 MiB or 50000 coordinates. The parser requires finite, bounded coordinates and plausible distance and time values. Redirects are rejected. Cancellation disconnects callbacks before aborting the reply. Provider entries remain stored when their format plugin is absent.
+The client permits one request at a time, with a two-second request interval and a twenty-second deadline. Replies cannot exceed 4 MiB or 50000 coordinates. The parser requires finite, bounded coordinates and plausible distance and time values. The client rejects redirects. Cancellation disconnects callbacks before it aborts the reply. Provider entries remain stored when their format plugin is absent.
 
 The initial provider URL is https://valhalla1.openstreetmap.de/route. A private Valhalla installation uses its own /route endpoint. The request uses two locations, a costing model, distance-based costing, the OSRM JSON format, and GeoJSON geometry. Responses require code Ok and one route. Errors, absent roads, and unsupported formats leave no old route on the map.
 

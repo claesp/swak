@@ -24,7 +24,8 @@ Follow these standing requirements:
 - Do not hide memory corruption with catch-all handlers or fatal signal recovery.
 - Add external dependencies only with a documented reason.
 - Use the `qt-linux-gui` skill for development when available.
-- Use the `simple-english` skill for commits, code comments, and documentation when available.
+- Use the `cpp-skill-focused-on-safety` skill to write and review C++ when available.
+- Use the `simple-english` or `simplified-technical-english-asd-ste100` skill for commits, code comments, and documentation when available.
 - Write short, clear sentences with active verbs in commits, comments, and documentation.
 - Keep project documentation and session notes under `docs/`.
 - Preserve unrelated user changes.
@@ -32,7 +33,17 @@ Follow these standing requirements:
 - Rebuild the release executable after every commit.
 - Always rebuild the release executable with the CMake release preset before completing a task that changes the application.
 - Report any release build failure before handing the task back to the user.
+
+# Git
+
 - Commit all completed functional changes with Git.
+- Keep commit messages very short and very concise. Write one summary line of 50 characters or fewer in the imperative mood.
+- Add a commit body only when the summary cannot give the reason. Keep the body to a few short lines.
+- Do not add attribution trailers, such as `Co-Authored-By`, to commit messages. [docs/README.md](docs/README.md) records tool attribution.
+- Do not commit build output, logs, or other files under `build/`.
+- Do not rewrite published history or force-push unless the user asks for it.
+
+# References
 
 Read [docs/build.md](docs/build.md) for build and test commands. Read [docs/security.md](docs/security.md) before changing input handling. Read [docs/architecture.md](docs/architecture.md) before changing plugin interfaces.
 
