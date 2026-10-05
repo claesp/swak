@@ -101,6 +101,14 @@ def coverage_report(build, report, env):
     (report / "coverage.md").write_text("\n".join(lines))
 
 
+def soak_limits(seconds):
+    """Return the external limit in seconds and the Qt Test limit in milliseconds."""
+    external = seconds + 60
+    # Qt Test stops a test function after 300 seconds by default. Keep its limit longer
+    # than the external limit, so that the external watchdog stops a stalled run.
+    return external, max(300000, (external + 60) * 1000)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=["quick", "gui", "soak", "coverage", "analyze", "style"])
@@ -268,7 +276,9 @@ def main():
                         "-s",
                         "-screen 0 1600x1200x24 -nolisten tcp",
                     ] + command
-                run(command, report / "soak.log", args.seconds + 60, env, report)
+                limit, qt_limit = soak_limits(args.seconds)
+                env["QTEST_FUNCTION_TIMEOUT"] = str(qt_limit)
+                run(command, report / "soak.log", limit, env, report)
             if args.mode == "gui" or (args.mode == "coverage" and args.gui):
                 env["QT_QPA_PLATFORM"] = "xcb"
                 run(

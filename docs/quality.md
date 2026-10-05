@@ -32,7 +32,7 @@ python3 tools/quality.py gui
 
 # Long sessions
 
-A soak test repeats work in one process for a set duration. Run this mode for at least two hours before a release. The command below adds a short warmup and idle phase to the requested duration. The external watchdog allows another 60 seconds before it stops a stalled process.
+A soak test repeats work in one process for a set duration. Run this mode for at least two hours before a release. The command below adds a short warmup and idle phase to the requested duration. The external watchdog allows another 60 seconds before it stops a stalled process. Qt Test stops a test function after 300 seconds by default. The runner sets QTEST_FUNCTION_TIMEOUT above the external limit, so the external watchdog stops a stalled soak run.
 
 ```sh
 python3 tools/quality.py soak --seconds 7200

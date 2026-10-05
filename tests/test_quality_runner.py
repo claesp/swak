@@ -35,6 +35,13 @@ class RunnerTest(unittest.TestCase):
             self.assertLess(time.monotonic() - start, 5)
             self.assertIn("time limit", log.read_text())
 
+    def test_soak_limits_exceed_qt_default(self):
+        for seconds in (1, 7200, 86400):
+            external, qt_limit = quality.soak_limits(seconds)
+            self.assertGreater(external, seconds)
+            self.assertGreater(qt_limit, external * 1000)
+            self.assertGreaterEqual(qt_limit, 300000)
+
     def test_coverage_merges_shared_sources(self):
         with tempfile.TemporaryDirectory() as directory:
             build = Path(directory) / "build"
