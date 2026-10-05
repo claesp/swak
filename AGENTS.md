@@ -23,9 +23,8 @@ Follow these standing requirements:
 - Expose plugin configuration through the shared Settings interface.
 - Do not hide memory corruption with catch-all handlers or fatal signal recovery.
 - Add external dependencies only with a documented reason.
-- Use the `qt-linux-gui` skill for development when available.
-- Use the `cpp-skill-focused-on-safety` skill to write and review C++ when available.
-- Use the `simple-english` or `simplified-technical-english-asd-ste100` skill for commits, code comments, and documentation when available.
+- Use the `cpp-skill-focused-on-safety` skill to write and review C++ and Qt code.
+- Use the `simplified-technical-english-asd-ste100` skill for commits, code comments, and documentation.
 - Write short, clear sentences with active verbs in commits, comments, and documentation.
 - Keep project documentation and session notes under `docs/`.
 - Preserve unrelated user changes.

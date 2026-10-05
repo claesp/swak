@@ -1,6 +1,6 @@
 # Coding style
 
-This standard applies to first-party C++, Python, and CMake code, including tests and development tools. It follows the qt-linux-gui skill and the existing Linux, Qt 6.4, and C++20 baseline. Repository rules take precedence over formatter defaults. Formatting does not prove correct behavior or memory safety.
+This standard applies to first-party C++, Python, and CMake code, including tests and development tools. It follows the cpp-skill-focused-on-safety skill and the existing Linux, Qt 6.4, and C++20 baseline. Repository rules take precedence over formatter defaults. Formatting does not prove correct behavior or memory safety.
 
 ## Automatic format
 
