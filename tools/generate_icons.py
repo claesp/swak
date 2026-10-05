@@ -7,7 +7,7 @@ from fontTools.pens.recordingPen import RecordingPen
 
 ROOT = Path(__file__).resolve().parents[1]
 ICONS = {
-    "Clear": "trash-2",
+    "Delete": "trash-2",
     "Marker": "map-pin",
     "Area": "pentagon",
     "Map": "globe",
@@ -60,6 +60,10 @@ for name, file in ICONS.items():
     lines.append("        break;")
 lines.extend(
     [
+        "    case UiIcon::Clear:",
+        "        path.moveTo(3, 13); path.lineTo(13, 3); path.lineTo(21, 11); path.lineTo(11, 21); path.lineTo(7, 21); path.closeSubpath();",
+        "        path.moveTo(8, 8); path.lineTo(16, 16); path.moveTo(11, 21); path.lineTo(22, 21);",
+        "        break;",
         "    case UiIcon::Circle:",
         "        path.addEllipse(QPointF(12, 12), 9, 9);",
         "        break;",

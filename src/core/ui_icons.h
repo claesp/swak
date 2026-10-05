@@ -6,6 +6,7 @@ namespace swak {
 enum class UiIcon
 {
     Clear,
+    Delete,
     Marker,
     Area,
     Map,

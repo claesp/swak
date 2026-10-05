@@ -391,7 +391,7 @@ public:
         menu.setObjectName(QStringLiteral("polygonContextMenu"));
         auto *edit = menu.addAction(uiIcon(UiIcon::Edit), tr("Edit"));
         edit->setObjectName(QStringLiteral("editPolygon"));
-        auto *remove = menu.addAction(uiIcon(UiIcon::Clear), tr("Delete ..."));
+        auto *remove = menu.addAction(uiIcon(UiIcon::Delete), tr("Delete ..."));
         remove->setObjectName(QStringLiteral("deletePolygon"));
         edit->setProperty("menuOrder", -2);
         remove->setProperty("menuOrder", -1);
@@ -603,7 +603,7 @@ private:
         auto *move = menu.addAction(uiIcon(UiIcon::Move), tr("Move"));
         move->setObjectName(QStringLiteral("movePolygonVertex"));
         move->setProperty("menuOrder", -1);
-        auto *remove = menu.addAction(uiIcon(UiIcon::Clear), tr("Delete ..."));
+        auto *remove = menu.addAction(uiIcon(UiIcon::Delete), tr("Delete ..."));
         remove->setObjectName(QStringLiteral("deletePolygonVertex"));
         remove->setEnabled(validatePolygon(reduced).isEmpty());
         connect(move, &QAction::triggered, this, [this, index, &map] {

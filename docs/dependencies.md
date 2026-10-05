@@ -48,3 +48,12 @@ The upstream [GeographicLib repository](https://github.com/geographiclib/geograp
 On this host, the Debian packages are extracted under build/geographiclib. The CMake cache names the extracted include directory and static library. This local path is not portable. Install libgeographiclib-dev on another machine, as described in build.md. The release executable on this host links the static library. A normal system build can link its shared library.
 
 The grid renderer limits entries, visible lines, sampling points, coordinate formats, and user text. GeographicLib receives finite, bounded coordinates. Its coordinate-domain exceptions stop the affected grid cell. The application does not suppress memory corruption or fatal signals.
+
+
+# Credits inventory
+
+Help > Credits uses the existing library version APIs and pinned asset versions. It adds no dependencies. The table names direct application dependencies, bundled headers and icons, libarchive compression backends, and the active Qt TLS backend. System graphics and desktop dependencies vary with the host.
+
+The license references include [Qt licensing](https://doc.qt.io/qt-6/licensing.html), [libarchive](https://www.libarchive.org/), and [GeographicLib](https://github.com/geographiclib/geographiclib). Bundled protozero and Lucide notices remain under third_party. The table summarizes license families and does not replace the distributed notices.
+
+Clear commands use an original eraser path in the shared vector icon factory. Delete commands retain the bundled Lucide trash icon.

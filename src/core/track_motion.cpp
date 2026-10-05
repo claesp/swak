@@ -15,6 +15,20 @@ TrackMotion::TrackMotion(QObject *parent) : QObject(parent)
     timer_.setInterval(33);
     connect(&timer_, &QTimer::timeout, this, &TrackMotion::advance);
 }
+void TrackMotion::setHeadingConeEnabled(const QString &uid, bool enabled)
+{
+    if (uid.isEmpty() || uid.size() > 128 || coneTargets_.contains(uid) == enabled ||
+        (enabled && coneTargets_.size() >= 4096)) {
+        return;
+    }
+    if (enabled) {
+        coneTargets_.insert(uid);
+    } else {
+        coneTargets_.remove(uid);
+    }
+    emit coneTargetsChanged();
+    emit changed();
+}
 QList<SettingField> TrackMotion::settingsFields() const
 {
     return {
@@ -34,6 +48,18 @@ QList<SettingField> TrackMotion::settingsFields() const
 }
 QJsonObject TrackMotion::savePreferences() const
 {
+    QJsonArray targets;
+    auto ids = coneTargets_.values();
+    std::sort(ids.begin(), ids.end());
+    for (const auto &id : ids) {
+        targets.append(id);
+    }
+    auto values = animationPreferences();
+    values.insert(QStringLiteral("headingConeTargets"), targets);
+    return values;
+}
+QJsonObject TrackMotion::animationPreferences() const
+{
     return {{QStringLiteral("headingConeEnabled"), cone_.enabled},
             {QStringLiteral("headingConeAngle"), cone_.angle},
             {QStringLiteral("headingConeLength"), cone_.length},
@@ -46,6 +72,16 @@ QJsonObject TrackMotion::savePreferences() const
 }
 void TrackMotion::restorePreferences(const QJsonObject &v)
 {
+    const auto previousAnimation = animationPreferences();
+    coneTargets_.clear();
+    const auto targets = v.value(QStringLiteral("headingConeTargets")).toArray();
+    for (qsizetype i = 0; i < std::min<qsizetype>(targets.size(), 4096); ++i) {
+        const auto id = targets[i].toString();
+        if (!id.isEmpty() && id.size() <= 128) {
+            coneTargets_.insert(id);
+        }
+    }
+    emit coneTargetsChanged();
     cone_.enabled = v.value("headingConeEnabled").toBool(true);
     cone_.angle = preferenceNumber(v, "headingConeAngle", 60, 5, 180);
     cone_.length = preferenceNumber(v, "headingConeLength", 60, 10, 200);
@@ -66,6 +102,9 @@ void TrackMotion::restorePreferences(const QJsonObject &v)
         if (!paused_) {
             timer_.start();
         }
+    }
+    if (animationPreferences() != previousAnimation) {
+        emit configurationChanged();
     }
     emit changed();
 }

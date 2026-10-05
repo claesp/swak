@@ -42,6 +42,8 @@ Reuse QAction objects between menus and toolbars. Use shared plugin interfaces, 
 
 Use translation-aware interface text and locale-aware sorting and units. Provide names and tooltips for icon controls. Preserve keyboard access, disabled states, and focus. Respect standard menu conventions, including Quit last in File.
 
+Keep animation configuration in typed runtime fields. Update those fields during configuration changes. Do not read or serialize preferences during frame painting, animation ticks, or incoming position updates. Subscribe to a shared configuration signal when another component owns those values.
+
 Use asynchronous network APIs. Bound work per event-loop pass. Keep GUI callbacks free of sleep, processEvents loops, and blocking network waits. Tests can use bounded Qt waits. Shutdown can wait for a cancelled, bounded worker to finish before it destroys resources.
 
 Use a worker QObject for threaded services. Create sockets on their owning thread. Define cancellation, timeout, stale-result rejection, and shutdown before adding asynchronous work. Release locks before calling external callbacks or updating widgets.

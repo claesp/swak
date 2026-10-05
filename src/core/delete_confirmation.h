@@ -5,6 +5,23 @@
 #include <QPushButton>
 
 namespace swak {
+inline bool
+confirmAction(QWidget *parent, const QString &title, const QString &question, const QString &verb)
+{
+    QMessageBox dialog(QMessageBox::NoIcon,
+                       title,
+                       question,
+                       QMessageBox::NoButton,
+                       parent ? parent->window() : nullptr);
+    dialog.setObjectName(QStringLiteral("actionConfirmation"));
+    dialog.setTextFormat(Qt::PlainText);
+    auto *accept = dialog.addButton(verb, QMessageBox::DestructiveRole);
+    auto *cancel = dialog.addButton(QMessageBox::Cancel);
+    dialog.setDefaultButton(accept);
+    dialog.setEscapeButton(cancel);
+    dialog.exec();
+    return dialog.clickedButton() == accept;
+}
 inline bool confirmDeletion(QWidget *parent, const QString &name)
 {
     QMessageBox dialog(QMessageBox::NoIcon,

@@ -6,6 +6,8 @@
 #include "app/marker_manager.h"
 #include "app/plugin_panel.h"
 #include "core/activity.h"
+#include "core/credits.h"
+#include "core/delete_confirmation.h"
 #include "core/identity.h"
 #include "core/interfaces.h"
 #include "core/logging.h"
@@ -342,6 +344,16 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
                                     content,
                                     area);
             pluginDocks.insert(plugin, dock);
+            for (const auto &extra : pane->additionalPanes(services, this)) {
+                if (!extra.widget || extra.id.isEmpty()) {
+                    continue;
+                }
+                auto *extraDock =
+                    createDock(extra.title, extra.id, extra.widget, Qt::RightDockWidgetArea);
+                additionalDocks[plugin].append(extraDock);
+                sideDocks.append(extraDock);
+                extraDock->hide();
+            }
             if (area == Qt::RightDockWidgetArea) {
                 sideDocks.append(dock);
             } else if (area == Qt::BottomDockWidgetArea && bottomDock) {
@@ -364,9 +376,15 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     }
     resizeDocks(sideDocks, QList<int>(sideDocks.size(), 380), Qt::Horizontal);
     sideDocks.first()->raise();
-    auto *resetLayout = viewMenu->addAction(tr("Reset layout"));
+    auto *resetLayout = addMenuFooterAction(*viewMenu, tr("Reset Layout ..."));
     resetLayout->setObjectName(QStringLiteral("resetLayoutAction"));
     connect(resetLayout, &QAction::triggered, this, [this] {
+        if (!confirmAction(this,
+                           tr("Reset Layout"),
+                           tr("Reset the layout to its default arrangement?"),
+                           tr("Reset"))) {
+            return;
+        }
         panels_->restoreState(defaultLayout_, LayoutVersion);
         QMainWindow::restoreState(defaultWindowLayout_, LayoutVersion);
         fitWindowsToScreens();
@@ -520,6 +538,9 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
             }
         }
         for (auto *extra : additionalDocks.value(plugin)) {
+            if (menu == pluginsMenu) {
+                continue;
+            }
             addPaneAction(*pluginsMenu, *extra);
         }
         if (menu && menu != pluginsMenu && menu->isEmpty()) {
@@ -551,6 +572,12 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     defaultWindowLayout_ = QMainWindow::saveState(LayoutVersion);
     auto *helpMenu = menuBar()->addMenu(tr("&Help"));
     helpMenu->setObjectName(QStringLiteral("helpMenu"));
+    auto *credits = helpMenu->addAction(tr("Credits"));
+    credits->setObjectName(QStringLiteral("creditsAction"));
+    credits->setProperty("menuOrder", -1);
+    connect(credits, &QAction::triggered, this, [this] {
+        showCredits(this);
+    });
     auto *about = helpMenu->addAction(tr("&About"));
     about->setObjectName(QStringLiteral("aboutAction"));
     connect(about, &QAction::triggered, this, [this] {
@@ -559,14 +586,12 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
             existing->activateWindow();
             return;
         }
-        auto *dialog =
-            new QMessageBox(QMessageBox::Information,
-                            tr("About SWAK"),
-                            tr("SWAK\nVersion %1\n\nReceive, "
-                               "generate, and present CoT messages with built-in plugins.")
-                                .arg(QStringLiteral(SWAK_VERSION)),
-                            QMessageBox::Close,
-                            this);
+        auto *dialog = new QMessageBox(
+            QMessageBox::NoIcon,
+            tr("About SWAK"),
+            tr("SWAK\nVersion %1\n\nYet another TAK client.").arg(QStringLiteral(SWAK_VERSION)),
+            QMessageBox::Close,
+            this);
         dialog->setInformativeText(tr("Git SHA: %1").arg(QStringLiteral(SWAK_REVISION)) +
                                    (QStringLiteral(SWAK_GIT_TAG).isEmpty()
                                         ? QString{}
@@ -764,7 +789,10 @@ void Window::restorePreferences()
     }
     const auto components = document.value(QStringLiteral("components")).toObject();
     for (auto *participant : participants()) {
-        const auto values = components.value(participant->preferenceId());
+        auto values = components.value(participant->preferenceId());
+        if (!values.isObject() && !participant->preferenceFallbackId().isEmpty()) {
+            values = components.value(participant->preferenceFallbackId());
+        }
         if (values.isObject()) {
             participant->restorePreferences(values.toObject());
         }
@@ -919,6 +947,9 @@ QList<SettingsPage> Window::settingsPages()
              saveTimer_.setInterval(values.value(QStringLiteral("saveInterval")).toInt());
          }});
     for (auto *participant : participants()) {
+        if (dynamic_cast<Identity *>(participant)) {
+            continue;
+        }
         if (auto *maps = dynamic_cast<MapSources *>(participant)) {
             pages.append({maps->preferenceId(),
                           maps->settingsTitle(),

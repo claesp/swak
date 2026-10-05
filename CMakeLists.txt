@@ -63,6 +63,8 @@ endif()
 
 add_library(
     swak_core STATIC
+    src/core/credits.cpp
+    src/core/credits.h
     src/core/graphics.cpp
     src/core/graphics.h
     src/core/measure.cpp

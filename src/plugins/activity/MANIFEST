@@ -3,7 +3,7 @@
   "id": "org.swak.activity",
   "name": "Events",
   "description": "Present bounded internal-event history.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "apiVersion": 2,
   "entryPoint": "ActivityPlugin",
   "linkage": "static",

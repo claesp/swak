@@ -6,6 +6,7 @@
 #include <QHash>
 #include <QObject>
 #include <QPointF>
+#include <QSet>
 #include <QTimer>
 namespace swak {
 struct TrackKinematics
@@ -46,6 +47,7 @@ public:
     }
     QList<SettingField> settingsFields() const override;
     QJsonObject savePreferences() const override;
+    QJsonObject animationPreferences() const;
     void restorePreferences(const QJsonObject &values) override;
     void update(const Event &event, qint64 now = -1);
     void expire(const QString &uid, qint64 now = -1);
@@ -62,6 +64,15 @@ public:
     {
         return cone_;
     }
+    bool headingConeEnabled(const QString &uid) const
+    {
+        return coneTargets_.contains(uid);
+    }
+    bool canEnableHeadingCone(const QString &uid) const
+    {
+        return coneTargets_.contains(uid) || coneTargets_.size() < 4096;
+    }
+    void setHeadingConeEnabled(const QString &uid, bool enabled);
     qint64 time() const
     {
         return clock_.elapsed();
@@ -69,6 +80,8 @@ public:
 signals:
     void changed();
     void pauseChanged(bool paused);
+    void coneTargetsChanged();
+    void configurationChanged();
 
 private:
     struct Motion
@@ -95,5 +108,6 @@ private:
     int staleSeconds_ = 10;
     int fade_ = 600;
     HeadingConeStyle cone_;
+    QSet<QString> coneTargets_;
 };
 } // namespace swak

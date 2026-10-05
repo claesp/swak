@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 5, 2026: Read “Graphics startup and provider menus” at the end of this file. Earlier sections are historical snapshots. Use Git for the current revision.
+Latest implementation, October 5, 2026: Read “Clear commands, shape panes, and animation configuration” at the end of this file. Earlier sections are historical snapshots. Use Git for the current revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -1332,3 +1332,31 @@ The corrected native rendering workload passes in build/quality/20261005-012451-
 Quick sanitizer diagnostics pass all ten suites in build/quality/20261005-012725-quick-103677. The corrected workload also passes in headless mode. The final release rebuild after the commit uses build/gl-leak/release-committed.log. The executable remains build/release/swak.
 
 Coverage passes ten headless suites and 98 native cases in build/quality/20261005-012917-coverage-104190. It records 12609 of 13528 lines, 1219 of 1285 functions, and 18434 of 34984 branches. Every line of the shared graphics helper and menu footer helper runs. Provider removal during an open popup and failed provider writes remain existing coverage gaps. The six high-scaling cases pass without leaks in build/gl-leak/hidpi.log.
+
+# 2026-10-05: Clear commands, shape panes, and animation configuration
+
+The provider managers now show two-line notices with wrapping. Their status text also wraps. Map Providers uses No map. View ends with a separator and Reset Layout ..., with confirmation. Events, CoT Messages, Predict, and Trace use Clear ... with the same confirmation behavior and eraser icon. Enter accepts and Esc cancels. Delete actions keep the trash icon. Predict and Trace already removed their target records when cleared. New tests cover cancellation, cleared flags after incoming messages, and persistence across restart.
+
+About uses Yet another TAK client. without a message icon. Help places Credits before About. Credits lists direct libraries, bundled icon and decoder assets, libarchive compression backends, and the Qt TLS backend. It shows versions, licenses, attributions, and URLs. Runtime APIs provide system library versions where available. GeographicLib uses its build version. Other system graphics and desktop dependencies vary by host. No application dependency was added. The pinned FontTools 4.55.3 converter was restored under build/icon-tools for asset generation only.
+
+Grids replaces Grid Types in Settings. Identity remains under File but no longer appears in Settings. Circles and Lines have separate editors, configuration sections, pane controls, and keybindings. Distance remains with Lines. The shared PanePlugin API now supports additionalPanes. The Lines pane uses org.swak.lines.pane. Circles retains org.swak.shapes.pane. PreferenceParticipant::preferenceFallbackId supports migration from an older component section. Lines reads org.swak.shapes only when org.swak.lines is absent. Existing geometry and object ownership identifiers remain unchanged.
+
+Each CoT object starts with its FOV cone off. Context and Information menus share a checkable FOV cone action. TrackMotion stores bounded per-object choices and preserves them in preferences. The limit is 4096 identities of at most 128 characters. Shared cone styling remains under CoT animation. Missing heading data still prevents drawing a cone.
+
+Animation configuration stays in typed runtime fields. Predict previously copied preferences on each motion frame and each accepted prediction update. It now refreshes its endpoint configuration and cached teleport threshold at construction and on TrackMotion::configurationChanged. This signal fires only when animation configuration changes. animationPreferences excludes the cone target list. Trace, marker guides, shape measurements, map navigation, and TrackMotion already use cached fields. The cone renderer reads the typed HeadingConeStyle cache. AGENTS.md and docs/coding-style.md record this standing rule.
+
+Native screenshots show the three provider notices on two lines and the Credits table without clipped cell text. The native suite passes 101 cases under Qt 6.8.2 and Xvfb with llvmpipe. The report is build/quality/20261005-014844-gui-113910. The 60-second rendering workload passes 875 cycles. Peak memory growth is 45125632 bytes. The maximum heartbeat gap is 110 ms. Idle CPU time is 0.022 seconds. Its report is build/quality/20261005-015010-soak-114846. Both sanitizer processes report no leaks. Hardware graphics, native Wayland, and a two-hour session remain separate qualification work.
+
+Earlier intermediate runs found an unnecessary manifest schema-version change and old test expectations for pane counts and Identity in Settings. Those defects were corrected. The final configuration regression tests distinguish stored animation values from object flags and exercise repeated position updates without configuration notifications.
+
+A final shutdown test caught a typed QPointer downcast after the ShapesEditor destructor completed. The registry now stores QPointer<QObject>. It removes the exact editor during the destroyed signal without a derived-type cast. The failing report is build/quality/20261005-015719-gui-118255.
+
+The focused interface suite also passes 11 cases at 200 percent scaling in build/ui-review/hidpi/gui.log. The provider notices remain on two lines. Credits cells wrap and retain tooltips.
+
+Final native sanitizer diagnostics pass all 101 cases in build/quality/20261005-015802-gui-118693 without reported leaks or undefined behavior. Quick diagnostics pass all ten suites in build/quality/20261005-015425-quick-117122. Source analysis passes in build/quality/20261005-020027-analyze-120080. Style diagnostics pass in build/quality/20261005-020033-style-120158.
+
+Final coverage uses build/quality/20261005-015857-coverage-119252. All ten headless suites pass. A separate native run adds 101 passing cases, then regenerates the report. It records 12878 of 13797 lines, 1243 of 1308 functions, 18792 of 35631 branches.
+
+Remaining paths include unavailable TLS backends, absent compression backends, some motion expiry boundaries, and discarded prediction restoration. Existing provider write-failure and application startup branches also remain. The 60-second workload does not qualify two-hour operation.
+
+The post-commit release rebuild uses build/ui-review/release-committed.log. The executable is build/release/swak. Its version includes the committed Git revision.

@@ -1,8 +1,10 @@
+#include "core/delete_confirmation.h"
 #include "core/interfaces.h"
 #include "core/map_tools.h"
 #include "core/maps.h"
 #include "core/prediction.h"
 #include "core/store.h"
+#include "core/ui_icons.h"
 
 #include <QJsonArray>
 #include <QMenu>
@@ -32,10 +34,8 @@ public:
         endpoints_.setPaused(store_.motion().paused());
         connect(&endpoints_, &TrackMotion::changed, this, &MapTool::changed);
         connect(&store_.motion(), &TrackMotion::pauseChanged, &endpoints_, &TrackMotion::setPaused);
-        connect(&store_.motion(), &TrackMotion::changed, this, [this] {
-            if (!records_.isEmpty()) {
-                syncMotion();
-            }
+        connect(&store_.motion(), &TrackMotion::configurationChanged, this, [this] {
+            syncMotion();
         });
         connect(&store_, &Store::eventAccepted, this, [this](const Event &event) {
             update(event);
@@ -232,11 +232,12 @@ public:
 private:
     void syncMotion()
     {
-        auto values = store_.motion().savePreferences();
+        auto values = store_.motion().animationPreferences();
         values.insert(QStringLiteral("predictionMs"), 0);
         values.insert(QStringLiteral("staleSeconds"), 0);
         if (values != motionSettings_) {
             motionSettings_ = values;
+            teleportKm_ = values.value(QStringLiteral("teleportKm")).toDouble(100);
             endpoints_.restorePreferences(values);
         }
     }
@@ -258,13 +259,10 @@ private:
         if (found == records_.end()) {
             return;
         }
-        syncMotion();
         if (found->size() == 0) {
             discard(event.uid);
         }
-        found->append(event,
-                      motionSettings_.value(QStringLiteral("teleportKm")).toDouble(100),
-                      historySeconds_);
+        found->append(event, teleportKm_, historySeconds_);
         for (const auto seconds : Seconds) {
             const auto target = found->forecast(seconds);
             if (!target) {
@@ -283,6 +281,7 @@ private:
     Store &store_;
     TrackMotion endpoints_;
     QJsonObject motionSettings_;
+    double teleportKm_ = 100;
     QHash<QString, PredictionHistory> records_;
     int historySeconds_ = 300;
     double opacity_ = 0.75;
@@ -318,10 +317,15 @@ public:
         }
         auto *tool = new PredictTool(services, &menu);
         services.mapTools->add(tool);
-        auto *clear = menu.addAction(tr("Clear predictions"));
+        auto *clear = menu.addAction(uiIcon(UiIcon::Clear), tr("Clear ..."));
         clear->setObjectName(QStringLiteral("clearPredictions"));
-        connect(clear, &QAction::triggered, tool, [tool] {
-            tool->clear();
+        connect(clear, &QAction::triggered, tool, [tool, &menu] {
+            if (confirmAction(&menu,
+                              tr("Clear"),
+                              tr("Clear all predictions and turn off Predict for all objects?"),
+                              tr("Clear"))) {
+                tool->clear();
+            }
         });
     }
 };

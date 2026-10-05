@@ -36,10 +36,15 @@ MarkerManager::MarkerManager(MarkerCollections &collections,
     setWindowTitle(tr("Marker Collections"));
     resize(700, 460);
     auto *layout = new QVBoxLayout(this);
-    layout->addWidget(
-        new SingleLineLabel(tr("Enable collections for new markers. Existing markers keep their "
-                               "saved collection references. Built-in collections are read-only."),
-                            this));
+    auto *notice =
+        new QLabel(tr("Enable collections for new markers. Built-in collections are "
+                      "read-only.\nExisting markers keep their saved collection references."),
+                   this);
+    notice->setObjectName(QStringLiteral("providerNotice"));
+    notice->setTextFormat(Qt::PlainText);
+    notice->setWordWrap(true);
+    notice->setMinimumHeight(notice->fontMetrics().lineSpacing() * 2);
+    layout->addWidget(notice);
     table_ = new ProviderTable(false, this);
     table_->setObjectName(QStringLiteral("markerCollectionList"));
     table_->setAccessibleName(tr("Marker collections"));
@@ -58,7 +63,9 @@ MarkerManager::MarkerManager(MarkerCollections &collections,
     auto *import = button(tr("Import"), QStringLiteral("importMarkerCollection"));
     auto *exportButton = button(tr("Export"), QStringLiteral("exportMarkerCollection"));
     layout->addLayout(row);
-    status_ = new SingleLineLabel(this);
+    status_ = new QLabel(this);
+    status_->setWordWrap(true);
+    status_->setMinimumHeight(status_->fontMetrics().lineSpacing() * 2);
     status_->setTextFormat(Qt::PlainText);
     status_->setObjectName(QStringLiteral("markerCollectionStatus"));
     layout->addWidget(status_);

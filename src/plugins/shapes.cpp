@@ -63,31 +63,46 @@ QPointF world(QPointF point, const Viewport &view)
 class ShapesEditor final : public ObjectEditor, public SettingsParticipant
 {
 public:
-    ShapesEditor(UserObjects &objects, MarkerCollections &collections, QWidget *parent)
-        : ObjectEditor(objects, collections, parent)
+    ShapesEditor(UserObjects &objects,
+                 MarkerCollections &collections,
+                 QWidget *parent,
+                 bool isCircle = true)
+        : ObjectEditor(objects, collections, parent), circles(isCircle)
     {
-        setObjectName(QStringLiteral("shapesEditor"));
+        setObjectName(circles ? QStringLiteral("shapesEditor") : QStringLiteral("linesEditor"));
     }
     QString preferenceId() const override
+    {
+        return circles ? QStringLiteral("org.swak.shapes") : QStringLiteral("org.swak.lines");
+    }
+    QString preferenceFallbackId() const override
     {
         return QStringLiteral("org.swak.shapes");
     }
     QString settingsTitle() const override
     {
-        return tr("Circle and line tools");
+        return circles ? tr("Circles") : tr("Lines");
     }
     QList<SettingField> settingsFields() const override
     {
-        return {keySetting(QStringLiteral("circleKey"), tr("Create circle")),
-                keySetting(QStringLiteral("distanceKey"), tr("Measure distance")),
-                keySetting(QStringLiteral("lineKey"), tr("Create line")),
-                numberSetting(
-                    QStringLiteral("holdSeconds"), tr("Measurement duration (seconds)"), 1, 60),
-                numberSetting(
-                    QStringLiteral("fadeMs"), tr("Measurement fade (milliseconds)"), 100, 5000),
-                numberSetting(QStringLiteral("lineWidth"), tr("Outline width (pixels)"), 1, 6),
-                numberSetting(QStringLiteral("radius"), tr("Control point radius (pixels)"), 1, 6)};
+        QList<SettingField> fields;
+        if (circles) {
+            fields.append(keySetting(QStringLiteral("circleKey"), tr("Create circle")));
+        } else {
+            fields.append(keySetting(QStringLiteral("lineKey"), tr("Create line")));
+            fields.append(keySetting(QStringLiteral("distanceKey"), tr("Measure distance")));
+            fields.append(numberSetting(
+                QStringLiteral("holdSeconds"), tr("Measurement duration (seconds)"), 1, 60));
+            fields.append(numberSetting(
+                QStringLiteral("fadeMs"), tr("Measurement fade (milliseconds)"), 100, 5000));
+        }
+        fields.append(
+            numberSetting(QStringLiteral("lineWidth"), tr("Outline width (pixels)"), 1, 6));
+        fields.append(
+            numberSetting(QStringLiteral("radius"), tr("Control point radius (pixels)"), 1, 6));
+        return fields;
     }
+
     QJsonObject savePreferences() const override
     {
         auto values = editorState();
@@ -108,12 +123,15 @@ public:
         for (const auto &name : {QStringLiteral("circleKey"),
                                  QStringLiteral("distanceKey"),
                                  QStringLiteral("lineKey")}) {
+            if (circles != (name == QStringLiteral("circleKey"))) {
+                continue;
+            }
             const auto sequence =
                 QKeySequence::fromString(values.value(name).toString(), QKeySequence::PortableText);
             if (sequence.count() != 1 || sequence[0].keyboardModifiers() != Qt::NoModifier ||
                 sequence[0].key() < Qt::Key_A || sequence[0].key() > Qt::Key_Z ||
                 used.contains(sequence[0].key())) {
-                return tr("Use three different letters without modifiers.");
+                return tr("Use different letters without modifiers.");
             }
             used.insert(sequence[0].key());
         }
@@ -142,6 +160,7 @@ public:
         restoreEditorState(values);
         emit configurationChanged();
     }
+    const bool circles;
     std::array<int, 3> keys{Qt::Key_C, Qt::Key_D, Qt::Key_L};
     int holdSeconds = 10, fadeMs = 1000;
     double width = 2, radius = 3;
@@ -151,9 +170,10 @@ class ShapesTool final : public MapTool
 public:
     ShapesTool(PluginServices &services, ShapesEditor &editor)
         : MapTool(&editor), objects_(*services.objects), selection_(*services.selection),
-          tools_(*services.mapTools), store_(services.store), editor_(editor)
+          tools_(*services.mapTools), store_(services.store), editor_(editor),
+          mode_(editor.circles ? ShapeMode::Circle : ShapeMode::Line)
     {
-        setObjectName(QStringLiteral("shapesTool"));
+        setObjectName(editor.circles ? QStringLiteral("shapesTool") : QStringLiteral("linesTool"));
         clock_.start();
         timer_.setInterval(33);
         connect(&timer_, &QTimer::timeout, this, [this] {
@@ -185,8 +205,10 @@ public:
         connect(&objects_, &UserObjects::changed, this, [this] {
             if (selection_.item() && selection_.item()->owner == owner()) {
                 const auto id = selection_.item()->id;
-                if (objects_.find(id)) {
-                    select(id);
+                if (const auto item = objects_.find(id)) {
+                    if (supported(*item)) {
+                        select(id);
+                    }
                 } else {
                     selection_.clear();
                 }
@@ -266,6 +288,10 @@ public:
         if (interactionActive() || !selection_.item() || selection_.item()->owner != owner()) {
             return false;
         }
+        const auto selected = objects_.find(selection_.item()->id);
+        if (!selected || !supported(*selected)) {
+            return false;
+        }
         deleteObject(objects_, selection_.item()->id, &editor_);
         return true;
     }
@@ -279,7 +305,7 @@ public:
                 return false;
             }
             for (size_t i = 0; i < 3; ++i) {
-                if (key.key() == editor_.keys[i]) {
+                if ((editor_.circles == (i == 0)) && key.key() == editor_.keys[i]) {
                     if (!key.isAutoRepeat()) {
                         request(static_cast<ShapeMode>(i));
                     }
@@ -435,7 +461,7 @@ public:
         }
         const auto record = objects_.find(item.id);
         if (!record || !supported(*record)) {
-            return true;
+            return false;
         }
         if (event.type() == QEvent::MouseButtonRelease) {
             editor_.cancel();
@@ -455,7 +481,7 @@ public:
         edit->setObjectName(QStringLiteral("editShape"));
         auto *move = menu.addAction(uiIcon(UiIcon::Move), tr("Move"));
         move->setObjectName(QStringLiteral("moveShape"));
-        auto *remove = menu.addAction(uiIcon(UiIcon::Clear), tr("Delete ..."));
+        auto *remove = menu.addAction(uiIcon(UiIcon::Delete), tr("Delete ..."));
         remove->setObjectName(QStringLiteral("deleteShape"));
         edit->setProperty("menuOrder", -2);
         remove->setProperty("menuOrder", -1);
@@ -463,6 +489,7 @@ public:
         connect(edit, &QAction::triggered, this, [this, id = item.id] {
             if (const auto found = objects_.find(id)) {
                 selection_.clear();
+                mode_ = editor_.circles ? ShapeMode::Circle : ShapeMode::Line;
                 editor_.edit(*found);
                 emit changed();
             }
@@ -578,9 +605,10 @@ private:
     {
         return QStringLiteral("org.swak.shapes");
     }
-    static bool supported(const UserObject &item)
+    bool supported(const UserObject &item) const
     {
-        return item.type == QStringLiteral("range-circle") || item.type == QStringLiteral("line");
+        return item.type ==
+               (editor_.circles ? QStringLiteral("range-circle") : QStringLiteral("line"));
     }
     void reset()
     {
@@ -718,7 +746,7 @@ private:
                 QMenu menu(&map);
                 auto *move = menu.addAction(uiIcon(UiIcon::Move), tr("Move"));
                 move->setObjectName(QStringLiteral("moveShapePoint"));
-                auto *remove = menu.addAction(uiIcon(UiIcon::Clear), tr("Delete ..."));
+                auto *remove = menu.addAction(uiIcon(UiIcon::Delete), tr("Delete ..."));
                 remove->setEnabled(false);
                 remove->setToolTip(tr("This shape needs both control points."));
                 connect(move, &QAction::triggered, this, [this, i] {
@@ -764,7 +792,7 @@ class ShapesPlugin final : public QObject,
 public:
     QString name() const override
     {
-        return tr("Circle and line tools");
+        return tr("Circles");
     }
     QString mapId() const override
     {
@@ -780,19 +808,41 @@ public:
     }
     QWidget *create(PluginServices &services, QWidget *parent) override
     {
+        return createEditor(services, parent, true);
+    }
+    QList<PluginPane> additionalPanes(PluginServices &services, QWidget *parent) override
+    {
+        return {{QStringLiteral("org.swak.lines.pane"),
+                 tr("Lines"),
+                 createEditor(services, parent, false)}};
+    }
+    QWidget *createEditor(PluginServices &services, QWidget *parent, bool circles)
+    {
         if (!services.objects || !services.selection || !services.mapTools ||
             !services.collections) {
             return new QWidget(parent);
         }
-        auto *editor = new ShapesEditor(*services.objects, *services.collections, parent);
+        auto *editor = new ShapesEditor(*services.objects, *services.collections, parent, circles);
         auto *tool = new ShapesTool(services, *editor);
         services.mapTools->add(tool);
-        editors_.insert(services.mapTools, editor);
-        connect(editor, &QObject::destroyed, this, [this, tools = services.mapTools] {
-            editors_.remove(tools);
-        });
+        editors_[services.mapTools].append(editor);
+        connect(editor,
+                &QObject::destroyed,
+                this,
+                [this, tools = services.mapTools, object = static_cast<QObject *>(editor)] {
+                    auto &entries = editors_[tools];
+                    entries.removeIf([object](const auto &entry) {
+                        return entry.isNull() || entry.data() == object;
+                    });
+                    if (entries.isEmpty()) {
+                        editors_.remove(tools);
+                    }
+                });
         const std::array<UiIcon, 3> icons{UiIcon::Circle, UiIcon::Distance, UiIcon::Line};
         for (int i = 0; i < 3; ++i) {
+            if (circles != (i == 0)) {
+                continue;
+            }
             const auto mode = static_cast<ShapeMode>(i);
             auto *action =
                 new QAction(uiIcon(icons[static_cast<size_t>(i)]), shapeName(mode), editor);
@@ -827,19 +877,23 @@ public:
     }
     void populateMenu(PluginServices &services, QMenu &menu) override
     {
-        addActions(editors_.value(services.mapTools), [&menu](QAction *action) {
-            menu.addAction(action);
-        });
+        for (const auto &editor : editors_.value(services.mapTools)) {
+            addActions(editor, [&menu](QAction *action) {
+                menu.addAction(action);
+            });
+        }
     }
     void populateToolbar(PluginServices &services, QToolBar &toolbar, QMenu *) override
     {
-        addActions(editors_.value(services.mapTools), [&toolbar](QAction *action) {
-            toolbar.addAction(action);
-        });
+        for (const auto &editor : editors_.value(services.mapTools)) {
+            addActions(editor, [&toolbar](QAction *action) {
+                toolbar.addAction(action);
+            });
+        }
     }
 
 private:
-    QHash<MapTools *, QPointer<ShapesEditor>> editors_;
+    QHash<MapTools *, QList<QPointer<QObject>>> editors_;
     static void addActions(QObject *root, const std::function<void(QAction *)> &add)
     {
         if (!root) {

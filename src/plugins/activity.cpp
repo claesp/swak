@@ -1,7 +1,9 @@
 #include "core/activity.h"
 
+#include "core/delete_confirmation.h"
 #include "core/interfaces.h"
 #include "core/preferences.h"
+#include "core/ui_icons.h"
 
 #include <QHeaderView>
 #include <QMenu>
@@ -64,10 +66,14 @@ public:
     }
     void populateMenu(PluginServices &services, QMenu &menu) override
     {
-        auto *clear = menu.addAction(tr("Clear"));
+        auto *clear = menu.addAction(uiIcon(UiIcon::Clear), tr("Clear ..."));
         clear->setObjectName(QStringLiteral("clearActivityAction"));
         auto *model = &services.activity;
-        connect(clear, &QAction::triggered, model, &ActivityModel::clear);
+        connect(clear, &QAction::triggered, model, [model, &menu] {
+            if (confirmAction(&menu, tr("Clear events"), tr("Clear all events?"), tr("Clear"))) {
+                model->clear();
+            }
+        });
     }
 };
 } // namespace swak

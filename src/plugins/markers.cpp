@@ -366,7 +366,7 @@ public:
         edit->setObjectName(QStringLiteral("editMarker"));
         auto *move = menu.addAction(uiIcon(UiIcon::Move), tr("Move"));
         move->setObjectName(QStringLiteral("moveMarker"));
-        auto *remove = menu.addAction(uiIcon(UiIcon::Clear), tr("Delete ..."));
+        auto *remove = menu.addAction(uiIcon(UiIcon::Delete), tr("Delete ..."));
         remove->setObjectName(QStringLiteral("deleteMarker"));
         edit->setProperty("menuOrder", -2);
         remove->setProperty("menuOrder", -1);

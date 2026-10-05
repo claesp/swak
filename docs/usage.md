@@ -64,7 +64,7 @@ Saved preferences include these interface choices:
 
 Live events, the selected event, message counts, and generated XML previews are session data. They are not preferences and do not survive a restart. Editor drafts survive without automatically generating events.
 
-Use View > Reset layout to return panes to their initial arrangement. This command keeps editor values, map position, and receiver configuration. Tools > Plugins contains pane toggles and the Marker placement command. View contains only Toolbar and Reset layout.
+Use View > Reset Layout ... to return panes to their initial arrangement. This command keeps editor values, map position, and receiver configuration. Tools > Plugins contains pane toggles and the Marker placement command. View also controls the toolbar, grid, map scale, and zoom legend.
 
 The default file is `preferences.json` in the Qt application configuration directory. On Linux, Qt uses the user configuration location under `XDG_CONFIG_HOME` or `~/.config`. The application identifies itself with organization `SWAK` and name `swak`.
 
@@ -210,7 +210,7 @@ Undo stays available while the history contains deletions to restore. After the 
 File > Settings > General > Markers changes circle color, radius, and guide opacity. File > Settings > Keybindings > Markers changes the creation key. It accepts one letter without modifiers. A tool activation key takes priority over a map navigation key with the same value. Choose different keys for these actions. The model allows at most 256 objects and reserves storage for undo. ID, Latitude, and Longitude are reserved property names.
 
 
-The coordinate grid operates independently of marker modes. File > Settings > General > Grid Types manages its appearance and coordinate system.
+The coordinate grid operates independently of marker modes. File > Settings > General > Grids manages its appearance and coordinate system.
 
 
 Press the marker activation key again to leave placement mode. The default key is M. The same key cancels movement and restores the original position. The status bar shows M during placement or movement and clears it when that mode ends. Press Enter in the Title field to apply marker details. Enter uses the same validation as Apply.
@@ -218,7 +218,7 @@ Press the marker activation key again to leave placement mode. The default key i
 Help > About shows the application version and full Git SHA. The SHA identifies the source commit. The version includes a short SHA and adds `-dirty` when tracked files contain uncommitted changes. About also shows an exact Git tag when one exists. Builds without Git metadata show `+unknown`. These values identify the build but do not query a server for newer releases.
 
 
-The grid stays below data-feed and local markers. Choose No grid in Grid Types to hide it.
+The grid stays below data-feed and local markers. Choose No grid in Grids to hide it.
 
 
 After Apply or Enter saves a marker, keyboard focus returns to the map. Press M to create the next marker without closing Information or clicking the map first. This also applies when the editor or Information pane is detached.
@@ -387,7 +387,7 @@ The main view appears in the Map tab. Its keyboard, mouse, overlay, and lock con
 
 The faded indicator at the left center shows the supported zoom levels. A longer tick marks the current level. View > Map scale and View > Map zoom level control visibility. Both choices survive restart.
 
-Open File > Settings > General > Grid Types to manage coordinate grids. Longitude/latitude is the default selection. UTM and MGRS are also available. Select a radio button to activate a type. Select No grid to hide all types.
+Open File > Settings > General > Grids to manage coordinate grids. Longitude/latitude is the default selection. UTM and MGRS are also available. Select a radio button to activate a type. Select No grid to hide all types.
 
 View > Grid also hides or shows the grid. Showing it restores the last selected type. Both the hidden state and the remembered type survive restart. The menu item is disabled when no grid types remain.
 
@@ -407,7 +407,7 @@ Circle includes the same Restricted flag as Area. Select this flag to add diagon
 
 While editing an Area, double-click a corner to start Move. Click its new location to place it. Press Escape to cancel that move. The corner menu places Move before Delete.
 
-Grid lines use antialiasing to soften their edges. New grids use 30 percent opacity. Existing grids keep their saved opacity. Change the opacity under Grid Types in Settings.
+Grid lines use antialiasing to soften their edges. New grids use 30 percent opacity. Existing grids keep their saved opacity. Change the opacity under Grids in Settings.
 
 The zoom legend appears at the right edge of the map. Click a tick to select that zoom level. The map keeps its center and respects the selected provider limits. The navigation lock also blocks legend clicks. View > Map zoom level controls its visibility.
 
@@ -416,3 +416,16 @@ The Information pane shows ground speed for received CoT objects. The calculatio
 A faint cone shows reported heading, or an estimated heading from recent movement. CoT animation in Settings controls its visibility, angle, length, and opacity. The cone follows the marker during movement, teleport fades, and stale fades. Space freezes the cone and motion values with the map. The angle is a visual aid, not a measured sensor field of view.
 
 The Map providers, Servers, and Data providers menus on the main toolbar end with the More ... action. This entry opens the corresponding management window. A separator places it below the provider choices. The Tools menu keeps the full management names.
+
+
+# Clear commands and object cones
+
+Events, CoT Messages, Predict, and Trace provide Clear ... under Tools > Plugins. Each command opens a confirmation dialog. Enter confirms the action. Esc cancels it. Clearing Predict or Trace removes every enabled object flag as well as the drawn paths. New messages do not enable those flags again.
+
+View > Reset Layout ... appears last, after a separator. Its confirmation dialog protects the current arrangement from an accidental reset. Map Providers uses No map to deselect the current provider.
+
+Each CoT object starts with its FOV cone off. FOV means field of view. Select FOV cone in the object context menu or Information pane to enable it. The application saves this choice by object identity. CoT animation controls the shared cone appearance and its global visibility.
+
+Circles and Lines have separate General, Panes, and Keybindings entries in Settings. Lines also contains the temporary Distance configuration. Older combined configuration initializes both sections. Later changes remain independent. The Identity command remains under File and no longer appears in Settings.
+
+Help > Credits lists library and icon versions, licenses, attributions, and project URLs. Qt and libarchive report their runtime versions. GeographicLib reports its build version. The table also includes compression libraries reported by libarchive and the active Qt TLS backend. System graphics and desktop libraries depend on the Linux installation.

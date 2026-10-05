@@ -14,6 +14,10 @@ class PreferenceParticipant
 public:
     virtual ~PreferenceParticipant() = default;
     virtual QString preferenceId() const = 0;
+    virtual QString preferenceFallbackId() const
+    {
+        return {};
+    }
     virtual QJsonObject savePreferences() const = 0;
     virtual void restorePreferences(const QJsonObject &values) = 0;
 };

@@ -3,7 +3,7 @@ QPainterPath iconPath(UiIcon icon)
 {
     QPainterPath path;
     switch (icon) {
-    case UiIcon::Clear:
+    case UiIcon::Delete:
         path.moveTo(3, 6);
         path.lineTo(21, 6);
         path.moveTo(19, 6);
@@ -87,6 +87,10 @@ QPainterPath iconPath(UiIcon icon)
         path.moveTo(9, 5);
         path.lineTo(12, 2);
         path.lineTo(15, 5);
+        break;
+    case UiIcon::Clear:
+        path.moveTo(3, 13); path.lineTo(13, 3); path.lineTo(21, 11); path.lineTo(11, 21); path.lineTo(7, 21); path.closeSubpath();
+        path.moveTo(8, 8); path.lineTo(16, 16); path.moveTo(11, 21); path.lineTo(22, 21);
         break;
     case UiIcon::Circle:
         path.addEllipse(QPointF(12, 12), 9, 9);

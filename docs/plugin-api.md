@@ -57,7 +57,7 @@ The host owns pane placement, visibility actions, and layout persistence. Plugin
 | `src/plugins/information` | Information | Pane |
 | `src/plugins/trace` | Trace | Menu and map tool |
 | `src/plugins/predict` | Predict | Menu and map tool |
-| `src/plugins/shapes` | Circle and line tools | Pane, menu, toolbar, and map tool |
+| `src/plugins/shapes` | Circles and Lines | Pane, menu, toolbar, and map tool |
 | `src/plugins/markers` | Markers | Pane, map tool, and Core collection |
 | `src/plugins/polygons` | Areas | Pane and map tool |
 | `src/plugins/milstd2525` | MILSTD2525 | Marker collection |
@@ -212,7 +212,7 @@ Overlay painting does not request map tile painting. The view refreshes the over
 `MapTool::statusText` returns a short active-mode indicator or empty text. `MapTools::statusText` combines these indicators. The host reserves a separate status area and refreshes it on `MapTools::changed`. Plugins emit `changed` when a mode starts or ends. The marker tool returns M during placement and movement. Pointer-only updates do not refresh this area.
 
 
-`MapTool::guidesActive` reports active placement or movement guides. `MapTools` combines these requests for cursor behavior. Grid Types controls coordinate grids independently of tools.
+`MapTool::guidesActive` reports active placement or movement guides. `MapTools` combines these requests for cursor behavior. Grids controls coordinate grids independently of tools.
 
 
 # Map overlay panels
@@ -429,3 +429,16 @@ mapZoomLegendRect and mapZoomLevelAt share screen geometry for drawing and hit t
 
 
 The host and graphical test executables call configureGraphics before QApplication. This shared startup helper sets the OpenGL format and the default X11 integration preference. Plugins do not change the graphics integration after startup. The addMenuFooterAction helper creates a separated final menu action with explicit sorting priority. Provider toolbar menus use it for More ... without renaming their shared management actions.
+
+
+# Additional editor panes and preference migration
+
+PanePlugin::additionalPanes returns optional PluginPane records, like SourcePlugin::additionalPanes. Each record provides a stable layout identifier, a translated title, and a parent-owned widget. The pane plugin declares extra panes in its MANIFEST. Root-action tools control editor visibility through their creation commands. Settings discovers each editor through the shared participant interface.
+
+PreferenceParticipant::preferenceFallbackId supplies an optional migration source. The host reads that section only when the current section is absent or is not an object. Future writes use the current identifier. Unknown sections remain intact. Lines migrates from org.swak.shapes into org.swak.lines. Circles retains org.swak.shapes and the existing org.swak.shapes.pane layout identifier.
+
+TrackMotion stores bounded headingConeTargets preferences for up to 4096 object identities, with 128 characters per identity. No target starts enabled. setHeadingConeEnabled changes one target and emits coneTargetsChanged. The CoT plugin contributes the same checkable FOV cone action to context and Information menus through MapTool. The renderer requires both the object flag and the shared appearance switch.
+
+TrackMotion::configurationChanged reports a change to restored animation configuration. Predict uses this signal instead of copying preferences on every animation frame. TrackMotion::animationPreferences excludes object cone flags, so incoming predictions do not copy them.
+
+Predict caches the teleport threshold and endpoint animation configuration at construction and on that signal, including while no targets are active. Its incoming-event and painting paths do not fetch configuration. TrackMotion, Trace, map navigation, and shape measurement timers use typed fields populated by restorePreferences. The cone renderer reads the existing typed HeadingConeStyle cache rather than preference data.

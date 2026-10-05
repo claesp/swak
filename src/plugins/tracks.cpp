@@ -1,6 +1,8 @@
+#include "core/delete_confirmation.h"
 #include "core/interfaces.h"
 #include "core/logging.h"
 #include "core/map_label.h"
+#include "core/map_tools.h"
 #include "core/marker_symbols.h"
 #include "core/preferences.h"
 #include "core/projection.h"
@@ -21,6 +23,48 @@
 #include <algorithm>
 
 namespace swak {
+class HeadingConeTool final : public MapTool
+{
+public:
+    HeadingConeTool(TrackMotion &motion, QObject *parent) : MapTool(parent), motion_(motion)
+    {
+        connect(&motion_, &TrackMotion::coneTargetsChanged, this, &MapTool::actionsChanged);
+    }
+    bool handle(QEvent &, const Viewport &, QWidget &) override
+    {
+        return false;
+    }
+    void paint(QPainter &, const Viewport &) const override {}
+    bool cancel() override
+    {
+        return false;
+    }
+    void populateInformationMenu(const MapItem &item, QMenu &menu) override
+    {
+        populateContextMenu(item, menu);
+    }
+    void populateContextMenu(const MapItem &item, QMenu &menu) override
+    {
+        if (item.owner != QStringLiteral("org.swak.events")) {
+            return;
+        }
+        auto *action = menu.addAction(tr("FOV cone"));
+        action->setObjectName(QStringLiteral("headingConeObject"));
+        action->setCheckable(true);
+        action->setChecked(motion_.headingConeEnabled(item.id));
+        action->setEnabled(motion_.canEnableHeadingCone(item.id));
+        action->setToolTip(
+            action->isEnabled()
+                ? tr("Show the field of view cone for this object.")
+                : tr("The cone limit is 4096 objects. Turn off another cone first."));
+        connect(action, &QAction::triggered, this, [this, id = item.id](bool enabled) {
+            motion_.setHeadingConeEnabled(id, enabled);
+        });
+    }
+
+private:
+    TrackMotion &motion_;
+};
 class EventTable final : public QTableView, public SettingsParticipant
 {
 public:
@@ -172,6 +216,9 @@ public:
     void populateMenu(PluginServices &services, QMenu &menu) override
     {
         menu.addAction(createClearAction(services.store, menu));
+        if (services.mapTools) {
+            services.mapTools->add(new HeadingConeTool(services.store.motion(), &menu));
+        }
     }
     int order() const override
     {
@@ -217,7 +264,8 @@ public:
             painter.save();
             painter.setOpacity(visual.opacity);
             const auto &cone = store.motion().headingConeStyle();
-            if (cone.enabled && visual.kinematics.heading) {
+            if (cone.enabled && store.motion().headingConeEnabled(event.uid) &&
+                visual.kinematics.heading) {
                 const double radius = view.markerSize(cone.length);
                 QPainterPath path;
                 path.moveTo(point);
@@ -283,11 +331,15 @@ public:
 private:
     QAction *createClearAction(Store &store, QWidget &owner)
     {
-        auto *clear = new QAction(uiIcon(UiIcon::Clear), tr("&Clear"), &owner);
+        auto *clear = new QAction(uiIcon(UiIcon::Clear), tr("Clear ..."), &owner);
         clear->setObjectName(QStringLiteral("clearEventsAction"));
         clear->setToolTip(tr("Clear CoT Messages"));
         clear->setStatusTip(tr("Remove all current CoT messages and clear the selection."));
-        connect(clear, &QAction::triggered, &store, [&store] {
+        connect(clear, &QAction::triggered, &store, [&store, &owner] {
+            if (!confirmAction(
+                    &owner, tr("Clear CoT messages"), tr("Clear all CoT messages?"), tr("Clear"))) {
+                return;
+            }
             store.clear();
             logMessage(Severity::Info,
                        Urgency::Routine,

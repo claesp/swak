@@ -16,7 +16,7 @@ public:
     }
     QString settingsTitle() const override
     {
-        return tr("Grid Types");
+        return tr("Grids");
     }
     QList<SettingField> settingsFields() const override
     {

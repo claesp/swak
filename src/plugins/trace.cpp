@@ -1,7 +1,9 @@
+#include "core/delete_confirmation.h"
 #include "core/interfaces.h"
 #include "core/map_tools.h"
 #include "core/maps.h"
 #include "core/store.h"
+#include "core/ui_icons.h"
 #include "core/user_objects.h"
 
 #include <QJsonArray>
@@ -292,10 +294,15 @@ public:
         }
         auto *tool = new TraceTool(services, &menu);
         services.mapTools->add(tool);
-        auto *clear = menu.addAction(tr("Clear traces"));
+        auto *clear = menu.addAction(uiIcon(UiIcon::Clear), tr("Clear ..."));
         clear->setObjectName(QStringLiteral("clearTraces"));
-        connect(clear, &QAction::triggered, tool, [tool] {
-            tool->clear();
+        connect(clear, &QAction::triggered, tool, [tool, &menu] {
+            if (confirmAction(&menu,
+                              tr("Clear"),
+                              tr("Clear all traces and turn off Trace for all objects?"),
+                              tr("Clear"))) {
+                tool->clear();
+            }
         });
     }
 };

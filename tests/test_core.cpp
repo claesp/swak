@@ -22,6 +22,7 @@
 #include <QJsonDocument>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMessageBox>
 #include <QPainter>
 #include <QPluginLoader>
 #include <QPushButton>
@@ -40,6 +41,16 @@
 #include <memory>
 #include <sys/stat.h>
 
+static void answerAction(Qt::Key key = Qt::Key_Return)
+{
+    QTimer::singleShot(0, qApp, [key] {
+        auto *dialog = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
+        QVERIFY(dialog);
+        QCOMPARE(dialog->objectName(), QStringLiteral("actionConfirmation"));
+        QCOMPARE(dialog->icon(), QMessageBox::NoIcon);
+        QTest::keyClick(dialog, key);
+    });
+}
 using namespace swak;
 class CoreTest final : public QObject
 {
@@ -166,6 +177,68 @@ private slots:
         QCOMPARE(motion.headingConeStyle().angle, 90.0);
         QCOMPARE(motion.headingConeStyle().length, 100.0);
         QCOMPARE(motion.headingConeStyle().opacity, .3);
+    }
+    void animationConfigurationChanges()
+    {
+        TrackMotion motion;
+        QSignalSpy configuration(&motion, &TrackMotion::configurationChanged);
+        motion.restorePreferences(motion.savePreferences());
+        QCOMPARE(configuration.count(), 0);
+        auto values = motion.savePreferences();
+        values.insert(QStringLiteral("duration"), 0);
+        motion.restorePreferences(values);
+        QCOMPARE(configuration.count(), 1);
+        motion.setHeadingConeEnabled(QStringLiteral("cone"), true);
+        auto event = sample();
+        for (int i = 0; i < 100; ++i) {
+            event.time = event.time.addMSecs(10);
+            event.longitude += .00001;
+            motion.update(event, i * 10);
+            motion.snapshot(i * 10);
+        }
+        QCOMPARE(configuration.count(), 1);
+        motion.setPaused(true);
+        motion.setPaused(false);
+        motion.restorePreferences(motion.savePreferences());
+        QCOMPARE(configuration.count(), 1);
+        values.insert(QStringLiteral("teleportKm"), 20);
+        motion.restorePreferences(values);
+        QCOMPARE(configuration.count(), 2);
+        QVERIFY(!motion.animationPreferences().contains(QStringLiteral("headingConeTargets")));
+    }
+    void coneTargetLimits()
+    {
+        TrackMotion motion;
+        QSignalSpy changes(&motion, &TrackMotion::coneTargetsChanged);
+        motion.setHeadingConeEnabled({}, true);
+        motion.setHeadingConeEnabled(QString(129, 'x'), true);
+        QCOMPARE(changes.count(), 0);
+        for (int i = 0; i < 4097; ++i) {
+            motion.setHeadingConeEnabled(QString::number(i), true);
+        }
+        QCOMPARE(changes.count(), 4096);
+        QVERIFY(!motion.headingConeEnabled(QStringLiteral("4096")));
+        QVERIFY(!motion.canEnableHeadingCone(QStringLiteral("4096")));
+        QVERIFY(motion.canEnableHeadingCone(QStringLiteral("0")));
+        motion.setHeadingConeEnabled(QStringLiteral("0"), false);
+        QVERIFY(!motion.headingConeEnabled(QStringLiteral("0")));
+        motion.setHeadingConeEnabled(QStringLiteral("4096"), true);
+        QVERIFY(motion.headingConeEnabled(QStringLiteral("4096")));
+        TrackMotion restored;
+        restored.restorePreferences(motion.savePreferences());
+        QCOMPARE(restored.savePreferences(), motion.savePreferences());
+        restored.restorePreferences({{QStringLiteral("headingConeTargets"),
+                                      QJsonArray{true,
+                                                 42,
+                                                 QString(129, 'x'),
+                                                 QString(),
+                                                 QStringLiteral("valid"),
+                                                 QStringLiteral("valid")}}});
+        QCOMPARE(
+            restored.savePreferences().value(QStringLiteral("headingConeTargets")).toArray().size(),
+            1);
+        restored.restorePreferences({});
+        QVERIFY(!restored.headingConeEnabled(QStringLiteral("valid")));
     }
     void trackDetails()
     {
@@ -454,6 +527,7 @@ private slots:
         QMenu menu;
         tool->populateContextMenu(area, menu);
         QVERIFY(menu.isEmpty());
+        answerAction();
         main.findChild<QAction *>(QStringLiteral("clearPredictions"))->trigger();
         QVERIFY(settings->savePreferences().value(QStringLiteral("targets")).toArray().isEmpty());
     }
@@ -510,6 +584,7 @@ private slots:
         settings->restorePreferences(values);
         QCOMPARE(settings->savePreferences().value(QStringLiteral("positions")).toInt(), 50);
         QVERIFY(settings->savePreferences().value(QStringLiteral("opacity")).toDouble() > 0);
+        answerAction();
         main.findChild<QAction *>(QStringLiteral("clearTraces"))->trigger();
         QCOMPARE(settings->savePreferences().value(QStringLiteral("targets")).toArray().size(), 0);
         settings->restorePreferences(values);
@@ -521,6 +596,7 @@ private slots:
         QMenu excluded;
         tools.populateContextMenu(area, excluded);
         QVERIFY(excluded.isEmpty());
+        answerAction();
         main.findChild<QAction *>(QStringLiteral("clearTraces"))->trigger();
         UserObject marker;
         marker.id = QStringLiteral("local-trace");

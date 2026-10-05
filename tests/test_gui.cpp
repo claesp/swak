@@ -100,6 +100,16 @@
 #include <cmath>
 #include <memory>
 
+static void answerAction(Qt::Key key = Qt::Key_Return)
+{
+    QTimer::singleShot(0, qApp, [key] {
+        auto *dialog = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
+        QVERIFY(dialog);
+        QCOMPARE(dialog->objectName(), QStringLiteral("actionConfirmation"));
+        QCOMPARE(dialog->icon(), QMessageBox::NoIcon);
+        QTest::keyClick(dialog, key);
+    });
+}
 static void chooseMapObject(QWidget *map, const QString &label)
 {
     QTimer::singleShot(0, map, [label] {
@@ -279,6 +289,199 @@ class GuiTest final : public QObject
 {
     Q_OBJECT
 private slots:
+    void revisedMenusAndSettings()
+    {
+        QTemporaryDir directory;
+        const auto profile = directory.filePath(QStringLiteral("revised.json"));
+        swak::Window window(profile, QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *view = window.findChild<QMenu *>(QStringLiteral("viewMenu"));
+        auto *reset = window.findChild<QAction *>(QStringLiteral("resetLayoutAction"));
+        QVERIFY(view && reset);
+        swak::sortMenuActions(*view);
+        QCOMPARE(view->actions().last(), reset);
+        QVERIFY(view->actions().at(view->actions().size() - 2)->isSeparator());
+        QCOMPARE(reset->text(), QStringLiteral("Reset Layout ..."));
+        auto *toolbar = window.findChild<QToolBar *>();
+        toolbar->hide();
+        answerAction(Qt::Key_Escape);
+        reset->trigger();
+        QVERIFY(toolbar->isHidden());
+        answerAction();
+        reset->trigger();
+        QVERIFY(!toolbar->isHidden());
+        auto *help = window.findChild<QMenu *>(QStringLiteral("helpMenu"));
+        swak::sortMenuActions(*help);
+        QCOMPARE(help->actions().first()->objectName(), QStringLiteral("creditsAction"));
+        help->actions().first()->trigger();
+        auto *credits = window.findChild<QDialog *>(QStringLiteral("creditsDialog"));
+        QVERIFY(credits);
+        auto *table = credits->findChild<QTableWidget *>(QStringLiteral("creditsTable"));
+        QVERIFY(table && table->rowCount() >= 5);
+        QCOMPARE(table->columnCount(), 5);
+        QCOMPARE(table->editTriggers(), QAbstractItemView::NoEditTriggers);
+        help->actions().first()->trigger();
+        QCOMPARE(window.findChildren<QDialog *>(QStringLiteral("creditsDialog")).size(), 1);
+        QVERIFY(credits->grab().save(QStringLiteral("credits.png")));
+        credits->close();
+        window.findChild<QAction *>(QStringLiteral("aboutAction"))->trigger();
+        auto *about = window.findChild<QMessageBox *>(QStringLiteral("aboutDialog"));
+        QVERIFY(about);
+        QCOMPARE(about->icon(), QMessageBox::NoIcon);
+        QVERIFY(about->text().contains(QStringLiteral("Yet another TAK client.")));
+        about->close();
+        const auto inspectProvider = [](QDialog &dialog, const QString &file) {
+            dialog.show();
+            QVERIFY(QTest::qWaitForWindowExposed(&dialog));
+            auto *notice = dialog.findChild<QLabel *>(QStringLiteral("providerNotice"));
+            QVERIFY(notice && notice->wordWrap());
+            QVERIFY(notice->height() >= notice->fontMetrics().lineSpacing() * 2);
+            QVERIFY(notice->heightForWidth(notice->width()) <= notice->height());
+            QVERIFY(dialog.grab().save(file));
+            dialog.close();
+        };
+        swak::MapManager maps(*window.findChild<swak::MapSources *>(), &window);
+        QCOMPARE(maps.findChild<QPushButton *>(QStringLiteral("clearMapProvider"))->text(),
+                 QStringLiteral("No map"));
+        inspectProvider(maps, QStringLiteral("map-providers.png"));
+        swak::DataManager data(*window.findChild<swak::DataSources *>(), &window);
+        inspectProvider(data, QStringLiteral("data-providers.png"));
+        swak::MarkerManager markers(*window.findChild<swak::MarkerCollections *>(), &window, {});
+        inspectProvider(markers, QStringLiteral("marker-collections.png"));
+        bool inspected = false;
+        QTimer::singleShot(0, &window, [&] {
+            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            QVERIFY(dialog);
+            const auto labels = [](QListWidget *list) {
+                QStringList result;
+                for (int i = 0; i < list->count(); ++i) {
+                    result.append(list->item(i)->text());
+                }
+                return result;
+            };
+            for (const auto &id : {QStringLiteral("settingsSections"),
+                                   QStringLiteral("paneSettingsSections"),
+                                   QStringLiteral("keybindingSettingsSections")}) {
+                auto *list = dialog->findChild<QListWidget *>(id);
+                QVERIFY(list);
+                const auto names = labels(list);
+                QVERIFY(names.contains(QStringLiteral("Circles")));
+                QVERIFY(names.contains(QStringLiteral("Lines")));
+                QVERIFY(!names.contains(QStringLiteral("Circle and line tools")));
+                QVERIFY(!names.contains(QStringLiteral("Identity")));
+            }
+            const auto names =
+                labels(dialog->findChild<QListWidget *>(QStringLiteral("settingsSections")));
+            QVERIFY(names.contains(QStringLiteral("Grids")));
+            inspected = true;
+            dialog->reject();
+        });
+        window.findChild<QAction *>(QStringLiteral("settingsAction"))->trigger();
+        QVERIFY(inspected);
+    }
+    void separateShapePreferences()
+    {
+        QTemporaryDir directory;
+        const auto profile = directory.filePath(QStringLiteral("migration.json"));
+        {
+            swak::Preferences old(profile);
+            QVERIFY(old.save(
+                {{QStringLiteral("version"), 1},
+                 {QStringLiteral("components"),
+                  QJsonObject{
+                      {QStringLiteral("org.swak.shapes"),
+                       QJsonObject{{QStringLiteral("lineWidth"), 4},
+                                   {QStringLiteral("circleKey"), QStringLiteral("J")},
+                                   {QStringLiteral("lineKey"), QStringLiteral("K")},
+                                   {QStringLiteral("distanceKey"), QStringLiteral("D")}}}}}}));
+        }
+        {
+            swak::Window window(profile, QPluginLoader::staticInstances());
+            auto *circles = dynamic_cast<swak::SettingsParticipant *>(
+                window.findChild<QObject *>(QStringLiteral("shapesEditor")));
+            auto *lines = dynamic_cast<swak::SettingsParticipant *>(
+                window.findChild<QObject *>(QStringLiteral("linesEditor")));
+            QVERIFY(circles && lines);
+            QCOMPARE(circles->savePreferences().value(QStringLiteral("lineWidth")).toDouble(), 4.0);
+            QCOMPARE(lines->savePreferences().value(QStringLiteral("lineWidth")).toDouble(), 4.0);
+            QCOMPARE(lines->savePreferences().value(QStringLiteral("lineKey")).toString(),
+                     QStringLiteral("K"));
+            auto values = lines->savePreferences();
+            values.insert(QStringLiteral("lineWidth"), 2);
+            lines->restorePreferences(values);
+            QCOMPARE(circles->savePreferences().value(QStringLiteral("lineWidth")).toDouble(), 4.0);
+            QVERIFY(window.savePreferences());
+        }
+        swak::Window restored(profile, QPluginLoader::staticInstances());
+        auto *lines = dynamic_cast<swak::SettingsParticipant *>(
+            restored.findChild<QObject *>(QStringLiteral("linesEditor")));
+        QCOMPARE(lines->savePreferences().value(QStringLiteral("lineWidth")).toDouble(), 2.0);
+    }
+    void clearFlagsAndConeChoices()
+    {
+        QTemporaryDir directory;
+        const auto profile = directory.filePath(QStringLiteral("flags.json"));
+        {
+            swak::Window window(profile, QPluginLoader::staticInstances());
+            auto &store = window.store();
+            swak::Event event;
+            event.uid = QStringLiteral("flags-target");
+            event.type = QStringLiteral("a-f-G");
+            event.how = QStringLiteral("m-g");
+            event.time = event.start = QDateTime::currentDateTimeUtc();
+            event.stale = event.time.addSecs(600);
+            QVERIFY(store.accept(event).isEmpty());
+            swak::MapItem item;
+            item.owner = QStringLiteral("org.swak.events");
+            item.id = event.uid;
+            auto *tools = window.findChild<swak::MapTools *>();
+            QVERIFY(tools);
+            for (const auto &pair : {std::pair{"predictMarker", "clearPredictions"},
+                                     std::pair{"traceMarker", "clearTraces"}}) {
+                QMenu menu;
+                tools->populateInformationMenu(item, menu);
+                auto *flag = menu.findChild<QAction *>(QString::fromLatin1(pair.first));
+                QVERIFY(flag && !flag->isChecked());
+                flag->trigger();
+                auto *clear = window.findChild<QAction *>(QString::fromLatin1(pair.second));
+                QVERIFY(clear && !clear->icon().isNull());
+                QCOMPARE(clear->text(), QStringLiteral("Clear ..."));
+                answerAction(Qt::Key_Escape);
+                clear->trigger();
+                QMenu cancelled;
+                tools->populateInformationMenu(item, cancelled);
+                QVERIFY(
+                    cancelled.findChild<QAction *>(QString::fromLatin1(pair.first))->isChecked());
+                answerAction();
+                clear->trigger();
+                event.time = event.time.addSecs(1);
+                event.longitude += .001;
+                QVERIFY(store.accept(event).isEmpty());
+                QMenu cleared;
+                tools->populateInformationMenu(item, cleared);
+                QVERIFY(
+                    !cleared.findChild<QAction *>(QString::fromLatin1(pair.first))->isChecked());
+            }
+            QMenu menu;
+            tools->populateInformationMenu(item, menu);
+            auto *cone = menu.findChild<QAction *>(QStringLiteral("headingConeObject"));
+            QVERIFY(cone && !cone->isChecked());
+            cone->trigger();
+            QVERIFY(store.motion().headingConeEnabled(event.uid));
+            QVERIFY(!store.motion().headingConeEnabled(QStringLiteral("other")));
+            QVERIFY(window.savePreferences());
+        }
+        swak::Window restored(profile, QPluginLoader::staticInstances());
+        QVERIFY(restored.store().motion().headingConeEnabled(QStringLiteral("flags-target")));
+        for (const auto &id : {QStringLiteral("predictTool"), QStringLiteral("traceTool")}) {
+            auto *settings =
+                dynamic_cast<swak::SettingsParticipant *>(restored.findChild<QObject *>(id));
+            QVERIFY(settings);
+            QVERIFY(
+                settings->savePreferences().value(QStringLiteral("targets")).toArray().isEmpty());
+        }
+    }
     void graphicsLifecycle()
     {
         for (int i = 0; i < 20; ++i) {
@@ -328,6 +531,8 @@ private slots:
         QCOMPARE(render().pixelColor(200, 160).alpha(), 0);
         event.course = 0;
         QVERIFY(store.accept(event).isEmpty());
+        QCOMPARE(render().pixelColor(200, 160).alpha(), 0);
+        store.motion().setHeadingConeEnabled(event.uid, true);
         QVERIFY(render().pixelColor(200, 160).alpha() > 20);
         QCOMPARE(render().pixelColor(200, 240).alpha(), 0);
         event.course = 90;
@@ -993,6 +1198,11 @@ private slots:
             QVERIFY(window.screen()
                         ->grabWindow(window.winId())
                         .save(QStringLiteral("internal-events-smoke.png")));
+            const auto countBeforeClear = history->rowCount();
+            answerAction(Qt::Key_Escape);
+            historyMenu->findChild<QAction *>(QStringLiteral("clearActivityAction"))->trigger();
+            QCOMPARE(history->rowCount(), countBeforeClear);
+            answerAction();
             historyMenu->findChild<QAction *>(QStringLiteral("clearActivityAction"))->trigger();
             QCOMPARE(history->rowCount(), 0);
             QCOMPARE(status->text(), QStringLiteral("Events: 0"));
@@ -3345,6 +3555,13 @@ private slots:
                               QStringLiteral("Help")}));
         for (auto *menu : window.findChildren<QMenu *>()) {
             auto actions = menu->actions();
+            if (menu->objectName() == QStringLiteral("viewMenu")) {
+                QCOMPARE(actions.takeLast()->objectName(), QStringLiteral("resetLayoutAction"));
+                QVERIFY(actions.takeLast()->isSeparator());
+            }
+            if (menu->objectName() == QStringLiteral("helpMenu")) {
+                QCOMPARE(actions.takeFirst()->objectName(), QStringLiteral("creditsAction"));
+            }
             if (menu->objectName() == QStringLiteral("fileMenu")) {
                 QCOMPARE(actions.takeLast(),
                          window.findChild<QAction *>(QStringLiteral("quitAction")));
@@ -3845,7 +4062,21 @@ private slots:
                 QApplication::sendEvent(map, &event);
                 return invoked;
             };
+            for (int i = 0; i < 3; ++i) {
+                auto *action = window.findChild<QAction *>(QStringLiteral("shapeMode%1").arg(i));
+                QVERIFY(action);
+                action->trigger();
+                QVERIFY(action->isChecked());
+                QCOMPARE(map->cursor().shape(), Qt::CrossCursor);
+                action->trigger();
+                QVERIFY(!action->isChecked());
+                QVERIFY(map->cursor().shape() != Qt::CrossCursor);
+            }
             for (const auto key : {Qt::Key_C, Qt::Key_L}) {
+                editor = window.findChild<swak::ObjectEditor *>(
+                    key == Qt::Key_C ? QStringLiteral("shapesEditor")
+                                     : QStringLiteral("linesEditor"));
+                QVERIFY(editor);
                 QTest::keyClick(map, key);
                 QCOMPARE(map->cursor().shape(), Qt::CrossCursor);
                 click({180, 180});
@@ -3938,7 +4169,7 @@ private slots:
             temporary.insert(QStringLiteral("fadeMs"), 100);
             settings->restorePreferences(temporary);
             auto *tool = dynamic_cast<swak::MapTool *>(
-                window.findChild<QObject *>(QStringLiteral("shapesTool")));
+                window.findChild<QObject *>(QStringLiteral("linesTool")));
             QVERIFY(tool);
             const swak::Viewport view{QSizeF(map->size()), QPointF(0.5, 0.5), 8};
             const auto frame = [&] {
@@ -4703,6 +4934,7 @@ private slots:
             1000));
         QVERIFY(toolbar->grab().save(QStringLiteral("compact-toolbar-dark.png")));
         for (const auto icon : {swak::UiIcon::Clear,
+                                swak::UiIcon::Delete,
                                 swak::UiIcon::Marker,
                                 swak::UiIcon::Area,
                                 swak::UiIcon::Map,
@@ -4751,6 +4983,7 @@ private slots:
         QVERIFY(toolbar->isHidden());
         toolbar->actions().last()->trigger();
         QCOMPARE(plugin.calls, 2);
+        answerAction();
         restored.findChild<QAction *>(QStringLiteral("resetLayoutAction"))->trigger();
         QVERIFY(!toolbar->isHidden());
     }
@@ -4897,7 +5130,7 @@ private slots:
         QVERIFY(events);
         auto *clear = window.findChild<QAction *>(QStringLiteral("clearEventsAction"));
         QVERIFY(clear && events->actions().contains(clear));
-        QCOMPARE(clear->text(), QStringLiteral("&Clear"));
+        QCOMPARE(clear->text(), QStringLiteral("Clear ..."));
         auto *toolbar = window.findChild<QToolBar *>(QStringLiteral("mainToolbar"));
         QVERIFY(toolbar && !toolbar->actions().contains(clear));
         QVERIFY(!clear->icon().isNull());
@@ -4908,9 +5141,14 @@ private slots:
         generate->click();
         QCOMPARE(window.store().rowCount(), 1);
         QVERIFY(!window.store().selected().isEmpty());
+        answerAction(Qt::Key_Escape);
+        clear->trigger();
+        QCOMPARE(window.store().rowCount(), 1);
+        answerAction();
         clear->trigger();
         QCOMPARE(window.store().rowCount(), 0);
         QVERIFY(window.store().selected().isEmpty());
+        answerAction();
         clear->trigger();
         QCOMPARE(window.store().rowCount(), 0);
     }
@@ -5351,6 +5589,7 @@ private slots:
             restored.findChild<QObject *>(QStringLiteral("predictTool")));
         QVERIFY(settings);
         QCOMPARE(settings->savePreferences().value(QStringLiteral("targets")).toArray().size(), 1);
+        answerAction();
         restored.findChild<QAction *>(QStringLiteral("clearPredictions"))->trigger();
         QVERIFY(settings->savePreferences().value(QStringLiteral("targets")).toArray().isEmpty());
     }
@@ -5543,13 +5782,13 @@ private slots:
                 auto *tabs = dialog->findChild<QTabWidget *>();
                 auto *panes =
                     dialog->findChild<QListWidget *>(QStringLiteral("paneSettingsSections"));
-                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 10) {
+                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 11) {
                     dialog->reject();
                     QFAIL("The pane tab is incomplete.");
                     return;
                 }
                 for (auto *label : dialog->findChildren<QLabel *>()) {
-                    if (label->wordWrap()) {
+                    if (label->buddy() && label->wordWrap()) {
                         dialog->reject();
                         QFAIL("A Settings label wraps across lines.");
                         return;
@@ -5575,8 +5814,8 @@ private slots:
                 auto *buttons = dialog->findChild<QDialogButtonBox *>();
                 auto *identity =
                     dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.editor/identity"));
-                auto *address =
-                    dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.identity/how"));
+                auto *color =
+                    dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.markers/color"));
                 auto *enabled = dialog->findChild<QCheckBox *>(QStringLiteral("logging/enabled"));
                 auto *severity = dialog->findChild<QComboBox *>(QStringLiteral("logging/severity"));
                 auto *interval =
@@ -5585,21 +5824,21 @@ private slots:
                     dialog->findChild<QDoubleSpinBox *>(QStringLiteral("org.swak.map/zoom"));
                 auto *width = dialog->findChild<QDoubleSpinBox *>(
                     QStringLiteral("org.swak.events/columns/0/width"));
-                if (!buttons || !identity || !address || !enabled || !severity || !interval ||
+                if (!buttons || !identity || !color || !enabled || !severity || !interval ||
                     !zoom || !width) {
                     dialog->reject();
                     QFAIL("A settings field is missing.");
                     return;
                 }
                 identity->setText(QStringLiteral("configured"));
-                address->setText(QStringLiteral("!"));
+                color->setText(QStringLiteral("!"));
                 buttons->button(QDialogButtonBox::Apply)->click();
                 if (window.findChild<QLineEdit *>(QStringLiteral("identity"))->text() != initial) {
                     dialog->reject();
                     QFAIL("An invalid page allowed partial application.");
                     return;
                 }
-                address->setText(QStringLiteral("h-e"));
+                color->setText(QStringLiteral("#ffc857"));
                 enabled->setChecked(true);
                 severity->setCurrentIndex(severity->findData(3));
                 interval->setValue(2000);
@@ -6023,7 +6262,10 @@ private slots:
             QTimer::singleShot(0, &window, [&] {
                 auto *settings = window.findChild<swak::SettingsDialog *>();
                 QVERIFY(settings);
-                for (const auto *page : {"org.swak.identity", "org.swak.editor"}) {
+                const auto close = qScopeGuard([settings] {
+                    settings->reject();
+                });
+                for (const auto *page : {"org.swak.editor"}) {
                     for (const auto *name : {"type", "how", "team", "role"}) {
                         QVERIFY(settings->findChild<QPushButton *>(QString::fromLatin1(page) + '/' +
                                                                    QString::fromLatin1(name) +
@@ -6790,6 +7032,7 @@ private slots:
             QVERIFY(window.isMaximized());
             const auto *plugins = window.findChild<QDockWidget *>(QStringLiteral("pluginsDock"));
             QVERIFY(window.screen()->availableGeometry().contains(plugins->geometry().topLeft()));
+            answerAction();
             window.findChild<QAction *>(QStringLiteral("resetLayoutAction"))->trigger();
             QVERIFY(!plugins->isFloating());
             QCOMPARE(window.findChild<QLineEdit *>(QStringLiteral("callsign"))->text(),
@@ -6825,13 +7068,13 @@ private slots:
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         const auto docks = window.findChildren<QDockWidget *>();
-        QCOMPARE(docks.size(), 10);
+        QCOMPARE(docks.size(), 11);
         QVERIFY(!window.findChild<QWidget *>(QStringLiteral("toolsDock")));
         auto *viewMenu = window.findChild<QMenu *>(QStringLiteral("viewMenu"));
         auto *fileMenu = window.findChild<QMenu *>(QStringLiteral("fileMenu"));
         auto *quit = window.findChild<QAction *>(QStringLiteral("quitAction"));
         QVERIFY(viewMenu && fileMenu && quit);
-        QCOMPARE(viewMenu->actions().size(), 5);
+        QCOMPARE(viewMenu->actions().size(), 6);
         QVERIFY(viewMenu->actions().contains(
             window.findChild<QToolBar *>(QStringLiteral("mainToolbar"))->toggleViewAction()));
         for (int repeat = 0; repeat < 5; ++repeat) {
@@ -6976,6 +7219,7 @@ private slots:
         map->update();
         QVERIFY(frames.wait(2000));
         QVERIFY(map->width() >= 320);
+        answerAction();
         window.findChild<QAction *>(QStringLiteral("clearEventsAction"))->trigger();
         QCOMPARE(window.store().rowCount(), 0);
         window.close();

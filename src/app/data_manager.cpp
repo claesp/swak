@@ -4,7 +4,6 @@
 #include "core/logging.h"
 #include "core/provider_table.h"
 #include "core/settings_dialog.h"
-#include "core/single_line_label.h"
 
 #include <QCollator>
 #include <QDialogButtonBox>
@@ -30,12 +29,14 @@ DataManager::DataManager(DataSources &sources,
     setWindowTitle(tr("Data Providers"));
     resize(700, 460);
     auto *layout = new QVBoxLayout(this);
-    auto *notice = new SingleLineLabel(
-        tr("Enable feeds to draw KML/KMZ points, lines, and polygons. Each enabled feed refreshes "
-           "on its own interval. Downloads use HTTPS. Network links and remote icons are not "
-           "loaded. Provider changes apply immediately."),
-        this);
-    notice->setWordWrap(false);
+    auto *notice =
+        new QLabel(tr("Enabled KML/KMZ feeds refresh on their own schedules over HTTPS.\nRemote "
+                      "links and icons stay disabled. Changes apply immediately."),
+                   this);
+    notice->setObjectName(QStringLiteral("providerNotice"));
+    notice->setTextFormat(Qt::PlainText);
+    notice->setWordWrap(true);
+    notice->setMinimumHeight(notice->fontMetrics().lineSpacing() * 2);
     layout->addWidget(notice);
     list_ = new ProviderTable(false, this);
     list_->setObjectName(QStringLiteral("dataProviderList"));
@@ -53,9 +54,10 @@ DataManager::DataManager(DataSources &sources,
     auto *remove = button(tr("Delete ..."), QStringLiteral("removeDataProvider"));
     auto *update = button(tr("Refresh now"), QStringLiteral("refreshDataProvider"));
     layout->addLayout(row);
-    status_ = new SingleLineLabel(this);
+    status_ = new QLabel(this);
+    status_->setWordWrap(true);
+    status_->setMinimumHeight(status_->fontMetrics().lineSpacing() * 2);
     status_->setTextFormat(Qt::PlainText);
-    status_->setWordWrap(false);
     status_->setObjectName(QStringLiteral("dataProviderStatus"));
     layout->addWidget(status_);
     if (!embedded) {

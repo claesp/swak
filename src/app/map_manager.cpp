@@ -31,12 +31,14 @@ MapManager::MapManager(MapSources &sources,
     setWindowTitle(tr("Map Providers"));
     resize(650, 460);
     auto *layout = new QVBoxLayout(this);
-    auto *notice = new SingleLineLabel(
-        tr("Select a provider to fetch visible map tiles over HTTPS. Providers receive your IP "
-           "address and viewed area. Attribution stays visible on the map. No bulk downloads. "
-           "Provider changes apply immediately."),
-        this);
-    notice->setWordWrap(false);
+    auto *notice =
+        new QLabel(tr("HTTPS map requests share your IP address and viewed area.\nAttribution "
+                      "stays visible. No bulk downloads. Changes apply immediately."),
+                   this);
+    notice->setObjectName(QStringLiteral("providerNotice"));
+    notice->setTextFormat(Qt::PlainText);
+    notice->setWordWrap(true);
+    notice->setMinimumHeight(notice->fontMetrics().lineSpacing() * 2);
     layout->addWidget(notice);
     list_ = new ProviderTable(true, this);
     list_->setObjectName(QStringLiteral("mapProviderList"));
@@ -96,11 +98,12 @@ MapManager::MapManager(MapSources &sources,
         dialog.exec();
     });
     layout->addLayout(row);
-    status_ = new SingleLineLabel(this);
+    status_ = new QLabel(this);
+    status_->setWordWrap(true);
+    status_->setMinimumHeight(status_->fontMetrics().lineSpacing() * 2);
     status_->setTextFormat(Qt::PlainText);
-    status_->setWordWrap(false);
     layout->addWidget(status_);
-    auto *clearProvider = new QPushButton(tr("Clear selection"), this);
+    auto *clearProvider = new QPushButton(tr("No map"), this);
     clearProvider->setObjectName(QStringLiteral("clearMapProvider"));
     row->addWidget(clearProvider);
     connect(clearProvider, &QPushButton::clicked, this, [this] {

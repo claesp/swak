@@ -11,6 +11,7 @@ Follow these standing requirements:
 - Use the shared core API for every plugin and embed a MANIFEST with its metadata.
 - Update `docs/plugin-api.md` when plugin contracts or roles change.
 - Keep the application small, fast, and secure.
+- Cache animation configuration in runtime fields. Refresh it only when configuration changes, never during frames, animation ticks, or incoming position updates.
 - Harden all code for long sessions and recoverable failures.
 - Exercise all reachable code paths, including errors, cancellation, and shutdown, with tests.
 - Review coverage gaps and record paths that remain untested.

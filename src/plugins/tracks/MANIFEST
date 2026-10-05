@@ -3,7 +3,7 @@
   "id": "org.swak.tracks",
   "name": "CoT Messages",
   "description": "Show CoT messages with original vector symbols for supported ground units.",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "apiVersion": 2,
   "entryPoint": "TracksPlugin",
   "linkage": "static",

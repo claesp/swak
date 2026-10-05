@@ -85,9 +85,19 @@ public:
     virtual QString name() const = 0;
     virtual QWidget *create(PluginServices &services, const Codec &codec, QWidget *parent) = 0;
 };
+struct PluginPane
+{
+    QString id;
+    QString title;
+    QWidget *widget = nullptr;
+};
 class PanePlugin
 {
 public:
+    virtual QList<PluginPane> additionalPanes(PluginServices &, QWidget *)
+    {
+        return {};
+    }
     virtual ~PanePlugin() = default;
     virtual QString name() const = 0;
     virtual QWidget *create(PluginServices &services, QWidget *parent) = 0;
@@ -114,12 +124,6 @@ public:
     virtual QString name() const = 0;
     virtual void
     populateToolbar(PluginServices &services, QToolBar &toolbar, QMenu *pluginMenu) = 0;
-};
-struct PluginPane
-{
-    QString id;
-    QString title;
-    QWidget *widget = nullptr;
 };
 class SourcePlugin
 {
