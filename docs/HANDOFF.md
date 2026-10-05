@@ -1464,3 +1464,10 @@ The two-hour GUI soak failed after 35 minutes in build/quality/20261005-163739-s
 - The sanitizer GUI build stayed between 464 MB and 477 MB from the first minute to 25 minutes. It had no upward trend.
 
 Graphics, font, and allocator caches fill during the first minute. The two-second baseline counted that plateau as growth. The runner now passes SWAK_SOAK_WARMUP. The warmup is one tenth of the duration, from 2 to 300 seconds. The external limit includes the warmup. Quick runs keep the two-second warmup and pass in build/quality/20261005-180217-quick-202754. The 64 MiB limit is unchanged.
+
+The GUI soak with the five-minute warmup also failed after 36 minutes in build/quality/20261005-180419-soak-203379. Two 45-minute traces with per-cycle memory logs explained it:
+
+- The debug GUI build ran 49859 cycles. Its memory stayed between 273 MB and 277 MB. No cycle added more than 4 MB.
+- The sanitizer GUI build passed the full 45 minutes. Its memory moved by 4 to 7 MB between cycles 1041 times. Most of the moving memory belongs to uninstrumented Mesa code that uses the sanitizer allocator.
+
+So one low baseline sample and one high later sample could cross 64 MiB without a trend. The soak test now compares window means. A window is one twentieth of the duration, from 1 to 60 seconds. The log records each window mean. The 64 MiB limit is unchanged. An injected leak of 1 MB per cycle failed the new check in the third window. Quick diagnostics pass in build/quality/20261005-202054-quick-214233.

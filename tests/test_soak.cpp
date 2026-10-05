@@ -26,6 +26,7 @@
 #include <QTest>
 #include <QUdpSocket>
 
+#include <algorithm>
 #include <ctime>
 #include <memory>
 #include <unistd.h>
@@ -184,9 +185,31 @@ private slots:
         pulse.start();
         QElapsedTimer elapsed;
         elapsed.start();
+        // Sanitizer and graphics allocators move resident memory by several MiB between cycles.
+        // Compare window means, so that one low baseline sample or one high sample does not
+        // count as growth. A leak raises the later means.
+        const qint64 windowMs = std::clamp<qint64>(static_cast<qint64>(seconds) * 50, 1000, 60000);
         qint64 baseline = -1;
         qint64 peak = 0;
-        int baselineFiles = 0;
+        qint64 windowSum = 0;
+        qint64 windowSamples = 0;
+        qint64 windowStart = -1;
+        int windows = 0;
+        int baselineFiles = -1;
+        const auto closeWindow = [&] {
+            const qint64 mean = windowSum / windowSamples;
+            if (baseline < 0) {
+                baseline = mean;
+            }
+            peak = qMax(peak, mean);
+            qInfo("memory_window=%d mean_resident_bytes=%lld growth_bytes=%lld",
+                  ++windows,
+                  static_cast<long long>(mean),
+                  static_cast<long long>(mean - baseline));
+            windowSum = 0;
+            windowSamples = 0;
+            return mean - baseline < 64 * 1024 * 1024;
+        };
         int cycles = 0;
         quint32 random = 0x5357414b;
         while (elapsed.elapsed() < (static_cast<qint64>(seconds) + warmup) * 1000) {
@@ -303,19 +326,27 @@ private slots:
             const qint64 resident = residentBytes();
             QVERIFY(resident > 0);
             if (elapsed.elapsed() >= static_cast<qint64>(warmup) * 1000) {
-                if (baseline < 0) {
-                    baseline = resident;
+                if (baselineFiles < 0) {
                     baselineFiles = descriptors();
+                    windowStart = elapsed.elapsed();
                 }
-                peak = qMax(peak, resident);
-                QVERIFY2(resident - baseline < 64 * 1024 * 1024,
-                         "Resident memory grew by at least 64 MiB after warmup.");
+                windowSum += resident;
+                ++windowSamples;
+                if (elapsed.elapsed() - windowStart >= windowMs) {
+                    windowStart = elapsed.elapsed();
+                    QVERIFY2(closeWindow(),
+                             "Mean resident memory grew by at least 64 MiB after warmup.");
+                }
                 QVERIFY2(descriptors() <= baselineFiles + 8,
                          "Open file descriptors grew after warmup.");
             }
             QVERIFY2(maxGap < 2000, "The event loop stalled for at least two seconds.");
         }
         QVERIFY(cycles > 0);
+        if (windowSamples > 0) {
+            QVERIFY2(closeWindow(), "Mean resident memory grew by at least 64 MiB after warmup.");
+        }
+        QVERIFY(windows > 1);
         QElapsedTimer quiet;
         quiet.start();
         QObject idleObserver;
@@ -357,8 +388,10 @@ private slots:
         receiver.reset();
         sender.close();
         QVERIFY(sender.bind(QHostAddress::LocalHost, targetPort));
-        qInfo("cycles=%d peak_growth_bytes=%lld max_heartbeat_gap_ms=%lld idle_cpu_seconds=%.3f",
+        qInfo("cycles=%d memory_windows=%d peak_growth_bytes=%lld max_heartbeat_gap_ms=%lld "
+              "idle_cpu_seconds=%.3f",
               cycles,
+              windows,
               static_cast<long long>(peak - baseline),
               static_cast<long long>(maxGap),
               idleCpu);
