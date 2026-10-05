@@ -1414,7 +1414,6 @@ Source analysis passes in build/quality/20261005-120437-analyze-162936. Quick sa
 
 Open items from the review:
 
-- GridTypes::validate builds a regular expression on each frame.
 - PluginServices does not document the lifetime of its service pointers.
 - docs/usage.md says "No map provider clears the selection." The sentence has two possible meanings.
 
@@ -1433,3 +1432,9 @@ The sanitizer build delivered the Escape paint in markerPointerLatency after 80 
 # 2026-10-05: Provider tooltip test
 
 The native test providerEndpointToolTips restores a map entry and a data entry with markup in the endpoint. Both entries have an absent format, so validation does not remove them. The test checks that each table tooltip contains the escaped text and not the raw markup. The test fails when plainToolTip returns the raw text. The native sanitizer suite passes 104 cases in build/quality/20261005-123426-gui-173826.
+
+# 2026-10-05: Grid validation cost
+
+GridTypes::validate runs on every map frame through paintGridType. It no longer builds a regular expression, a QStringList, or the translated settings fields on each call. A plain character check replaces the color pattern and keeps the same ASCII #RRGGBB rule. The numeric limits come from fields() once and stay in a static list, so fields() remains the single source of the limits.
+
+gridTypesAndCoordinates now covers rejected and accepted colors, including non-ASCII digits, and out-of-range opacity and width. Source analysis passes in build/quality/20261005-124752-analyze-175603. Quick sanitizer diagnostics pass in build/quality/20261005-124758-quick-175663. The native sanitizer suite passes 104 cases in build/quality/20261005-124932-gui-176164.

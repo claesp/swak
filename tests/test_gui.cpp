@@ -810,6 +810,23 @@ private slots:
         invalid = swak::GridTypes::defaults();
         invalid.insert("color", "red");
         QVERIFY(!grids.put("invalid", invalid).isEmpty());
+        for (const auto *color : {"#12345g",
+                                  "#1234567",
+                                  "#12345",
+                                  "123456#",
+                                  "#\u0661\u0662\u0663\u0664\u0665\u0666"}) {
+            invalid.insert("color", QString::fromUtf8(color));
+            QVERIFY2(!swak::GridTypes::validate(invalid).isEmpty(), color);
+        }
+        for (const auto *color : {"#abcdef", "#ABCDEF", "#09aF3c"}) {
+            invalid.insert("color", QString::fromUtf8(color));
+            QVERIFY2(swak::GridTypes::validate(invalid).isEmpty(), color);
+        }
+        for (const auto &field : {QStringLiteral("opacity"), QStringLiteral("width")}) {
+            invalid = swak::GridTypes::defaults();
+            invalid.insert(field, 1000);
+            QVERIFY(!swak::GridTypes::validate(invalid).isEmpty());
+        }
         auto value = swak::GridTypes::defaults("mgrs");
         value.insert("name", "Custom grid");
         QVERIFY(grids.put("custom", value).isEmpty());

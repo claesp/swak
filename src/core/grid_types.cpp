@@ -10,7 +10,6 @@
 #include <QCollator>
 #include <QLabel>
 #include <QPushButton>
-#include <QRegularExpression>
 #include <QTimer>
 #include <QUuid>
 #include <QVBoxLayout>
@@ -47,6 +46,35 @@ QList<SettingField> fields()
     result.last().enabledValue = QStringLiteral("geographic");
     return result;
 }
+struct NumberLimit
+{
+    QString path;
+    double minimum = 0;
+    double maximum = 0;
+};
+// Painting validates the grid on every frame. Read the limits from fields() only once.
+const QList<NumberLimit> &numberLimits()
+{
+    static const QList<NumberLimit> limits = [] {
+        QList<NumberLimit> result;
+        for (const auto &field : fields()) {
+            if (field.kind == SettingField::Kind::Number) {
+                result.append({field.path, field.minimum, field.maximum});
+            }
+        }
+        return result;
+    }();
+    return limits;
+}
+bool isHexColor(const QString &text)
+{
+    return text.size() == 7 && text.front() == QLatin1Char('#') &&
+           std::all_of(text.begin() + 1, text.end(), [](QChar c) {
+               return (c >= QLatin1Char('0') && c <= QLatin1Char('9')) ||
+                      (c >= QLatin1Char('a') && c <= QLatin1Char('f')) ||
+                      (c >= QLatin1Char('A') && c <= QLatin1Char('F'));
+           });
+}
 } // namespace
 GridTypes::GridTypes(QObject *parent) : QObject(parent)
 {
@@ -75,19 +103,17 @@ QString GridTypes::validate(const QJsonObject &value)
         })) {
         return tr("Use a name with 1 to 80 visible characters.");
     }
-    if (!QStringList{"geographic", "utm", "mgrs"}.contains(value.value("system").toString()) ||
-        !QRegularExpression(QStringLiteral("^#[0-9A-Fa-f]{6}$"))
-             .match(value.value("color").toString())
-             .hasMatch()) {
+    const auto system = value.value("system").toString();
+    if ((system != QLatin1String("geographic") && system != QLatin1String("utm") &&
+         system != QLatin1String("mgrs")) ||
+        !isHexColor(value.value("color").toString())) {
         return tr("Choose a coordinate system and a color in #RRGGBB format.");
     }
-    for (const auto &field : fields()) {
-        if (field.kind == SettingField::Kind::Number) {
-            const auto v = value.value(field.path);
-            const double n = v.toDouble();
-            if (!v.isDouble() || !std::isfinite(n) || n < field.minimum || n > field.maximum) {
-                return tr("Use values within the shown limits.");
-            }
+    for (const auto &limit : numberLimits()) {
+        const auto v = value.value(limit.path);
+        const double n = v.toDouble();
+        if (!v.isDouble() || !std::isfinite(n) || n < limit.minimum || n > limit.maximum) {
+            return tr("Use values within the shown limits.");
         }
     }
     const auto format = value.value("format");
