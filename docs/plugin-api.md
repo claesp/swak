@@ -10,6 +10,8 @@ The application links plugins into the executable. Qt embeds each `src/plugins/<
 
 The host passes this context to each UI factory and menu or toolbar callback. The context exists only during the call. Plugins can capture its service pointers in callbacks whose QObject context limits their lifetime.
 
+The Window owns every service and destroys objects in a fixed order. First it destroys dock panes and the map view. Then it destroys Servers, the Store, and the other services. Last, it destroys menus, toolbars, and the objects that MenuPlugin and ToolbarPlugin create. So every service outlives the panes and the map view. Menu and toolbar objects outlive the services. Their destructors must not use a service. The comment on PluginServices in src/core/interfaces.h gives the order and the owner of each pointer.
+
 The host owns the services for each window. Plugins must not save service pointers, menus, or widgets in their static plugin objects. Qt parents own created widgets and actions. The host destroys plugin widgets before the event store. All model and widget operations use the GUI thread.
 
 Use `services.store` for CoT data and selection. Use `services.maps` for provider discovery, selection, and catalog changes. Emit `MapSources::managementRequested` to request the provider manager. Use `services.activity` for internal-event history. If `services.data` is non-null, use it for data feeds and geometry. No plugin searches the host widget tree to find these services.

@@ -23,20 +23,57 @@ class MarkerCollections;
 class Identity;
 class Servers;
 class RouteSources;
+// Per-window services for plugin factories and callbacks.
+//
+// The struct itself is a local value in the Window constructor. It exists only during the
+// call that receives it. Do not keep a pointer or reference to the struct. Copy the
+// service references or pointers that you need.
+//
+// The Window owns every service. All services live on the interface thread. A null pointer
+// means that the service is not available in this window.
+//
+// The Window destroys objects in this order:
+// 1. Dock panes and the central map view. Factories in ViewPlugin, ToolPlugin,
+//    SourcePlugin, and PanePlugin create these widgets.
+// 2. Servers.
+// 3. Store.
+// 4. All other services, in creation order: activity, maps, data, selection, mapTools,
+//    objects, collections, identity, and routes.
+// 5. Menus, toolbars, and their children, which include objects that MenuPlugin and
+//    ToolbarPlugin create.
+//
+// So every service outlives the widgets from step 1. Objects from step 5 outlive all
+// services. Their destructors must not use a service. Their connections to services
+// must use a QObject context, so that Qt removes them when a service dies.
 struct PluginServices
 {
+    // Window member. Lives until step 3.
     Store &store;
+    // Window child. Lives until step 4.
     ActivityModel &activity;
+    // Window child. Lives until step 4.
     MapSources &maps;
+    // Window child. Lives until step 4. Null in hosts without data feeds.
     DataSources *data = nullptr;
+    // Window child. Lives until step 4.
     MapSelection *selection = nullptr;
+    // Window child. Lives until step 4. It holds guarded tool pointers and does not own tools.
     MapTools *mapTools = nullptr;
+    // Window child. Lives until step 4.
     UserObjects *objects = nullptr;
+    // Window child. Lives until step 4.
     MarkerCollections *collections = nullptr;
+    // Window child. Lives until step 4.
     Identity *identity = nullptr;
+    // Window child. Lives until step 2. Null when no codec or source plugin exists.
     Servers *servers = nullptr;
+    // Owned by the map view, so it dies in step 1. ViewPlugin::create sets it. It is null
+    // before that call and when no view plugin exists. Menu and toolbar callbacks run later.
     QAction *navigationLock = nullptr;
+    // Owned by the map view, like navigationLock. QAction removes itself from menus and
+    // toolbars when it dies.
     QList<QAction *> viewActions = {};
+    // Window child. Lives until step 4.
     RouteSources *routes = nullptr;
 };
 class Plugin
