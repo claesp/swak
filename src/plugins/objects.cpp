@@ -1,5 +1,6 @@
 #include "core/interfaces.h"
 #include "core/map_tools.h"
+#include "core/modal.h"
 #include "core/preferences.h"
 #include "core/store.h"
 
@@ -86,11 +87,11 @@ protected:
         if (!item) {
             return;
         }
-        QMenu menu(this);
-        menu.setObjectName(QStringLiteral("objectsContextMenu"));
-        auto *information = menu.addAction(tr("Information"));
+        Modal<QMenu> menu(this);
+        menu->setObjectName(QStringLiteral("objectsContextMenu"));
+        auto *information = menu->addAction(tr("Information"));
         information->setObjectName(QStringLiteral("mapItemInformation"));
-        connect(information, &QAction::triggered, &menu, [this, id = item->id] {
+        connect(information, &QAction::triggered, menu.get(), [this, id = item->id] {
             const auto &events = store_.events();
             const auto found =
                 std::find_if(events.cbegin(), events.cend(), [&id](const auto &message) {
@@ -104,11 +105,11 @@ protected:
             }
         });
         if (tools_) {
-            tools_->populateContextMenu(*item, menu);
+            tools_->populateContextMenu(*item, *menu);
         }
-        connect(&store_, &QAbstractItemModel::rowsRemoved, &menu, &QMenu::close);
-        connect(&store_, &QAbstractItemModel::modelReset, &menu, &QMenu::close);
-        menu.exec(event->globalPos());
+        connect(&store_, &QAbstractItemModel::rowsRemoved, menu.get(), &QMenu::close);
+        connect(&store_, &QAbstractItemModel::modelReset, menu.get(), &QMenu::close);
+        menu->exec(event->globalPos());
         event->accept();
     }
 

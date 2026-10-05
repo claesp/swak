@@ -4,6 +4,7 @@
 #include "core/map_tools.h"
 #include "core/maps.h"
 #include "core/measure.h"
+#include "core/modal.h"
 #include "core/provider_table.h"
 #include "core/routing.h"
 #include "core/settings_dialog.h"
@@ -132,14 +133,14 @@ public:
         auto *manage = new QPushButton(tr("Route providers ..."), this);
         layout->addWidget(manage);
         connect(manage, &QPushButton::clicked, this, [this] {
-            QDialog dialog(this);
-            dialog.setWindowTitle(tr("Route Providers"));
-            auto *box = new QVBoxLayout(&dialog);
-            box->addWidget(createSettingsWidget(&dialog));
-            auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+            Modal<QDialog> dialog(this);
+            dialog->setWindowTitle(tr("Route Providers"));
+            auto *box = new QVBoxLayout(dialog.get());
+            box->addWidget(createSettingsWidget(dialog.get()));
+            auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, dialog.get());
             box->addWidget(buttons);
-            connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-            dialog.exec();
+            connect(buttons, &QDialogButtonBox::rejected, dialog.get(), &QDialog::reject);
+            dialog->exec();
         });
         auto *form = new QFormLayout;
         for (int i = 0; i < 4; ++i) {
@@ -294,10 +295,13 @@ public:
         auto *table = new ProviderTable(true, widget);
         table->setObjectName(QStringLiteral("routeProviderTable"));
         layout->addWidget(table);
-        const auto refresh = [this, table] {
+        // The window Settings dialog can own this widget after the pane is gone.
+        // The callbacks use the route service, which outlives both, and never this pane.
+        auto &sources = sources_;
+        const auto refresh = [&sources, table] {
             const auto selected = table->selectedId();
             table->clearProviders();
-            const auto entries = sources_.sources();
+            const auto entries = sources.sources();
             auto ids = entries.keys();
             const QCollator collator;
             std::sort(ids.begin(), ids.end(), [&](const auto &a, const auto &b) {
@@ -306,23 +310,23 @@ public:
             });
             for (const auto &id : ids) {
                 const auto source = entries[id].toObject();
-                const auto *provider = sources_.provider(source);
+                const auto *provider = sources.provider(source);
                 auto *button =
                     table->append(id,
                                   source.value("name").toString(),
                                   provider ? provider->routeName() : tr("Plugin unavailable"),
                                   source.value("endpoint").toString(),
-                                  sources_.activeId() == id,
+                                  sources.activeId() == id,
                                   provider != nullptr);
-                connect(button, &QAbstractButton::clicked, table, [this, table, id] {
-                    QTimer::singleShot(0, table, [this, id] {
-                        sources_.select(id);
+                connect(button, &QAbstractButton::clicked, table, [&sources, table, id] {
+                    QTimer::singleShot(0, table, [&sources, id] {
+                        sources.select(id);
                     });
                 });
             }
             table->selectId(selected);
         };
-        connect(&sources_, &RouteSources::changed, table, refresh);
+        connect(&sources, &RouteSources::changed, table, refresh);
         refresh();
         auto *row = new QHBoxLayout;
         for (int operation = 0; operation < 3; ++operation) {
@@ -332,7 +336,7 @@ public:
                                               QStringLiteral("editRouteProvider"),
                                               QStringLiteral("removeRouteProvider")}[operation]);
             row->addWidget(button);
-            connect(button, &QPushButton::clicked, widget, [this, table, operation, widget] {
+            connect(button, &QPushButton::clicked, widget, [&sources, table, operation, widget] {
                 const auto id = operation == 0 ? QUuid::createUuid().toString(QUuid::WithoutBraces)
                                                : table->selectedId();
                 if (id.isEmpty()) {
@@ -340,15 +344,15 @@ public:
                 }
                 if (operation == 2) {
                     if (confirmDeletion(widget, tr("this route provider"))) {
-                        sources_.remove(id);
+                        sources.remove(id);
                     }
                     return;
                 }
                 QList<SettingsPage> pages;
-                const auto original = sources_.sources().value(id).toObject();
+                const auto original = sources.sources().value(id).toObject();
                 QString error;
-                for (const auto *provider : sources_.providers()) {
-                    if (operation == 1 && provider != sources_.provider(original)) {
+                for (const auto *provider : sources.providers()) {
+                    if (operation == 1 && provider != sources.provider(original)) {
                         continue;
                     }
                     auto values =
@@ -363,14 +367,14 @@ public:
                                   RouteSources::fields(),
                                   values,
                                   RouteSources::validate,
-                                  [this, id, &error](const QJsonObject &value) {
-                                      error = sources_.put(id, value);
+                                  [&sources, id, &error](const QJsonObject &value) {
+                                      error = sources.put(id, value);
                                   }});
                 }
                 if (pages.isEmpty()) {
                     return;
                 }
-                SettingsDialog dialog(
+                Modal<SettingsDialog> dialog(
                     pages,
                     [&error] {
                         return error;
@@ -378,9 +382,9 @@ public:
                     widget,
                     true,
                     operation == 0);
-                dialog.setWindowTitle(operation == 0 ? tr("Add route provider")
-                                                     : tr("Edit route provider"));
-                dialog.exec();
+                dialog->setWindowTitle(operation == 0 ? tr("Add route provider")
+                                                      : tr("Edit route provider"));
+                dialog->exec();
             });
         }
         layout->addLayout(row);

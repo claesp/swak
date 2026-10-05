@@ -2,6 +2,7 @@
 
 #include "core/delete_confirmation.h"
 #include "core/logging.h"
+#include "core/modal.h"
 #include "core/provider_table.h"
 #include "core/settings_dialog.h"
 #include "core/single_line_label.h"
@@ -64,38 +65,38 @@ MapManager::MapManager(MapSources &sources,
             reportError(tr("Select an authentication method in Edit first."));
             return;
         }
-        QDialog dialog(this);
-        dialog.setObjectName(QStringLiteral("mapCredentialsDialog"));
-        dialog.setWindowTitle(tr("Map credentials"));
-        auto *credentialLayout = new QVBoxLayout(&dialog);
+        Modal<QDialog> dialog(this);
+        dialog->setObjectName(QStringLiteral("mapCredentialsDialog"));
+        dialog->setWindowTitle(tr("Map credentials"));
+        auto *credentialLayout = new QVBoxLayout(dialog.get());
         auto *credentialNotice =
             new QLabel(tr("Enter the password or token for this session. An empty value clears the "
                           "session secret. A configured environment variable then applies."),
-                       &dialog);
+                       dialog.get());
         credentialNotice->setWordWrap(true);
         credentialLayout->addWidget(credentialNotice);
-        auto *secret = new QLineEdit(&dialog);
+        auto *secret = new QLineEdit(dialog.get());
         secret->setEchoMode(QLineEdit::Password);
         secret->setMaxLength(4096);
         secret->setObjectName(QStringLiteral("mapSecret"));
         secret->setAccessibleName(tr("Password or token"));
         credentialLayout->addWidget(secret);
-        auto *error = new SingleLineLabel(&dialog);
+        auto *error = new SingleLineLabel(dialog.get());
         credentialLayout->addWidget(error);
         auto *buttons =
-            new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+            new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dialog.get());
         credentialLayout->addWidget(buttons);
-        connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-        connect(buttons, &QDialogButtonBox::accepted, &dialog, [&] {
+        connect(buttons, &QDialogButtonBox::rejected, dialog.get(), &QDialog::reject);
+        connect(buttons, &QDialogButtonBox::accepted, dialog.get(), [&] {
             const auto problem = sources_.setCredential(id, secret->text().toUtf8());
             if (!problem.isEmpty()) {
                 error->setText(problem);
                 return;
             }
             secret->clear();
-            dialog.accept();
+            dialog->accept();
         });
-        dialog.exec();
+        dialog->exec();
     });
     layout->addLayout(row);
     status_ = new QLabel(this);
@@ -143,7 +144,7 @@ MapManager::MapManager(MapSources &sources,
                           }});
         }
         applyError_.clear();
-        SettingsDialog dialog(
+        Modal<SettingsDialog> dialog(
             pages,
             [this] {
                 return !applyError_.isEmpty() ? applyError_
@@ -153,8 +154,8 @@ MapManager::MapManager(MapSources &sources,
             this,
             true,
             true);
-        dialog.setWindowTitle(tr("Add provider"));
-        if (dialog.exec() == QDialog::Accepted) {
+        dialog->setWindowTitle(tr("Add provider"));
+        if (dialog->exec() == QDialog::Accepted) {
             for (int i = 0; i < list_->rowCount(); ++i) {
                 if (list_->item(i, 1)->data(Qt::UserRole).toString() == id) {
                     list_->setCurrentCell(i, 1);
@@ -249,17 +250,17 @@ void MapManager::edit()
         return;
     }
     applyError_.clear();
-    SettingsDialog dialog(
-        {{id,
-          source.value(QStringLiteral("name")).toString(),
-          provider->fields(),
-          source,
-          [provider](const QJsonObject &values) {
-              return provider->validate(values);
-          },
-          [this, id](const QJsonObject &values) {
-              applyError_ = sources_.put(id, values);
-          }}},
+    Modal<SettingsDialog> dialog(
+        QList<SettingsPage>{{id,
+                             source.value(QStringLiteral("name")).toString(),
+                             provider->fields(),
+                             source,
+                             [provider](const QJsonObject &values) {
+                                 return provider->validate(values);
+                             },
+                             [this, id](const QJsonObject &values) {
+                                 applyError_ = sources_.put(id, values);
+                             }}},
         [this] {
             return !applyError_.isEmpty() ? applyError_
                    : save_                ? save_()
@@ -267,7 +268,7 @@ void MapManager::edit()
         },
         this,
         true);
-    dialog.setWindowTitle(tr("Edit provider"));
-    dialog.exec();
+    dialog->setWindowTitle(tr("Edit provider"));
+    dialog->exec();
 }
 } // namespace swak

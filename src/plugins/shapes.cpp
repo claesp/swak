@@ -5,6 +5,7 @@
 #include "core/maps.h"
 #include "core/measure.h"
 #include "core/menu_order.h"
+#include "core/modal.h"
 #include "core/object_editor.h"
 #include "core/polygon.h"
 #include "core/store.h"
@@ -493,17 +494,17 @@ public:
         map_ = &map;
         select(item.id);
         const auto context = static_cast<QContextMenuEvent &>(event).globalPos();
-        QMenu menu(&map);
-        menu.setObjectName(QStringLiteral("shapeContextMenu"));
-        auto *edit = menu.addAction(uiIcon(UiIcon::Edit), tr("Edit"));
+        Modal<QMenu> menu(&map);
+        menu->setObjectName(QStringLiteral("shapeContextMenu"));
+        auto *edit = menu->addAction(uiIcon(UiIcon::Edit), tr("Edit"));
         edit->setObjectName(QStringLiteral("editShape"));
-        auto *move = menu.addAction(uiIcon(UiIcon::Move), tr("Move"));
+        auto *move = menu->addAction(uiIcon(UiIcon::Move), tr("Move"));
         move->setObjectName(QStringLiteral("moveShape"));
-        auto *remove = menu.addAction(uiIcon(UiIcon::Delete), tr("Delete ..."));
+        auto *remove = menu->addAction(uiIcon(UiIcon::Delete), tr("Delete ..."));
         remove->setObjectName(QStringLiteral("deleteShape"));
         edit->setProperty("menuOrder", -2);
         remove->setProperty("menuOrder", -1);
-        sortMenuActions(menu);
+        sortMenuActions(*menu);
         connect(edit, &QAction::triggered, this, [this, id = item.id] {
             if (const auto found = objects_.find(id)) {
                 selection_.clear();
@@ -527,7 +528,7 @@ public:
         connect(remove, &QAction::triggered, this, [this, id = item.id] {
             deleteObject(objects_, id, &editor_);
         });
-        menu.exec(context);
+        menu->exec(context);
         return true;
     }
     void paint(QPainter &painter, const Viewport &view) const override
@@ -761,10 +762,10 @@ private:
         const auto points = polygonVertices(editor_.draft()->geometry);
         for (int i = 0; i < 2; ++i) {
             if (QLineF(screen(points[i], view), event.pos()).length() <= editor_.radius + 5) {
-                QMenu menu(&map);
-                auto *move = menu.addAction(uiIcon(UiIcon::Move), tr("Move"));
+                Modal<QMenu> menu(&map);
+                auto *move = menu->addAction(uiIcon(UiIcon::Move), tr("Move"));
                 move->setObjectName(QStringLiteral("moveShapePoint"));
-                auto *remove = menu.addAction(uiIcon(UiIcon::Delete), tr("Delete ..."));
+                auto *remove = menu->addAction(uiIcon(UiIcon::Delete), tr("Delete ..."));
                 remove->setEnabled(false);
                 remove->setToolTip(tr("This shape needs both control points."));
                 connect(move, &QAction::triggered, this, [this, i] {
@@ -773,7 +774,7 @@ private:
                     map_->setFocus();
                     emit overlayChanged();
                 });
-                menu.exec(event.globalPos());
+                menu->exec(event.globalPos());
                 return;
             }
         }

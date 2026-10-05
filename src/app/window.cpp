@@ -14,6 +14,7 @@
 #include "core/map_selection.h"
 #include "core/map_tools.h"
 #include "core/menu_order.h"
+#include "core/modal.h"
 #include "core/provider_toolbar.h"
 #include "core/routing.h"
 #include "core/server_browser.h"
@@ -208,29 +209,32 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     auto *identityAction = fileMenu->addAction(tr("Identity"));
     identityAction->setObjectName(QStringLiteral("identityAction"));
     connect(identityAction, &QAction::triggered, this, [this, identity] {
-        SettingsDialog dialog(
-            {{identity->preferenceId(),
-              identity->settingsTitle(),
-              identity->settingsFields(),
-              identity->savePreferences(),
-              [identity](const QJsonObject &v) {
-                  return identity->validateSettings(v);
-              },
-              [identity](const QJsonObject &v) {
-                  identity->restorePreferences(v);
-              }}},
+        Modal<SettingsDialog> dialog(
+            QList<SettingsPage>{{identity->preferenceId(),
+                                 identity->settingsTitle(),
+                                 identity->settingsFields(),
+                                 identity->savePreferences(),
+                                 [identity](const QJsonObject &v) {
+                                     return identity->validateSettings(v);
+                                 },
+                                 [identity](const QJsonObject &v) {
+                                     identity->restorePreferences(v);
+                                 }}},
             [this] {
                 return savePreferences() ? QString{} : preferences_.error();
             },
             this,
             true);
-        dialog.setObjectName(QStringLiteral("identityDialog"));
-        dialog.setWindowTitle(tr("Identity"));
+        dialog->setObjectName(QStringLiteral("identityDialog"));
+        dialog->setWindowTitle(tr("Identity"));
         if (!identityGeometry_.isEmpty()) {
-            dialog.restoreGeometry(identityGeometry_);
+            dialog->restoreGeometry(identityGeometry_);
         }
-        dialog.exec();
-        identityGeometry_ = dialog.saveGeometry();
+        dialog->exec();
+        if (!dialog) {
+            return;
+        }
+        identityGeometry_ = dialog->saveGeometry();
         savePreferences();
     });
     fileMenu->addSeparator();
@@ -398,28 +402,31 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         auto *manageServers = toolsMenu->addAction(tr("Servers"));
         manageServers->setObjectName(QStringLiteral("serversAction"));
         connect(manageServers, &QAction::triggered, this, [this, servers] {
-            SettingsDialog dialog(
-                {{servers->preferenceId(),
-                  servers->settingsTitle(),
-                  {},
-                  {},
-                  {},
-                  {},
-                  false,
-                  [servers](QWidget *owner) {
-                      return servers->createSettingsWidget(owner);
-                  }}},
+            Modal<SettingsDialog> dialog(
+                QList<SettingsPage>{{servers->preferenceId(),
+                                     servers->settingsTitle(),
+                                     {},
+                                     {},
+                                     {},
+                                     {},
+                                     false,
+                                     [servers](QWidget *owner) {
+                                         return servers->createSettingsWidget(owner);
+                                     }}},
                 [this] {
                     return savePreferences() ? QString{} : preferences_.error();
                 },
                 this,
                 true);
-            dialog.setWindowTitle(tr("Servers"));
+            dialog->setWindowTitle(tr("Servers"));
             if (!serversGeometry_.isEmpty()) {
-                dialog.restoreGeometry(serversGeometry_);
+                dialog->restoreGeometry(serversGeometry_);
             }
-            dialog.exec();
-            serversGeometry_ = dialog.saveGeometry();
+            dialog->exec();
+            if (!dialog) {
+                return;
+            }
+            serversGeometry_ = dialog->saveGeometry();
             savePreferences();
         });
         connect(servers, &Servers::changed, this, [this] {
@@ -1099,22 +1106,26 @@ QList<SettingsPage> Window::settingsPages()
 }
 void Window::openSettings()
 {
-    SettingsDialog dialog(
+    Modal<SettingsDialog> dialog(
         settingsPages(),
         [this] {
             return savePreferences() ? QString{} : preferences_.error();
         },
         this);
-    dialog.restoreNavigation(settingsNavigation_);
+    dialog->restoreNavigation(settingsNavigation_);
     if (!settingsGeometry_.isEmpty()) {
-        dialog.restoreGeometry(settingsGeometry_);
+        dialog->restoreGeometry(settingsGeometry_);
     }
     if (screen()) {
-        dialog.setGeometry(fitWindowRectangle(dialog.geometry(), {screen()->availableGeometry()}));
+        dialog->setGeometry(
+            fitWindowRectangle(dialog->geometry(), {screen()->availableGeometry()}));
     }
-    dialog.exec();
-    settingsGeometry_ = dialog.saveGeometry();
-    settingsNavigation_ = dialog.navigation();
+    dialog->exec();
+    if (!dialog) {
+        return;
+    }
+    settingsGeometry_ = dialog->saveGeometry();
+    settingsNavigation_ = dialog->navigation();
     savePreferences();
 }
 void Window::fitWindowsToScreens()

@@ -6,6 +6,7 @@
 #include "core/maps.h"
 #include "core/measure.h"
 #include "core/menu_order.h"
+#include "core/modal.h"
 #include "core/object_editor.h"
 #include "core/polygon.h"
 #include "core/store.h"
@@ -395,15 +396,15 @@ public:
         auto &context = static_cast<QContextMenuEvent &>(event);
         tools_.cancel();
         select(id);
-        QMenu menu(&map);
-        menu.setObjectName(QStringLiteral("polygonContextMenu"));
-        auto *edit = menu.addAction(uiIcon(UiIcon::Edit), tr("Edit"));
+        Modal<QMenu> menu(&map);
+        menu->setObjectName(QStringLiteral("polygonContextMenu"));
+        auto *edit = menu->addAction(uiIcon(UiIcon::Edit), tr("Edit"));
         edit->setObjectName(QStringLiteral("editPolygon"));
-        auto *remove = menu.addAction(uiIcon(UiIcon::Delete), tr("Delete ..."));
+        auto *remove = menu->addAction(uiIcon(UiIcon::Delete), tr("Delete ..."));
         remove->setObjectName(QStringLiteral("deletePolygon"));
         edit->setProperty("menuOrder", -2);
         remove->setProperty("menuOrder", -1);
-        sortMenuActions(menu);
+        sortMenuActions(*menu);
         connect(edit, &QAction::triggered, this, [this, id] {
             const auto currentObject = objects_.find(id);
             if (currentObject) {
@@ -416,8 +417,8 @@ public:
         connect(remove, &QAction::triggered, this, [this, id] {
             deleteObject(objects_, id, &editor_);
         });
-        tools_.populateContextMenu(item, menu);
-        menu.exec(context.globalPos());
+        tools_.populateContextMenu(item, *menu);
+        menu->exec(context.globalPos());
         return true;
     }
     QList<MapItem> itemsAt(const Viewport &view, QPointF pointer) const override
@@ -608,12 +609,12 @@ private:
         }
         auto reduced = points;
         reduced.removeAt(index);
-        QMenu menu(&map);
-        menu.setObjectName(QStringLiteral("polygonVertexMenu"));
-        auto *move = menu.addAction(uiIcon(UiIcon::Move), tr("Move"));
+        Modal<QMenu> menu(&map);
+        menu->setObjectName(QStringLiteral("polygonVertexMenu"));
+        auto *move = menu->addAction(uiIcon(UiIcon::Move), tr("Move"));
         move->setObjectName(QStringLiteral("movePolygonVertex"));
         move->setProperty("menuOrder", -1);
-        auto *remove = menu.addAction(uiIcon(UiIcon::Delete), tr("Delete ..."));
+        auto *remove = menu->addAction(uiIcon(UiIcon::Delete), tr("Delete ..."));
         remove->setObjectName(QStringLiteral("deletePolygonVertex"));
         remove->setEnabled(validatePolygon(reduced).isEmpty());
         connect(move, &QAction::triggered, this, [this, index, &map] {
@@ -630,7 +631,7 @@ private:
                 editor_.setGeometry(polygonGeometry(reduced));
             }
         });
-        menu.exec(context.globalPos());
+        menu->exec(context.globalPos());
     }
     void select(const QString &id)
     {

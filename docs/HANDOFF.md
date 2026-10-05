@@ -1414,9 +1414,19 @@ Source analysis passes in build/quality/20261005-120437-analyze-162936. Quick sa
 
 Open items from the review:
 
-- Stack dialogs with a parent call exec(). Destruction of the parent during exec() deletes the dialog twice. The fix is a project-wide change to heap dialogs or open().
-- Route planner settings lambdas capture the pane but use the table as context.
 - GridTypes::validate builds a regular expression on each frame.
 - No test checks the escaped tooltips in the map and data provider tables.
 - PluginServices does not document the lifetime of its service pointers.
 - docs/usage.md says "No map provider clears the selection." The sentence has two possible meanings.
+
+# 2026-10-05: Modal dialog ownership
+
+A parented dialog or menu on the stack got a second delete when its parent died during exec(). Every such dialog and context menu now uses swak::Modal in src/core/modal.h. Modal keeps the object on the heap behind a QPointer and deletes it only when it is alive. Code that uses the dialog after exec() checks the Modal first.
+
+confirmAction and confirmDeletion return false when their parent widget dies during the dialog. The CoT editor and the marker import check a QPointer to themselves after static QFileDialog calls. Route planner settings callbacks now capture the RouteSources service instead of the pane.
+
+The native test modalParentDestroyed deletes the parent during a dialog, a menu, a confirmation, and the Settings dialog of a heap Window. It passes under the address and undefined behavior sanitizers. docs/coding-style.md records the rule.
+
+Source analysis passes in build/quality/20261005-122845-analyze-172292 with a narrow suppression. Cppcheck cannot see that a QPointer becomes null during a nested loop. Quick sanitizer diagnostics pass in build/quality/20261005-122030-quick-167793. The native sanitizer suite passes 103 cases in build/quality/20261005-122856-gui-172359.
+
+The sanitizer build delivered the Escape paint in markerPointerLatency after 80 ms. The test now waits until paints stop, then expects no further paint. The same failure occurred on the previous commit, so the Modal change did not cause it.

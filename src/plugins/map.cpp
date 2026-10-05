@@ -9,6 +9,7 @@
 #include "core/marker_symbols.h"
 #include "core/measure.h"
 #include "core/menu_order.h"
+#include "core/modal.h"
 #include "core/preferences.h"
 #include "core/projection.h"
 #include "core/single_line_label.h"
@@ -554,16 +555,16 @@ protected:
             return;
         }
         const auto features = tiles_.featuresAt(position);
-        QMenu menu(this);
-        menu.setObjectName(QStringLiteral("mapContextMenu"));
-        auto *information = menu.addAction(tr("Map information"));
+        Modal<QMenu> menu(this);
+        menu->setObjectName(QStringLiteral("mapContextMenu"));
+        auto *information = menu->addAction(tr("Map information"));
         information->setObjectName(QStringLiteral("mapInformation"));
         information->setEnabled(!features.isEmpty());
         connect(information, &QAction::triggered, this, [this, features] {
             showInformation(features);
         });
-        addLayerMenu(menu);
-        menu.exec(mapToGlobal(position));
+        addLayerMenu(*menu);
+        menu->exec(mapToGlobal(position));
         event->accept();
     }
     bool event(QEvent *event) override
@@ -985,11 +986,11 @@ protected:
         }
         qsizetype chosen = 0;
         if (hits.size() > 1) {
-            QMenu menu(this);
-            menu.setObjectName(QStringLiteral("mapObjectChooser"));
-            menu.setToolTipsVisible(true);
+            Modal<QMenu> menu(this);
+            menu->setObjectName(QStringLiteral("mapObjectChooser"));
+            menu->setToolTipsVisible(true);
             chosen = -1;
-            closeOnContentChange(menu);
+            closeOnContentChange(*menu);
             // Build each page only when it opens. Dense overlaps keep a small menu.
             const auto fillPage = [&](auto &&self, QMenu *page, qsizetype start) -> void {
                 const auto end = std::min(start + 30, hits.size());
@@ -1015,24 +1016,25 @@ protected:
                         QString(text).replace('&', QStringLiteral("&&")));
                     action->setToolTip(label + QStringLiteral(" (%1)").arg(detail));
                     action->setData(hit.item.id);
-                    connect(action, &QAction::triggered, &menu, [&, i] {
+                    connect(action, &QAction::triggered, menu.get(), [&, i] {
                         chosen = i;
-                        menu.close();
+                        menu->close();
                     });
                 }
                 if (end < hits.size()) {
                     auto *more = page->addMenu(tr("More objects"));
                     more->setToolTipsVisible(true);
-                    connect(more, &QMenu::aboutToShow, &menu, [&, more, end] {
+                    connect(more, &QMenu::aboutToShow, menu.get(), [&, more, end] {
                         if (more->actions().isEmpty()) {
                             self(self, more, end);
                         }
                     });
                 }
             };
-            fillPage(fillPage, &menu, 0);
-            menu.exec(mapToGlobal(position.toPoint()));
-            if (chosen < 0) {
+            fillPage(fillPage, menu.get(), 0);
+            menu->exec(mapToGlobal(position.toPoint()));
+            // The menu dies with this widget. Stop before the code uses a deleted widget.
+            if (!menu || chosen < 0) {
                 return true;
             }
         }
@@ -1043,19 +1045,19 @@ protected:
                 tools_->interact(hit.item, event, *this);
             }
         } else if (event.type() == QEvent::ContextMenu) {
-            QMenu menu(this);
-            menu.setObjectName(QStringLiteral("mapItemContextMenu"));
-            auto *information = menu.addAction(tr("Information"));
+            Modal<QMenu> menu(this);
+            menu->setObjectName(QStringLiteral("mapItemContextMenu"));
+            auto *information = menu->addAction(tr("Information"));
             information->setObjectName(QStringLiteral("mapItemInformation"));
             if (tools_) {
-                tools_->populateContextMenu(hit.item, menu);
+                tools_->populateContextMenu(hit.item, *menu);
             }
             if (hit.source == QStringLiteral("vector")) {
-                menu.setObjectName(QStringLiteral("mapContextMenu"));
+                menu->setObjectName(QStringLiteral("mapContextMenu"));
                 information->setObjectName(QStringLiteral("mapInformation"));
                 information->setText(tr("Map information"));
-                addLayerMenu(menu);
-                connect(information, &QAction::triggered, &menu, [this, hit] {
+                addLayerMenu(*menu);
+                connect(information, &QAction::triggered, menu.get(), [this, hit] {
                     auto properties = hit.item.properties;
                     properties.insert(QStringLiteral("name"), hit.item.label);
                     properties.insert(QStringLiteral("description"), hit.item.description);
@@ -1065,11 +1067,11 @@ protected:
                         {QStringLiteral("properties"), properties}}});
                 });
             } else {
-                connect(information, &QAction::triggered, &menu, [this, hit] {
+                connect(information, &QAction::triggered, menu.get(), [this, hit] {
                     selectHit(hit);
                 });
             }
-            menu.exec(mapToGlobal(position.toPoint()));
+            menu->exec(mapToGlobal(position.toPoint()));
         } else {
             selectHit(hit);
         }

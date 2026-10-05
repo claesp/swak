@@ -2,6 +2,7 @@
 
 #include "core/delete_confirmation.h"
 #include "core/logging.h"
+#include "core/modal.h"
 #include "core/provider_table.h"
 #include "core/single_line_label.h"
 
@@ -13,6 +14,7 @@
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QLineEdit>
+#include <QPointer>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QStandardPaths>
@@ -103,12 +105,16 @@ MarkerManager::MarkerManager(MarkerCollections &collections,
         }
     });
     connect(import, &QPushButton::clicked, this, [this] {
+        // The file dialog runs a nested loop. It can delete this manager.
+        const QPointer<MarkerManager> self(this);
         const auto path = QFileDialog::getOpenFileName(
             this,
             tr("Import marker collection"),
             collections_.directory(),
             tr("Collection archives (*.zip *.tar *.tar.gz *.tgz);;All files (*)"));
-        if (path.isEmpty()) {
+        // The nested dialog loop can delete this object. Cppcheck cannot see that.
+        // cppcheck-suppress knownConditionTrueFalse
+        if (!self || path.isEmpty()) {
             return;
         }
         collections_.setDirectory(QFileInfo(path).absolutePath());
@@ -128,20 +134,24 @@ MarkerManager::MarkerManager(MarkerCollections &collections,
             collections_.directory().isEmpty()
                 ? QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
                 : collections_.directory();
-        QFileDialog dialog(this, tr("Export marker collection"), directory);
-        dialog.setAcceptMode(QFileDialog::AcceptSave);
-        dialog.setNameFilters({tr("ZIP archive (*.zip)"), tr("Compressed TAR archive (*.tar.gz)")});
-        dialog.setDefaultSuffix(QStringLiteral("zip"));
-        dialog.selectFile(id);
-        connect(&dialog, &QFileDialog::filterSelected, &dialog, [&dialog](const QString &filter) {
-            dialog.setDefaultSuffix(filter.contains(QStringLiteral("*.tar.gz"))
-                                        ? QStringLiteral("tar.gz")
-                                        : QStringLiteral("zip"));
-        });
-        if (dialog.exec() != QDialog::Accepted || dialog.selectedFiles().isEmpty()) {
+        Modal<QFileDialog> dialog(this, tr("Export marker collection"), directory);
+        dialog->setAcceptMode(QFileDialog::AcceptSave);
+        dialog->setNameFilters(
+            {tr("ZIP archive (*.zip)"), tr("Compressed TAR archive (*.tar.gz)")});
+        dialog->setDefaultSuffix(QStringLiteral("zip"));
+        dialog->selectFile(id);
+        connect(dialog.get(),
+                &QFileDialog::filterSelected,
+                dialog.get(),
+                [&dialog](const QString &filter) {
+                    dialog->setDefaultSuffix(filter.contains(QStringLiteral("*.tar.gz"))
+                                                 ? QStringLiteral("tar.gz")
+                                                 : QStringLiteral("zip"));
+                });
+        if (dialog->exec() != QDialog::Accepted || dialog->selectedFiles().isEmpty()) {
             return;
         }
-        const auto path = dialog.selectedFiles().first();
+        const auto path = dialog->selectedFiles().first();
         collections_.setDirectory(QFileInfo(path).absolutePath());
         const auto error = collections_.exportArchive(id, path);
         if (error.isEmpty()) {
@@ -219,14 +229,14 @@ void MarkerManager::edit(bool adding)
         report(tr("Built-in collections are read-only. Use Add to create a copy."));
         return;
     }
-    QDialog dialog(this);
-    dialog.setObjectName(QStringLiteral("editMarkerCollectionDialog"));
-    dialog.setWindowTitle(adding ? tr("Add marker collection") : tr("Edit marker collection"));
-    auto *layout = new QVBoxLayout(&dialog);
+    Modal<QDialog> dialog(this);
+    dialog->setObjectName(QStringLiteral("editMarkerCollectionDialog"));
+    dialog->setWindowTitle(adding ? tr("Add marker collection") : tr("Edit marker collection"));
+    auto *layout = new QVBoxLayout(dialog.get());
     auto *form = new QFormLayout;
     form->setRowWrapPolicy(QFormLayout::DontWrapRows);
     layout->addLayout(form);
-    auto *source = new QComboBox(&dialog);
+    auto *source = new QComboBox(dialog.get());
     source->setObjectName(QStringLiteral("collectionTemplate"));
     const auto entries = collections_.collections();
     auto ids = entries.keys();
@@ -249,26 +259,28 @@ void MarkerManager::edit(bool adding)
     }
     const auto original = entries.value(id).toObject();
     auto *name = new QLineEdit(
-        adding ? QString{} : original.value(QStringLiteral("name")).toString(), &dialog);
+        adding ? QString{} : original.value(QStringLiteral("name")).toString(), dialog.get());
     name->setMaxLength(100);
     name->setObjectName(QStringLiteral("collectionName"));
     form->addRow(tr("Name"), name);
-    auto *description = new QLineEdit(
-        adding ? QString{} : original.value(QStringLiteral("description")).toString(), &dialog);
+    auto *description =
+        new QLineEdit(adding ? QString{} : original.value(QStringLiteral("description")).toString(),
+                      dialog.get());
     description->setMaxLength(1024);
     description->setObjectName(QStringLiteral("collectionDescription"));
     form->addRow(tr("Description"), description);
     auto *version = new QLineEdit(adding ? QStringLiteral("1.0.0")
                                          : original.value(QStringLiteral("version")).toString(),
-                                  &dialog);
+                                  dialog.get());
     version->setMaxLength(32);
     form->addRow(tr("Version"), version);
-    auto *error = new SingleLineLabel(&dialog);
+    auto *error = new SingleLineLabel(dialog.get());
     layout->addWidget(error);
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    auto *buttons =
+        new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dialog.get());
     layout->addWidget(buttons);
-    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    connect(buttons, &QDialogButtonBox::accepted, &dialog, [&] {
+    connect(buttons, &QDialogButtonBox::rejected, dialog.get(), &QDialog::reject);
+    connect(buttons, &QDialogButtonBox::accepted, dialog.get(), [&] {
         auto value = adding ? entries.value(source->currentData().toString()).toObject() : original;
         value.insert(QStringLiteral("id"),
                      adding ? QUuid::createUuid().toString(QUuid::WithoutBraces) : id);
@@ -282,8 +294,8 @@ void MarkerManager::edit(bool adding)
         }
         table_->selectId(value.value(QStringLiteral("id")).toString());
         save();
-        dialog.accept();
+        dialog->accept();
     });
-    dialog.exec();
+    dialog->exec();
 }
 } // namespace swak

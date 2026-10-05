@@ -1,6 +1,7 @@
 #include "core/server_browser.h"
 
 #include "core/delete_confirmation.h"
+#include "core/modal.h"
 #include "core/provider_table.h"
 #include "core/servers.h"
 #include "core/settings_dialog.h"
@@ -253,24 +254,25 @@ void ServerBrowser::edit(bool adding)
     const auto id =
         adding ? QUuid::createUuid().toString(QUuid::WithoutBraces) : table_->selectedId();
     QString error;
-    SettingsDialog dialog(
-        {{id,
-          tr("CoT server"),
-          serverFields(adding ? serverDefaults() : servers_.sources().value(id).toObject()),
-          adding ? serverDefaults() : servers_.sources().value(id).toObject(),
-          validateServer,
-          [this, id, &error](const QJsonObject &v) {
-              error = servers_.put(id, v);
-          }}},
+    Modal<SettingsDialog> dialog(
+        QList<SettingsPage>{
+            {id,
+             tr("CoT server"),
+             serverFields(adding ? serverDefaults() : servers_.sources().value(id).toObject()),
+             adding ? serverDefaults() : servers_.sources().value(id).toObject(),
+             validateServer,
+             [this, id, &error](const QJsonObject &v) {
+                 error = servers_.put(id, v);
+             }}},
         [&error] {
             return error;
         },
         this,
         true,
         adding);
-    dialog.setObjectName(QStringLiteral("serverEditor"));
-    dialog.setWindowTitle(adding ? tr("Add server") : tr("Edit server"));
-    if (dialog.exec() == QDialog::Accepted) {
+    dialog->setObjectName(QStringLiteral("serverEditor"));
+    dialog->setWindowTitle(adding ? tr("Add server") : tr("Edit server"));
+    if (dialog->exec() == QDialog::Accepted) {
         table_->selectId(id);
     }
 }

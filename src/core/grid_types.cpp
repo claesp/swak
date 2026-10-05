@@ -2,6 +2,7 @@
 
 #include "core/delete_confirmation.h"
 #include "core/map_grid.h"
+#include "core/modal.h"
 #include "core/provider_table.h"
 #include "core/settings_dialog.h"
 #include "core/single_line_label.h"
@@ -239,28 +240,28 @@ QWidget *GridTypes::createSettingsWidget(QWidget *parent)
         if (add) {
             value.insert("name", "");
         }
-        SettingsDialog dialog(
-            {{QStringLiteral("grid"),
-              add ? tr("Add grid type") : tr("Edit grid type"),
-              fields(),
-              value,
-              [this, id](const QJsonObject &v) {
-                  if (!entries_.contains(id) && entries_.size() >= 32) {
-                      return tr("Use at most 32 grid types.");
-                  }
-                  return validate(v);
-              },
-              [this, id](const QJsonObject &v) {
-                  put(id, v);
-              }}},
+        Modal<SettingsDialog> dialog(
+            QList<SettingsPage>{{QStringLiteral("grid"),
+                                 add ? tr("Add grid type") : tr("Edit grid type"),
+                                 fields(),
+                                 value,
+                                 [this, id](const QJsonObject &v) {
+                                     if (!entries_.contains(id) && entries_.size() >= 32) {
+                                         return tr("Use at most 32 grid types.");
+                                     }
+                                     return validate(v);
+                                 },
+                                 [this, id](const QJsonObject &v) {
+                                     put(id, v);
+                                 }}},
             [] {
                 return QString{};
             },
             widget,
             true,
             add);
-        dialog.setObjectName(QStringLiteral("gridTypeEditor"));
-        dialog.exec();
+        dialog->setObjectName(QStringLiteral("gridTypeEditor"));
+        dialog->exec();
     };
     const auto button = [&](const QString &name, const QString &text, auto callback) {
         auto *b = new QPushButton(text, widget);

@@ -2,6 +2,7 @@
 
 #include "core/delete_confirmation.h"
 #include "core/logging.h"
+#include "core/modal.h"
 #include "core/provider_table.h"
 #include "core/settings_dialog.h"
 
@@ -201,7 +202,7 @@ void DataManager::edit(bool adding)
                       }});
     }
     applyError_.clear();
-    SettingsDialog dialog(
+    Modal<SettingsDialog> dialog(
         pages,
         [this] {
             return !applyError_.isEmpty() ? applyError_
@@ -211,8 +212,8 @@ void DataManager::edit(bool adding)
         this,
         true,
         adding);
-    dialog.setWindowTitle(adding ? tr("Add data provider") : tr("Edit data provider"));
-    if (dialog.exec() == QDialog::Accepted) {
+    dialog->setWindowTitle(adding ? tr("Add data provider") : tr("Edit data provider"));
+    if (dialog->exec() == QDialog::Accepted) {
         for (int i = 0; i < list_->rowCount(); ++i) {
             if (list_->item(i, 1)->data(Qt::UserRole).toString() == id) {
                 list_->setCurrentCell(i, 1);

@@ -7,6 +7,7 @@
 #include "core/marker_collections.h"
 #include "core/marker_symbols.h"
 #include "core/menu_order.h"
+#include "core/modal.h"
 #include "core/object_editor.h"
 #include "core/store.h"
 #include "core/toolbar.h"
@@ -360,17 +361,17 @@ public:
         auto &context = static_cast<QContextMenuEvent &>(event);
         editor_.cancel();
         select(id);
-        QMenu menu(&map);
-        menu.setObjectName(QStringLiteral("markerContextMenu"));
-        auto *edit = menu.addAction(uiIcon(UiIcon::Edit), tr("Edit"));
+        Modal<QMenu> menu(&map);
+        menu->setObjectName(QStringLiteral("markerContextMenu"));
+        auto *edit = menu->addAction(uiIcon(UiIcon::Edit), tr("Edit"));
         edit->setObjectName(QStringLiteral("editMarker"));
-        auto *move = menu.addAction(uiIcon(UiIcon::Move), tr("Move"));
+        auto *move = menu->addAction(uiIcon(UiIcon::Move), tr("Move"));
         move->setObjectName(QStringLiteral("moveMarker"));
-        auto *remove = menu.addAction(uiIcon(UiIcon::Delete), tr("Delete ..."));
+        auto *remove = menu->addAction(uiIcon(UiIcon::Delete), tr("Delete ..."));
         remove->setObjectName(QStringLiteral("deleteMarker"));
         edit->setProperty("menuOrder", -2);
         remove->setProperty("menuOrder", -1);
-        sortMenuActions(menu);
+        sortMenuActions(*menu);
         connect(edit, &QAction::triggered, this, [this, id] {
             const auto currentObject = objects_.find(id);
             if (currentObject) {
@@ -393,9 +394,9 @@ public:
             deleteObject(objects_, id, &editor_);
         });
         if (tools_) {
-            tools_->populateContextMenu(item, menu);
+            tools_->populateContextMenu(item, *menu);
         }
-        menu.exec(context.globalPos());
+        menu->exec(context.globalPos());
         return true;
     }
     QList<MapItem> itemsAt(const Viewport &view, QPointF pointer) const override

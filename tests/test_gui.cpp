@@ -21,6 +21,7 @@
 #include "core/marker_collections.h"
 #include "core/measure.h"
 #include "core/menu_order.h"
+#include "core/modal.h"
 #include "core/object_editor.h"
 #include "core/polygon.h"
 #include "core/projection.h"
@@ -2713,7 +2714,11 @@ private slots:
         QVERIFY(at(current.x(), 40) != at(current.x() + 10, 40));
         QCOMPARE(at(stale.x(), 40), at(stale.x() + 10, 40));
         QTest::keyClick(map, Qt::Key_Escape);
-        QTest::qWait(80);
+        // Sanitizer builds can deliver the Escape paint after 80 ms. Wait until paints stop.
+        for (int previous = -1, i = 0; i < 25 && overlayPaints.count != previous; ++i) {
+            previous = overlayPaints.count;
+            QTest::qWait(80);
+        }
         overlayPaints.count = 0;
         QTest::qWait(80);
         QCOMPARE(overlayPaints.count, 0);
@@ -3234,6 +3239,53 @@ private slots:
             QTest::keyClick(dialog, Qt::Key_Return);
         });
         QVERIFY(swak::confirmDeletion(&parent, QStringLiteral("Area")));
+    }
+    void modalParentDestroyed()
+    {
+        // Each case deletes the parent inside the nested loop. A stack dialog got a second delete.
+        auto *owner = new QWidget;
+        owner->show();
+        swak::Modal<QDialog> dialog(owner);
+        QTimer::singleShot(0, owner, [owner] {
+            delete owner;
+        });
+        QCOMPARE(dialog->exec(), int(QDialog::Rejected));
+        QVERIFY(!dialog);
+
+        auto *menuOwner = new QWidget;
+        menuOwner->show();
+        swak::Modal<QMenu> menu(menuOwner);
+        menu->addAction(QStringLiteral("Item"));
+        QTimer::singleShot(0, menuOwner, [menuOwner] {
+            delete menuOwner;
+        });
+        QVERIFY(!menu->exec(QPoint(10, 10)));
+        QVERIFY(!menu);
+
+        QWidget top;
+        auto *pane = new QWidget(&top);
+        top.show();
+        QTimer::singleShot(0, &top, [pane] {
+            auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
+            delete pane;
+            QVERIFY(box);
+            QTest::keyClick(box, Qt::Key_Return);
+        });
+        QVERIFY(!swak::confirmDeletion(pane, QStringLiteral("Area")));
+
+        QTemporaryDir directory;
+        QPointer<swak::Window> window = new swak::Window(
+            directory.filePath(QStringLiteral("modal.json")), QPluginLoader::staticInstances());
+        window->show();
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        auto *settings = window->findChild<QAction *>(QStringLiteral("settingsAction"));
+        QVERIFY(settings);
+        QTimer::singleShot(0, window, [window] {
+            QVERIFY(qobject_cast<swak::SettingsDialog *>(QApplication::activeModalWidget()));
+            delete window.data();
+        });
+        settings->trigger();
+        QVERIFY(!window);
     }
     void navigationLock()
     {
