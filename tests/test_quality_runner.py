@@ -43,10 +43,17 @@ class RunnerTest(unittest.TestCase):
         self.assertIn("detect_leaks=1", soak)
         self.assertIn("halt_on_error=1", soak)
 
+    def test_soak_warmup_scales_with_duration(self):
+        self.assertEqual(quality.soak_warmup(1), 2)
+        self.assertEqual(quality.soak_warmup(5), 2)
+        self.assertEqual(quality.soak_warmup(600), 60)
+        self.assertEqual(quality.soak_warmup(7200), 300)
+        self.assertEqual(quality.soak_warmup(86400), 300)
+
     def test_soak_limits_exceed_qt_default(self):
         for seconds in (1, 7200, 86400):
             external, qt_limit = quality.soak_limits(seconds)
-            self.assertGreater(external, seconds)
+            self.assertGreater(external, seconds + quality.soak_warmup(seconds))
             self.assertGreater(qt_limit, external * 1000)
             self.assertGreaterEqual(qt_limit, 300000)
 

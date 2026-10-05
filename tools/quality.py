@@ -111,9 +111,15 @@ def asan_options(mode):
     return options + (":malloc_context_size=0" if mode == "soak" else "")
 
 
+def soak_warmup(seconds):
+    """Return the warmup in seconds before the soak test records its memory baseline."""
+    # GUI caches fill for about one minute under sanitizers. Long runs wait longer.
+    return min(max(seconds // 10, 2), 300)
+
+
 def soak_limits(seconds):
     """Return the external limit in seconds and the Qt Test limit in milliseconds."""
-    external = seconds + 60
+    external = seconds + soak_warmup(seconds) + 60
     # Qt Test stops a test function after 300 seconds by default. Keep its limit longer
     # than the external limit, so that the external watchdog stops a stalled run.
     return external, max(300000, (external + 60) * 1000)
@@ -169,6 +175,7 @@ def main():
     env["LSAN_OPTIONS"] = "exitcode=23"
     env["SWAK_SOAK_SECONDS"] = str(args.seconds if args.mode == "soak" else 5)
     env.pop("SWAK_SOAK_GUI", None)
+    env.pop("SWAK_SOAK_WARMUP", None)
     preset = (
         "coverage" if args.mode == "coverage" else "debug" if args.mode == "analyze" else "sanitize"
     )
@@ -284,6 +291,7 @@ def main():
                         "-s",
                         "-screen 0 1600x1200x24 -nolisten tcp",
                     ] + command
+                env["SWAK_SOAK_WARMUP"] = str(soak_warmup(args.seconds))
                 limit, qt_limit = soak_limits(args.seconds)
                 env["QTEST_FUNCTION_TIMEOUT"] = str(qt_limit)
                 run(command, report / "soak.log", limit, env, report)

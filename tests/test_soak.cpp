@@ -59,6 +59,12 @@ private slots:
         const int seconds = secondsText.isEmpty() ? 5 : secondsText.toInt(&ok);
         QVERIFY2(secondsText.isEmpty() || (ok && seconds >= 1 && seconds <= 86400),
                  "SWAK_SOAK_SECONDS must be between 1 and 86400.");
+        // Graphics, font, and allocator caches fill during the first minutes of a GUI run.
+        // The runner sets a longer warmup for long runs. Memory checks start after it.
+        const auto warmupText = qgetenv("SWAK_SOAK_WARMUP");
+        const int warmup = warmupText.isEmpty() ? 2 : warmupText.toInt(&ok);
+        QVERIFY2(warmupText.isEmpty() || (ok && warmup >= 1 && warmup <= 600),
+                 "SWAK_SOAK_WARMUP must be between 1 and 600.");
         DataProvider *dataProvider = nullptr;
         VectorTileProvider *vectorProvider = nullptr;
         Codec *codec = nullptr;
@@ -183,7 +189,7 @@ private slots:
         int baselineFiles = 0;
         int cycles = 0;
         quint32 random = 0x5357414b;
-        while (elapsed.elapsed() < (static_cast<qint64>(seconds) + 2) * 1000) {
+        while (elapsed.elapsed() < (static_cast<qint64>(seconds) + warmup) * 1000) {
             std::atomic_bool cancelled = false;
             QVERIFY(vectorProvider);
             const auto vector = vectorProvider->decodeTile(vector_fixture::sample(), cancelled);
@@ -296,7 +302,7 @@ private slots:
             ++cycles;
             const qint64 resident = residentBytes();
             QVERIFY(resident > 0);
-            if (elapsed.elapsed() >= 2000) {
+            if (elapsed.elapsed() >= static_cast<qint64>(warmup) * 1000) {
                 if (baseline < 0) {
                     baseline = resident;
                     baselineFiles = descriptors();

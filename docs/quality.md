@@ -32,15 +32,15 @@ python3 tools/quality.py gui
 
 # Long sessions
 
-A soak test repeats work in one process for a set duration. Run this mode for at least two hours before a release. The command below adds a short warmup and idle phase to the requested duration. The external watchdog allows another 60 seconds before it stops a stalled process. Qt Test stops a test function after 300 seconds by default. The runner sets QTEST_FUNCTION_TIMEOUT above the external limit, so the external watchdog stops a stalled soak run.
+A soak test repeats work in one process for a set duration. Run this mode for at least two hours before a release. The command below adds a warmup and an idle phase to the requested duration. The warmup is one tenth of the duration, from 2 to 300 seconds. The external watchdog allows another 60 seconds after the duration and warmup before it stops a stalled process. Qt Test stops a test function after 300 seconds by default. The runner sets QTEST_FUNCTION_TIMEOUT above the external limit, so the external watchdog stops a stalled soak run.
 
 ```sh
 python3 tools/quality.py soak --seconds 7200
 ```
 
-The workload fills the event store to its limit, then exercises bounded parsing mutations, UDP bursts, event expiry, widget destruction, and preference writes. It uses temporary profiles and local sockets. It tests these resource limits after a two-second warmup:
+The workload fills the event store to its limit, then exercises bounded parsing mutations, UDP bursts, event expiry, widget destruction, and preference writes. It uses temporary profiles and local sockets. It tests these resource limits after the warmup:
 
-- Resident memory growth stays below 64 MiB from the warmup baseline.
+- Resident memory growth stays below 64 MiB from the warmup baseline. Graphics, font, and allocator caches fill during about the first minute of a GUI run. A two-second warmup counted that plateau as growth.
 - Open file descriptors grow by no more than eight.
 - The event loop responds within two seconds.
 - The idle process consumes less than half of one CPU core over one second.

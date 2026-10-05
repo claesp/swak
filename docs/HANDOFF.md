@@ -1455,3 +1455,12 @@ The second run failed after 51 minutes in build/quality/20261005-130649-soak-180
 - The sanitizer build with malloc_context_size=0 grew 0.6 MB over five minutes.
 
 AddressSanitizer keeps each unique allocation stack. The random parser mutations reach new stacks for hours. The application memory stays flat. The soak mode now sets malloc_context_size=0. It still detects memory faults and leaks, but reports omit allocation stacks. Quick, GUI, and coverage modes keep full stacks.
+
+The headless two-hour soak then passed in build/quality/20261005-143630-soak-186637. It ran 115759 cycles. Peak memory growth was 16912384 bytes. The maximum heartbeat gap was 137 ms. Idle CPU time was 0.013 seconds.
+
+The two-hour GUI soak failed after 35 minutes in build/quality/20261005-163739-soak-197056. Memory again grew by 64 MiB after the two-second warmup. Samples every 60 seconds showed a plateau, not a leak:
+
+- The debug GUI build rose from 229 MB to 282 MB in three minutes. It then grew 0.3 MB in 17 minutes.
+- The sanitizer GUI build stayed between 464 MB and 477 MB from the first minute to 25 minutes. It had no upward trend.
+
+Graphics, font, and allocator caches fill during the first minute. The two-second baseline counted that plateau as growth. The runner now passes SWAK_SOAK_WARMUP. The warmup is one tenth of the duration, from 2 to 300 seconds. The external limit includes the warmup. Quick runs keep the two-second warmup and pass in build/quality/20261005-180217-quick-202754. The 64 MiB limit is unchanged.
