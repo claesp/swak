@@ -81,6 +81,7 @@ public:
     bool dismiss();
     bool deleteSelection();
 signals:
+    void centerRequested(QPointF world);
     void activationRequested(swak::MapTool *tool);
     void changed();
     void itemsChanged();

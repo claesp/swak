@@ -126,6 +126,8 @@ add_library(
     src/core/settings.h
     src/core/cot_picker.cpp
     src/core/cot_picker.h
+    src/core/routing.cpp
+    src/core/routing.h
     src/core/maps.cpp
     src/core/maps.h
     src/core/tiles.cpp
@@ -163,6 +165,9 @@ swak_plugin(swak_basemap src/plugins/basemap.cpp)
 swak_plugin(swak_trace src/plugins/trace.cpp)
 swak_plugin(swak_predict src/plugins/predict.cpp)
 swak_plugin(swak_shapes src/plugins/shapes.cpp)
+swak_plugin(swak_valhalla src/plugins/valhalla.cpp)
+swak_plugin(swak_route_planner src/plugins/route_planner.cpp)
+swak_plugin(swak_objects src/plugins/objects.cpp)
 swak_plugin(swak_tracks src/plugins/tracks.cpp)
 swak_plugin(swak_servers src/plugins/servers.cpp Qt6::Network)
 swak_plugin(swak_editor src/plugins/editor.cpp)
@@ -197,6 +202,9 @@ target_link_libraries(
             swak_cot
             swak_map
             swak_basemap
+            swak_valhalla
+            swak_route_planner
+            swak_objects
             swak_tracks
             swak_servers
             swak_editor
@@ -214,6 +222,7 @@ install(FILES third_party/protozero/LICENSE.md third_party/protozero/LICENSE.fro
 )
 install(
     FILES docs/GeographicLib-copyright.txt
+          docs/routing.md
           docs/servers.md
           docs/usage.md
           docs/map-providers.md
@@ -266,6 +275,9 @@ if(BUILD_TESTING)
                 swak_cot
                 swak_map
                 swak_basemap
+                swak_valhalla
+                swak_route_planner
+                swak_objects
                 swak_tracks
                 swak_servers
                 swak_editor
@@ -292,6 +304,9 @@ if(BUILD_TESTING)
                 swak_cot
                 swak_map
                 swak_basemap
+                swak_valhalla
+                swak_route_planner
+                swak_objects
                 swak_tracks
                 swak_servers
                 swak_editor
@@ -344,6 +359,9 @@ if(BUILD_TESTING)
                 swak_cot
                 swak_map
                 swak_basemap
+                swak_valhalla
+                swak_route_planner
+                swak_objects
                 swak_tracks
                 swak_servers
                 swak_editor
@@ -389,6 +407,9 @@ if(BUILD_TESTING)
                 swak_cot
                 swak_map
                 swak_basemap
+                swak_valhalla
+                swak_route_planner
+                swak_objects
                 swak_tracks
                 swak_servers
                 swak_editor

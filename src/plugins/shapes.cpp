@@ -111,6 +111,7 @@ public:
         for (int i = 0; i < 3; ++i) {
             values.insert(names[i], QKeySequence(keys[i]).toString(QKeySequence::PortableText));
         }
+        values.insert(QStringLiteral("shapeShortcutVersion"), 1);
         values.insert(QStringLiteral("holdSeconds"), holdSeconds);
         values.insert(QStringLiteral("fadeMs"), fadeMs);
         values.insert(QStringLiteral("lineWidth"), width);
@@ -128,12 +129,14 @@ public:
             }
             const auto sequence =
                 QKeySequence::fromString(values.value(name).toString(), QKeySequence::PortableText);
-            if (sequence.count() != 1 || sequence[0].keyboardModifiers() != Qt::NoModifier ||
+            if (sequence.count() != 1 ||
+                (sequence[0].keyboardModifiers() != Qt::NoModifier &&
+                 sequence[0].keyboardModifiers() != Qt::ShiftModifier) ||
                 sequence[0].key() < Qt::Key_A || sequence[0].key() > Qt::Key_Z ||
-                used.contains(sequence[0].key())) {
-                return tr("Use different letters without modifiers.");
+                used.contains(sequence[0].toCombined())) {
+                return tr("Use different letters, with optional Shift.");
             }
-            used.insert(sequence[0].key());
+            used.insert(sequence[0].toCombined());
         }
         return {};
     }
@@ -143,6 +146,18 @@ public:
         for (auto it = values.begin(); it != values.end(); ++it) {
             merged.insert(it.key(), it.value());
         }
+        if (values.value(QStringLiteral("shapeShortcutVersion")).toInt() < 1) {
+            const QStringList names{QStringLiteral("circleKey"),
+                                    QStringLiteral("distanceKey"),
+                                    QStringLiteral("lineKey")};
+            const QStringList defaults{
+                QStringLiteral("C"), QStringLiteral("D"), QStringLiteral("L")};
+            for (int i = 0; i < names.size(); ++i) {
+                if (merged.value(names[i]).toString() == defaults[i]) {
+                    merged.insert(names[i], QStringLiteral("Shift+") + defaults[i]);
+                }
+            }
+        }
         if (validateSettings(merged).isEmpty()) {
             const QStringList names{QStringLiteral("circleKey"),
                                     QStringLiteral("distanceKey"),
@@ -150,7 +165,7 @@ public:
             for (int i = 0; i < 3; ++i) {
                 keys[i] = QKeySequence::fromString(merged.value(names[i]).toString(),
                                                    QKeySequence::PortableText)[0]
-                              .key();
+                              .toCombined();
             }
         }
         holdSeconds = preferenceInteger(values, QStringLiteral("holdSeconds"), 10, 1, 60);
@@ -161,7 +176,9 @@ public:
         emit configurationChanged();
     }
     const bool circles;
-    std::array<int, 3> keys{Qt::Key_C, Qt::Key_D, Qt::Key_L};
+    std::array<int, 3> keys{QKeyCombination(Qt::ShiftModifier, Qt::Key_C).toCombined(),
+                            QKeyCombination(Qt::ShiftModifier, Qt::Key_D).toCombined(),
+                            QKeyCombination(Qt::ShiftModifier, Qt::Key_L).toCombined()};
     int holdSeconds = 10, fadeMs = 1000;
     double width = 2, radius = 3;
 };
@@ -301,16 +318,17 @@ public:
         map_ = &map;
         if (event.type() == QEvent::KeyPress) {
             auto &key = static_cast<QKeyEvent &>(event);
-            if (key.modifiers() != Qt::NoModifier) {
-                return false;
-            }
             for (size_t i = 0; i < 3; ++i) {
-                if ((editor_.circles == (i == 0)) && key.key() == editor_.keys[i]) {
+                if ((editor_.circles == (i == 0)) &&
+                    key.keyCombination().toCombined() == editor_.keys[i]) {
                     if (!key.isAutoRepeat()) {
                         request(static_cast<ShapeMode>(i));
                     }
                     return true;
                 }
+            }
+            if (key.modifiers() != Qt::NoModifier) {
+                return false;
             }
             if (key.key() == Qt::Key_Escape) {
                 return dismiss();

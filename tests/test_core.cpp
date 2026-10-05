@@ -12,6 +12,7 @@
 #include "core/polygon.h"
 #include "core/prediction.h"
 #include "core/projection.h"
+#include "core/routing.h"
 #include "core/servers.h"
 #include "core/store.h"
 #include "core/user_objects.h"
@@ -30,6 +31,8 @@
 #include <QSignalSpy>
 #include <QSpinBox>
 #include <QSurfaceFormat>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QUdpSocket>
@@ -73,6 +76,118 @@ private:
         return event;
     }
 private slots:
+    void routingFormatAndRequests()
+    {
+        RouteSources sources(QPluginLoader::staticInstances(), nullptr);
+        auto *provider = sources.provider(QJsonObject{{"format", "org.swak.valhalla"}});
+        QVERIFY(provider);
+        for (const auto &mode : QStringList{"driving", "walking", "running", "cycling"}) {
+            const auto payload = provider->request({18, 59}, {18.1, 59.1}, mode, 12);
+            QCOMPARE(payload.value("shape_format").toString(), QStringLiteral("geojson"));
+            const auto costing = payload.value("costing").toString();
+            QVERIFY(payload.value("costing_options")
+                        .toObject()
+                        .value(costing)
+                        .toObject()
+                        .value("shortest")
+                        .toBool());
+            if (mode == QStringLiteral("running")) {
+                QCOMPARE(payload.value("costing_options")
+                             .toObject()
+                             .value(costing)
+                             .toObject()
+                             .value("walking_speed")
+                             .toDouble(),
+                         12.0);
+            }
+        }
+        const QByteArray valid =
+            R"({"code":"Ok","routes":[{"distance":123,"duration":45,"geometry":{"type":"LineString","coordinates":[[18,59],[18.1,59.1]]}}]})";
+        QVERIFY(provider->decode(valid).error.isEmpty());
+        QCOMPARE(provider->decode(valid).coordinates.size(), 2);
+        for (const auto &body :
+             QList<QByteArray>{"{",
+                               "{}",
+                               "[]",
+                               R"({"code":"NoRoute"})",
+                               QByteArray(valid).replace("18.1", "999"),
+                               QByteArray(valid).replace("123", "-1"),
+                               QByteArray(valid).replace("LineString", "Polygon"),
+                               QByteArray(valid).replace("[18,59]", "[null,59]"),
+                               QByteArray(4 * 1024 * 1024 + 1, 'x')}) {
+            QVERIFY(!provider->decode(body).error.isEmpty());
+        }
+        auto source = sources.sources().value("fossgis").toObject();
+        source.insert("endpoint", "http://example.com/route");
+        QVERIFY(!RouteSources::validate(source).isEmpty());
+        source.insert("endpoint", "https://user:secret@example.com/route");
+        QVERIFY(!RouteSources::validate(source).isEmpty());
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        QByteArray response = valid;
+        QByteArray status = "200 OK";
+        QByteArray received;
+        bool hold = false;
+        connect(&server, &QTcpServer::newConnection, &server, [&] {
+            auto *socket = server.nextPendingConnection();
+            connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+            connect(socket, &QTcpSocket::readyRead, socket, [&, socket] {
+                received += socket->readAll();
+                if (!received.contains("\r\n\r\n") || hold) {
+                    return;
+                }
+                socket->write("HTTP/1.1 " + status +
+                              "\r\nContent-Length: " + QByteArray::number(response.size()) +
+                              "\r\nConnection: close\r\n\r\n" + response);
+                socket->disconnectFromHost();
+            });
+        });
+        source.insert("endpoint",
+                      QStringLiteral("http://127.0.0.1:%1/route").arg(server.serverPort()));
+        for (int test = 0; test < 5; ++test) {
+            RouteSources client(QPluginLoader::staticInstances(), nullptr);
+            QVERIFY(client.put("local", source).isEmpty());
+            client.select("local");
+            QSignalSpy complete(&client, &RouteSources::completed);
+            received.clear();
+            response = test == 1   ? QByteArray("invalid")
+                       : test == 2 ? QByteArray(4 * 1024 * 1024 + 1, 'x')
+                                   : valid;
+            status = test == 3 ? QByteArray("302 Found") : QByteArray("200 OK");
+            hold = test == 4;
+            client.calculate({18, 59}, {18.1, 59.1}, "driving", 10);
+            if (hold) {
+                QVERIFY(QTest::qWaitFor(
+                    [&] {
+                        return !received.isEmpty();
+                    },
+                    5000));
+                client.cancel();
+                QVERIFY(!client.busy());
+                QCOMPARE(complete.count(), 0);
+            } else {
+                QVERIFY(QTest::qWaitFor(
+                    [&] {
+                        return complete.count() == 1;
+                    },
+                    5000));
+                QCOMPARE(client.result().error.isEmpty(), test == 0);
+                QVERIFY(!client.busy());
+            }
+        }
+        QSignalSpy complete(&sources, &RouteSources::completed);
+        sources.calculate({18, 59}, {18, 59}, "walking", 10);
+        QCOMPARE(complete.count(), 1);
+        QVERIFY(!sources.result().error.isEmpty());
+        source.insert("format", "missing-plugin");
+        sources.restorePreferences(
+            {{"sources", QJsonObject{{"missing", source}}}, {"active", "missing"}});
+        QVERIFY(sources.sources().contains("missing"));
+        QVERIFY(!sources.provider(source));
+        sources.calculate({18, 59}, {18.1, 59.1}, "walking", 10);
+        QCOMPARE(complete.count(), 2);
+    }
+
     void graphicsConfiguration()
     {
         const bool set = qEnvironmentVariableIsSet("QT_XCB_GL_INTEGRATION");
@@ -1211,7 +1326,7 @@ private slots:
 
     void pluginManifests()
     {
-        QCOMPARE(builtInPlugins().size(), 19);
+        QCOMPARE(builtInPlugins().size(), 22);
         for (const auto &entry : QPluginLoader::staticPlugins()) {
             if (entry.metaData().value(QStringLiteral("IID")).toString() !=
                 QStringLiteral("org.swak.Plugin/2.0")) {

@@ -70,10 +70,10 @@ const std::array<QString, 15> KeyPaths{QStringLiteral("panNorthKey"),
                                        QStringLiteral("stepNorthKey"),
                                        QStringLiteral("stepSouthKey"),
                                        QStringLiteral("pauseMarkersKey")};
-const std::array<int, 15> DefaultKeys{Qt::Key_Up,
-                                      Qt::Key_Left,
-                                      Qt::Key_Down,
-                                      Qt::Key_Right,
+const std::array<int, 15> DefaultKeys{Qt::Key_W,
+                                      Qt::Key_A,
+                                      Qt::Key_S,
+                                      Qt::Key_D,
                                       Qt::Key_Q,
                                       Qt::Key_E,
                                       Qt::Key_Home,
@@ -219,7 +219,8 @@ public:
                 update();
                 return;
             }
-            if (selection_ && selectedSource_ == QStringLiteral("cot") && selection_->item()) {
+            if (selection_ && selection_->item() &&
+                selection_->item()->owner == QStringLiteral("org.swak.events")) {
                 auto item = *selection_->item();
                 const auto &events = store_.events();
                 const auto found =
@@ -269,7 +270,13 @@ public:
     {
         selection_ = selection;
         if (selection_) {
-            connect(selection_, &MapSelection::changed, this, qOverload<>(&QWidget::update));
+            connect(selection_, &MapSelection::changed, this, [this] {
+                if (selection_->item() &&
+                    selection_->item()->owner == QStringLiteral("org.swak.events")) {
+                    selectedSource_ = QStringLiteral("cot");
+                }
+                update();
+            });
         }
     }
     void setDataSources(DataSources *sources)
@@ -309,6 +316,15 @@ public:
     {
         tools_ = tools;
         if (tools_) {
+            connect(tools_, &MapTools::centerRequested, this, [this](QPointF world) {
+                if (!std::isfinite(world.x()) || !std::isfinite(world.y())) {
+                    return;
+                }
+                stopPanning();
+                view_.center = world;
+                clampCenter();
+                update();
+            });
             connect(tools_, &MapTools::activationRequested, this, [this](MapTool *tool) {
                 tools_->cancel();
                 tool->activate(*this);
@@ -467,7 +483,7 @@ public:
             {QStringLiteral("wheelReverse"), wheelReverse_},
             {QStringLiteral("wheelSteps"), wheelSteps_},
             {QStringLiteral("prefetchMargin"), prefetchMargin_}};
-        values.insert(QStringLiteral("navigationKeysVersion"), 2);
+        values.insert(QStringLiteral("navigationKeysVersion"), 3);
         values.insert(QStringLiteral("scaleLegend"), scaleLegend_->isChecked());
         values.insert(QStringLiteral("zoomIndicator"), zoomIndicator_->isChecked());
         for (size_t i = 0; i < KeyPaths.size(); ++i) {
@@ -621,7 +637,8 @@ protected:
             tools_->paint(painter, view_);
         }
         if (selection_) {
-            if (selectedSource_ == QStringLiteral("cot") && selection_->item()) {
+            if (selection_->item() &&
+                selection_->item()->owner == QStringLiteral("org.swak.events")) {
                 const auto visuals = store_.motion().snapshot();
                 const auto found =
                     std::find_if(visuals.cbegin(), visuals.cend(), [this](const auto &visual) {
@@ -903,25 +920,7 @@ protected:
                  !labelHit)) {
                 continue;
             }
-            MapItem item;
-            item.owner = QStringLiteral("org.swak.events");
-            item.label = message.callsign.isEmpty() ? message.uid : message.callsign;
-            item.type = message.type;
-            item.point = project(message.latitude, message.longitude);
-            item.color = Qt::white;
-            item.symbol = markerSymbolForCot(message.type);
-            item.properties = {
-                {QStringLiteral("UID"), message.uid},
-                {QStringLiteral("How"), message.how},
-                {QStringLiteral("Latitude"), message.latitude},
-                {QStringLiteral("Longitude"), message.longitude},
-                {QStringLiteral("Altitude"), message.altitude},
-                {QStringLiteral("Circular error"), message.circularError},
-                {QStringLiteral("Linear error"), message.linearError},
-                {QStringLiteral("Time"), message.time.toString(Qt::ISODateWithMs)},
-                {QStringLiteral("Start"), message.start.toString(Qt::ISODateWithMs)},
-                {QStringLiteral("Stale"), message.stale.toString(Qt::ISODateWithMs)}};
-            item.id = message.uid;
+            auto item = cotMapItem(message);
             addKinematics(item, visual.kinematics);
             hits.append({std::move(item), QStringLiteral("cot")});
         }
@@ -1240,6 +1239,17 @@ private:
                 if (values.value(KeyPaths[i + 10]).toString() ==
                     QKeySequence(oldStep[i]).toString(QKeySequence::PortableText)) {
                     values.insert(KeyPaths[i + 10], QString{});
+                }
+            }
+        }
+        if (values.value(QStringLiteral("navigationKeysVersion")).toInt() < 3) {
+            const std::array<int, 4> oldPan{Qt::Key_Up, Qt::Key_Left, Qt::Key_Down, Qt::Key_Right};
+            for (size_t i = 0; i < oldPan.size(); ++i) {
+                if (values.value(KeyPaths[i]).toString() ==
+                    QKeySequence(oldPan[i]).toString(QKeySequence::PortableText)) {
+                    values.insert(
+                        KeyPaths[i],
+                        QKeySequence(DefaultKeys[i]).toString(QKeySequence::PortableText));
                 }
             }
         }

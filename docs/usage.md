@@ -28,7 +28,7 @@ The sender identity supplies the default event type, initially `a-f-G-U`. CoT ma
 
 Select a table row or map marker to focus that event. The XML preview then shows that event. Selection changes the preview but keeps the editor fields unchanged.
 
-Drag the map with the left mouse button to move it. Double-click with the left button to center that point without changing zoom. Use the wheel to zoom around the pointer. With map focus, hold the arrow keys to pan in their direction. Diagonal movement keeps the same speed. Release the keys to stop. Losing focus also stops movement. Q and E zoom in and out. Plus and minus also change zoom, and Home resets the view.
+Drag the map with the left mouse button to move it. Double-click with the left button to center that point without changing zoom. Use the wheel to zoom around the pointer. With map focus, hold W, A, S, and D to pan north, west, south, and east. Diagonal movement keeps the same speed. Release the keys to stop. Losing focus also stops movement. Q and E zoom in and out. Plus and minus also change zoom, and Home resets the view.
 
 The map uses Web Mercator, a rectangular map projection. It clips positions near the poles to approximately 85.05 degrees. The event table retains the original coordinates, including polar positions.
 
@@ -250,7 +250,7 @@ Tools > Plugins > Marker activates marker placement. Click the map to open the m
 
 # Create and edit polygons
 
-Press A while the map has focus, or select Area on the toolbar or under Tools > Plugins. The crosshair and black guide lines follow the pointer. Click to place each blue corner. After two corners, the preview fills the area through the current pointer position with 30 percent blue.
+Press Shift+A while the map has focus, or select Area on the toolbar or under Tools > Plugins. The crosshair and black guide lines follow the pointer. Click to place each blue corner. After two corners, the preview fills the area through the current pointer position with 30 percent blue.
 
 Click the first corner after placing at least three corners to close the polygon. Enter closes the placed outline. With exactly two placed corners, Enter adds the current pointer position as the third corner. A polygon needs three distinct corners and a nonzero area. Crossing or overlapping edges prevent completion. Each polygon supports at most 64 corners.
 
@@ -275,7 +275,7 @@ For object commands, right-click the overlap and choose an object first. Its con
 
 The main toolbar uses icons and separators. Hover over a button to read its command and shortcut. Marker and Area buttons show their active state. Click an active mode button again to stop it. The globe button opens the map provider list. Its tooltip names the current provider. Clear CoT Messages remains in its plugin menu.
 
-Older profiles migrate the default W/A/S/D pan keys to arrow keys and the default P area key to A. Other custom keys remain unchanged. File > Settings > Keybindings can change these assignments. Saved geometry still uses the polygon type internally.
+Older profiles migrate default arrow pan keys to W/A/S/D. Area, Circle, Line, and Distance use Shift+A, Shift+C, Shift+L, and Shift+D. Older default tool keys migrate to these combinations. Other custom keys remain unchanged. Area, Circle, Line, and Distance accept letters with optional Shift. File > Settings > Keybindings can change these assignments. Saved geometry still uses the polygon type internally.
 
 
 # Servers, Identity, and CoT animation
@@ -316,9 +316,9 @@ Click an object label to select its object. Selected labels invert their foregro
 
 With the map focused, press C to start Circle. Click the center. Move the pointer to set the radius. The preview shows the current radius in local units. Click again to open the object editor. Enter the title, description, color, and properties. Select Apply to save the circle. Circle uses the fill opacity from File > Settings > Areas.
 
-Press D to start Distance. Click the first point. Move the pointer to read the distance. Click the second point to finish. The measurement stays for ten seconds, then fades for one second and disappears. Measurements are temporary and do not survive restart. The tool retains at most 64 measurements.
+Press Shift+D to start Distance. Click the first point. Move the pointer to read the distance. Click the second point to finish. The measurement stays for ten seconds, then fades for one second and disappears. Measurements are temporary and do not survive restart. The tool retains at most 64 measurements.
 
-Press L to start Line. Click each endpoint. Complete the object editor and select Apply. The saved line shows its title and distance. Information shows Distance for lines and Area for circles. Measurements use the operating-system locale and unit system. Distances use meters or feet and change to kilometers or miles at the corresponding threshold.
+Press Shift+L to start Line. Click each endpoint. Complete the object editor and select Apply. The saved line shows its title and distance. Information shows Distance for lines and Area for circles. Measurements use the operating-system locale and unit system. Distances use meters or feet and change to kilometers or miles at the corresponding threshold.
 
 Right-click a saved circle or line to select Edit, Move, or Delete. During editing, right-click a control point to move it. Both control points are required, so their Delete action stays disabled. Moving a circle center retains its radius. Moving its edge control changes its radius. Esc cancels a pending move. Delete and Backspace delete the selected saved object. Ctrl+Z restores a deleted object.
 
@@ -429,3 +429,10 @@ Each CoT object starts with its FOV cone off. FOV means field of view. Select FO
 Circles and Lines have separate General, Panes, and Keybindings entries in Settings. Lines also contains the temporary Distance configuration. Older combined configuration initializes both sections. Later changes remain independent. The Identity command remains under File and no longer appears in Settings.
 
 Help > Credits lists library and icon versions, licenses, attributions, and project URLs. Qt and libarchive report their runtime versions. GeographicLib reports its build version. The table also includes compression libraries reported by libarchive and the active Qt TLS backend. System graphics and desktop libraries depend on the Linux installation.
+
+
+# Objects and routes
+
+Tools > Plugins > Objects lists current CoT objects by title and type. The list includes objects outside the viewport. Repeated messages update the same UID row. Expired or cleared messages disappear. Double-click a row to center the map without selecting the object. Right-click a row to use Information, Trace, Predict, and FOV cone actions. Table column arrangement and sorting survive restart.
+
+Tools > Plugins > Route planning opens the routing preview. Read [Route planning](routing.md) for provider management, map picking, transport modes, and current limits.

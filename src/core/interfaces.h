@@ -22,6 +22,7 @@ class UserObjects;
 class MarkerCollections;
 class Identity;
 class Servers;
+class RouteSources;
 struct PluginServices
 {
     Store &store;
@@ -36,6 +37,7 @@ struct PluginServices
     Servers *servers = nullptr;
     QAction *navigationLock = nullptr;
     QList<QAction *> viewActions = {};
+    RouteSources *routes = nullptr;
 };
 class Plugin
 {

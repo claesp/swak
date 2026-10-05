@@ -1,6 +1,6 @@
 # Session handoff
 
-Latest implementation, October 5, 2026: Read “Clear commands, shape panes, and animation configuration” at the end of this file. Earlier sections are historical snapshots. Use Git for the current revision.
+Latest implementation, October 5, 2026: Read “Tool shortcuts, Objects, and route planning” at the end of this file. Earlier sections are historical snapshots. Use Git for the current revision.
 
 Previous implementation: [Review fixes, October 2](review-fixes-2026-10-02.md). This update addresses the findings in both October 2 reviews. It rebuilds the release and adds regression tests. The review records below describe the earlier state.
 
@@ -1360,3 +1360,30 @@ Final coverage uses build/quality/20261005-015857-coverage-119252. All ten headl
 Remaining paths include unavailable TLS backends, absent compression backends, some motion expiry boundaries, and discarded prediction restoration. Existing provider write-failure and application startup branches also remain. The 60-second workload does not qualify two-hour operation.
 
 The post-commit release rebuild uses build/ui-review/release-committed.log. The executable is build/release/swak. Its version includes the committed Git revision.
+
+
+# 2026-10-05: Tool shortcuts, Objects, and route planning
+
+The default movement keys are W/A/S/D. Area, Circle, Line, and Distance use Shift+A, Shift+C, Shift+L, and Shift+D. The tool editors accept letters with optional Shift. Navigation preferences use version 3. Area shortcuts use version 3. Shape shortcuts use version 1. Old defaults migrate once. Other custom keys remain unchanged. A current-version profile can explicitly retain arrow movement or unmodified tool keys.
+
+Objects is a separate PanePlugin. Its two-column proxy shows the current Store entries by title and type. It has no duplicate event storage. A double-click emits MapTools::centerRequested without changing object selection. Context actions use cotMapItem and the shared MapTools menu contributions. Information, Trace, Predict, and FOV cone remain available. Column layout and sorting use the shared preferences contract.
+
+Routing uses a new RouteProvider interface and RouteSources service. The Valhalla plugin implements request construction and bounded JSON response decoding. Route planning uses a PanePlugin, a MapExtension tool, and the shared SettingsWidgetProvider interface. Providers use the existing ProviderTable and SettingsDialog. Endpoints and appearance configuration persist. Requests and route results do not resume at startup. No runtime library was added.
+
+The first version supports driving, walking, running, and cycling. The plugin requests distance-based paths, with disabled hierarchy pruning for driving. Server limits prevent a general guarantee of global shortest paths. Map tiles remain independent of routing data. Research, source links, limits, and the offline plan are in docs/routing.md. That manual is included in installation.
+
+A public Valhalla request between sample Berlin points returned an OSRM-format GeoJSON LineString with 154 coordinates and a distance of 1836.974 meters. The response is in build/routing-review/valhalla-live.json. Automated tests use local servers. They exercise successful replies, malformed JSON, invalid geometry, oversized bodies, redirects, cancellation, absent providers, and invalid coordinates. Native tests cover point picking, route rendering, provider forms, object actions, and shortcut migration.
+
+The first complete native run exposed an old expected pane count and route form labels without minimum widths. Both issues were corrected. The final native sanitizer run passes 102 cases without reported leaks in build/quality/20261005-051018-gui-133003. Quick diagnostics pass all ten suites in build/quality/20261005-050329-quick-129886. Native screenshots include route-pane.png, route-providers.png, and route-preview.png in the GUI report directory.
+
+Final review also corrected Information updates for CoT objects opened from the Objects pane. The map now identifies CoT selections by their shared owner. Tests cover later label updates and removal. Source analysis prompted const-correctness and algorithm changes. Provider presets now belong to RouteProvider, including the Valhalla demo entry.
+
+Final native diagnostics pass 102 cases in build/quality/20261005-052414-gui-138278 without reported sanitizer faults or leaks. The final quick run passes ten suites in build/quality/20261005-051657-quick-135877. The 60-second native workload passes 883 cycles in build/quality/20261005-051114-soak-133809. Peak memory growth is 46637056 bytes. The maximum heartbeat gap is 84 milliseconds. Idle CPU time is 0.023 seconds.
+
+Coverage passes ten headless suites and 102 native cases in build/quality/20261005-052525-coverage-138738. It records 13527 of 14507 lines, 1329 of 1406 functions, 19874 of 37881 branches. Source analysis passes in build/quality/20261005-052730-analyze-139486. Style diagnostics pass in build/quality/20261005-052736-style-139549.
+
+The focused suite passes five cases at 200 percent scaling in build/routing-review/hidpi/gui.log. It covers object actions, route drawing and provider forms, shortcuts, and Settings. Native tests use Qt 6.8.2 with Xvfb and llvmpipe.
+
+Remaining new coverage gaps include the twenty-second deadline, request cooldown rejection, full provider capacity, some manager cancellation paths, and empty route arrays. TLS failures use Qt behavior but lack a routing-specific certificate fixture. Hardware graphics, native Wayland, and two-hour endurance remain unqualified. Existing coverage gaps and the earlier Qt dependency advisory still apply. This is a development release.
+
+The release rebuild after the commit uses build/routing-review/release-committed.log. The executable is build/release/swak. No application dependency was added. The research sample and generated test images remain in ignored build directories.

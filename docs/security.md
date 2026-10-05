@@ -146,3 +146,9 @@ The model resets after excessive speed, a large source jump, or a long gap. Thes
 Local LAN discovery compares the incoming interface index with the selected interface. Each TCP listener and outgoing peer socket binds to the selected local address. TLS and TCP server sockets also support explicit local binding. Binding failures do not fall back to another address. Source binding does not replace operating-system routing or firewall rules.
 
 CoT track details accept one track element per message. Course and speed accept bounded finite decimal values only. Duplicate track elements, malformed numbers, and values outside the supported ranges reject the message. Course ranges from 0 through 360 degrees. Speed ranges from 0 through 1000 meters per second. Motion estimates reject invalid coordinates, unsuitable time intervals, excessive speed, stale transitions, and configured teleport jumps. The calculation adds constant work per update and no separate history allocation.
+
+# Routing responses
+
+RouteSources accepts HTTPS provider endpoints without URL credentials, fragments, or query strings. Literal loopback HTTP endpoints support local routing services. It never follows redirects or disables certificate validation. The client sends coordinates only after Calculate. It permits one request, a twenty-second deadline, and a two-second request interval.
+
+Responses cannot exceed 4 MiB. The Valhalla parser accepts one GeoJSON LineString with at most 50000 points. It rejects invalid numbers, unsupported geometry, and out-of-range coordinates, distances, and times. Cancellation disconnects reply callbacks before aborting the socket. The parser and painter use bounded arrays. Route data remains untrusted and cannot initiate further requests.

@@ -15,6 +15,7 @@
 #include "core/map_tools.h"
 #include "core/menu_order.h"
 #include "core/provider_toolbar.h"
+#include "core/routing.h"
 #include "core/server_browser.h"
 #include "core/servers.h"
 #include "core/settings_dialog.h"
@@ -181,6 +182,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
                             collections,
                             identity,
                             servers};
+    services.routes = new RouteSources(plugins, this);
     auto *mainViews = new QTabWidget(this);
     mainViews->setObjectName(QStringLiteral("mainViews"));
     mainViews->setDocumentMode(true);

@@ -26,3 +26,7 @@ Q_IMPORT_PLUGIN(TracePlugin)
 Q_IMPORT_PLUGIN(ShapesPlugin)
 
 Q_IMPORT_PLUGIN(PredictPlugin)
+
+Q_IMPORT_PLUGIN(ObjectsPlugin)
+Q_IMPORT_PLUGIN(ValhallaProvider)
+Q_IMPORT_PLUGIN(RoutePlannerPlugin)

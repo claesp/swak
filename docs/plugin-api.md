@@ -1,6 +1,6 @@
 # Plugin API
 
-This review covers all nineteen built-in plugins. Every plugin implements `Plugin` and uses the shared contracts in `src/core/`. The common API version is 2. No plugin depends on a concrete application window class.
+This review covers all twenty-two built-in plugins. Every plugin implements `Plugin` and uses the shared contracts in `src/core/`. The common API version is 2. No plugin depends on a concrete application window class.
 
 The application links plugins into the executable. Qt embeds each `src/plugins/<plugin>/MANIFEST` file through `Q_PLUGIN_METADATA`. The common metadata identifier is `org.swak.Plugin/2.0`. The application does not load external plugin binaries or search plugin directories.
 
@@ -30,6 +30,7 @@ Plugins implement the feature interfaces that they need. Their manifests declare
 | `MapExtension` | `/1.0` | Supplies a stable map identifier, name, and Provider or Tool kind. |
 | `DataProvider` | `/1.0` | Supplies `dataId()`, `dataName()`, disabled `presets()`, and bounded `decode(bytes, cancelled)`. |
 | `VectorTileProvider` | `/1.0` | Supplies bounded vector decoding and known layer names. |
+| `RouteProvider` | `/1.0` | Supplies route identity, presets, request bodies, and bounded response decoding. |
 | `MapProvider` | `/1.0` | Supplies source defaults, fields, validation, and tile URLs. |
 | `PreferenceParticipant` | C++ interface, no Qt identifier | Saves and restores bounded JSON under a stable component identifier. |
 | `SettingsParticipant` | `/1.0` | Adds a title, editable fields, and optional validation to preferences. |
@@ -46,11 +47,14 @@ The host owns pane placement, visibility actions, and layout persistence. Plugin
 
 | Manifest directory | Name | Roles |
 | --- | --- | --- |
+| `src/plugins/objects` | Objects | Pane |
+| `src/plugins/route_planner` | Route planning | Pane and map tool |
+| `src/plugins/valhalla` | Valhalla | Route provider |
 | `src/plugins/kml` | KML and KMZ data | Data provider |
 | `src/plugins/cot` | Cursor-on-Target XML | Codec |
 | `src/plugins/basemap` | Map background | Map layer |
 | `src/plugins/map` | OpenGL map | View and toolbar |
-| `src/plugins/tracks` | CoT Messages | Map layer, tool, menu, and toolbar |
+| `src/plugins/tracks` | CoT Messages | Map layer, tool, and menu |
 | `src/plugins/editor` | CoT Event Generator | Tool |
 | `src/plugins/servers` | Servers | Source |
 | `src/plugins/activity` | Events | Pane and menu |
@@ -442,3 +446,14 @@ TrackMotion stores bounded headingConeTargets preferences for up to 4096 object 
 TrackMotion::configurationChanged reports a change to restored animation configuration. Predict uses this signal instead of copying preferences on every animation frame. TrackMotion::animationPreferences excludes object cone flags, so incoming predictions do not copy them.
 
 Predict caches the teleport threshold and endpoint animation configuration at construction and on that signal, including while no targets are active. Its incoming-event and painting paths do not fetch configuration. TrackMotion, Trace, map navigation, and shape measurement timers use typed fields populated by restorePreferences. The cone renderer reads the existing typed HeadingConeStyle cache rather than preference data.
+
+
+# Objects and routing
+
+Objects is a PanePlugin with a sorted proxy over Store. It shows one row per current CoT UID, including objects outside the viewport. Store expiry and removal update the table through model signals. The pane does not keep another event history. cotMapItem builds the shared CoT identity and properties for map and table actions.
+
+MapTools::centerRequested carries projected world coordinates. The map clamps the center and preserves zoom and selection. Explicit centering works while manual navigation is locked. Objects uses this signal for double-clicks. Its context menu uses the same MapTools contributions as the map, plus Information.
+
+RouteProvider/1.0 supplies routeId, routeName, presets, request, and decode. Its stable routeId matches its MANIFEST id. The manifest role is route-provider. RouteResult contains longitude/latitude pairs, meters, seconds, and an error. The host supplies RouteSources through PluginServices::routes. RouteSources owns provider configuration, bounded HTTPS requests, cancellation, and result notification. It retains unavailable provider entries.
+
+The Route planning plugin uses PanePlugin and MapExtension with the tool role. Its MapTool handles endpoint picking and route painting. Its SettingsWidgetProvider exposes provider management through the shared Settings host. Valhalla supplies the first route-provider format. Read routing.md for protocol bounds and routing limits.

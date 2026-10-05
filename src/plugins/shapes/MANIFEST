@@ -3,7 +3,7 @@
   "id": "org.swak.shapes",
   "name": "Circles",
   "description": "Create circles and lines and measure temporary distances.",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "apiVersion": 2,
   "entryPoint": "ShapesPlugin",
   "linkage": "static",

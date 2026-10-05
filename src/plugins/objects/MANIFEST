@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "org.swak.objects",
+  "name": "Objects",
+  "description": "Browse received CoT objects and their map actions.",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entryPoint": "ObjectsPlugin",
+  "linkage": "static",
+  "platforms": [
+    "linux"
+  ],
+  "qtMajor": 6,
+  "qtMinimum": "6.4.0",
+  "interfaces": [
+    "pane"
+  ],
+  "requires": [],
+  "permissions": [],
+  "settingsSchemaVersion": 1
+}

@@ -1,4 +1,5 @@
 #pragma once
+#include "core/event.h"
 #include "core/projection.h"
 
 #include <QColor>
@@ -43,6 +44,7 @@ struct MapItem
     QPainterPath markerOutline;
     Qt::PenStyle outlineStyle = Qt::DashLine;
 };
+MapItem cotMapItem(const Event &message);
 class MapSelection final : public QObject
 {
     Q_OBJECT

@@ -7,6 +7,29 @@
 #include <algorithm>
 #include <optional>
 namespace swak {
+MapItem cotMapItem(const Event &message)
+{
+    MapItem item;
+    item.owner = QStringLiteral("org.swak.events");
+    item.label = message.callsign.isEmpty() ? message.uid : message.callsign;
+    item.type = message.type;
+    item.point = project(message.latitude, message.longitude);
+    item.color = Qt::white;
+    item.symbol = markerSymbolForCot(message.type);
+    item.properties = {{QStringLiteral("UID"), message.uid},
+                       {QStringLiteral("How"), message.how},
+                       {QStringLiteral("Latitude"), message.latitude},
+                       {QStringLiteral("Longitude"), message.longitude},
+                       {QStringLiteral("Altitude"), message.altitude},
+                       {QStringLiteral("Circular error"), message.circularError},
+                       {QStringLiteral("Linear error"), message.linearError},
+                       {QStringLiteral("Time"), message.time.toString(Qt::ISODateWithMs)},
+                       {QStringLiteral("Start"), message.start.toString(Qt::ISODateWithMs)},
+                       {QStringLiteral("Stale"), message.stale.toString(Qt::ISODateWithMs)}};
+    item.id = message.uid;
+    return item;
+}
+
 void MapSelection::paint(QPainter &painter,
                          const Viewport &view,
                          std::optional<QPointF> point,

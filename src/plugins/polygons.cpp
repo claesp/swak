@@ -75,7 +75,7 @@ public:
         auto state = editorState();
         state.insert(QStringLiteral("createKey"),
                      QKeySequence(key_).toString(QKeySequence::PortableText));
-        state.insert(QStringLiteral("areaShortcutVersion"), 2);
+        state.insert(QStringLiteral("areaShortcutVersion"), 3);
         state.insert(QStringLiteral("vertexRadius"), radius);
         state.insert(QStringLiteral("lineWidth"), lineWidth);
         state.insert(QStringLiteral("fillOpacity"), fillOpacity);
@@ -85,13 +85,13 @@ public:
     QString validateSettings(const QJsonObject &values) const override
     {
         return readKey(values) ? QString{}
-                               : tr("Use one letter without modifiers to create a polygon.");
+                               : tr("Use one letter, with optional Shift, to create an area.");
     }
     void restorePreferences(const QJsonObject &values) override
     {
         key_ = readKey(values);
         if (!key_) {
-            key_ = Qt::Key_A;
+            key_ = QKeyCombination(Qt::ShiftModifier, Qt::Key_A).toCombined();
         }
         radius = preferenceNumber(values, QStringLiteral("vertexRadius"), 3, 1, 6);
         lineWidth = preferenceNumber(values, QStringLiteral("lineWidth"), 2, 1, 6);
@@ -109,20 +109,24 @@ public:
 private:
     static int readKey(const QJsonObject &values)
     {
-        auto text = preferenceText(values, QStringLiteral("createKey"), QStringLiteral("A"), 32);
+        auto text =
+            preferenceText(values, QStringLiteral("createKey"), QStringLiteral("Shift+A"), 32);
         if (values.value(QStringLiteral("areaShortcutVersion")).toInt() < 2 &&
             text == QStringLiteral("P")) {
             text = QStringLiteral("A");
         }
+        if (values.value(QStringLiteral("areaShortcutVersion")).toInt() < 3 &&
+            text == QStringLiteral("A")) {
+            text = QStringLiteral("Shift+A");
+        }
         const auto key = QKeySequence::fromString(text, QKeySequence::PortableText);
-        if (key.count() != 1 || key[0].keyboardModifiers() != Qt::NoModifier) {
+        if (key.count() != 1 || (key[0].keyboardModifiers() != Qt::NoModifier &&
+                                 key[0].keyboardModifiers() != Qt::ShiftModifier)) {
             return 0;
         }
-        return key[0].key() >= Qt::Key_A && key[0].key() <= Qt::Key_Z
-                   ? static_cast<int>(key[0].key())
-                   : 0;
+        return key[0].key() >= Qt::Key_A && key[0].key() <= Qt::Key_Z ? key[0].toCombined() : 0;
     }
-    int key_ = Qt::Key_A;
+    int key_ = QKeyCombination(Qt::ShiftModifier, Qt::Key_A).toCombined();
 };
 class PolygonTool final : public MapTool
 {
@@ -233,10 +237,7 @@ public:
         map_ = &map;
         if (event.type() == QEvent::KeyPress) {
             auto &key = static_cast<QKeyEvent &>(event);
-            if (key.modifiers() != Qt::NoModifier) {
-                return false;
-            }
-            if (key.key() == editor_.createKey()) {
+            if (key.keyCombination().toCombined() == editor_.createKey()) {
                 if (!key.isAutoRepeat()) {
                     if (interactionActive()) {
                         cancel();
@@ -245,6 +246,9 @@ public:
                     }
                 }
                 return true;
+            }
+            if (key.modifiers() != Qt::NoModifier) {
+                return false;
             }
             if (key.key() == Qt::Key_Escape) {
                 if (moving_ >= 0) {
