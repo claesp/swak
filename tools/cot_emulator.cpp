@@ -71,7 +71,7 @@ public:
                 std::fprintf(stderr,
                              "TCP client connected from [%s]:%u.\n",
                              qPrintable(socket->peerAddress().toString()),
-                             socket->peerPort());
+                             static_cast<unsigned>(socket->peerPort()));
                 connect(socket, &QTcpSocket::disconnected, this, [this, socket] {
                     clients_.remove(socket);
                     socket->deleteLater();
@@ -142,7 +142,7 @@ public:
                          "%s %s:%u\n",
                          udp ? "UDP destination" : "TCP listener",
                          qPrintable(address.toString()),
-                         port);
+                         static_cast<unsigned>(port));
         }
         if (!tak_ && !udp) {
             const auto clientAddress =
@@ -154,7 +154,7 @@ public:
                          "Waiting for SWAK. Select TCP CoT stream, host %s, port %u, and enable "
                          "the Active checkbox in Servers. This listener does not use TLS.\n",
                          qPrintable(clientAddress),
-                         port);
+                         static_cast<unsigned>(port));
             if (address.isLoopback()) {
                 std::fprintf(stderr,
                              "Only clients on this computer can connect. For remote clients, bind "
@@ -191,6 +191,12 @@ private:
             client->read(16384);
         }
         const double rate = static_cast<double>(scenario_.units.size()) * scenario_.frequency;
+        if (scenario_.units.isEmpty() || !std::isfinite(rate) || rate <= 0) {
+            // Stop instead of dividing by zero below.
+            timer_.stop();
+            app_.exit(1);
+            return;
+        }
         const auto due = static_cast<qint64>(std::floor(elapsed * rate));
         if (due - sequence_ >= 16) {
             skipped_ += due - sequence_ - 15;

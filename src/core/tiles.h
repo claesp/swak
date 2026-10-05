@@ -22,9 +22,9 @@ QImage decodeMapTile(const QByteArray &bytes);
 struct TilePlacement
 {
     QString key;
-    int z;
-    int x;
-    int y;
+    int z = 0;
+    int x = 0;
+    int y = 0;
     QRectF rectangle;
 };
 QList<TilePlacement> visibleTiles(const Viewport &view, int minimumZoom, int maximumZoom);
@@ -113,7 +113,7 @@ private:
     struct Failure
     {
         QDateTime retryAt;
-        int delay;
+        int delay = 0;
     };
     QCache<QString, Failure> failures_{256};
     QString status_;

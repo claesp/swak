@@ -57,7 +57,8 @@ bool MapTools::interact(const MapItem &item, QEvent &event, QWidget &map)
 }
 void MapTools::populateInformationMenu(const MapItem &item, QMenu &menu)
 {
-    for (const auto &tool : tools_) {
+    const auto snapshot = tools_;
+    for (const auto &tool : snapshot) {
         if (tool) {
             tool->populateInformationMenu(item, menu);
         }
@@ -96,7 +97,9 @@ void MapTools::paintOverlay(QPainter &painter, const Viewport &view, QPointF poi
 }
 bool MapTools::deleteSelection()
 {
-    return std::any_of(tools_.cbegin(), tools_.cend(), [](const auto &tool) {
+    // A tool can destroy itself or another tool here. Iterate over a copy.
+    const auto snapshot = tools_;
+    return std::any_of(snapshot.cbegin(), snapshot.cend(), [](const auto &tool) {
         return tool && tool->deleteSelection();
     });
 }
@@ -121,7 +124,8 @@ QString MapTools::statusText() const
 }
 bool MapTools::dismiss()
 {
-    return std::any_of(tools_.cbegin(), tools_.cend(), [](const auto &tool) {
+    const auto snapshot = tools_;
+    return std::any_of(snapshot.cbegin(), snapshot.cend(), [](const auto &tool) {
         return tool && tool->dismiss();
     });
 }
@@ -137,7 +141,8 @@ void MapTools::populateContextMenu(const MapItem &item, QMenu &menu)
 bool MapTools::cancel()
 {
     bool cancelled = false;
-    for (const auto &tool : tools_) {
+    const auto snapshot = tools_;
+    for (const auto &tool : snapshot) {
         if (tool) {
             cancelled = tool->cancel() || cancelled;
         }

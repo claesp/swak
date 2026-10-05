@@ -339,6 +339,10 @@ public:
             }
             if (moving_ >= 0 && editor_.draft()) {
                 auto candidate = polygonVertices(editor_.draft()->geometry);
+                if (moving_ >= candidate.size()) {
+                    dismiss();
+                    return true;
+                }
                 candidate[moving_] = worldPoint(pointer_, view);
                 if (editor_.setGeometry(polygonGeometry(candidate))) {
                     moving_ = -1;
@@ -481,13 +485,15 @@ public:
             lengthLabels(painter, measured, view);
         } else if (editor_.draft() && editingVertices_) {
             auto polygon = screenPolygon(polygonVertices(editor_.draft()->geometry), view);
-            if (moving_ >= 0) {
+            // The draft can change while a corner moves. Check the index on each use.
+            const bool movable = moving_ >= 0 && moving_ < polygon.size();
+            if (movable) {
                 polygon[moving_] = pointer;
                 draw(painter, polygon, QColor(editor_.draft()->color), editor_.draft()->restricted);
             }
             dots(painter, polygon, QColor(editor_.draft()->color));
             auto measured = polygonVertices(editor_.draft()->geometry);
-            if (moving_ >= 0) {
+            if (movable) {
                 measured[moving_] = worldPoint(pointer, view);
             }
             lengthLabels(painter, measured, view);

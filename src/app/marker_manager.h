@@ -23,7 +23,7 @@ private:
     void save();
     MarkerCollections &collections_;
     std::function<QString()> save_;
-    ProviderTable *table_;
-    QLabel *status_;
+    ProviderTable *table_ = nullptr;
+    QLabel *status_ = nullptr;
 };
 } // namespace swak

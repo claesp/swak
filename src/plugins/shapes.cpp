@@ -617,7 +617,7 @@ private:
     struct Measurement
     {
         QPolygonF points;
-        qint64 time;
+        qint64 time = 0;
     };
     static QString owner()
     {

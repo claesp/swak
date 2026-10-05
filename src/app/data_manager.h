@@ -24,7 +24,7 @@ private:
     DataSources &sources_;
     std::function<QString()> save_;
     QString applyError_;
-    ProviderTable *list_;
-    QLabel *status_;
+    ProviderTable *list_ = nullptr;
+    QLabel *status_ = nullptr;
 };
 } // namespace swak

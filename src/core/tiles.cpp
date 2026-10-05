@@ -228,6 +228,10 @@ void TileRenderer::compactImages()
             continue;
         }
         std::unique_ptr<Image> image(images_.take(key));
+        // QCache::take returns null when the cache no longer holds the key.
+        if (!image) {
+            continue;
+        }
         image->pixels =
             image->pixels.scaled(256, 256, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
         image->vectors = {};
@@ -811,8 +815,11 @@ QList<MapItem> TileRenderer::itemsAt(QPointF position) const
             return {};
         }
         for (const auto &hit : hits) {
-            const auto &feature =
-                image->vectors.features.at(hit.value(QStringLiteral("featureIndex")).toInt());
+            const int featureIndex = hit.value(QStringLiteral("featureIndex")).toInt(-1);
+            if (featureIndex < 0 || featureIndex >= image->vectors.features.size()) {
+                continue;
+            }
+            const auto &feature = image->vectors.features.at(featureIndex);
             MapItem item;
             item.kind = feature.kind == VectorFeature::Kind::Point  ? MapItem::Kind::Point
                         : feature.kind == VectorFeature::Kind::Line ? MapItem::Kind::Line
@@ -832,7 +839,7 @@ QList<MapItem> TileRenderer::itemsAt(QPointF position) const
             world.translate(tile.x / count, tile.y / count);
             world.scale(1 / count, 1 / count);
             for (const auto &label : labels) {
-                if (label.index == hit.value(QStringLiteral("featureIndex")).toInt()) {
+                if (label.index == featureIndex) {
                     item.cachedLabelBounds = world.mapRect(
                         QRectF(label.bounds.topLeft() / 256, label.bounds.size() / 256));
                     item.cachedLabelText = label.text;

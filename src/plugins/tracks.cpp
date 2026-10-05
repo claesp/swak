@@ -23,6 +23,7 @@
 #include <algorithm>
 
 namespace swak {
+namespace {
 class HeadingConeTool final : public MapTool
 {
 public:
@@ -199,6 +200,7 @@ private:
         return ids;
     }
 };
+} // namespace
 class TracksPlugin final : public QObject,
                            public Plugin,
                            public MapLayer,

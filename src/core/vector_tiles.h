@@ -46,7 +46,7 @@ public:
 };
 struct VectorLabel
 {
-    int index;
+    int index = -1;
     QRectF bounds;
     QString text;
 };

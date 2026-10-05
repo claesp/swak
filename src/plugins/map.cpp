@@ -301,7 +301,9 @@ public:
             if (selection_ && selectedSource_ == QStringLiteral("vector")) {
                 selection_->clear();
             }
-            const auto source = sources_->activeSource();
+            // Cache the validated source. Paint and zoom code read only this copy.
+            activeSource_ = sources_->activeSource();
+            const auto &source = activeSource_;
             normalizeZoom();
             clampCenter();
             wheelRemainder_ = 0;
@@ -326,6 +328,9 @@ public:
                 update();
             });
             connect(tools_, &MapTools::activationRequested, this, [this](MapTool *tool) {
+                if (!tool) {
+                    return;
+                }
                 tools_->cancel();
                 tool->activate(*this);
                 setFocus(Qt::OtherFocusReason);
@@ -658,8 +663,7 @@ protected:
                             zoomLimits().first,
                             zoomLimits().second,
                             property(MapOcclusionProperty).value<QRegion>());
-        const auto source = sources_ ? sources_->activeSource() : QJsonObject{};
-        painter.setPen(QColor("#c7d7e5"));
+        const auto &source = activeSource_;
         updateStatus();
         QStringList credits;
         if (!source.isEmpty()) {
@@ -1112,7 +1116,9 @@ protected:
     }
     void keyPressEvent(QKeyEvent *event) override
     {
-        if (event->key() == keys_[14] && event->modifiers() == Qt::NoModifier) {
+        // Qt reports key 0 for compose sequences. Disabled optional keys also store 0.
+        const bool knownKey = event->key() != 0;
+        if (knownKey && event->key() == keys_[14] && event->modifiers() == Qt::NoModifier) {
             if (!event->isAutoRepeat()) {
                 store_.motion().setPaused(!store_.motion().paused());
             }
@@ -1145,7 +1151,8 @@ protected:
             QOpenGLWidget::keyPressEvent(event);
             return;
         }
-        const auto match = std::find(keys_.begin() + 4, keys_.end(), event->key());
+        const auto match =
+            knownKey ? std::find(keys_.begin() + 4, keys_.end(), event->key()) : keys_.end();
         if (match == keys_.end()) {
             QOpenGLWidget::keyPressEvent(event);
             return;
@@ -1189,7 +1196,7 @@ protected:
 private:
     void updateStatus()
     {
-        const auto source = sources_ ? sources_->activeSource() : QJsonObject{};
+        const auto &source = activeSource_;
         const QPointF coord = view_.coordinate(cursor_);
         const bool onWorld = coord.x() >= -180 && coord.x() <= 180 && coord.y() >= -85.051129 &&
                              coord.y() <= 85.051129;
@@ -1350,7 +1357,7 @@ private:
     }
     std::pair<int, int> zoomLimits() const
     {
-        const auto source = sources_ ? sources_->activeSource() : QJsonObject{};
+        const auto &source = activeSource_;
         const int fit = std::clamp(
             static_cast<int>(std::ceil(std::log2(std::max(width(), height()) / 256.0))), 0, 19);
         const int minimum = std::max(fit, source.value(QStringLiteral("minZoom")).toInt());
@@ -1401,8 +1408,9 @@ private:
     ToolOverlay *overlay_ = nullptr;
     MapTools *tools_ = nullptr;
     MapSources *sources_ = nullptr;
+    QJsonObject activeSource_;
     TileRenderer tiles_;
-    QLabel *attribution_;
+    QLabel *attribution_ = nullptr;
     QPointer<QLabel> pauseStatus_, cacheStatus_, zoomStatus_, pointerStatus_, tileStatus_,
         tlsStatus_;
     double attributionOpacity_ = 0.55;
@@ -1416,9 +1424,11 @@ private:
     Store &store_;
     DataSources *dataSources_ = nullptr;
     QList<MapLayer *> layers_;
-    QAction *navigationLock_;
-    QAction *gridVisibility_, *scaleLegend_, *zoomIndicator_;
-    GridTypes *grids_;
+    QAction *navigationLock_ = nullptr;
+    QAction *gridVisibility_ = nullptr;
+    QAction *scaleLegend_ = nullptr;
+    QAction *zoomIndicator_ = nullptr;
+    GridTypes *grids_ = nullptr;
     Viewport view_;
     QPointF cursor_;
     QPointF last_;

@@ -11,6 +11,7 @@
 #include <QTableView>
 
 namespace swak {
+namespace {
 class ActivityTable final : public QTableView, public PreferenceParticipant
 {
 public:
@@ -33,6 +34,7 @@ public:
         }
     }
 };
+} // namespace
 class ActivityPlugin final : public QObject, public Plugin, public PanePlugin, public MenuPlugin
 {
     Q_OBJECT

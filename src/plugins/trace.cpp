@@ -9,6 +9,7 @@
 #include <QJsonArray>
 #include <QMenu>
 #include <QPainter>
+#include <QPointer>
 #include <QSet>
 
 #include <cmath>
@@ -258,7 +259,7 @@ private:
         emit changed();
     }
     Store &store_;
-    UserObjects *objects_;
+    QPointer<UserObjects> objects_;
     QHash<QString, Record> records_, frozen_;
     int limit_ = 50;
     double opacity_ = 0.7;

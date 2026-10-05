@@ -441,12 +441,12 @@ private:
             entries.value(sources_.activeId()).toObject().value("attribution").toString());
     }
     RouteSources &sources_;
-    RouteTool *tool_;
-    QComboBox *providers_;
-    QComboBox *mode_;
+    RouteTool *tool_ = nullptr;
+    QComboBox *providers_ = nullptr;
+    QComboBox *mode_ = nullptr;
     QDoubleSpinBox *points_[4]{};
     QLabel *status_ = nullptr;
-    QLabel *attribution_;
+    QLabel *attribution_ = nullptr;
     double runningSpeed_ = 10;
 };
 class RoutePlannerPlugin final : public QObject,

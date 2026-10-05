@@ -9,10 +9,10 @@
 namespace swak {
 struct ActivityEvent
 {
-    quint64 sequence;
+    quint64 sequence = 0;
     QDateTime time;
-    Severity severity;
-    Urgency urgency;
+    Severity severity = Severity::Debug;
+    Urgency urgency = Urgency::Routine;
     QString category;
     QString message;
 };

@@ -325,8 +325,8 @@ private:
     struct Peer
     {
         QHostAddress address;
-        quint16 port;
-        qint64 seen;
+        quint16 port = 0;
+        qint64 seen = 0;
     };
     struct Lan
     {
@@ -376,12 +376,14 @@ private:
         const auto protocol = s.source.value(QStringLiteral("protocol")).toString();
         const auto label =
             protocol == QLatin1String("stcp") ? QStringLiteral("TCP") : protocol.toUpper();
+        // Use one substitution pass. A marker such as %1 in an error text then stays literal.
         state(s,
               tr("%1 [%2]:%3: %4 Retry in %5 seconds.")
-                  .arg(label, s.source.value(QStringLiteral("host")).toString())
-                  .arg(s.source.value(QStringLiteral("port")).toInt())
-                  .arg(text)
-                  .arg(delay / 1000),
+                  .arg(label,
+                       s.source.value(QStringLiteral("host")).toString(),
+                       QString::number(s.source.value(QStringLiteral("port")).toInt()),
+                       text,
+                       QString::number(delay / 1000)),
               Severity::Warning);
     }
     bool tls(QSslSocket &socket, const QJsonObject &source)
@@ -1111,18 +1113,19 @@ QString Servers::status(const QString &id) const
     const auto state = stats_.value(id).toObject();
     if (state.value("lan").toBool()) {
         return tr("%1. Interface: %2. Peers: %3.")
-            .arg(state.value("state").toString(), entry.value("localAddress").toString())
-            .arg(state.value("peers").toInt());
+            .arg(state.value("state").toString(),
+                 entry.value("localAddress").toString(),
+                 QString::number(state.value("peers").toInt()));
     }
     if (state.isEmpty()) {
         return entry.value(QStringLiteral("enabled")).toBool() ? tr("Connecting")
                                                                : tr("Disconnected");
     }
     return tr("%1. Received: %2. Rejected: %3. Queue drops: %4.")
-        .arg(state.value(QStringLiteral("state")).toString())
-        .arg(state.value(QStringLiteral("received")).toDouble(), 0, 'f', 0)
-        .arg(state.value(QStringLiteral("rejected")).toDouble(), 0, 'f', 0)
-        .arg(stats_.value(QStringLiteral("dropped")).toDouble(), 0, 'f', 0);
+        .arg(state.value(QStringLiteral("state")).toString(),
+             QString::number(state.value(QStringLiteral("received")).toDouble(), 'f', 0),
+             QString::number(state.value(QStringLiteral("rejected")).toDouble(), 'f', 0),
+             QString::number(stats_.value(QStringLiteral("dropped")).toDouble(), 'f', 0));
 }
 QString Servers::send(const Event &event)
 {

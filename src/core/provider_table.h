@@ -7,6 +7,11 @@
 #include <QTableWidget>
 
 namespace swak {
+// Qt shows tooltips as rich text when they look like markup. Escape stored text.
+inline QString plainToolTip(const QString &text)
+{
+    return text.isEmpty() ? QString{} : QStringLiteral("<qt>%1</qt>").arg(text.toHtmlEscaped());
+}
 class ProviderTable final : public QTableWidget
 {
 public:
@@ -39,7 +44,8 @@ public:
     void selectId(const QString &id)
     {
         for (int row = 0; row < rowCount(); ++row) {
-            if (item(row, 1)->data(Qt::UserRole).toString() == id) {
+            const auto *entry = item(row, 1);
+            if (entry && entry->data(Qt::UserRole).toString() == id) {
                 setCurrentCell(row, 1);
                 return;
             }
@@ -76,7 +82,7 @@ public:
     }
 
 private:
-    bool exclusive_;
-    QButtonGroup *group_;
+    bool exclusive_ = false;
+    QButtonGroup *group_ = nullptr;
 };
 } // namespace swak

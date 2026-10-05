@@ -18,6 +18,7 @@
 #include <cmath>
 #include <memory>
 #include <optional>
+#include <utility>
 namespace swak {
 namespace {
 constexpr qsizetype ArchiveLimit = 1024 * 1024;
@@ -90,13 +91,18 @@ std::optional<QPainterPath> decodePath(const QJsonValue &value, bool empty)
     }
     return path;
 }
-CollectionSymbol decodeSymbol(const QJsonObject &value)
+std::optional<CollectionSymbol> decodeSymbol(const QJsonObject &value)
 {
-    return {value.value(QStringLiteral("id")).toString(),
-            value.value(QStringLiteral("name")).toString(),
-            QColor(value.value(QStringLiteral("color")).toString()),
-            *decodePath(value.value(QStringLiteral("frame")), false),
-            *decodePath(value.value(QStringLiteral("glyph")), true)};
+    auto frame = decodePath(value.value(QStringLiteral("frame")), false);
+    auto glyph = decodePath(value.value(QStringLiteral("glyph")), true);
+    if (!frame || !glyph) {
+        return std::nullopt;
+    }
+    return CollectionSymbol{value.value(QStringLiteral("id")).toString(),
+                            value.value(QStringLiteral("name")).toString(),
+                            QColor(value.value(QStringLiteral("color")).toString()),
+                            std::move(*frame),
+                            std::move(*glyph)};
 }
 QString key(const QString &collection, const QString &id)
 {
@@ -217,7 +223,9 @@ void MarkerCollections::rebuild()
         }
         for (const auto &entry : value.value(QStringLiteral("symbols")).toArray()) {
             const auto item = decodeSymbol(entry.toObject());
-            symbols_.insert(key(it.key(), item.id), item);
+            if (item) {
+                symbols_.insert(key(it.key(), item->id), *item);
+            }
         }
     }
 }

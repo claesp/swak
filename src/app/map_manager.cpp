@@ -203,10 +203,11 @@ void MapManager::refresh()
         const auto source = entries.value(id).toObject();
         const auto *provider = sources_.provider(source);
         const bool available = provider && provider->validate(source).isEmpty();
+        const auto endpoint = plainToolTip(source.value(QStringLiteral("endpoint")).toString());
         auto *button = list_->append(id,
                                      source.value(QStringLiteral("name")).toString(),
                                      provider ? provider->mapName() : tr("Plugin unavailable"),
-                                     source.value(QStringLiteral("endpoint")).toString(),
+                                     endpoint,
                                      id == sources_.activeId() && sources_.networkEnabled(),
                                      available);
         connect(button, &QAbstractButton::clicked, this, [this, id] {

@@ -12,6 +12,7 @@
 #include <algorithm>
 
 namespace swak {
+namespace {
 class ObjectsModel final : public QSortFilterProxyModel
 {
 public:
@@ -128,6 +129,7 @@ private:
     QPointer<MapTools> tools_;
     QPointer<MapSelection> selection_;
 };
+} // namespace
 class ObjectsPlugin final : public QObject, public Plugin, public PanePlugin
 {
     Q_OBJECT

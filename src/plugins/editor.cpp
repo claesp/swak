@@ -17,6 +17,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
+#include <QPointer>
 #include <QPushButton>
 #include <QSaveFile>
 #include <QSpinBox>
@@ -26,6 +27,7 @@
 #include <algorithm>
 
 namespace swak {
+namespace {
 class Editor final : public QWidget, public SettingsParticipant
 {
 public:
@@ -135,7 +137,7 @@ public:
                     return item.uid == store_.selected();
                 });
             if (event != events.end()) {
-                showEvent(*event);
+                showPreview(*event);
             }
         };
         connect(&store_, &Store::selectionChanged, this, refreshPreview);
@@ -240,7 +242,7 @@ private:
         field->setRange(low, high);
         return field;
     }
-    void showEvent(const Event &event)
+    void showPreview(const Event &event)
     {
         const auto next = codec_.encode(event);
         if (output_ == next) {
@@ -273,7 +275,7 @@ private:
             showStatus(error, Severity::Error);
             return;
         }
-        showEvent(event);
+        showPreview(event);
         store_.select(event.uid);
         if (send_->isChecked() && servers_) {
             const auto sendError = servers_->send(event);
@@ -304,12 +306,18 @@ private:
             return;
         }
         const auto decoded = codec_.decode(input.bytes);
-        const auto error = decoded.event ? store_.accept(*decoded.event) : decoded.error;
+        if (!decoded.event) {
+            showStatus(decoded.error.isEmpty() ? tr("The file does not contain a CoT event.")
+                                               : decoded.error,
+                       Severity::Error);
+            return;
+        }
+        const auto error = store_.accept(*decoded.event);
         if (!error.isEmpty()) {
             showStatus(error, Severity::Error);
             return;
         }
-        showEvent(*decoded.event);
+        showPreview(*decoded.event);
         store_.select(decoded.event->uid);
         showStatus(
             tr("The event was imported. Unknown detail fields are not included in exports."));
@@ -340,26 +348,27 @@ private:
     }
     Store &store_;
     const Codec &codec_;
-    Identity *identity_;
-    Servers *servers_;
-    QCheckBox *send_;
-    QLineEdit *uid_;
-    QLineEdit *callsign_;
-    QLineEdit *type_;
-    QLineEdit *how_;
-    QLineEdit *team_;
-    QLineEdit *role_;
-    QDoubleSpinBox *latitude_;
-    QDoubleSpinBox *longitude_;
-    QDoubleSpinBox *altitude_;
-    QSpinBox *lifetime_;
-    QPlainTextEdit *preview_;
-    QPushButton *export_;
-    QLabel *status_;
+    QPointer<Identity> identity_;
+    QPointer<Servers> servers_;
+    QCheckBox *send_ = nullptr;
+    QLineEdit *uid_ = nullptr;
+    QLineEdit *callsign_ = nullptr;
+    QLineEdit *type_ = nullptr;
+    QLineEdit *how_ = nullptr;
+    QLineEdit *team_ = nullptr;
+    QLineEdit *role_ = nullptr;
+    QDoubleSpinBox *latitude_ = nullptr;
+    QDoubleSpinBox *longitude_ = nullptr;
+    QDoubleSpinBox *altitude_ = nullptr;
+    QSpinBox *lifetime_ = nullptr;
+    QPlainTextEdit *preview_ = nullptr;
+    QPushButton *export_ = nullptr;
+    QLabel *status_ = nullptr;
     QByteArray output_;
     QString importDirectory_;
     QString exportDirectory_;
 };
+} // namespace
 class EditorPlugin final : public QObject, public Plugin, public ToolPlugin
 {
     Q_OBJECT

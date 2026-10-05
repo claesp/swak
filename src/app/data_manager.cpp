@@ -10,6 +10,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QSignalBlocker>
+#include <QTimer>
 #include <QUuid>
 #include <QVBoxLayout>
 
@@ -124,10 +125,11 @@ void DataManager::refresh()
     for (const auto &id : ids) {
         const auto source = entries[id].toObject();
         const auto *provider = sources_.provider(source);
+        const auto endpoint = plainToolTip(source.value(QStringLiteral("endpoint")).toString());
         auto *button = list_->append(id,
                                      source.value(QStringLiteral("name")).toString(),
                                      provider ? provider->dataName() : tr("Plugin unavailable"),
-                                     source.value(QStringLiteral("endpoint")).toString(),
+                                     endpoint,
                                      source.value(QStringLiteral("enabled")).toBool(),
                                      provider != nullptr);
         connect(button, &QAbstractButton::clicked, this, [this, id](bool enabled) {

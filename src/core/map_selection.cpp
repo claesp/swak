@@ -5,6 +5,7 @@
 #include <QPainter>
 
 #include <algorithm>
+#include <cmath>
 #include <optional>
 namespace swak {
 MapItem cotMapItem(const Event &message)
@@ -93,7 +94,9 @@ void MapSelection::paint(QPainter &painter,
             painter.fillRect(screenBounds, Qt::black);
             painter.setPen(Qt::white);
             auto font = painter.font();
-            font.setPixelSize(std::clamp(qRound(selected.cachedLabelFontHeight * scale), 1, 256));
+            // Clamp before the conversion. A deep zoom can exceed the int range.
+            const double pixels = selected.cachedLabelFontHeight * scale;
+            font.setPixelSize(std::isfinite(pixels) ? qRound(std::clamp(pixels, 1.0, 256.0)) : 1);
             painter.setFont(font);
             painter.drawText(screenBounds, Qt::AlignCenter, selected.cachedLabelText);
             painter.restore();

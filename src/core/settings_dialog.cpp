@@ -390,7 +390,9 @@ bool SettingsDialog::applyChanges()
     QList<QJsonObject> values;
     for (qsizetype i = 0; i < pages_.size(); ++i) {
         auto updated = QJsonValue(pages_.at(i).values);
-        for (qsizetype j = 0; j < pages_.at(i).fields.size(); ++j) {
+        // A page with custom content has no field editors.
+        const auto editorCount = std::min(pages_.at(i).fields.size(), editors_.at(i).size());
+        for (qsizetype j = 0; j < editorCount; ++j) {
             auto *editor = editors_.at(i).at(j);
             const auto value = editorValue(editor);
             if (value != QJsonValue::fromVariant(editor->property("initialSettingValue"))) {

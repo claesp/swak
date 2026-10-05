@@ -16,6 +16,7 @@
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPlainTextEdit>
+#include <QPointer>
 #include <QTableWidget>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -67,12 +68,12 @@ class InformationPane final : public PaneContent, public SettingsParticipant
 public:
     InformationPane(MapSelection *selection, Store &store, MapTools *tools, QWidget *parent)
         : PaneContent(parent), selection_(selection), tools_(tools), store_(store),
-          owner_(parent->window())
+          owner_(parent ? parent->window() : nullptr)
     {
         setObjectName(QStringLiteral("informationPane"));
         qApp->installEventFilter(this);
-        QTimer::singleShot(0, this, [this, selection] {
-            if (!selection || !selection->item()) {
+        QTimer::singleShot(0, this, [this] {
+            if (!selection_ || !selection_->item()) {
                 emit visibilityRequested(false);
             }
         });
@@ -271,8 +272,14 @@ private:
             return;
         }
         actionIdentity_ = identity;
+        // A box can trigger this rebuild from its own click signal.
+        // Defer the deletion so that Qt does not use a deleted sender.
         while (auto *item = actionsLayout_->takeAt(0)) {
-            delete item->widget();
+            if (auto *widget = item->widget()) {
+                widget->hide();
+                widget->setObjectName(QString{});
+                widget->deleteLater();
+            }
             delete item;
         }
         actionsMenu_->clear();
@@ -309,18 +316,18 @@ private:
         const int value = key[0].key();
         return value == Qt::Key_Escape || (value >= Qt::Key_F1 && value <= Qt::Key_F12) ? value : 0;
     }
-    MapSelection *selection_;
-    MapTools *tools_;
+    QPointer<MapSelection> selection_;
+    QPointer<MapTools> tools_;
     Store &store_;
-    QWidget *owner_;
+    QWidget *owner_ = nullptr;
     int dismissKey_ = Qt::Key_Escape;
     QString actionIdentity_;
-    QMenu *actionsMenu_;
-    QVBoxLayout *actionsLayout_;
-    CopyLabel *title_;
-    CopyLabel *type_;
-    Description *description_;
-    QTableWidget *properties_;
+    QMenu *actionsMenu_ = nullptr;
+    QVBoxLayout *actionsLayout_ = nullptr;
+    CopyLabel *title_ = nullptr;
+    CopyLabel *type_ = nullptr;
+    Description *description_ = nullptr;
+    QTableWidget *properties_ = nullptr;
 };
 } // namespace
 class InformationPlugin final : public QObject, public Plugin, public PanePlugin

@@ -83,6 +83,9 @@ public:
     using QWidget::QWidget;
     void watchPane(QWidget *pane)
     {
+        if (!pane) {
+            return;
+        }
         pane_ = pane;
         pane->installEventFilter(this);
     }

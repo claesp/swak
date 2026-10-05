@@ -9,7 +9,7 @@ struct LanPeer
 {
     QString id;
     QHostAddress address;
-    quint16 port;
+    quint16 port = 0;
 };
 QByteArray lanAnnouncement(const QString &id, quint16 port);
 std::optional<LanPeer> parseLanAnnouncement(const QByteArray &bytes,

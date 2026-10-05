@@ -14,7 +14,9 @@
 namespace swak {
 void showCredits(QWidget *parent)
 {
-    if (auto *existing = parent->findChild<QDialog *>(QStringLiteral("creditsDialog"))) {
+    auto *existing =
+        parent ? parent->findChild<QDialog *>(QStringLiteral("creditsDialog")) : nullptr;
+    if (existing) {
         existing->show();
         existing->raise();
         existing->activateWindow();

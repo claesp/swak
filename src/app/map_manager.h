@@ -23,8 +23,8 @@ private:
     MapSources &sources_;
     std::function<QString()> save_;
     QString applyError_;
-    ProviderTable *list_;
+    ProviderTable *list_ = nullptr;
 
-    QLabel *status_;
+    QLabel *status_ = nullptr;
 };
 } // namespace swak
