@@ -6,6 +6,8 @@ Q_IMPORT_PLUGIN(TracksPlugin)
 Q_IMPORT_PLUGIN(ServersPlugin)
 Q_IMPORT_PLUGIN(EditorPlugin)
 Q_IMPORT_PLUGIN(GdalRasterProvider)
+Q_IMPORT_PLUGIN(GoogleMapsProvider)
+Q_IMPORT_PLUGIN(AzureMapsProvider)
 Q_IMPORT_PLUGIN(ActivityPlugin)
 
 Q_IMPORT_PLUGIN(GdalVectorProvider)

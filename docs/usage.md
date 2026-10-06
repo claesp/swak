@@ -124,7 +124,7 @@ The application logging controls classify this message as Warning severity with 
 
 # Online maps
 
-Open Tools > Map Providers to select or configure an online map. A fresh profile has no map provider and shows a plain green background. File > Settings contains source and rendering controls. Read [Map providers](map-providers.md) for sources, formats, attribution, and HTTPS behavior.
+Open Tools > Map Providers to select or configure an online map. Google Maps and Azure Maps presets need your own API key. Read [Google Maps and Azure Maps](map-providers.md#google-maps-and-azure-maps). A fresh profile has no map provider and shows a plain green background. File > Settings contains source and rendering controls. Read [Map providers](map-providers.md) for sources, formats, attribution, and HTTPS behavior.
 
 # Events and map selection
 

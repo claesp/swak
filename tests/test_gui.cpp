@@ -1763,7 +1763,7 @@ private slots:
         auto &window = *owner;
         auto *sources = window.findChild<swak::MapSources *>();
         QVERIFY(sources);
-        QCOMPARE(sources->providers().size(), 2);
+        QCOMPARE(sources->providers().size(), 4);
         QVERIFY(!sources->networkEnabled());
         const auto id = QStringLiteral("org.swak.gdal.raster");
         auto source = sources->sources().value(id).toObject();

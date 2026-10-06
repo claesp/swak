@@ -4,6 +4,7 @@
 #include "tile_server.h"
 
 #include <QGuiApplication>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QPainter>
 #include <QPluginLoader>
@@ -12,6 +13,7 @@
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QTimeZone>
 #include <QUrlQuery>
 #include <QtConcurrentRun>
 
@@ -62,6 +64,95 @@ public:
                         .replace(QStringLiteral("{z}"), QString::number(z))
                         .replace(QStringLiteral("{x}"), QString::number(x))
                         .replace(QStringLiteral("{y}"), QString::number(y)));
+    }
+};
+QByteArray json(const QJsonObject &object)
+{
+    return QJsonDocument(object).toJson(QJsonDocument::Compact);
+}
+// A session service on the local test server. It follows the Google flow: a POST starts a
+// session, tiles carry the session, and a viewport request reports attribution.
+class SessionProvider final : public QObject, public MapProvider, public MapServiceProvider
+{
+    Q_OBJECT
+    Q_INTERFACES(swak::MapExtension swak::MapProvider swak::MapServiceProvider)
+public:
+    QString mapId() const override
+    {
+        return QStringLiteral("test.session");
+    }
+    QString mapName() const override
+    {
+        return QStringLiteral("Session fixture");
+    }
+    QJsonObject defaults() const override
+    {
+        return mapDefaults(QStringLiteral("Session"),
+                           QStringLiteral("https://localhost/tiles"),
+                           QStringLiteral("Session fixture"),
+                           19);
+    }
+    QList<SettingField> fields() const override
+    {
+        return commonMapFields();
+    }
+    QString validate(const QJsonObject &source) const override
+    {
+        return validateMapSource(source);
+    }
+    QUrl tileUrl(const QJsonObject &, int, int, int) const override
+    {
+        return {};
+    }
+    QUrl sessionUrl(const QJsonObject &source) const override
+    {
+        return QUrl(origin(source) + QStringLiteral("/session"));
+    }
+    QByteArray sessionBody(const QJsonObject &) const override
+    {
+        return json({{QStringLiteral("mapType"), QStringLiteral("roadmap")}});
+    }
+    MapSession readSession(const QByteArray &reply) const override
+    {
+        const auto object = QJsonDocument::fromJson(reply).object();
+        return {
+            object.value(QStringLiteral("session")).toString(),
+            QDateTime::fromSecsSinceEpoch(
+                object.value(QStringLiteral("expiry")).toString().toLongLong(), QTimeZone::UTC)};
+    }
+    QUrl sessionTileUrl(
+        const QJsonObject &source, const QString &session, int z, int x, int y) const override
+    {
+        return QUrl(origin(source) +
+                    QStringLiteral("/tiles/%1/%2/%3?session=%4").arg(z).arg(x).arg(y).arg(session));
+    }
+    QUrl attributionUrl(const QJsonObject &source,
+                        const QString &session,
+                        int zoom,
+                        const MapBounds &bounds) const override
+    {
+        if (session.isEmpty()) {
+            return {};
+        }
+        lastBounds = bounds;
+        return QUrl(origin(source) +
+                    QStringLiteral("/viewport?session=%1&zoom=%2").arg(session).arg(zoom));
+    }
+    QString readAttribution(const QByteArray &reply) const override
+    {
+        return QJsonDocument::fromJson(reply)
+            .object()
+            .value(QStringLiteral("copyright"))
+            .toString();
+    }
+    mutable MapBounds lastBounds;
+
+private:
+    static QString origin(const QJsonObject &source)
+    {
+        return QUrl(source.value(QStringLiteral("endpoint")).toString())
+            .adjusted(QUrl::RemovePath | QUrl::RemoveQuery)
+            .toString();
     }
 };
 class MapTest final : public QObject
@@ -117,7 +208,287 @@ class MapTest final : public QObject
         QPainter painter(&canvas);
         renderer.paint(painter, Viewport{QSizeF(256, 256), QPointF(0.5, 0.5), 0}, 1, false);
     }
+    // Trusts the test server certificate until this object ends.
+    struct TrustServer
+    {
+        QSslConfiguration previous = QSslConfiguration::defaultConfiguration();
+        explicit TrustServer(const TileServer &server)
+        {
+            auto trusted = previous;
+            auto authorities = trusted.caCertificates();
+            authorities.append(server.certificate);
+            trusted.setCaCertificates(authorities);
+            QSslConfiguration::setDefaultConfiguration(trusted);
+        }
+        ~TrustServer()
+        {
+            QSslConfiguration::setDefaultConfiguration(previous);
+        }
+        TrustServer(const TrustServer &) = delete;
+        TrustServer &operator=(const TrustServer &) = delete;
+    };
 private slots:
+    void googleMapTiles()
+    {
+        auto *google = format(QStringLiteral("org.swak.google.tiles"));
+        QVERIFY(google);
+        auto *service = dynamic_cast<MapServiceProvider *>(google);
+        QVERIFY(service);
+        MapSources sources(QPluginLoader::staticInstances());
+        for (const auto &[id, type] :
+             {std::pair{QStringLiteral("org.swak.google.tiles"), QStringLiteral("roadmap")},
+              std::pair{QStringLiteral("org.swak.google.satellite"), QStringLiteral("satellite")},
+              std::pair{QStringLiteral("org.swak.google.terrain"), QStringLiteral("terrain")}}) {
+            const auto preset = sources.sources().value(id).toObject();
+            QCOMPARE(preset.value(QStringLiteral("mapType")).toString(), type);
+            QVERIFY(google->validate(preset).isEmpty());
+            QCOMPARE(preset.value(QStringLiteral("authEnvironment")).toString(),
+                     QStringLiteral("SWAK_MAP_GOOGLE_KEY"));
+        }
+        auto source = google->defaults();
+        QVERIFY(google->validate(source).isEmpty());
+        QVERIFY(google->tileUrl(source, 1, 0, 0).isEmpty());
+        QCOMPARE(service->sessionUrl(source),
+                 QUrl(QStringLiteral("https://tile.googleapis.com/v1/createSession")));
+        auto body = QJsonDocument::fromJson(service->sessionBody(source)).object();
+        QCOMPARE(body.value(QStringLiteral("mapType")).toString(), QStringLiteral("roadmap"));
+        QCOMPARE(body.value(QStringLiteral("language")).toString(), QStringLiteral("en-US"));
+        QCOMPARE(body.value(QStringLiteral("region")).toString(), QStringLiteral("US"));
+        QVERIFY(!body.contains(QStringLiteral("layerTypes")));
+        auto terrain = source;
+        terrain.insert(QStringLiteral("mapType"), QStringLiteral("terrain"));
+        terrain.insert(QStringLiteral("language"), QStringLiteral("sv-SE"));
+        terrain.insert(QStringLiteral("region"), QStringLiteral("SE"));
+        body = QJsonDocument::fromJson(service->sessionBody(terrain)).object();
+        QCOMPARE(body.value(QStringLiteral("layerTypes")).toArray(),
+                 QJsonArray{QStringLiteral("layerRoadmap")});
+        QCOMPARE(body.value(QStringLiteral("language")).toString(), QStringLiteral("sv-SE"));
+        // Sessions need a usable token and an expiry in seconds since the epoch.
+        auto session =
+            service->readSession(json({{QStringLiteral("session"), QStringLiteral("a+b/c=")},
+                                       {QStringLiteral("expiry"), QStringLiteral("1900000000")}}));
+        QCOMPARE(session.token, QStringLiteral("a+b/c="));
+        QCOMPARE(session.expires.toSecsSinceEpoch(), 1900000000);
+        QCOMPARE(service
+                     ->readSession(json({{QStringLiteral("session"), QStringLiteral("t")},
+                                         {QStringLiteral("expiry"), 1900000000}}))
+                     .token,
+                 QStringLiteral("t"));
+        for (const QByteArray &bad :
+             {json({{QStringLiteral("expiry"), QStringLiteral("1900000000")}}),
+              json({{QStringLiteral("session"), QStringLiteral("a b")},
+                    {QStringLiteral("expiry"), QStringLiteral("1900000000")}}),
+              json({{QStringLiteral("session"), QStringLiteral("t")},
+                    {QStringLiteral("expiry"), QStringLiteral("soon")}}),
+              json({{QStringLiteral("session"), QStringLiteral("t")},
+                    {QStringLiteral("expiry"), QStringLiteral("-5")}}),
+              json({{QStringLiteral("session"), QStringLiteral("t")}}),
+              QByteArray("not json")}) {
+            QVERIFY2(service->readSession(bad).token.isEmpty(), bad.constData());
+        }
+        // The token is percent-encoded. The host adds the key parameter.
+        const auto tile = service->sessionTileUrl(source, QStringLiteral("a+b/c="), 3, 2, 1);
+        QCOMPARE(
+            tile.toString(QUrl::FullyEncoded),
+            QStringLiteral("https://tile.googleapis.com/v1/2dtiles/3/2/1?session=a%2Bb%2Fc%3D"));
+        QVERIFY(service->sessionTileUrl(source, {}, 3, 2, 1).isEmpty());
+        QVERIFY(service->sessionTileUrl(source, QStringLiteral("t"), 3, 8, 1).isEmpty());
+        const auto viewport =
+            service->attributionUrl(source, QStringLiteral("t"), 5, MapBounds{-180, -10, 20, 95});
+        QCOMPARE(viewport.path(), QStringLiteral("/tile/v1/viewport"));
+        const QUrlQuery query(viewport);
+        QCOMPARE(query.queryItemValue(QStringLiteral("zoom")), QStringLiteral("5"));
+        QCOMPARE(query.queryItemValue(QStringLiteral("west")), QStringLiteral("-179.999999"));
+        QCOMPARE(query.queryItemValue(QStringLiteral("north")), QStringLiteral("89.999999"));
+        QCOMPARE(query.queryItemValue(QStringLiteral("east")), QStringLiteral("20.000000"));
+        QVERIFY(service->attributionUrl(source, {}, 5, {}).isEmpty());
+        QCOMPARE(service->readAttribution(json(
+                     {{QStringLiteral("copyright"), QStringLiteral("Map data ©2026 Google")}})),
+                 QStringLiteral("Map data ©2026 Google"));
+        // The fixed service rejects another server, another key parameter, and bad options.
+        for (const auto &[key, value] :
+             {std::pair{"endpoint", QJsonValue(QStringLiteral("https://example.test/v1/2dtiles"))},
+              std::pair{"authParameter", QJsonValue(QStringLiteral("apikey"))},
+              std::pair{"authMode", QJsonValue(QStringLiteral("bearer"))},
+              std::pair{"ignoreTls", QJsonValue(true)},
+              std::pair{"mapType", QJsonValue(QStringLiteral("hybrid"))},
+              std::pair{"language", QJsonValue(QStringLiteral("e"))},
+              std::pair{"region", QJsonValue(QStringLiteral("us"))}}) {
+            auto bad = source;
+            bad.insert(QLatin1String(key), value);
+            QVERIFY2(!google->validate(bad).isEmpty(), key);
+            QVERIFY(service->sessionUrl(bad).isEmpty());
+        }
+    }
+    void azureMapTiles()
+    {
+        auto *azure = format(QStringLiteral("org.swak.azure.tiles"));
+        QVERIFY(azure);
+        auto *service = dynamic_cast<MapServiceProvider *>(azure);
+        QVERIFY(service);
+        MapSources sources(QPluginLoader::staticInstances());
+        for (const auto &id : {QStringLiteral("org.swak.azure.tiles"),
+                               QStringLiteral("org.swak.azure.darkgrey"),
+                               QStringLiteral("org.swak.azure.imagery")}) {
+            QVERIFY2(azure->validate(sources.sources().value(id).toObject()).isEmpty(),
+                     qPrintable(id));
+        }
+        auto source = azure->defaults();
+        source.insert(QStringLiteral("language"), QStringLiteral("de-DE"));
+        QVERIFY(service->sessionUrl(source).isEmpty());
+        const auto tile = azure->tileUrl(source, 4, 3, 2);
+        QCOMPARE(tile.host(), QStringLiteral("atlas.microsoft.com"));
+        QCOMPARE(tile.path(), QStringLiteral("/map/tile"));
+        const QUrlQuery query(tile);
+        QCOMPARE(query.queryItemValue(QStringLiteral("api-version")), QStringLiteral("2024-04-01"));
+        QCOMPARE(query.queryItemValue(QStringLiteral("tilesetId")),
+                 QStringLiteral("microsoft.base.road"));
+        QCOMPARE(query.queryItemValue(QStringLiteral("zoom")), QStringLiteral("4"));
+        QCOMPARE(query.queryItemValue(QStringLiteral("x")), QStringLiteral("3"));
+        QCOMPARE(query.queryItemValue(QStringLiteral("y")), QStringLiteral("2"));
+        QCOMPARE(query.queryItemValue(QStringLiteral("language")), QStringLiteral("de-DE"));
+        QVERIFY(azure->tileUrl(source, 2, 4, 0).isEmpty());
+        // The key travels as subscription-key on the same host.
+        QNetworkRequest request(tile);
+        QVERIFY(authorizeMapRequest(request, source, "azure-secret").isEmpty());
+        QCOMPARE(QUrlQuery(request.url()).queryItemValue(QStringLiteral("subscription-key")),
+                 QStringLiteral("azure-secret"));
+        const auto attribution =
+            service->attributionUrl(source, {}, 6, MapBounds{-122.4, 47.5, -122.2, 47.7});
+        QCOMPARE(attribution.path(), QStringLiteral("/map/attribution"));
+        QCOMPARE(QUrlQuery(attribution).queryItemValue(QStringLiteral("bounds")),
+                 QStringLiteral("-122.400000,47.500000,-122.200000,47.700000"));
+        QCOMPARE(service->readAttribution(
+                     "{\"copyrights\":[\"<a data-tileset=\\\"x\\\">&copy;2026 TomTom</a>\","
+                     "\"Earthstar\"]}"),
+                 QStringLiteral("<a data-tileset=\"x\">&copy;2026 TomTom</a>, Earthstar"));
+        QVERIFY(service->readAttribution("[]").isEmpty());
+        auto imagery = sources.sources().value(QStringLiteral("org.swak.azure.imagery")).toObject();
+        imagery.insert(QStringLiteral("minZoom"), 0);
+        QVERIFY(!azure->validate(imagery).isEmpty());
+        for (const auto &[key, value] :
+             {std::pair{"endpoint", QJsonValue(QStringLiteral("https://example.test/map/tile"))},
+              std::pair{"authParameter", QJsonValue(QStringLiteral("key"))},
+              std::pair{"tilesetId", QJsonValue(QStringLiteral("microsoft.base"))},
+              std::pair{"language", QJsonValue(QStringLiteral("123"))}}) {
+            auto bad = source;
+            bad.insert(QLatin1String(key), value);
+            QVERIFY2(!azure->validate(bad).isEmpty(), key);
+            QVERIFY(azure->tileUrl(bad, 1, 0, 0).isEmpty());
+            QVERIFY(service->attributionUrl(bad, {}, 1, {}).isEmpty());
+        }
+    }
+    void sessionTilesAndAttribution()
+    {
+        TileServer server;
+        QVERIFY(server.load(QFINDTESTDATA("fixtures")));
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        const TrustServer trust(server);
+        const auto expiry = QByteArray::number(QDateTime::currentSecsSinceEpoch() + 86400 * 14);
+        QByteArray sessionStatus = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n";
+        QByteArray sessionReply = json({{QStringLiteral("session"), QStringLiteral("token-1")},
+                                        {QStringLiteral("expiry"), QString::fromLatin1(expiry)}});
+        server.respond = [&](const QByteArray &head) -> std::pair<QByteArray, QByteArray> {
+            const auto line = head.left(head.indexOf("\r\n"));
+            if (line.startsWith("POST /session")) {
+                return {sessionStatus, sessionReply};
+            }
+            if (line.startsWith("GET /viewport")) {
+                return {"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n",
+                        json({{QStringLiteral("copyright"),
+                               QStringLiteral("<b>Map data</b> &copy; Test\u0007")}})};
+            }
+            return {server.headers, server.body};
+        };
+        SessionProvider provider;
+        auto source = provider.defaults();
+        source.insert(QStringLiteral("endpoint"),
+                      QStringLiteral("https://localhost:%1/tiles").arg(server.serverPort()));
+        source.insert(QStringLiteral("authMode"), QStringLiteral("query"));
+        source.insert(QStringLiteral("authParameter"), QStringLiteral("key"));
+        TileRenderer renderer;
+        QSignalSpy changed(&renderer, &TileRenderer::changed);
+        renderer.setSource(&provider, source, "secret-key");
+        QImage canvas(256, 256, QImage::Format_ARGB32);
+        draw(renderer, canvas);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return renderer.coverage().rendered == 1;
+            },
+            5000));
+        // The session starts first. The tile carries the session and the key.
+        QVERIFY(server.requests.first().startsWith("POST /session?key=secret-key "));
+        QVERIFY(server.requests.first().toLower().contains("content-type: application/json"));
+        const auto tileRequest = std::find_if(
+            server.requests.cbegin(), server.requests.cend(), [](const QByteArray &request) {
+                return request.startsWith("GET /tiles/0/0/0?");
+            });
+        QVERIFY(tileRequest != server.requests.cend());
+        QVERIFY(tileRequest->contains("session=token-1"));
+        QVERIFY(tileRequest->contains("key=secret-key"));
+        // The view attribution arrives after the view rests and becomes plain text.
+        draw(renderer, canvas);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return !renderer.attribution().isEmpty();
+            },
+            5000));
+        QCOMPARE(renderer.attribution(), QStringLiteral("Map data © Test"));
+        QCOMPARE(provider.lastBounds.west, -180.0);
+        QCOMPARE(provider.lastBounds.east, 180.0);
+        QVERIFY(provider.lastBounds.north <= 85 && provider.lastBounds.south >= -85);
+        const auto viewportRequests = [&server] {
+            return std::count_if(
+                server.requests.cbegin(), server.requests.cend(), [](const QByteArray &request) {
+                    return request.startsWith("GET /viewport");
+                });
+        };
+        // The same view does not ask again.
+        const auto asked = viewportRequests();
+        draw(renderer, canvas);
+        QTest::qWait(900);
+        QCOMPARE(viewportRequests(), asked);
+        // A new source clears the attribution. A rejected session stops tiles.
+        sessionStatus = "HTTP/1.1 403 Forbidden\r\nContent-Type: application/json\r\n";
+        server.requests.clear();
+        renderer.setSource(&provider, source, "other-key");
+        QVERIFY(renderer.attribution().isEmpty());
+        draw(renderer, canvas);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return !renderer.status().isEmpty();
+            },
+            5000));
+        QCOMPARE(renderer.coverage().rendered, 0);
+        QVERIFY(std::none_of(
+            server.requests.cbegin(), server.requests.cend(), [](const QByteArray &request) {
+                return request.startsWith("GET /tiles");
+            }));
+        QVERIFY(!renderer.status().contains(QStringLiteral("other-key")));
+        // A session that ends within ten minutes is not usable.
+        sessionStatus = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n";
+        sessionReply = json(
+            {{QStringLiteral("session"), QStringLiteral("short")},
+             {QStringLiteral("expiry"), QString::number(QDateTime::currentSecsSinceEpoch() + 60)}});
+        server.requests.clear();
+        renderer.setSource(&provider, source, "third-key");
+        draw(renderer, canvas);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return !renderer.status().isEmpty();
+            },
+            5000));
+        QCOMPARE(renderer.coverage().rendered, 0);
+        // Missing credentials stop the session before any request.
+        server.requests.clear();
+        renderer.setSource(&provider, source);
+        draw(renderer, canvas);
+        QTest::qWait(200);
+        QVERIFY(server.requests.isEmpty());
+        QVERIFY(!renderer.status().isEmpty());
+        renderer.setSource(nullptr, {});
+        QVERIFY(changed.count() > 0);
+    }
     void mapCredentials()
     {
         auto *xyz = &urlTiles_;
@@ -639,7 +1010,7 @@ private slots:
     void formats()
     {
         MapSources sources(QPluginLoader::staticInstances());
-        QCOMPARE(sources.providers().size(), 2);
+        QCOMPARE(sources.providers().size(), 4);
         QVERIFY(!sources.networkEnabled());
         QVERIFY(sources.activeSource().isEmpty());
         for (auto *provider : sources.providers()) {

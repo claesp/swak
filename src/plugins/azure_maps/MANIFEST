@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "org.swak.azure.tiles",
+  "name": "Azure Maps tiles",
+  "description": "Show Azure Maps road, dark grey, and imagery tiles with your own Azure Maps key. Azure Maps replaces Bing Maps.",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entryPoint": "AzureMapsProvider",
+  "linkage": "static",
+  "platforms": ["linux"],
+  "qtMajor": 6,
+  "qtMinimum": "6.4.0",
+  "interfaces": ["map-provider", "map-service"],
+  "requires": [],
+  "permissions": [],
+  "settingsSchemaVersion": 1
+}

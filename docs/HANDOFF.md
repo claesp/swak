@@ -1516,3 +1516,11 @@ The Events table no longer shows Urgency. It has four columns, named by `Activit
 
 The map provider dropdown names its clear command Disable instead of No map provider. Disable now sits in the footer, directly before More .... The View menu names the map decorations Scale and Zoom Level. Settings > Map keeps the longer field labels, and the provider button tooltip still reads No map provider when no provider is active.
 
+# 2026-10-06: Google Maps and Azure Maps
+
+Two plugins, google_maps and azure_maps, add Google Map Tiles and Azure Maps as map providers. Google offers Roadmap, Satellite, and Terrain presets. Azure Maps offers Road, Dark Grey, and Imagery. Azure Maps is the Microsoft successor to Bing Maps. No Bing source exists. Each preset needs the user's key through Credentials, `SWAK_MAP_GOOGLE_KEY`, or `SWAK_MAP_AZURE_KEY`.
+
+The new optional interface `MapServiceProvider` lets TileRenderer start, use, and renew sessions, and fetch attribution for the visible area. The map attribution panel shows that attribution below the source attribution. The renderer renews a session after one day, five minutes before expiry, or after a 401 or 403 tile reply when the session is older than one minute. Authenticated sources keep their existing limits: no disk cache and visible tiles only.
+
+Tests cover both plugins' URLs, bodies, parsing, and validation. A local HTTPS fixture covers the session, tile, and attribution flow, a rejected session, a short session, missing credentials, and repeated views. The test tile server can now route requests. Untested: live Google and Azure services, session renewal on expiry or rejection, attribution failure that keeps the last text, and the Google logo, which SWAK replaces with the text Google Maps.
+

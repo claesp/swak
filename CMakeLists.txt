@@ -158,6 +158,8 @@ endfunction()
 swak_plugin(swak_gdal_vector src/plugins/gdal_vector.cpp GDAL::GDAL)
 swak_plugin(swak_mvt src/plugins/mvt.cpp GDAL::GDAL)
 swak_plugin(swak_gdal_raster src/plugins/gdal_raster.cpp GDAL::GDAL)
+swak_plugin(swak_google_maps src/plugins/google_maps.cpp)
+swak_plugin(swak_azure_maps src/plugins/azure_maps.cpp)
 swak_plugin(swak_milstd2525 src/plugins/milstd2525.cpp)
 swak_plugin(swak_polygons src/plugins/polygons.cpp)
 swak_plugin(swak_markers src/plugins/markers.cpp)
@@ -213,6 +215,8 @@ target_link_libraries(
             swak_servers
             swak_editor
             swak_gdal_raster
+            swak_google_maps
+            swak_azure_maps
 )
 install(TARGETS swak RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES packaging/org.swak.Swak.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
@@ -281,6 +285,8 @@ if(BUILD_TESTING)
                 swak_servers
                 swak_editor
                 swak_gdal_raster
+                swak_google_maps
+                swak_azure_maps
                 Qt6::Test
     )
     add_test(NAME maps COMMAND swak_map_tests)
@@ -308,6 +314,8 @@ if(BUILD_TESTING)
                 swak_servers
                 swak_editor
                 swak_gdal_raster
+                swak_google_maps
+                swak_azure_maps
                 Qt6::Test
                 Qt6::Network
     )
@@ -361,6 +369,8 @@ if(BUILD_TESTING)
                 swak_servers
                 swak_editor
                 swak_gdal_raster
+                swak_google_maps
+                swak_azure_maps
                 Qt6::Test
                 Qt6::Network
     )
@@ -407,6 +417,8 @@ if(BUILD_TESTING)
                 swak_servers
                 swak_editor
                 swak_gdal_raster
+                swak_google_maps
+                swak_azure_maps
                 Qt6::Test
                 Qt6::Network
                 Qt6::OpenGLWidgets

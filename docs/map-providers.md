@@ -14,6 +14,22 @@ OpenTopoMap also documents XYZ raster tiles. A custom XYZ entry can use its endp
 
 Free map data does not mean unlimited free hosting. Review each provider policy before deployment or distribution. Source operators can change endpoints and terms independently of SWAK.
 
+# Google Maps and Azure Maps
+
+Research date: October 6, 2026. Two provider plugins add commercial services. Each one needs your own API key and a billing account with the service. SWAK adds no key. Read the service terms before you select a source. Usage counts against your account.
+
+The Google Map Tiles plugin uses the [Map Tiles API](https://developers.google.com/maps/documentation/tile/2d-tiles-overview). It adds three presets: Google Maps Roadmap, Satellite, and Terrain. Each one is off until you select it. Supply the key through Credentials or the `SWAK_MAP_GOOGLE_KEY` environment variable. The key travels as the `key` query parameter.
+
+Google needs a session before it sends tiles. SWAK sends a POST to `https://tile.googleapis.com/v1/createSession` with the map type, language, and region. The language defaults to `en-US` and the region defaults to `US`. Terrain also requests the roadmap layer, as Google requires. Every tile request then carries the session token. SWAK renews the session after one day, before it expires, or after Google rejects it. A rejected session uses the provider-wide retry delay. Read [session tokens](https://developers.google.com/maps/documentation/tile/session_tokens).
+
+Google requires its attribution on the map. The source attribution is Google Maps. SWAK shows this text, not the Google logo image. After the view rests for 0.75 seconds, SWAK asks the viewport service for the data credits of the visible area. The map attribution panel shows them on the next line. The same view does not ask again. The [Map Tiles API policies](https://developers.google.com/maps/documentation/tile/policies) prohibit caching except as the HTTP cache headers permit. Authenticated sources, including Google, use no disk cache and fetch only visible tiles.
+
+The Azure Maps plugin uses [Get Map Tile](https://learn.microsoft.com/en-us/rest/api/maps/render/get-map-tile) with API version 2024-04-01. Azure Maps replaces Bing Maps. Microsoft ended free and basic Bing Maps keys on June 30, 2025, and retires Bing Maps for Enterprise on June 30, 2028. SWAK adds no Bing source. The presets are Azure Maps Road, Dark Grey, and Imagery. Imagery starts at zoom level 1. Supply the key through Credentials or `SWAK_MAP_AZURE_KEY`. The key travels as the `subscription-key` query parameter.
+
+Azure Maps also requires the attribution of the visible area. SWAK asks [Get Map Attribution](https://learn.microsoft.com/en-us/rest/api/maps/render/get-map-attribution) after the view rests. The source attribution is Microsoft Azure Maps. The reported credits follow on the next line.
+
+Both plugins fix the service address and key parameter. You can change the name, map type or style, language, Google region, zoom range, and environment variable. Session and attribution replies have a limit of 64 KiB. SWAK converts attribution HTML to one line of plain text with at most 300 characters. A failed attribution request keeps the last text.
+
 # Supported formats
 
 The GDAL raster provider has four source types. Select the type in the Source type field. Saved XYZ, WMS, and WMTS entries from earlier versions convert to the matching type when SWAK loads the profile.
@@ -160,5 +176,7 @@ For restart use, set Secret environment variable to a name such as `SWAK_MAP_PRI
 The application does not store passwords on disk or provide a password vault. Environment values remain available to the process and its launch environment. Session values remain in process memory. Qt containers do not guarantee secure erasure of all copies. Credentials permit printable ASCII values up to 4096 bytes. Non-ASCII Basic passwords require server-specific encoding support that this version does not provide.
 
 Authenticated requests require valid HTTPS certificates. GDAL receives the credential through per-thread HTTP options, not through the dataset description. Query keys appear in the request URL. SWAK replaces URL query values in GDAL messages before it logs or shows them. Authentication failures use the shared retry delay. Authenticated tiles bypass the disk cache and fetch only visible tiles. Read the redirect gap in HTTPS and cache. Secret changes cancel requests and clear decoded images. Endpoint and authentication changes clear the session secret.
+
+The Google presets use the `key` query parameter and `SWAK_MAP_GOOGLE_KEY`. The Azure Maps presets use `subscription-key` and `SWAK_MAP_AZURE_KEY`. Read Google Maps and Azure Maps above.
 
 The Thunderforest templates use API key query authentication with parameter `apikey`. Set the session credential or supply `SWAK_MAP_THUNDERFOREST_KEY` before launch. Read the service terms and account limits before you select the source. No template activates itself. Credentials do not grant access beyond the service account permissions.

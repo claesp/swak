@@ -10,6 +10,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkDiskCache>
 #include <QNetworkReply>
+#include <QPointer>
 #include <QSet>
 #include <QThreadPool>
 #include <QTimer>
@@ -43,6 +44,11 @@ public:
                bool smooth,
                double missingOpacity = 0.2);
     QString status() const;
+    // Plain-text attribution that the service reported for the current view, or empty text.
+    const QString &attribution() const
+    {
+        return attribution_;
+    }
     struct Coverage
     {
         int total = 0;
@@ -91,6 +97,11 @@ private:
         const QString &key, QByteArray bytes, const QUrl &url, QDateTime expires, bool transient);
     void renderRaster(const TilePlacement &tile);
     void fail(const QString &key, const QString &message, int retrySeconds, bool providerWide);
+    QNetworkRequest serviceRequest(const QUrl &url) const;
+    bool startSession(const MapServiceProvider &service);
+    void requestAttribution(const Viewport &view);
+    void fetchAttribution();
+    void stopServiceRequests();
     QNetworkAccessManager network_;
     QNetworkDiskCache *disk_ = nullptr;
     std::unique_ptr<QLockFile> lock_;
@@ -128,5 +139,14 @@ private:
     quint64 generation_ = 0;
     int activeJobs_ = 0;
     bool compact_ = false;
+    MapSession session_;
+    QDateTime sessionStarted_;
+    QPointer<QNetworkReply> sessionReply_;
+    QPointer<QNetworkReply> attributionReply_;
+    QString attribution_;
+    QString attributionKey_;
+    int attributionZoom_ = 0;
+    MapBounds attributionBounds_;
+    QTimer attributionTimer_;
 };
 } // namespace swak

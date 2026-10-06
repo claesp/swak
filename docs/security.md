@@ -120,6 +120,8 @@ The shared request helper limits secrets, rejects controls, and checks the desti
 
 Environment references use the `SWAK_MAP_` prefix. Only put dedicated map secrets in that namespace. A profile can direct its named secret to its configured server, so use trusted profiles. Query credentials reach the provider URL and can appear in its server logs. SWAK uses generic tile errors without those URLs.
 
+Google and Azure Maps sources fix their HTTPS address, key parameter, and certificate validation. A profile cannot redirect their keys to another host. Session and attribution requests use the same host check, no redirects, no cookies, no cache, and a 64 KiB reply limit. Session tokens must be printable ASCII of at most 1024 characters, with an expiry more than ten minutes away. Service attribution becomes plain text before the map shows it.
+
 Process memory and launch environments remain sensitive. Read [Map providers](map-providers.md) for storage limits and supported authentication methods.
 
 # Local polygon geometry

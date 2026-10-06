@@ -1,6 +1,7 @@
 #pragma once
 #include "core/settings.h"
 
+#include <QDateTime>
 #include <QImage>
 #include <QNetworkRequest>
 #include <QObject>
@@ -73,6 +74,54 @@ public:
     virtual RasterTile renderTile(const RasterRequest &request,
                                   const std::atomic_bool &cancelled) const = 0;
 };
+// A session that an online map service issued for later tile and attribution requests.
+struct MapSession
+{
+    QString token;
+    QDateTime expires;
+};
+// Geographic bounds of a view in degrees. West and east stay within -180 and 180.
+struct MapBounds
+{
+    double west = -180;
+    double south = -85;
+    double east = 180;
+    double north = 85;
+};
+// Optional services of an online map provider. The host calls these methods on the GUI thread.
+// The host sends every request to the source endpoint host, with the source credentials.
+class MapServiceProvider
+{
+public:
+    virtual ~MapServiceProvider() = default;
+    // A POST URL that starts a session. An empty URL means that the service has no sessions.
+    virtual QUrl sessionUrl(const QJsonObject &) const
+    {
+        return {};
+    }
+    // The JSON body of the session request.
+    virtual QByteArray sessionBody(const QJsonObject &) const
+    {
+        return {};
+    }
+    // Reads a session reply. An empty token means that the reply is not usable.
+    virtual MapSession readSession(const QByteArray &) const
+    {
+        return {};
+    }
+    // The tile URL for a session. MapProvider::tileUrl serves services without sessions.
+    virtual QUrl sessionTileUrl(const QJsonObject &, const QString &, int, int, int) const
+    {
+        return {};
+    }
+    // A GET URL for the attribution of a view. The session is empty for services without one.
+    virtual QUrl attributionUrl(const QJsonObject &source,
+                                const QString &session,
+                                int zoom,
+                                const MapBounds &bounds) const = 0;
+    // Reads an attribution reply as text or simple HTML. The host converts it to plain text.
+    virtual QString readAttribution(const QByteArray &reply) const = 0;
+};
 QList<SettingField> commonMapFields();
 QString validateMapSource(const QJsonObject &source);
 // Checks the name, attribution, location text, zoom, and authentication fields.
@@ -83,6 +132,13 @@ QJsonObject mapDefaults(const QString &name,
                         const QString &attribution,
                         int maximumZoom);
 QString validateMapAuthentication(const QJsonObject &source);
+// Checks a source of a fixed online service: its endpoint, an API key query parameter,
+// and certificate validation. Users cannot point these sources at another server.
+QString validateServiceSource(const QJsonObject &source,
+                              const QString &endpoint,
+                              const QString &keyParameter);
+// Checks an optional IETF language tag, such as en-US.
+bool validLanguageTag(const QString &tag);
 QString
 authorizeMapRequest(QNetworkRequest &request, const QJsonObject &source, const QByteArray &secret);
 bool authenticatedMap(const QJsonObject &source);
@@ -146,3 +202,4 @@ private:
 Q_DECLARE_INTERFACE(swak::MapExtension, "org.swak.MapExtension/1.0")
 Q_DECLARE_INTERFACE(swak::MapProvider, "org.swak.MapProvider/1.0")
 Q_DECLARE_INTERFACE(swak::RasterTileProvider, "org.swak.RasterTiles/1.0")
+Q_DECLARE_INTERFACE(swak::MapServiceProvider, "org.swak.MapService/1.0")

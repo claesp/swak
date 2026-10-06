@@ -114,6 +114,12 @@ QString validatePluginManifest(const QJsonObject &manifest, QObject *instance)
         }
         roles.insert(QStringLiteral("raster-tiles"));
     }
+    if (qobject_cast<MapServiceProvider *>(instance)) {
+        if (!qobject_cast<MapProvider *>(instance)) {
+            return QStringLiteral("Map services require a map provider.");
+        }
+        roles.insert(QStringLiteral("map-service"));
+    }
     if (auto *provider = qobject_cast<RouteProvider *>(instance)) {
         if (provider->routeId() != manifest.value(QStringLiteral("id")).toString()) {
             return QStringLiteral("Route plugin identifier mismatch.");

@@ -91,6 +91,31 @@ QString validateMapSource(const QJsonObject &source)
     }
     return {};
 }
+QString validateServiceSource(const QJsonObject &source,
+                              const QString &endpoint,
+                              const QString &keyParameter)
+{
+    const auto error = validateMapSource(source);
+    if (!error.isEmpty()) {
+        return error;
+    }
+    if (source.value(QStringLiteral("endpoint")).toString() != endpoint ||
+        source.value(QStringLiteral("ignoreTls")).toBool(false)) {
+        return QObject::tr("This service uses a fixed HTTPS address with certificate checks.");
+    }
+    if (source.value(QStringLiteral("authMode")).toString() != QStringLiteral("query") ||
+        source.value(QStringLiteral("authParameter")).toString() != keyParameter) {
+        return QObject::tr("This service needs its API key as the %1 query parameter.")
+            .arg(keyParameter);
+    }
+    return {};
+}
+bool validLanguageTag(const QString &tag)
+{
+    static const QRegularExpression pattern(
+        QStringLiteral("\\A[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,3}\\z"));
+    return tag.isEmpty() || pattern.match(tag).hasMatch();
+}
 bool validTile(int zoom, int x, int y)
 {
     return zoom >= 0 && zoom <= 19 && x >= 0 && y >= 0 && x < (1 << zoom) && y < (1 << zoom);

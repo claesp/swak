@@ -7,7 +7,9 @@
 #include <QSslSocket>
 #include <QTcpServer>
 
+#include <functional>
 #include <memory>
+#include <utility>
 
 // This server and its private key are test fixtures only.
 class TileServer final : public QTcpServer
@@ -23,6 +25,8 @@ public:
     int failFirst = 0;
     QSet<int> holdRequests;
     QByteArray failureHeaders = "HTTP/1.1 404 Not Found\r\n";
+    // Optional routing. It receives the request head and returns status headers and a body.
+    std::function<std::pair<QByteArray, QByteArray>(const QByteArray &)> respond;
     TileServer()
     {
         QImage image(256, 256, QImage::Format_RGB32);
@@ -58,18 +62,22 @@ protected:
             socket->disconnectFromHost();
         });
         auto input = std::make_shared<QByteArray>();
-        connect(socket, &QSslSocket::readyRead, this, [this, socket, input] {
+        auto answered = std::make_shared<bool>(false);
+        connect(socket, &QSslSocket::readyRead, this, [this, socket, input, answered] {
             input->append(socket->readAll());
-            if (!input->contains("\r\n\r\n")) {
+            if (*answered || !input->contains("\r\n\r\n")) {
                 return;
             }
+            *answered = true;
             requests.append(*input);
             if (hold || holdRequests.contains(static_cast<int>(requests.size()))) {
                 return;
             }
-            const auto response = requests.size() <= failFirst ? failureHeaders : headers;
-            socket->write(response + "Content-Length: " + QByteArray::number(body.size()) +
-                          "\r\nConnection: close\r\n\r\n" + body);
+            auto [response, content] =
+                respond ? respond(*input)
+                        : std::pair{requests.size() <= failFirst ? failureHeaders : headers, body};
+            socket->write(response + "Content-Length: " + QByteArray::number(content.size()) +
+                          "\r\nConnection: close\r\n\r\n" + content);
             socket->disconnectFromHost();
         });
         socket->startServerEncryption();

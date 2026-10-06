@@ -14,6 +14,7 @@
 #include <QPainter>
 #include <QSslError>
 #include <QStandardPaths>
+#include <QTextDocumentFragment>
 #include <QtConcurrentRun>
 
 #include <algorithm>
@@ -24,6 +25,22 @@
 namespace swak {
 namespace {
 constexpr qsizetype MaxTileBytes = 2 * 1024 * 1024;
+constexpr qsizetype MaxServiceBytes = 64 * 1024;
+// Converts service attribution, which can contain simple HTML, to one bounded line of text.
+QString plainAttribution(const QString &text)
+{
+    QString plain;
+    for (const auto ch : QTextDocumentFragment::fromHtml(text.left(4096)).toPlainText()) {
+        plain += ch.isPrint() && ch.category() != QChar::Other_Format ? ch : QChar(u' ');
+    }
+    return plain.simplified().left(300);
+}
+// Reads at most limit bytes of a finished reply. A larger reply gives an empty result.
+QByteArray boundedReply(QNetworkReply &reply, qsizetype limit)
+{
+    const auto data = reply.read(limit + 1);
+    return data.size() > limit ? QByteArray{} : data;
+}
 class TileDiskCache final : public QNetworkDiskCache
 {
 public:
@@ -197,6 +214,10 @@ TileRenderer::TileRenderer(QObject *parent) : QObject(parent)
     cacheStats_.start();
     schedule_.setSingleShot(true);
     connect(&schedule_, &QTimer::timeout, this, &TileRenderer::pump);
+    // Wait until the view rests. Each attribution request can be billed by the service.
+    attributionTimer_.setSingleShot(true);
+    attributionTimer_.setInterval(750);
+    connect(&attributionTimer_, &QTimer::timeout, this, &TileRenderer::fetchAttribution);
 }
 TileRenderer::Coverage TileRenderer::coverage() const
 {
@@ -286,6 +307,7 @@ void TileRenderer::setMemoryLimit(int mebibytes)
 }
 TileRenderer::~TileRenderer()
 {
+    stopServiceRequests();
     cancel();
     workers_.waitForDone();
     network_.setCache(nullptr);
@@ -306,6 +328,163 @@ void TileRenderer::cancel()
         reply->abort();
         reply->deleteLater();
     }
+}
+void TileRenderer::stopServiceRequests()
+{
+    attributionTimer_.stop();
+    for (auto *reply : {sessionReply_.data(), attributionReply_.data()}) {
+        if (reply) {
+            reply->disconnect(this);
+            reply->abort();
+            reply->deleteLater();
+        }
+    }
+    sessionReply_.clear();
+    attributionReply_.clear();
+}
+QNetworkRequest TileRenderer::serviceRequest(const QUrl &url) const
+{
+    QNetworkRequest request(url);
+    request.setRawHeader("User-Agent", "SWAK/" SWAK_VERSION " (native map viewer)");
+    request.setRawHeader("Accept", "application/json");
+    request.setRawHeader("Accept-Encoding", "identity");
+    request.setTransferTimeout(10000);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::ManualRedirectPolicy);
+    request.setAttribute(QNetworkRequest::CacheLoadControlAttribute,
+                         QNetworkRequest::AlwaysNetwork);
+    request.setAttribute(QNetworkRequest::CacheSaveControlAttribute, false);
+    request.setAttribute(QNetworkRequest::CookieLoadControlAttribute, QNetworkRequest::Manual);
+    request.setAttribute(QNetworkRequest::CookieSaveControlAttribute, QNetworkRequest::Manual);
+    return request;
+}
+bool TileRenderer::startSession(const MapServiceProvider &service)
+{
+    if (sessionReply_) {
+        return true;
+    }
+    auto request = serviceRequest(service.sessionUrl(source_));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    const auto error = authorizeMapRequest(request, source_, credential_);
+    if (!error.isEmpty()) {
+        ready_ = false;
+        status_ = error;
+        emit changed();
+        return false;
+    }
+    auto *reply = network_.post(request, service.sessionBody(source_));
+    reply->setReadBufferSize(MaxServiceBytes + 1);
+    sessionReply_ = reply;
+    connect(reply, &QNetworkReply::finished, this, [this, reply, service = &service] {
+        sessionReply_.clear();
+        reply->deleteLater();
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const auto data = boundedReply(*reply, MaxServiceBytes);
+        const auto now = QDateTime::currentDateTimeUtc();
+        auto session = reply->error() == QNetworkReply::NoError && status == 200
+                           ? service->readSession(data)
+                           : MapSession{};
+        if (session.token.isEmpty() || session.token.size() > 1024 || !session.expires.isValid() ||
+            session.expires <= now.addSecs(600)) {
+            fail(QStringLiteral("session"),
+                 tr("The map service did not start a session. Check the API key and service "
+                    "limits."),
+                 reply->rawHeader("Retry-After").toInt(),
+                 true);
+            schedule_.start(0);
+            return;
+        }
+        // Renew a long session after at most one day. The service can end it earlier.
+        session.expires = std::min(session.expires, now.addDays(1));
+        session_ = session;
+        sessionStarted_ = now;
+        failures_.remove(QStringLiteral("session"));
+        status_.clear();
+        // The attribution of the current view can now use the session.
+        attributionKey_.clear();
+        emit changed();
+        schedule_.start(0);
+    });
+    return true;
+}
+void TileRenderer::requestAttribution(const Viewport &view)
+{
+    if (!dynamic_cast<MapServiceProvider *>(provider_) || visible_.isEmpty()) {
+        return;
+    }
+    const auto clampLongitude = [](double value) {
+        return std::isfinite(value) ? std::clamp(value, -180.0, 180.0) : 0.0;
+    };
+    const auto clampLatitude = [](double value) {
+        return std::isfinite(value) ? std::clamp(value, -85.0, 85.0) : 0.0;
+    };
+    const auto northWest = view.coordinate(QPointF(0, 0));
+    const auto southEast = view.coordinate(QPointF(view.size.width(), view.size.height()));
+    MapBounds bounds;
+    // A view wider than the world reports the whole longitude range.
+    if (southEast.x() - northWest.x() < 360) {
+        bounds.west = clampLongitude(northWest.x());
+        bounds.east = clampLongitude(southEast.x());
+    }
+    bounds.north = clampLatitude(northWest.y());
+    bounds.south = clampLatitude(southEast.y());
+    const int zoom = visible_.first().z;
+    const auto key = QStringLiteral("%1/%2/%3/%4/%5")
+                         .arg(zoom)
+                         .arg(bounds.west, 0, 'f', 2)
+                         .arg(bounds.south, 0, 'f', 2)
+                         .arg(bounds.east, 0, 'f', 2)
+                         .arg(bounds.north, 0, 'f', 2);
+    if (key == attributionKey_) {
+        return;
+    }
+    attributionKey_ = key;
+    attributionZoom_ = zoom;
+    attributionBounds_ = bounds;
+    attributionTimer_.start();
+}
+void TileRenderer::fetchAttribution()
+{
+    const auto *service = dynamic_cast<MapServiceProvider *>(provider_);
+    if (!service || !ready_ || !contentVisible_) {
+        attributionKey_.clear();
+        return;
+    }
+    const auto url =
+        service->attributionUrl(source_, session_.token, attributionZoom_, attributionBounds_);
+    if (!url.isValid() || url.scheme() != QStringLiteral("https")) {
+        // A session service waits for its session. The next paint asks again.
+        attributionKey_.clear();
+        return;
+    }
+    auto request = serviceRequest(url);
+    if (!authorizeMapRequest(request, source_, credential_).isEmpty()) {
+        return;
+    }
+    if (attributionReply_) {
+        attributionReply_->disconnect(this);
+        attributionReply_->abort();
+        attributionReply_->deleteLater();
+    }
+    auto *reply = network_.get(request);
+    reply->setReadBufferSize(MaxServiceBytes + 1);
+    attributionReply_ = reply;
+    connect(reply, &QNetworkReply::finished, this, [this, reply, service] {
+        attributionReply_.clear();
+        reply->deleteLater();
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const auto data = boundedReply(*reply, MaxServiceBytes);
+        if (reply->error() != QNetworkReply::NoError || status != 200 || data.isEmpty()) {
+            // Keep the last attribution. Ask again when the view changes.
+            attributionKey_.clear();
+            return;
+        }
+        const auto text = plainAttribution(service->readAttribution(data));
+        if (text != attribution_) {
+            attribution_ = text;
+            emit changed();
+        }
+    });
 }
 void TileRenderer::stop()
 {
@@ -328,7 +507,12 @@ void TileRenderer::setSource(MapProvider *provider,
         (ready_ || !provider)) {
         return;
     }
+    stopServiceRequests();
     cancel();
+    session_ = {};
+    sessionStarted_ = {};
+    attribution_.clear();
+    attributionKey_.clear();
     images_.clear();
     compact_ = false;
     failures_.clear();
@@ -443,6 +627,9 @@ void TileRenderer::paint(
         prefetchSkipped_.clear();
         schedule_.start(0);
     }
+    if (fetching) {
+        requestAttribution(view);
+    }
     for (const auto &key : images_.keys()) {
         const auto *image = images_.object(key);
         if (image && image->transient &&
@@ -533,6 +720,16 @@ void TileRenderer::pump()
         schedule_.start(static_cast<int>(std::min<qint64>(now.msecsTo(retryAt_), 3600000)));
         return;
     }
+    const auto *service = dynamic_cast<MapServiceProvider *>(provider_);
+    const bool sessions = service && service->sessionUrl(source_).isValid();
+    if (sessions && (session_.token.isEmpty() || session_.expires <= now.addSecs(300))) {
+        // Tiles wait for a new session. Its reply schedules the next pass.
+        session_ = {};
+        if (!needed_.isEmpty()) {
+            startSession(*service);
+        }
+        return;
+    }
     qint64 nextRetry = 3600000;
     bool waiting = false;
     const bool visibleReady =
@@ -570,7 +767,9 @@ void TileRenderer::pump()
             renderRaster(tile);
             continue;
         }
-        const auto url = provider_->tileUrl(source_, tile.z, tile.x, tile.y);
+        const auto url =
+            sessions ? service->sessionTileUrl(source_, session_.token, tile.z, tile.x, tile.y)
+                     : provider_->tileUrl(source_, tile.z, tile.x, tile.y);
         if (!url.isValid() || url.scheme() != QStringLiteral("https") || url.host().isEmpty()) {
             continue;
         }
@@ -635,6 +834,11 @@ void TileRenderer::pump()
             if (!responseOk || (!vector && image.isNull())) {
                 if (disk_) {
                     disk_->remove(reply->url());
+                }
+                // A rejected session ends early. Renew it once it is older than one minute.
+                if ((status == 401 || status == 403) && !session_.token.isEmpty() &&
+                    sessionStarted_.secsTo(QDateTime::currentDateTimeUtc()) > 60) {
+                    session_ = {};
                 }
                 fail(key,
                      tr("Map tile failed. Check the provider, HTTPS certificate, and service "

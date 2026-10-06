@@ -670,6 +670,10 @@ protected:
         QStringList credits;
         if (!source.isEmpty()) {
             credits.append(source.value(QStringLiteral("attribution")).toString());
+            // Online services report the data attribution for the current view.
+            if (const auto reported = tiles_.attribution(); !reported.isEmpty()) {
+                credits.append(reported);
+            }
         }
         if (dataSources_) {
             credits.append(dataSources_->attributions());
