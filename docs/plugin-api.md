@@ -309,6 +309,8 @@ MapItem::outlineStyle controls the selected polygon outline. Imported areas reta
 
 `MapTool::interact(item, event, map)` handles a chosen object. The default returns false. A tool must reject another owner's item and find its current record by ID. A missing record causes no action. Left release selects the object. A context event opens that object's menu. Tool-specific creation, movement, and corner editing remain in `handle`.
 
+`MapTool::attributions` returns plain-text credits. The default returns an empty list. The map view shows them below the map provider and data feed attributions, with the same link handling.
+
 `MapTools` collects hits and routes chosen objects through this API. Markers and Areas both use it. The view also collects CoT, data feed, and vector feature hits. `DataSources::itemsAt` and `TileRenderer::itemsAt` return all hits. These methods replace the former first-hit `itemAt` methods.
 
 The host opens a chooser when more than one object matches. Menu rows show a label and icon. Tooltips show type and source details. More objects appear on pages of 30. Pages allocate their actions only when the user opens them.
@@ -504,4 +506,4 @@ RouteProvider/1.0 supplies routeId, routeName, presets, request, and decode. Its
 
 The host supplies RouteSources through PluginServices::routes. RouteSources owns provider configuration, bounded HTTPS requests, cancellation, and result notification. It retains unavailable provider entries.
 
-The Route planning plugin uses PanePlugin and MapExtension with the tool role. Its MapTool handles endpoint picking and draws the provider attribution. Its primaryAction is the Route planning toolbar button, which shows or hides the pane. Results become `route` objects in UserObjects, which the polygons plugin draws and edits. Its SettingsWidgetProvider exposes provider management through the shared Settings host. Valhalla supplies the first route-provider format. Read routing.md for protocol bounds and routing limits.
+The Route planning plugin uses PanePlugin and MapExtension with the tool role. Its MapTool handles endpoint picking and returns the provider attribution through `MapTool::attributions`. Its primaryAction is the Route planning toolbar button, which shows or hides the pane. Results become `route` objects in UserObjects, which the polygons plugin draws and edits. Its SettingsWidgetProvider exposes provider management through the shared Settings host. Valhalla supplies the first route-provider format. Read routing.md for protocol bounds and routing limits.

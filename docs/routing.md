@@ -9,7 +9,7 @@ Select Route planning on the main toolbar, or open Tools > Plugins > Route plann
 
 A map point appears in the list as Map point with its latitude and longitude. Escape cancels point placement.
 
-Each result becomes a Route marker named after the start and the destination. The marker keeps the travel mode, the provider distance, the estimated time, and the provider name as properties. Its description holds the provider attribution. The map shows that attribution while the latest planned route exists. Edit, move, or delete the route like other routes. Read Create and edit routes in [the user manual](usage.md).
+Each result becomes a Route marker named after the start and the destination. The marker keeps the travel mode, the provider distance, the estimated time, and the provider name as properties. Its description holds the provider attribution. The map attribution panel at the lower right lists that attribution below the map provider attribution while the latest planned route exists. Edit, move, or delete the route like other routes. Read Create and edit routes in [the user manual](usage.md).
 
 A route marker holds at most 250 points. SWAK simplifies longer provider geometry and keeps the first and last points. The marker Length then measures the simplified line. Provider distance keeps the value from the server.
 

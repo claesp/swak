@@ -103,20 +103,13 @@ public:
         }
         return false;
     }
-    void paint(QPainter &painter, const Viewport &view) const override
+    void paint(QPainter &, const Viewport &) const override {}
+    QStringList attributions() const override
     {
         if (attribution.isEmpty() || routeId.isEmpty() || !objects || !objects->find(routeId)) {
-            return;
+            return {};
         }
-        painter.save();
-        painter.setPen(Qt::white);
-        const QRectF attributionBox(
-            80, view.size.height() - 80, std::max(1.0, view.size.width() - 160), 45);
-        const auto textBounds =
-            painter.boundingRect(attributionBox, Qt::AlignCenter | Qt::TextWordWrap, attribution);
-        painter.fillRect(textBounds.adjusted(-5, -3, 5, 3), QColor(0, 0, 0, 140));
-        painter.drawText(attributionBox, Qt::AlignCenter | Qt::TextWordWrap, attribution);
-        painter.restore();
+        return {attribution};
     }
 };
 class RoutePane final : public PaneContent,
@@ -634,6 +627,7 @@ private:
         const auto source = sources_.sources().value(sources_.activeId()).toObject();
         tool_->attribution = source.value("attribution").toString();
         attribution_->setText(tool_->attribution);
+        emit tool_->changed();
     }
     RouteSources &sources_;
     QPointer<UserObjects> objects_;

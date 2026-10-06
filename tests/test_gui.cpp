@@ -504,6 +504,15 @@ private slots:
             },
             5000));
         QVERIFY(rendered.save(QStringLiteral("route-preview.png")));
+        // The map attribution panel lists the route provider while the route exists.
+        auto *credit = map->findChild<QLabel *>(QStringLiteral("mapAttribution"));
+        QVERIFY(credit);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                map->update();
+                return credit->isVisible() && credit->text().contains(QStringLiteral("Test route"));
+            },
+            5000));
         routeDock->show();
         routeDock->raise();
         QVERIFY(routePane->grab().save(QStringLiteral("route-pane.png")));
@@ -521,6 +530,18 @@ private slots:
         QCOMPARE(startChoice->currentIndex(), 0);
         QCOMPARE(destinationChoice->currentIndex(), 0);
         QCOMPARE(startChoice->findData(QStringLiteral("map")), -1);
+        // Clear keeps the route, so its attribution stays until the route is deleted.
+        map->update();
+        QTest::qWait(50);
+        QVERIFY(credit->text().contains(QStringLiteral("Test route")));
+        objects->remove(planned->id);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                map->update();
+                return !credit->isVisible() ||
+                       !credit->text().contains(QStringLiteral("Test route"));
+            },
+            5000));
         auto *providerWidget =
             dynamic_cast<swak::SettingsWidgetProvider *>(routePane)->createSettingsWidget(&window);
         providerWidget->setWindowFlag(Qt::Window);

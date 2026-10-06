@@ -64,6 +64,16 @@ void MapTools::populateInformationMenu(const MapItem &item, QMenu &menu)
         }
     }
 }
+QStringList MapTools::attributions() const
+{
+    QStringList credits;
+    for (const auto &tool : tools_) {
+        if (tool) {
+            credits.append(tool->attributions());
+        }
+    }
+    return credits;
+}
 double MapTools::areaFillOpacity() const
 {
     for (const auto &tool : tools_) {

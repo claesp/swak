@@ -673,6 +673,9 @@ protected:
         if (dataSources_) {
             credits.append(dataSources_->attributions());
         }
+        if (tools_) {
+            credits.append(tools_->attributions());
+        }
         attribution_->setVisible(!credits.isEmpty());
         if (!credits.isEmpty()) {
             QString text;

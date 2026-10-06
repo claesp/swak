@@ -26,6 +26,11 @@ public:
     {
         return {};
     }
+    // Returns plain-text credits that the map shows with the map provider attribution.
+    virtual QStringList attributions() const
+    {
+        return {};
+    }
     virtual bool guidesActive() const
     {
         return false;
@@ -72,6 +77,7 @@ public:
     void paintOverlay(QPainter &painter, const Viewport &view, QPointF pointer) const;
     QString statusText() const;
     double areaFillOpacity() const;
+    QStringList attributions() const;
     bool guidesActive() const;
     QList<MapItem> itemsAt(const Viewport &view, QPointF position) const;
     bool interact(const MapItem &item, QEvent &event, QWidget &map);
