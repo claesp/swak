@@ -28,8 +28,10 @@ private slots:
         QVERIFY(QTest::qWaitFor([&] {
             return model.rowCount() == 3;
         }));
-        QCOMPARE(model.index(0, 4).data().toString(), QStringLiteral("7"));
-        QCOMPARE(model.index(2, 4).data().toString(), QStringLiteral("9"));
+        QCOMPARE(model.index(0, ActivityModel::MessageColumn).data().toString(),
+                 QStringLiteral("7"));
+        QCOMPARE(model.index(2, ActivityModel::MessageColumn).data().toString(),
+                 QStringLiteral("9"));
         QCOMPARE(latest.last().first().toString(), QStringLiteral("9"));
         QVERIFY(!loggingConfiguration().value(QStringLiteral("enabled")).toBool());
         logMessage(
@@ -37,13 +39,16 @@ private slots:
         logMessage(
             Severity::Info, Urgency::Routine, QStringLiteral("swak.test"), QStringLiteral("11"));
         QVERIFY(QTest::qWaitFor([&] {
-            return model.index(2, 4).data().toString() == QStringLiteral("11");
+            return model.index(2, ActivityModel::MessageColumn).data().toString() ==
+                   QStringLiteral("11");
         }));
         QCOMPARE(model.rowCount(), 3);
-        QCOMPARE(model.index(0, 4).data().toString(), QStringLiteral("9"));
+        QCOMPARE(model.index(0, ActivityModel::MessageColumn).data().toString(),
+                 QStringLiteral("9"));
         model.restorePreferences({{QStringLiteral("capacity"), 1}});
         QCOMPARE(model.rowCount(), 1);
-        QCOMPARE(model.index(0, 4).data().toString(), QStringLiteral("11"));
+        QCOMPARE(model.index(0, ActivityModel::MessageColumn).data().toString(),
+                 QStringLiteral("11"));
         model.clear();
         QCOMPARE(model.rowCount(), 0);
         QVERIFY(!model.data({}).isValid());
@@ -59,16 +64,29 @@ private slots:
         QVERIFY(QTest::qWaitFor([&] {
             return model.rowCount() == 2;
         }));
-        QCOMPARE(model.index(0, 4).data().toString(), text);
+        QCOMPARE(model.index(0, ActivityModel::MessageColumn).data().toString(), text);
         QCOMPARE(model.index(0, 0).data(ActivityModel::SortRole).metaType(),
                  QMetaType::fromType<QDateTime>());
         QSortFilterProxyModel proxy;
         proxy.setSourceModel(&model);
         proxy.setSortRole(ActivityModel::SortRole);
         proxy.sort(1, Qt::AscendingOrder);
-        QCOMPARE(proxy.index(0, 4).data().toString(), text);
-        proxy.sort(2, Qt::AscendingOrder);
-        QCOMPARE(proxy.index(0, 4).data().toString(), QStringLiteral("error"));
+        QCOMPARE(proxy.index(0, ActivityModel::MessageColumn).data().toString(), text);
+        proxy.sort(ActivityModel::SeverityColumn, Qt::DescendingOrder);
+        QCOMPARE(proxy.index(0, ActivityModel::MessageColumn).data().toString(),
+                 QStringLiteral("error"));
+        // The table has no Urgency column.
+        QCOMPARE(model.columnCount(), 4);
+        QStringList headers;
+        for (int column = 0; column < model.columnCount(); ++column) {
+            headers.append(model.headerData(column, Qt::Horizontal, Qt::DisplayRole).toString());
+        }
+        QCOMPARE(headers,
+                 (QStringList{QStringLiteral("Time"),
+                              QStringLiteral("Severity"),
+                              QStringLiteral("Source"),
+                              QStringLiteral("Event")}));
+        QVERIFY(!model.index(0, 4).isValid());
     }
     void concurrentFlood()
     {
@@ -95,10 +113,16 @@ private slots:
         QVERIFY(QTest::qWaitFor([&] {
             return model.rowCount() == 256;
         }));
-        QCOMPARE(model.index(255, 4).data().toString().size(), 2048);
-        QVERIFY(model.index(255, 4).data(Qt::ForegroundRole).isValid());
+        QCOMPARE(model.index(255, ActivityModel::MessageColumn).data().toString().size(), 2048);
+        QVERIFY(model.index(255, ActivityModel::MessageColumn).data(Qt::ForegroundRole).isValid());
         QCOMPARE(model.index(255, 1).data().toString(), QStringLiteral("Error"));
-        QCOMPARE(model.index(255, 2).data().toString(), QStringLiteral("Immediate"));
+        // A wrapping tooltip shows the full, escaped message.
+        const auto tip =
+            model.index(255, ActivityModel::MessageColumn).data(Qt::ToolTipRole).toString();
+        QVERIFY(tip.contains(QStringLiteral("pre-wrap")));
+        QVERIFY(tip.contains(QString(2048, 'x')));
+        QCOMPARE(model.index(255, ActivityModel::SourceColumn).data().toString(),
+                 QStringLiteral("swak.test"));
         model.clear();
         publishActivity(static_cast<Severity>(99), Urgency::Routine, {}, {});
         publishActivity(Severity::Info, static_cast<Urgency>(99), {}, {});
@@ -107,7 +131,8 @@ private slots:
         QVERIFY(QTest::qWaitFor([&] {
             return model.rowCount() == 1;
         }));
-        QCOMPARE(model.index(0, 4).data().toString(), QStringLiteral("ab"));
+        QCOMPARE(model.index(0, ActivityModel::MessageColumn).data().toString(),
+                 QStringLiteral("ab"));
     }
 };
 QTEST_GUILESS_MAIN(ActivityTest)

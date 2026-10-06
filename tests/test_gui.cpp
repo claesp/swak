@@ -1421,7 +1421,8 @@ private slots:
         const auto failures = [&] {
             int count = 0;
             for (int i = 0; i < activity->rowCount(); ++i) {
-                if (activity->index(i, 3).data().toString() == QStringLiteral("swak.preferences")) {
+                if (activity->index(i, swak::ActivityModel::SourceColumn).data().toString() ==
+                    QStringLiteral("swak.preferences")) {
                     ++count;
                 }
             }
@@ -1517,6 +1518,41 @@ private slots:
                 return history->rowCount() > 0;
             }));
             QCOMPARE(status->text(), QStringLiteral("Events: %1").arg(history->rowCount()));
+            // A long event opens in full, and Copy puts one event on the clipboard.
+            const auto longText = QStringLiteral("Long event ") + QString(1500, 'y');
+            swak::logMessage(swak::Severity::Warning,
+                             swak::Urgency::Routine,
+                             QStringLiteral("swak.long"),
+                             longText);
+            QVERIFY(QTest::qWaitFor([&] {
+                return table->model()->rowCount() > 0 &&
+                       table->model()
+                               ->index(0, swak::ActivityModel::MessageColumn)
+                               .data()
+                               .toString() == longText;
+            }));
+            QCOMPARE(table->model()->columnCount(), 4);
+            table->setCurrentIndex(table->model()->index(0, 0));
+            QGuiApplication::clipboard()->clear();
+            table->findChild<QAction *>(QStringLiteral("copyActivityEvent"))->trigger();
+            const auto copied = QGuiApplication::clipboard()->text();
+            QVERIFY(copied.contains(QStringLiteral("\tWarning\tswak.long\t") + longText));
+            QVERIFY(!copied.contains('\n'));
+            QString shown;
+            QTimer::singleShot(0, &window, [&] {
+                auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+                QVERIFY(dialog);
+                QCOMPARE(dialog->objectName(), QStringLiteral("activityDetails"));
+                shown = dialog->findChild<QPlainTextEdit *>(QStringLiteral("activityDetailsText"))
+                            ->toPlainText();
+                QGuiApplication::clipboard()->clear();
+                dialog->findChild<QPushButton *>(QStringLiteral("activityDetailsCopy"))->click();
+                QVERIFY(dialog->grab().save(QStringLiteral("activity-details.png")));
+                dialog->reject();
+            });
+            table->findChild<QAction *>(QStringLiteral("viewActivityEvent"))->trigger();
+            QCOMPARE(shown, longText);
+            QCOMPARE(QGuiApplication::clipboard()->text(), copied);
             QVERIFY(!table->isVisible());
             swak::logMessage(swak::Severity::Info,
                              swak::Urgency::Routine,

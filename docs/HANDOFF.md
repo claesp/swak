@@ -1508,3 +1508,7 @@ The scale legend and the zoom indicator have no background. Their marks and text
 
 A click on a FOV cone, a trace line, or a prediction line selects the owner object. The cone tool, TraceTool, and PredictTool implement `itemsAt`. The map view turns CoT owner hits into normal CoT hits and removes duplicate owners. `lineDistance` moved from polygons.cpp to core/map_tools so that three tools share it. Tests cover the distance helper, transparent decorations, trace and prediction hits, cone clicks in the map, and the attribution panel lifetime of a planned route.
 
+# 2026-10-06: Events details and copy
+
+The Events table no longer shows Urgency. It has four columns, named by `ActivityModel::Column`. The table saves a `layout` value with its header state and ignores older five-column states once. A double-click, Enter, or View event ... opens a dialog with the full wrapped event text. Copy, Ctrl+C, and the dialog Copy button put one tab-separated line on the clipboard. The Event column tooltip wraps long text. Tests cover the columns, the wrapped tooltip, the dialog text, and both copy paths.
+

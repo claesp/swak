@@ -28,6 +28,14 @@ public:
     {
         SortRole = Qt::UserRole + 1
     };
+    enum Column
+    {
+        TimeColumn,
+        SeverityColumn,
+        SourceColumn,
+        MessageColumn,
+        ColumnCount
+    };
     explicit ActivityModel(QObject *parent = nullptr);
     int rowCount(const QModelIndex &parent = {}) const override;
     int columnCount(const QModelIndex &parent = {}) const override;

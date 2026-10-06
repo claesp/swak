@@ -129,7 +129,7 @@ Keep callbacks bounded. Do not let exceptions escape Qt calls. Use shared prefer
 
 The map catalog preserves invalid provider entries and disables their network use. A provider must reject invalid input before it creates a request. Catalog edits validate changed entries without discarding other saved providers.
 
-`Store::SortRole` supplies numeric coordinates and timestamps for table order. `Qt::DisplayRole` retains localized text. `ActivityModel::SortRole` supplies timestamps and numeric severity and urgency values. Table plugins must use these roles when they sort those models.
+`Store::SortRole` supplies numeric coordinates and timestamps for table order. `Qt::DisplayRole` retains localized text. `ActivityModel::SortRole` supplies timestamps and numeric severity values. `ActivityModel::Column` names the four columns: Time, Severity, Source, and Event. The model keeps urgency in `ActivityEvent` but does not show it. Table plugins must use these roles when they sort those models.
 
 Provider forms use the host persistence callback. They keep the form open when a save fails. The public plugin interface versions remain unchanged.
 

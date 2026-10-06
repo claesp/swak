@@ -132,6 +132,8 @@ The map toolbar button selects an online provider or clears the selection. Unava
 
 The status bar shows CoT Messages and retained Events counts, with a separator between them. New events do not open or raise a pane. The status bar does not show transient event messages. Tools > Plugins > Events opens the retained history. Clear removes its rows and pending entries.
 
+The Events table has Time, Severity, Source, and Event columns. The urgency of an event controls text logging only, so the table does not show it. Hover over a long event to read it in a wrapped tooltip. Double-click a row, or select it and press Enter, to open the full event in a window. Right-click a row for View event ... and Copy. Ctrl+C also copies the selected event. Copy puts one line on the clipboard, with tabs between the time, severity, source, and event text. Each event holds at most 2048 characters.
+
 File > Settings > Events controls the history limit from 1 through 10000 events. The default is 500. History stays in memory for the current process. Text logging remains disabled unless you enable it separately. Very large bursts discard older pending records to keep memory bounded.
 
 # Failure recovery

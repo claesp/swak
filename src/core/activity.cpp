@@ -66,12 +66,12 @@ int ActivityModel::rowCount(const QModelIndex &parent) const
 }
 int ActivityModel::columnCount(const QModelIndex &parent) const
 {
-    return parent.isValid() ? 0 : 5;
+    return parent.isValid() ? 0 : ColumnCount;
 }
 QVariant ActivityModel::data(const QModelIndex &index, int role) const
 {
     if (!index.isValid() || index.row() < 0 || index.row() >= events_.size() ||
-        index.column() < 0 || index.column() >= 5) {
+        index.column() < 0 || index.column() >= ColumnCount) {
         return {};
     }
     const auto &event = events_.at(index.row());
@@ -79,31 +79,30 @@ QVariant ActivityModel::data(const QModelIndex &index, int role) const
         return QColor(QStringLiteral("#e53935"));
     }
     if (role == SortRole) {
-        if (index.column() == 0) {
+        if (index.column() == TimeColumn) {
             return event.time;
         }
-        if (index.column() == 1) {
+        if (index.column() == SeverityColumn) {
             return static_cast<int>(event.severity);
         }
-        if (index.column() == 2) {
-            return static_cast<int>(event.urgency);
-        }
+    }
+    if (role == Qt::ToolTipRole && index.column() == MessageColumn) {
+        // Rich text lets the tooltip wrap a long message instead of one wide line.
+        return QStringLiteral("<p style=\"white-space: pre-wrap\">%1</p>")
+            .arg(event.message.toHtmlEscaped());
     }
     if (role != Qt::DisplayRole && role != Qt::ToolTipRole && role != SortRole) {
         return {};
     }
     switch (index.column()) {
-    case 0:
+    case TimeColumn:
         return event.time.toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"));
-    case 1:
+    case SeverityColumn:
         return QStringList{tr("Debug"), tr("Information"), tr("Warning"), tr("Error"), tr("Fatal")}
             .at(static_cast<int>(event.severity));
-    case 2:
-        return QStringList{tr("Routine"), tr("Attention"), tr("Immediate")}.at(
-            static_cast<int>(event.urgency));
-    case 3:
+    case SourceColumn:
         return event.category;
-    case 4:
+    case MessageColumn:
         return event.message;
     default:
         return {};
@@ -111,11 +110,11 @@ QVariant ActivityModel::data(const QModelIndex &index, int role) const
 }
 QVariant ActivityModel::headerData(int section, Qt::Orientation orientation, int role) const
 {
-    if (orientation != Qt::Horizontal || role != Qt::DisplayRole || section < 0 || section >= 5) {
+    if (orientation != Qt::Horizontal || role != Qt::DisplayRole || section < 0 ||
+        section >= ColumnCount) {
         return {};
     }
-    return QStringList{tr("Time"), tr("Severity"), tr("Urgency"), tr("Source"), tr("Event")}.at(
-        section);
+    return QStringList{tr("Time"), tr("Severity"), tr("Source"), tr("Event")}.at(section);
 }
 QString ActivityModel::preferenceId() const
 {
