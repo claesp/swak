@@ -41,6 +41,7 @@
 #include <QPointer>
 #include <QRegularExpression>
 #include <QResizeEvent>
+#include <QSet>
 #include <QStyle>
 #include <QToolBar>
 #include <QToolButton>
@@ -894,9 +895,18 @@ protected:
     QList<Hit> objectsAt(QPointF position) const
     {
         QList<Hit> hits;
+        // Cones, traces, and predictions report the object that owns them.
+        // CoT owners resolve below. Each object appears once in the chooser.
+        QSet<QString> linkedEvents;
         if (tools_) {
+            QSet<QString> seen;
             for (const auto &item : tools_->itemsAt(view_, position)) {
-                hits.append({item, QStringLiteral("local")});
+                if (item.owner == QStringLiteral("org.swak.events")) {
+                    linkedEvents.insert(item.id);
+                } else if (!seen.contains(item.owner + QLatin1Char('/') + item.id)) {
+                    seen.insert(item.owner + QLatin1Char('/') + item.id);
+                    hits.append({item, QStringLiteral("local")});
+                }
             }
         }
         const auto now = QDateTime::currentDateTimeUtc();
@@ -925,7 +935,7 @@ protected:
                                     .contains(position);
             if (visual.expired || visual.opacity < 0.15 || message.stale <= now ||
                 (QLineF(screen, position).length() >= std::max(8.0, view_.markerSize(14)) &&
-                 !labelHit)) {
+                 !labelHit && !linkedEvents.contains(message.uid))) {
                 continue;
             }
             auto item = cotMapItem(message);

@@ -883,9 +883,18 @@ private slots:
                  QStringLiteral("Estimated"));
         QVERIFY(map->grabFramebuffer().save(QStringLiteral("heading-cone-map.png")));
         QVERIFY(window.grab().save(QStringLiteral("heading-information.png")));
+        // A click inside the cone, away from the symbol and label, selects the object.
+        const auto insideCone = map->rect().center() + QPoint(40, 14);
+        selection->clear();
+        QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, insideCone);
+        QVERIFY(selection->item());
+        QCOMPARE(selection->item()->id, event.uid);
+        QCOMPARE(store.selected(), event.uid);
         values.insert(QStringLiteral("headingConeEnabled"), false);
         store.motion().restorePreferences(values);
         QCOMPARE(render().pixelColor(240, 200).alpha(), 0);
+        QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, insideCone);
+        QVERIFY(!selection->item());
     }
     void gridTypesAndCoordinates()
     {
@@ -6055,6 +6064,13 @@ private slots:
                          qPrintable(QStringLiteral("Missing tick at %1 seconds").arg(seconds)));
             }
             QVERIFY(forecast.pixelColor(qFloor(terminal.x()) - 2, 200).alpha() > 0);
+            // A click on a prediction line reports the predicted CoT object.
+            const auto predicted = tool->itemsAt(forecastView, QPointF(terminal.x() - 20, 202));
+            QCOMPARE(predicted.size(), 1);
+            QCOMPARE(predicted.first().owner, QStringLiteral("org.swak.events"));
+            QCOMPARE(predicted.first().id, event.uid);
+            QCOMPARE(predicted.first().label, event.callsign);
+            QVERIFY(tool->itemsAt(forecastView, QPointF(terminal.x() - 20, 260)).isEmpty());
             for (int x = qCeil(terminal.x()) + 2; x < forecast.width(); ++x) {
                 QVERIFY(forecast.pixelColor(x, 200).alpha() == 0);
             }

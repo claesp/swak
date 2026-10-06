@@ -647,6 +647,16 @@ private slots:
         main.findChild<QAction *>(QStringLiteral("clearPredictions"))->trigger();
         QVERIFY(settings->savePreferences().value(QStringLiteral("targets")).toArray().isEmpty());
     }
+    void lineDistances()
+    {
+        const QPolygonF line{QPointF(0, 0), QPointF(10, 0), QPointF(10, 10)};
+        QCOMPARE(lineDistance(line, QPointF(5, 3)), 3.0);
+        QCOMPARE(lineDistance(line, QPointF(13, 5)), 3.0);
+        QCOMPARE(lineDistance(line, QPointF(-4, 3)), 5.0);
+        QCOMPARE(lineDistance(QPolygonF{QPointF(2, 2), QPointF(2, 2)}, QPointF(5, 6)), 5.0);
+        QVERIFY(std::isinf(lineDistance(QPolygonF{QPointF(1, 1)}, QPointF(1, 1))));
+        QVERIFY(std::isinf(lineDistance({}, QPointF(1, 1))));
+    }
     void mapDecorationsHaveNoBackground()
     {
         const Viewport view{QSizeF(400, 300), QPointF(.5, .5), 8};
@@ -760,6 +770,13 @@ private slots:
         }
         QVERIFY(image.pixelColor(850, 50).alpha() > 0);
         QVERIFY(image.pixelColor(850, 50).red() > image.pixelColor(850, 50).blue());
+        // A click on the trace line reports the traced marker.
+        const auto traced = tools.itemsAt(view, QPointF(850, 52));
+        QCOMPARE(traced.size(), 1);
+        QCOMPARE(traced.first().owner, QStringLiteral("org.swak.markers"));
+        QCOMPARE(traced.first().id, marker.id);
+        QCOMPARE(traced.first().label, marker.title);
+        QVERIFY(tools.itemsAt(view, QPointF(850, 80)).isEmpty());
         QCOMPARE(image.pixelColor(510, 50).alpha(), 0);
         const auto beforePause = image;
         store.motion().setPaused(true);

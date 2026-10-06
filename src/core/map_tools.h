@@ -4,12 +4,15 @@
 
 #include <QObject>
 #include <QPointer>
+#include <QPolygonF>
 #include <QWidget>
 
 #include <optional>
 class QPainter;
 class QMenu;
 namespace swak {
+// Returns the shortest distance from a point to an open polyline, or infinity without a segment.
+double lineDistance(const QPolygonF &line, QPointF point);
 class MapTool : public QObject
 {
     Q_OBJECT

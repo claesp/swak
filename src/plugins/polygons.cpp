@@ -29,7 +29,6 @@
 #include <array>
 #include <cmath>
 #include <functional>
-#include <limits>
 #include <optional>
 #include <utility>
 namespace swak {
@@ -59,18 +58,6 @@ QPolygonF screenPolygon(const QPolygonF &points, const Viewport &view)
     return result;
 }
 // Distance from a point to the nearest segment of a screen polyline.
-double lineDistance(const QPolygonF &line, QPointF point)
-{
-    double nearest = std::numeric_limits<double>::infinity();
-    for (qsizetype i = 1; i < line.size(); ++i) {
-        const auto a = line.at(i - 1), d = line.at(i) - a;
-        const double length = QPointF::dotProduct(d, d);
-        const double t =
-            length > 0 ? std::clamp(QPointF::dotProduct(point - a, d) / length, 0.0, 1.0) : 0;
-        nearest = std::min(nearest, QLineF(point, a + t * d).length());
-    }
-    return nearest;
-}
 class PolygonEditor final : public ObjectEditor, public SettingsParticipant
 {
 public:

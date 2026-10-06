@@ -1,9 +1,23 @@
 #include "core/map_tools.h"
 
+#include <QLineF>
 #include <QPainter>
 
 #include <algorithm>
+#include <limits>
 namespace swak {
+double lineDistance(const QPolygonF &line, QPointF point)
+{
+    double nearest = std::numeric_limits<double>::infinity();
+    for (qsizetype i = 1; i < line.size(); ++i) {
+        const auto a = line.at(i - 1), d = line.at(i) - a;
+        const double length = QPointF::dotProduct(d, d);
+        const double t =
+            length > 0 ? std::clamp(QPointF::dotProduct(point - a, d) / length, 0.0, 1.0) : 0;
+        nearest = std::min(nearest, QLineF(point, a + t * d).length());
+    }
+    return nearest;
+}
 void MapTools::add(MapTool *tool)
 {
     if (!tool || tools_.contains(tool)) {

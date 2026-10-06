@@ -24,6 +24,21 @@
 
 namespace swak {
 namespace {
+QPointF screenPoint(const Viewport &view, QPointF world)
+{
+    return (world - view.center) * view.scale() +
+           QPointF(view.size.width() / 2, view.size.height() / 2);
+}
+QPainterPath headingCone(QPointF point, double heading, double radius, double angle)
+{
+    QPainterPath path;
+    path.moveTo(point);
+    path.arcTo(QRectF(point.x() - radius, point.y() - radius, radius * 2, radius * 2),
+               90 - heading + angle / 2,
+               -angle);
+    path.closeSubpath();
+    return path;
+}
 class HeadingConeTool final : public MapTool
 {
 public:
@@ -39,6 +54,36 @@ public:
     bool cancel() override
     {
         return false;
+    }
+    // A click inside a visible cone selects the object that owns the cone.
+    QList<MapItem> itemsAt(const Viewport &view, QPointF position) const override
+    {
+        QList<MapItem> result;
+        const auto &cone = motion_.headingConeStyle();
+        if (!cone.enabled) {
+            return result;
+        }
+        const auto now = QDateTime::currentDateTimeUtc();
+        for (const auto &visual : motion_.snapshot()) {
+            const auto &event = visual.event;
+            if (!visual.kinematics.heading || !motion_.headingConeEnabled(event.uid) ||
+                visual.expired || visual.opacity < 0.15 || event.start > now ||
+                event.stale <= now) {
+                continue;
+            }
+            if (headingCone(screenPoint(view, visual.world),
+                            *visual.kinematics.heading,
+                            view.markerSize(cone.length),
+                            cone.angle)
+                    .contains(position)) {
+                MapItem item;
+                item.owner = QStringLiteral("org.swak.events");
+                item.id = event.uid;
+                item.label = (event.callsign.isEmpty() ? event.uid : event.callsign).left(32);
+                result.append(std::move(item));
+            }
+        }
+        return result;
     }
     void populateInformationMenu(const MapItem &item, QMenu &menu) override
     {
@@ -236,8 +281,7 @@ public:
             if (event.start > now) {
                 continue;
             }
-            const QPointF point = (visual.world - view.center) * view.scale() +
-                                  QPointF(view.size.width() / 2, view.size.height() / 2);
+            const QPointF point = screenPoint(view, visual.world);
             if (!visible
                      .adjusted(-view.markerSize(12),
                                -view.markerSize(12),
@@ -268,17 +312,11 @@ public:
             const auto &cone = store.motion().headingConeStyle();
             if (cone.enabled && store.motion().headingConeEnabled(event.uid) &&
                 visual.kinematics.heading) {
-                const double radius = view.markerSize(cone.length);
-                QPainterPath path;
-                path.moveTo(point);
-                path.arcTo(QRectF(point.x() - radius, point.y() - radius, radius * 2, radius * 2),
-                           90 - *visual.kinematics.heading + cone.angle / 2,
-                           -cone.angle);
-                path.closeSubpath();
                 painter.setOpacity(visual.opacity * cone.opacity);
                 painter.setPen(Qt::NoPen);
                 painter.setBrush(color);
-                painter.drawPath(path);
+                painter.drawPath(headingCone(
+                    point, *visual.kinematics.heading, view.markerSize(cone.length), cone.angle));
                 painter.setOpacity(visual.opacity);
             }
             paintMarkerSymbol(

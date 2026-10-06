@@ -171,6 +171,49 @@ public:
                     emit actionsChanged();
                 });
     }
+    // A click on a visible trace selects the traced object.
+    QList<MapItem> itemsAt(const Viewport &view, QPointF position) const override
+    {
+        QList<MapItem> result;
+        const auto scale = view.scale();
+        const auto origin =
+            QPointF(view.size.width() / 2, view.size.height() / 2) - view.center * scale;
+        const auto &display = store_.motion().paused() ? frozen_ : records_;
+        for (const auto &record : display) {
+            if (record.points.size() < 2) {
+                continue;
+            }
+            QPolygonF line;
+            line.reserve(record.points.size());
+            auto previous = record.points.first();
+            for (auto point : record.points) {
+                point.setX(point.x() - std::round(point.x() - previous.x()));
+                line.append(point * scale + origin);
+                previous = point;
+            }
+            bool hit = false;
+            for (int wrap = -1; wrap <= 1 && !hit; ++wrap) {
+                hit = lineDistance(line.translated(wrap * scale, 0), position) <= width_ / 2 + 5;
+            }
+            if (!hit) {
+                continue;
+            }
+            MapItem item;
+            item.owner = record.owner;
+            item.id = record.id;
+            item.label = record.id;
+            if (record.owner == QStringLiteral("org.swak.markers")) {
+                item.type = tr("Marker");
+                if (objects_) {
+                    if (const auto object = objects_->find(record.id)) {
+                        item.label = object->title;
+                    }
+                }
+            }
+            result.append(std::move(item));
+        }
+        return result;
+    }
     void paint(QPainter &painter, const Viewport &view) const override
     {
         painter.setClipRect(QRectF(QPointF{}, view.size));

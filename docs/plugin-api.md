@@ -309,6 +309,8 @@ MapItem::outlineStyle controls the selected polygon outline. Imported areas reta
 
 `MapTool::interact(item, event, map)` handles a chosen object. The default returns false. A tool must reject another owner's item and find its current record by ID. A missing record causes no action. Left release selects the object. A context event opens that object's menu. Tool-specific creation, movement, and corner editing remain in `handle`.
 
+A tool can also report the owner of a drawn aid. The FOV cone, Trace, and Predict tools return the owner and ID of the CoT object or local marker under a cone, trace line, or prediction line. The map view resolves CoT owners to the normal CoT selection. It removes duplicate owner and ID pairs before the chooser opens. `lineDistance` in `core/map_tools.h` measures the distance from a point to an open polyline for these tests.
+
 `MapTool::attributions` returns plain-text credits. The default returns an empty list. The map view shows them below the map provider and data feed attributions, with the same link handling.
 
 `MapTools` collects hits and routes chosen objects through this API. Markers and Areas both use it. The view also collects CoT, data feed, and vector feature hits. `DataSources::itemsAt` and `TileRenderer::itemsAt` return all hits. These methods replace the former first-hit `itemAt` methods.

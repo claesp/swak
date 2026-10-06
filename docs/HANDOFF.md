@@ -1499,3 +1499,12 @@ UserObjects now measures objects as compact JSON. The limit is 16 KiB for each o
 Route planning results now become Route markers. The purple preview and the route width setting are gone. The marker keeps travel mode, provider distance, estimated time, and provider name. The provider attribution stays on the map while the latest planned route exists. Clear ... clears the start, the destination, and the status, and keeps route markers. The Route planning toolbar button uses a new signpost icon in the measurement section and shows or hides the pane.
 
 Help > Credits adds PROJ, GEOS, and libcurl with versions from the GDAL build information. One row names the other GDAL format libraries.
+
+# 2026-10-06: Attribution, legends, and aid selection
+
+The route provider attribution now appears in the map attribution panel at the lower right, below the map provider attribution. The new virtual `MapTool::attributions` supplies it. The route planner no longer paints its own attribution box.
+
+The scale legend and the zoom indicator have no background. Their marks and text use a thin white outline for contrast. The zoom indicator opacity rose from 0.4 to 0.6 to make up for the removed panel.
+
+A click on a FOV cone, a trace line, or a prediction line selects the owner object. The cone tool, TraceTool, and PredictTool implement `itemsAt`. The map view turns CoT owner hits into normal CoT hits and removes duplicate owners. `lineDistance` moved from polygons.cpp to core/map_tools so that three tools share it. Tests cover the distance helper, transparent decorations, trace and prediction hits, cone clicks in the map, and the attribution panel lifetime of a planned route.
+

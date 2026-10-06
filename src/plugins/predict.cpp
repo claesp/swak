@@ -164,15 +164,49 @@ public:
             emit actionsChanged();
         });
     }
+    // A click on a visible prediction line selects the predicted object.
+    QList<MapItem> itemsAt(const Viewport &view, QPointF position) const override
+    {
+        QList<MapItem> result;
+        if (records_.isEmpty()) {
+            return result;
+        }
+        const auto ends = endpoints();
+        const auto scale = view.scale();
+        const auto origin =
+            QPointF(view.size.width() / 2, view.size.height() / 2) - view.center * scale;
+        const auto now = QDateTime::currentDateTimeUtc();
+        for (const auto &source : store_.motion().snapshot()) {
+            if (!records_.contains(source.event.uid) || source.event.start > now ||
+                source.expired || source.opacity < 0.15) {
+                continue;
+            }
+            QPolygonF line{source.world * scale + origin};
+            for (const auto &step : forecast(source, ends)) {
+                line.append(step.world * scale + origin);
+            }
+            bool hit = false;
+            for (int wrap = -1; wrap <= 1 && line.size() > 1 && !hit; ++wrap) {
+                hit = lineDistance(line.translated(wrap * scale, 0), position) <= width_ / 2 + 5;
+            }
+            if (hit) {
+                MapItem item;
+                item.owner = QStringLiteral("org.swak.events");
+                item.id = source.event.uid;
+                item.label =
+                    (source.event.callsign.isEmpty() ? source.event.uid : source.event.callsign)
+                        .left(32);
+                result.append(std::move(item));
+            }
+        }
+        return result;
+    }
     void paint(QPainter &painter, const Viewport &view) const override
     {
         if (records_.isEmpty()) {
             return;
         }
-        QHash<QString, VisualEvent> ends;
-        for (const auto &endpoint : endpoints_.snapshot()) {
-            ends.insert(endpoint.event.uid, endpoint);
-        }
+        const auto ends = endpoints();
         painter.save();
         painter.setClipRect(QRectF(QPointF{}, view.size));
         const auto scale = view.scale();
@@ -190,18 +224,14 @@ public:
             const QColor color(qRound(base.red() * (1 - source.gray) + gray * source.gray),
                                qRound(base.green() * (1 - source.gray) + gray * source.gray),
                                qRound(base.blue() * (1 - source.gray) + gray * source.gray));
+            const auto steps = forecast(source, ends);
             auto previous = source.world;
             double previousOpacity = 1;
-            for (qsizetype index = 0; index < static_cast<qsizetype>(Seconds.size()); ++index) {
-                const auto found = ends.constFind(
-                    endpointId(source.event.uid, Seconds.at(static_cast<size_t>(index))));
-                if (found == ends.cend()) {
-                    break;
-                }
-                auto target = found->world;
-                target.setX(target.x() - std::round(target.x() - previous.x()));
+            for (qsizetype index = 0; index < steps.size(); ++index) {
+                const auto &found = steps.at(index);
+                const auto target = found.world;
                 painter.setOpacity(opacity_ * source.opacity *
-                                   std::min(previousOpacity, found->opacity));
+                                   std::min(previousOpacity, found.opacity));
                 const auto delta = (target - previous) * scale;
                 const auto length = std::hypot(delta.x(), delta.y());
                 const auto normal =
@@ -223,13 +253,39 @@ public:
                     painter.drawLine(end - tick, end + tick);
                 }
                 previous = target;
-                previousOpacity = found->opacity;
+                previousOpacity = found.opacity;
             }
         }
         painter.restore();
     }
 
 private:
+    QHash<QString, VisualEvent> endpoints() const
+    {
+        QHash<QString, VisualEvent> ends;
+        for (const auto &endpoint : endpoints_.snapshot()) {
+            ends.insert(endpoint.event.uid, endpoint);
+        }
+        return ends;
+    }
+    // Returns the available forecast points in order, unwrapped next to the previous point.
+    static QList<VisualEvent> forecast(const VisualEvent &source,
+                                       const QHash<QString, VisualEvent> &ends)
+    {
+        QList<VisualEvent> steps;
+        auto previous = source.world;
+        for (const auto seconds : Seconds) {
+            const auto found = ends.constFind(endpointId(source.event.uid, seconds));
+            if (found == ends.cend()) {
+                break;
+            }
+            auto step = *found;
+            step.world.setX(step.world.x() - std::round(step.world.x() - previous.x()));
+            previous = step.world;
+            steps.append(std::move(step));
+        }
+        return steps;
+    }
     void syncMotion()
     {
         auto values = store_.motion().animationPreferences();

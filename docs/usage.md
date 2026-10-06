@@ -351,7 +351,7 @@ Information describes CoT Type and How with names from the shared selector catal
 
 # Circle, Distance, and Line
 
-Click an object label to select its object. Selected labels invert their foreground and background colors. Overlapping labels use the same object chooser as overlapping symbols.
+Click an object label to select its object. Click a FOV cone, a trace line, or a prediction line to select the object that owns it. Selected labels invert their foreground and background colors. Overlapping labels use the same object chooser as overlapping symbols.
 
 With the map focused, press C to start Circle. Click the center. Move the pointer to set the radius. The preview shows the current radius in local units. Click again to open the object editor.
 
