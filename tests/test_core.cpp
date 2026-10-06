@@ -2,6 +2,7 @@
 #include "core/files.h"
 #include "core/graphics.h"
 #include "core/interfaces.h"
+#include "core/map_decorations.h"
 #include "core/map_grid.h"
 #include "core/map_tools.h"
 #include "core/maps.h"
@@ -645,6 +646,27 @@ private slots:
         answerAction();
         main.findChild<QAction *>(QStringLiteral("clearPredictions"))->trigger();
         QVERIFY(settings->savePreferences().value(QStringLiteral("targets")).toArray().isEmpty());
+    }
+    void mapDecorationsHaveNoBackground()
+    {
+        const Viewport view{QSizeF(400, 300), QPointF(.5, .5), 8};
+        QImage image(400, 300, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        {
+            QPainter painter(&image);
+            paintMapDecorations(painter, view, true, true, 0, 19, {});
+        }
+        // The scale bar and the zoom ladder draw marks without a filled panel.
+        const double y = view.size.height() - 18;
+        QVERIFY(image.pixelColor(16, qRound(y)).alpha() > 0);
+        QCOMPARE(image.pixelColor(11, qRound(y) + 9).alpha(), 0);
+        QCOMPARE(image.pixelColor(60, qRound(y) + 9).alpha(), 0);
+        const auto zoom = mapZoomLegendRect(view);
+        QVERIFY(image.pixelColor(qRound(zoom.left() + 7), qRound(zoom.center().y())).alpha() > 0);
+        QCOMPARE(image.pixelColor(qRound(zoom.left() + 32), qRound(zoom.top() + zoom.height() / 4))
+                     .alpha(),
+                 0);
+        QCOMPARE(image.pixelColor(qRound(zoom.left() + 2), qRound(zoom.top() - 8)).alpha(), 0);
     }
     void traceLimits()
     {

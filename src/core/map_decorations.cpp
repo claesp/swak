@@ -2,11 +2,41 @@
 
 #include "core/measure.h"
 
+#include <QLineF>
+#include <QList>
 #include <QPainter>
+#include <QPainterPath>
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 namespace swak {
+namespace {
+// A white halo keeps black marks readable on any map without a background plate.
+// All halos come first so that no halo covers the black line of a joined mark.
+void drawHaloLines(QPainter &painter, const QList<std::pair<QLineF, double>> &lines)
+{
+    for (const auto &[line, width] : lines) {
+        painter.setPen(QPen(QColor(255, 255, 255, 200), width + 2, Qt::SolidLine, Qt::RoundCap));
+        painter.drawLine(line);
+    }
+    for (const auto &[line, width] : lines) {
+        painter.setPen(QPen(Qt::black, width, Qt::SolidLine, Qt::FlatCap));
+        painter.drawLine(line);
+    }
+}
+void drawHaloText(QPainter &painter, QPointF baseline, const QString &text)
+{
+    QPainterPath path;
+    path.addText(baseline, painter.font(), text);
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.strokePath(
+        path, QPen(QColor(255, 255, 255, 200), 3, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.fillPath(path, Qt::black);
+    painter.restore();
+}
+} // namespace
 ScaleLegend mapScaleLegend(const Viewport &view, const QLocale &locale, double bottom)
 {
     if (view.size.width() < 80 || view.size.height() < 60 || !std::isfinite(view.zoom) ||
@@ -97,20 +127,11 @@ void paintMapDecorations(QPainter &painter,
         const auto legend = mapScaleLegend(view, QLocale(), bottom);
         if (legend.pixels > 0) {
             const double y = bottom - 18;
-            const auto width = std::max(
-                legend.pixels + 12,
-                static_cast<double>(painter.fontMetrics().horizontalAdvance(legend.text) + 12));
-            painter.fillRect(QRectF(10,
-                                    y - painter.fontMetrics().height() - 9,
-                                    width,
-                                    painter.fontMetrics().height() + 20),
-                             QColor(255, 255, 255, 150));
-            painter.setPen(QPen(Qt::black, 1.5));
-            painter.drawLine(QPointF(16, y), QPointF(16 + legend.pixels, y));
-            for (const double x : {16.0, 16 + legend.pixels}) {
-                painter.drawLine(QPointF(x, y - 4), QPointF(x, y + 4));
-            }
-            painter.drawText(QPointF(16, y - 6), legend.text);
+            drawHaloLines(painter,
+                          {{QLineF(16, y, 16 + legend.pixels, y), 1.5},
+                           {QLineF(16, y - 4, 16, y + 4), 1.5},
+                           {QLineF(16 + legend.pixels, y - 4, 16 + legend.pixels, y + 4), 1.5}});
+            drawHaloText(painter, QPointF(16, y - 6), legend.text);
         }
     }
     if (zoom) {
@@ -121,20 +142,24 @@ void paintMapDecorations(QPainter &painter,
             const double height = rectangle.height(), top = rectangle.top();
             const double x = rectangle.left() + 7;
             const int span = std::max(1, maximumZoom - minimumZoom);
-            painter.setOpacity(.4);
-            painter.fillRect(rectangle.adjusted(0, -12, 0, 12), Qt::white);
-            painter.setPen(QPen(Qt::black, 1));
-            painter.drawLine(QPointF(x, top), QPointF(x, top + height));
+            painter.setOpacity(.6);
+            QList<std::pair<QLineF, double>> marks{{QLineF(x, top, x, top + height), 1}};
+            QList<std::pair<QPointF, QString>> labels;
+            const auto metrics = painter.fontMetrics();
             for (int level = minimumZoom; level <= maximumZoom; ++level) {
                 const double y = top + (maximumZoom - level) * height / span;
                 const bool current = level == qRound(view.zoom);
-                painter.setPen(QPen(Qt::black, current ? 2 : 1));
-                painter.drawLine(QPointF(x, y), QPointF(x + (current ? 19 : 10), y));
+                marks.append({QLineF(x, y, x + (current ? 19 : 10), y), current ? 2 : 1});
                 if (current || level == minimumZoom || level == maximumZoom) {
-                    painter.drawText(QRectF(x + 20, y - 10, rectangle.right() - x - 24, 20),
-                                     Qt::AlignRight | Qt::AlignVCenter,
-                                     QLocale().toString(level));
+                    const auto text = QLocale().toString(level);
+                    labels.append({QPointF(rectangle.right() - 4 - metrics.horizontalAdvance(text),
+                                           y + (metrics.ascent() - metrics.descent()) / 2.0),
+                                   text});
                 }
+            }
+            drawHaloLines(painter, marks);
+            for (const auto &[baseline, text] : labels) {
+                drawHaloText(painter, baseline, text);
             }
         }
     }
