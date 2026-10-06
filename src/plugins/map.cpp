@@ -156,8 +156,8 @@ public:
             gridVisibility_->setChecked(!grids_->selected().isEmpty());
             gridVisibility_->setEnabled(!grids_->entries().isEmpty());
         });
-        scaleLegend_ = decorationAction(tr("Map scale"), QStringLiteral("mapScaleAction"));
-        zoomIndicator_ = decorationAction(tr("Map zoom level"), QStringLiteral("mapZoomAction"));
+        scaleLegend_ = decorationAction(tr("Scale"), QStringLiteral("mapScaleAction"));
+        zoomIndicator_ = decorationAction(tr("Zoom Level"), QStringLiteral("mapZoomAction"));
         navigationLock_ = new QAction(tr("Lock"), this);
         navigationLock_->setObjectName(QStringLiteral("mapNavigationLock"));
         navigationLock_->setCheckable(true);
@@ -1499,12 +1499,6 @@ public:
         connect(mapSources, &MapSources::changed, mapButton, updateMapButton);
         connect(mapMenu, &QMenu::aboutToShow, mapMenu, [mapMenu, mapSources] {
             mapMenu->clear();
-            auto *clearProvider = mapMenu->addAction(tr("No map provider"));
-            clearProvider->setCheckable(true);
-            clearProvider->setChecked(mapSources->activeSource().isEmpty());
-            connect(clearProvider, &QAction::triggered, mapSources, [mapSources] {
-                mapSources->select({});
-            });
             const auto sources = mapSources->sources();
             auto ids = sources.keys();
             const QCollator collator;
@@ -1526,8 +1520,18 @@ public:
                     mapSources->select(id);
                 });
             }
-            const auto *manage = addMenuFooterAction(*mapMenu, tr("More ..."));
+            auto *manage = addMenuFooterAction(*mapMenu, tr("More ..."));
             connect(manage, &QAction::triggered, mapSources, &MapSources::managementRequested);
+            // Disable sits in the footer, before More ..., and clears the provider selection.
+            auto *clearProvider = new QAction(tr("Disable"), mapMenu);
+            clearProvider->setObjectName(QStringLiteral("disableMapProvider"));
+            clearProvider->setCheckable(true);
+            clearProvider->setChecked(mapSources->activeSource().isEmpty());
+            clearProvider->setProperty("menuTailOrder", 2);
+            mapMenu->insertAction(manage, clearProvider);
+            connect(clearProvider, &QAction::triggered, mapSources, [mapSources] {
+                mapSources->select({});
+            });
         });
         updateMapButton();
     }

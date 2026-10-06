@@ -149,7 +149,7 @@ The receiver updates its pane for each batch. Events contain at most one traffic
 
 # Map background and zoom
 
-The map uses NATO-style green (`#303D2B`) beneath its tiles. To clear the provider selection, select No map provider in the map toolbar dropdown. The map then shows only the green background. This version removes the old schematic map.
+The map uses NATO-style green (`#303D2B`) beneath its tiles. To clear the provider selection, select Disable in the map toolbar dropdown. Disable sits directly before More ... at the end of the list. The map then shows only the green background. This version removes the old schematic map.
 
 Each missing tile shows faint MISSING TILE text at 45 degrees and a faint edge. File > Settings > Map controls Missing tile marker opacity. A loaded tile replaces its marker. Missing providers and unavailable tiles use the same background.
 
@@ -436,7 +436,7 @@ The Information pane shows Restricted as Yes or No for each Area.
 
 The main view appears in the Map tab. Its keyboard, mouse, overlay, and lock controls retain their behavior. Map scale appears at the lower left. The scale uses the local ground distance at its latitude. Units follow the operating system locale, with meters and kilometers or feet and miles.
 
-The faded indicator at the right edge shows the supported zoom levels. The scale and the zoom indicator have no background panel. A thin white outline keeps their black marks visible on dark maps. A longer tick marks the current level. View > Map scale and View > Map zoom level control visibility. Both choices survive restart.
+The faded indicator at the right edge shows the supported zoom levels. The scale and the zoom indicator have no background panel. A thin white outline keeps their black marks visible on dark maps. A longer tick marks the current level. View > Scale and View > Zoom Level control visibility. Both choices survive restart.
 
 Open File > Settings > General > Grids to manage coordinate grids. Longitude/latitude is the default selection. UTM and MGRS are also available. Select a radio button to activate a type. Select No grid to hide all types.
 
@@ -462,7 +462,7 @@ While you edit an Area, double-click a corner to start Move. Click its new locat
 
 Grid lines use antialiasing to soften their edges. New grids use 30 percent opacity. Existing grids keep their saved opacity. Change the opacity under Grids in Settings.
 
-The zoom legend appears at the right edge of the map. Click a tick to select that zoom level. The map keeps its center and respects the selected provider limits. The navigation lock also blocks legend clicks. View > Map zoom level controls its visibility.
+The zoom legend appears at the right edge of the map. Click a tick to select that zoom level. The map keeps its center and respects the selected provider limits. The navigation lock also blocks legend clicks. View > Zoom Level controls its visibility.
 
 The Information pane shows ground speed for received CoT objects. The calculation uses the distance and time between consecutive messages. It shows kilometers per hour or miles per hour from the operating system locale. Reported speed provides a fallback when no valid calculation exists. Unknown values remain marked Unknown.
 

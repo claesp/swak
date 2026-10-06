@@ -445,7 +445,7 @@ Predict draws successive segments from the source to 30 seconds, then 1 minute, 
 
 The host places its ViewPlugin widget in the Map tab of mainViews. MapPanels remains a child of that widget, so its overlay coordinates do not include the tab bar. StatusProvider still receives the actual view. Hiding the tab cancels map interaction and stops panning through the existing view lifecycle.
 
-PluginServices::viewActions publishes optional view-owned actions for the View menu. The map publishes Grid, Map scale, and Map zoom level. These actions share state with the map configuration fields and persist through SettingsParticipant.
+PluginServices::viewActions publishes optional view-owned actions for the View menu. The map publishes Grid, Scale, and Zoom Level. These actions share state with the map configuration fields and persist through SettingsParticipant.
 
 ToolbarSection::Providers groups map, server, and data selectors before creation and measurement actions. CoT Messages retains MenuPlugin but no longer implements ToolbarPlugin. Its MANIFEST matches these roles.
 

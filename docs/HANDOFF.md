@@ -1512,3 +1512,7 @@ A click on a FOV cone, a trace line, or a prediction line selects the owner obje
 
 The Events table no longer shows Urgency. It has four columns, named by `ActivityModel::Column`. The table saves a `layout` value with its header state and ignores older five-column states once. A double-click, Enter, or View event ... opens a dialog with the full wrapped event text. Copy, Ctrl+C, and the dialog Copy button put one tab-separated line on the clipboard. The Event column tooltip wraps long text. Tests cover the columns, the wrapped tooltip, the dialog text, and both copy paths.
 
+# 2026-10-06: Map menu names
+
+The map provider dropdown names its clear command Disable instead of No map provider. Disable now sits in the footer, directly before More .... The View menu names the map decorations Scale and Zoom Level. Settings > Map keeps the longer field labels, and the provider button tooltip still reads No map provider when no provider is active.
+

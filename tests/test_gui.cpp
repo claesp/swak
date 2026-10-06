@@ -1125,6 +1125,8 @@ private slots:
             auto *scale = window.findChild<QAction *>(QStringLiteral("mapScaleAction"));
             auto *zoom = window.findChild<QAction *>(QStringLiteral("mapZoomAction"));
             QVERIFY(scale->isChecked() && zoom->isChecked());
+            QCOMPARE(scale->text(), QStringLiteral("Scale"));
+            QCOMPARE(zoom->text(), QStringLiteral("Zoom Level"));
             const swak::Viewport legendView{map->size(), {.5, .5}, 8};
             const auto legend = swak::mapZoomLegendRect(legendView);
             QVERIFY(legend.left() > map->width() / 2);
@@ -1595,7 +1597,7 @@ private slots:
             QCOMPARE(menu->actions().size(), maps->sources().size() + 3);
             QAction *none = nullptr, *provider = nullptr, *manage = nullptr;
             for (auto *action : menu->actions()) {
-                if (action->text() == QStringLiteral("No map provider")) {
+                if (action->text() == QStringLiteral("Disable")) {
                     none = action;
                 } else if (action->text() == QStringLiteral("More ...")) {
                     manage = action;
@@ -1604,6 +1606,10 @@ private slots:
                 }
             }
             QVERIFY(none && provider && manage);
+            // Disable comes directly before More ... at the end of the menu.
+            QCOMPARE(menu->actions().last(), manage);
+            QCOMPARE(menu->actions().at(menu->actions().size() - 2), none);
+            QVERIFY(menu->actions().at(menu->actions().size() - 3)->isSeparator());
             QVERIFY(none->isChecked());
             provider->trigger();
             QVERIFY(!maps->activeSource().isEmpty());
@@ -4009,6 +4015,7 @@ private slots:
             QVERIFY(QTest::qWaitForWindowExposed(mapMenu));
             auto entries = mapMenu->actions();
             QCOMPARE(entries.takeLast()->text(), QStringLiteral("More ..."));
+            QCOMPARE(entries.takeLast()->text(), QStringLiteral("Disable"));
             QVERIFY(entries.takeLast()->isSeparator());
             QVERIFY(sorted(entries));
             QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
