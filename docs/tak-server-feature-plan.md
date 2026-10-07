@@ -90,7 +90,7 @@ Keep every received detail element as bounded XML, in addition to the typed fiel
 
 ## TAK REST client
 
-Add a core service that sends HTTPS requests to the server of a stream entry. It uses the same CA and client certificate as the stream. The default port is 8443 and the base path is `/Marti/api`.
+Add a core service that sends HTTPS requests to the server of a stream entry. It uses the same CA and client certificate as the stream. The default port is 8443 and the base path is `/Marti/api`. The service uses libcurl. Read the libcurl evaluation below.
 
 - Bound response sizes and times. Read JSON through one validation layer. Disable redirects and cookies.
 - Send credentials only to the configured host and port, as the map client does now.
@@ -108,6 +108,7 @@ A TAK Server can issue client certificates on connector 8446 without a client ce
 
 - Add an Enroll action to the server editor. Store the key and certificates as files with owner-only permissions. Never write the password into the profile.
 - Read the enrollment profile from `/api/tls/profile/enrollment` and apply supported settings, such as server entries.
+- Keys: support both methods. SWAK can generate a new key pair, or the user can select an existing private key file. In both cases SWAK builds the certificate request from that key.
 - Dependency: Qt cannot create key pairs or certificate requests. Use OpenSSL `libcrypto`, which the Qt TLS backend already loads. Document the reason in `docs/dependencies.md`.
 
 ## Username and password on the stream
@@ -119,8 +120,9 @@ Inputs with `auth="file"` or `auth="ldap"` expect an `<auth>` element with a use
 The server starts in XML mode. A client can ask for protobuf mode through `t-x-takp-q` after the server sends `t-x-takp-v`. The server confirms with `t-x-takp-r`. Version 1 frames use the `0xbf` magic byte, a varint length, and a `TakMessage`.
 
 - Benefit: smaller messages and less parsing work on busy servers.
-- Design: a bounded protobuf decoder for `takmessage.proto`, `cotevent.proto`, and `detail.proto`. The decoder converts to the same `Event` and detail model. Keep XML as the fallback.
-- Dependency: write a small decoder for the fixed message set, or add `libprotobuf-lite`. Decide during design.
+- Design: decode `TakMessage`, `CotEvent`, and `Detail` messages with the Protobuf library. Convert them to the same `Event` and detail model. Keep XML as the fallback. Check each frame length before decoding.
+- Dependency: Protobuf, with the lite runtime (`libprotobuf-lite`) and `protoc` at build time. Debian 13 supplies runtime 3.21.12. The build needs `libprotobuf-dev` and `protobuf-compiler`. Protobuf uses a BSD 3-clause license.
+- Schema license: the `.proto` files in the TAK Server repository are under GPL version 3. SWAK declares no license yet. Before SWAK copies these files, decide the SWAK license. Alternatively, write SWAK's own schema files with the same field numbers and types. Field numbers are interface facts.
 
 ## Multicast mesh
 
@@ -132,7 +134,7 @@ Allow a UDP entry to send to a server `udp` input, such as port 8087. Keep recei
 
 ## QUIC
 
-TAK Server 5.7 adds a QUIC input on port 8090. Qt has no QUIC client. Defer this until a maintained QUIC library meets the dependency rules. TLS stays the primary transport.
+TAK Server 5.7 adds a QUIC input on port 8090. The server is not an HTTP/3 server. It uses the ALPN name `takstream` and one bidirectional QUIC stream for CoT. Qt has no QUIC client, and libcurl cannot carry this stream. Use the QUIC client in OpenSSL 3.5 instead. Debian 13 supplies OpenSSL 3.5.7. This adds `libssl` to the `libcrypto` dependency from enrollment, from the same package. TLS stays the primary transport. Read the libcurl evaluation below.
 
 # Phase 2: Shared situational awareness
 
@@ -169,7 +171,9 @@ Send SWAK markers, circles, lines, areas, and routes as standard TAK CoT, so ATA
 | Rectangle | `u-d-r` |
 | Route | `b-m-r` with `link` checkpoints and `link_attr` |
 
-- Add a Share action and a Shared state for each local object. Keep receiving and sending separate. Never forward received events automatically.
+- Share only on an explicit Share action for each object. The object then stays shared, and SWAK sends its updates and deletion.
+- Add a global setting, Share new objects automatically, under File > Settings. It is off by default. When it is on, SWAK shares each new local object on save.
+- Keep receiving and sending separate. Never forward received events automatically.
 - Convert stroke and fill colors from the ARGB integer that TAK uses.
 
 # Phase 3: Chat
@@ -228,7 +232,9 @@ Download iconsets from the server and add them as marker collections. Show recei
 
 ## Video
 
-Read video connections from `/api/video` and `b-i-v` events with `__video` details. List them in a Video pane. Version one opens the stream URL in the system player after confirmation. Native playback needs Qt Multimedia with FFmpeg and a separate dependency decision.
+Read video connections from `/api/video` and `b-i-v` events with `__video` details. List them in a Video pane. Play them inside SWAK with Qt Multimedia and its FFmpeg backend. Debian 13 supplies Qt Multimedia 6.8.2 and FFmpeg 7.1. The build needs `qt6-multimedia-dev`.
+
+TAK video uses RTSP, RTMP, SRT, HLS, and MPEG-TS over UDP. Start with a test of each protocol in Qt Multimedia. Show a protocol that does not play as unavailable, with the reason. Do not start an external player.
 
 ## History and tracks
 
@@ -259,7 +265,7 @@ Query past positions with `/api/cot/sa` for a time range and area, and `/api/cot
 | 11 | Multicast mesh | Medium | Serverless ATAK interoperability |
 | 12 | TAK Protocol version 1 | Medium | Efficiency on busy servers |
 | 13 | History, video, ExCheck, CITrap, and others | Varies | Lower demand |
-| 14 | QUIC | Large | Waits for a suitable library |
+| 14 | QUIC | Large | Uses the OpenSSL QUIC client |
 
 # Engineering rules for every phase
 
@@ -270,10 +276,37 @@ Query past positions with `/api/cot/sa` for a time range and area, and `/api/cot
 - Test each feature against a disposable TAK Server 5.7 container, extending `swak_tak_compat`. Add unit tests for parsing and limits. Add GUI tests for each pane.
 - Update `docs/plugin-api.md`, `docs/security.md`, `docs/servers.md`, and the user guide with each phase.
 
-# Open decisions
+# Decisions
 
-1. OpenSSL `libcrypto` for enrollment key generation: accept, or require the user to supply keys.
-2. Protobuf: a hand-written bounded decoder, or `libprotobuf-lite`.
-3. Video: an external player only, or Qt Multimedia with FFmpeg.
-4. QUIC: wait, or evaluate a library such as msquic.
-5. Shared objects: send drawings automatically after Share, or only through an explicit send each time.
+The user made these decisions on October 7, 2026.
+
+1. Enrollment keys: support both. SWAK generates a key pair, or the user supplies a private key. SWAK uses OpenSSL `libcrypto`.
+2. TAK Protocol version 1: use the Protobuf library.
+3. Video: play inside SWAK with Qt Multimedia. Each streaming protocol needs a successful playback test first.
+4. Connectivity: evaluate libcurl for all related connections. The result is below.
+5. Sharing: share an object only after an explicit Share action. A global setting can share new objects automatically.
+
+One question remains open: the SWAK license, which controls whether SWAK can copy the GPL `.proto` files.
+
+# libcurl evaluation
+
+The development system has libcurl 8.14.1 with OpenSSL 3.5.7, HTTP/2, and HTTP/3 through nghttp3 and ngtcp2. GDAL already links libcurl for raster tiles and remote files, so libcurl adds no new package.
+
+| Connection | Today | libcurl fit | Recommendation |
+| --- | --- | --- | --- |
+| TAK REST API, enrollment, data packages, missions, iconsets, video list | None | Good. Client certificates in PEM and PKCS12, HTTP/2, HTTP/3, proxies, resumable downloads, and size limits in callbacks. | Use libcurl for the TAK REST client. |
+| QUIC CoT stream | None | Not possible. libcurl uses QUIC only for HTTP/3. TAK uses the `takstream` ALPN with a raw stream. | Use the OpenSSL QUIC client. |
+| TLS and TCP CoT streams | QSslSocket | Possible with `CURLOPT_CONNECT_ONLY` and `curl_easy_send` or `curl_easy_recv`. It gives no protocol gain. | Keep QSslSocket. Revisit only if TLS settings must match the REST client exactly. |
+| UDP and multicast CoT | QUdpSocket | Not supported. | Keep Qt sockets. |
+| Map tiles through GDAL | libcurl through GDAL | Already libcurl. | No change. |
+| MVT tiles, data feeds, routing, Google and Azure sessions | QNetworkAccessManager | Good. A switch gives one TLS and proxy configuration and HTTP/3. The MVT disk cache needs a replacement. | Move after the TAK REST client proves the libcurl integration. |
+
+Design for the libcurl client:
+
+- One core `NetworkClient` owns a curl multi handle. A worker thread runs it, so the interface thread never waits for the network.
+- Each request has a size limit, a time limit, and a cancellation flag. Redirects stay off unless a caller enables them for the same host.
+- Credentials come from the same files and environment variables as the CoT stream. Each request checks the destination host before it sends a credential.
+- Replies return to the interface thread through queued signals.
+- Tests use the existing local HTTPS fixtures and a disposable TAK Server container.
+
+Conclusion: libcurl can replace Qt for all HTTPS connectivity. It cannot replace the QUIC stream or the UDP and multicast inputs. The TLS and TCP CoT streams gain nothing from a switch.

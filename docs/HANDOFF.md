@@ -1546,3 +1546,7 @@ Marker mode now uses Shift+M, like Shift+A for Area and Shift+R for Route. The m
 
 `docs/tak-server-feature-plan.md` compares TAK Server 5.7-RELEASE-14, commit `5187abd`, with SWAK. It maps about 35 client-facing server capabilities to eight phases. Phase 0 adds a full CoT detail model and a TAK REST client. Later phases add enrollment, shared drawings, chat, data packages, missions, and server resources. The plan lists five open decisions, including OpenSSL for enrollment and the protobuf decoder. No code changed.
 
+# 2026-10-07: TAK plan decisions
+
+The user decided: enrollment supports generated and supplied keys through OpenSSL `libcrypto`; TAK Protocol version 1 uses the Protobuf library; video plays inside SWAK through Qt Multimedia after a protocol test; sharing needs an explicit Share action, with a global automatic setting. The libcurl evaluation recommends libcurl for all HTTPS work, starting with the TAK REST client. libcurl cannot carry TAK QUIC, because TAK uses ALPN `takstream` with a raw stream, not HTTP/3. The OpenSSL 3.5 QUIC client covers QUIC. The SWAK license remains open, because the TAK `.proto` files are GPL version 3.
+
