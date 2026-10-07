@@ -1566,3 +1566,7 @@ Received CoT keeps all detail children in `Event::detail`, up to 8192 characters
 
 TLS server entries accept `authUser` and `authPasswordEnv`. After the handshake, the worker sends `<auth><cot username password uid callsign/></auth>`, as TAK file and LDAP inputs require. `Servers::setSenderIdentity` supplies the UID and callsign from Identity. Validation rejects a login on plaintext entries or without a `SWAK_COT_` variable. `takStreamLogin` covers order, escaping, identity, validation, and a missing password. A live TAK Server with `auth="file"` remains untested.
 
+# 2026-10-07: Phase 1 UDP output
+
+A new server protocol, `udpout`, sends generated CoT to a server UDP input. It needs a numeric unicast address, binds an ephemeral local port, sends one event per datagram, and discards input. Its status shows the sent count. `udpOutput` covers validation, the datagram content, the count, and ignored input.
+

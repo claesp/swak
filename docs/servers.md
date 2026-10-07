@@ -14,7 +14,7 @@ TLS entries also use the TAK Server REST API. TAK Server serves it on port 8443 
 
 For an encrypted key or PKCS12 file, set Password environment variable to a dedicated `SWAK_COT_` name. Set that variable before you start SWAK. The profile stores the variable name, not its value. Certificate files remain external to the profile. Update their paths after you move a profile to another computer. Use trusted profiles because they choose credential destinations.
 
-TCP CoT stream supports explicit plaintext connections. The TAK Server example uses port 8088 for `stcp`. UDP input listens on the configured local address and port. It does not connect to a remote UDP server. These transports do not authenticate received messages.
+TCP CoT stream supports explicit plaintext connections. The TAK Server example uses port 8088 for `stcp`. UDP input listens on the configured local address and port. UDP output to a server sends generated CoT to a server UDP input, such as TAK Server port 8087. It needs the numeric address of the server. It sends one event per datagram and reads nothing. These transports do not authenticate messages, and UDP gives no delivery guarantee.
 
 Each stream retries after a failure. Repeated failures increase the retry delay to at most 60 seconds. Connection and incomplete-message timeouts share a configurable limit. Idle streams reconnect after 90 seconds without input. A control heartbeat runs every 30 seconds. CoT control messages do not become map objects.
 
@@ -24,7 +24,7 @@ File > Identity opens the sender configuration. The same fields appear in File >
 
 The generator uses this identity when it opens and when the identity changes. Use sender identity restores those defaults after draft edits. Position and lifetime remain generator fields. New identity in the generator creates a separate draft UID. It does not replace the saved sender identity.
 
-Generate event normally adds a local event. Enable Send generated CoT to connected servers and LAN peers to transmit it. Only connected TCP, TLS, and established LAN sessions receive generated messages. UDP inputs remain receive-only. SWAK never forwards received events automatically. This rule prevents forwarding loops across servers and peers.
+Generate event normally adds a local event. Enable Send generated CoT to connected servers and LAN peers to transmit it. Only connected TCP, TLS, UDP output, and established LAN sessions receive generated messages. UDP inputs remain receive-only. SWAK never forwards received events automatically. This rule prevents forwarding loops across servers and peers.
 
 # Local LAN servers
 

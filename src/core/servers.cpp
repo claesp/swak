@@ -106,14 +106,18 @@ QList<SettingField> serverFields(const QJsonObject &source)
     QList<SettingField> fields{
         textSetting(QStringLiteral("name"), tr("Name"), 128),
         textSetting(QStringLiteral("host"), tr("Host or local bind address"), 253),
-        choiceSetting(
-            QStringLiteral("protocol"),
-            tr("Protocol"),
-            {tr("TLS CoT stream"), tr("TCP CoT stream"), tr("UDP input"), tr("Local LAN")},
-            {QStringLiteral("tls"),
-             QStringLiteral("stcp"),
-             QStringLiteral("udp"),
-             QStringLiteral("lan")}),
+        choiceSetting(QStringLiteral("protocol"),
+                      tr("Protocol"),
+                      {tr("TLS CoT stream"),
+                       tr("TCP CoT stream"),
+                       tr("UDP input"),
+                       tr("UDP output to a server"),
+                       tr("Local LAN")},
+                      {QStringLiteral("tls"),
+                       QStringLiteral("stcp"),
+                       QStringLiteral("udp"),
+                       QStringLiteral("udpout"),
+                       QStringLiteral("lan")}),
         choiceSetting(
             QStringLiteral("localAddress"), tr("Interface"), interfaceLabels, interfaceValues),
         numberSetting(QStringLiteral("port"), tr("Port"), 1, 65535),
@@ -134,7 +138,7 @@ QList<SettingField> serverFields(const QJsonObject &source)
     for (auto &field : fields) {
         if (field.path == "host" || field.path == "port") {
             field.enabledBy = QStringLiteral("protocol");
-            field.enabledValue = QJsonArray{"tls", "stcp", "udp"};
+            field.enabledValue = QJsonArray{"tls", "stcp", "udp", "udpout"};
         }
         if (QStringList{QStringLiteral("ca"),
                         QStringLiteral("certificate"),
@@ -157,7 +161,8 @@ QString validateServer(const QJsonObject &v)
     }
     const auto protocol = v.value(QStringLiteral("protocol")).toString();
     if (protocol != QLatin1String("tls") && protocol != QLatin1String("stcp") &&
-        protocol != QLatin1String("udp") && protocol != QLatin1String("lan")) {
+        protocol != QLatin1String("udp") && protocol != QLatin1String("udpout") &&
+        protocol != QLatin1String("lan")) {
         return tr("The server protocol is unavailable.");
     }
     if (v.contains("localAddress") && !v.value("localAddress").isString()) {
@@ -189,6 +194,9 @@ QString validateServer(const QJsonObject &v)
         }
         if (protocol == QLatin1String("udp") && !address.setAddress(host)) {
             return tr("UDP input requires a numeric local address.");
+        }
+        if (protocol == QLatin1String("udpout") && !address.setAddress(host)) {
+            return tr("UDP output requires the numeric address of the server.");
         }
     }
     for (const auto &[key, low, high] :
@@ -323,6 +331,14 @@ public:
             if (s->tcp && s->ready && (!s->peer || s->greeted) &&
                 s->tcp->bytesToWrite() + payload.size() <= 256 * 1024) {
                 s->tcp->write(payload);
+            } else if (s->output && s->udp && s->ready) {
+                // One event per datagram. The 16 KiB message limit stays below the UDP limit.
+                const QHostAddress target(s->source.value(QStringLiteral("host")).toString());
+                const auto port =
+                    static_cast<quint16>(s->source.value(QStringLiteral("port")).toInt());
+                if (s->udp->writeDatagram(payload, target, port) == payload.size()) {
+                    ++s->sent;
+                }
             }
         }
     }
@@ -342,10 +358,10 @@ private:
         std::unique_ptr<QUdpSocket> udp;
         CotStream stream;
         QString state;
-        quint64 accepted = 0, rejected = 0, controls = 0;
+        quint64 accepted = 0, rejected = 0, controls = 0, sent = 0;
         qint64 next = 0, started = 0, partial = 0, lastRead = 0, lastPing = 0;
         int failures = 0;
-        bool ready = false, peer = false, greeted = false;
+        bool ready = false, peer = false, greeted = false, output = false;
         QByteArray greeting;
         QString peerId, lanId;
         QJsonObject lanSource;
@@ -569,6 +585,20 @@ private:
     void start(Session &s)
     {
         s.started = clock_.elapsed();
+        if (s.source.value(QStringLiteral("protocol")) == QLatin1String("udpout")) {
+            // Output only. The socket sends datagrams and reads nothing.
+            s.udp = std::make_unique<QUdpSocket>();
+            const auto local = s.source.value("localAddress").toString();
+            if (!s.udp->bind(
+                    local.isEmpty() ? QHostAddress(QHostAddress::Any) : QHostAddress(local), 0)) {
+                fail(s, tr("Cannot bind UDP output: %1.").arg(s.udp->errorString().left(256)));
+                return;
+            }
+            s.output = true;
+            s.ready = true;
+            state(s, tr("Sending"));
+            return;
+        }
         if (s.source.value(QStringLiteral("protocol")) == QLatin1String("udp")) {
             s.udp = std::make_unique<QUdpSocket>();
             const auto local = s.source.value("localAddress").toString();
@@ -667,6 +697,13 @@ private:
     }
     void receive(Session &s)
     {
+        if (s.output) {
+            // An output socket accepts no input. Discard stray datagrams in bounded steps.
+            for (int i = 0; i < 32 && s.udp && s.udp->hasPendingDatagrams(); ++i) {
+                s.udp->readDatagram(nullptr, 0);
+            }
+            return;
+        }
         if (s.udp) {
             for (int i = 0; i < 32 && s.udp->hasPendingDatagrams(); ++i) {
                 const auto size = s.udp->pendingDatagramSize();
@@ -936,12 +973,14 @@ private:
         for (const auto &s : sessions_) {
             stats.insert(
                 s->id,
-                QJsonObject{
-                    {QStringLiteral("state"), s->state},
-                    {QStringLiteral("connected"), s->ready && s->tcp && (!s->peer || s->greeted)},
-                    {QStringLiteral("received"), static_cast<double>(s->accepted)},
-                    {QStringLiteral("rejected"), static_cast<double>(s->rejected)},
-                    {QStringLiteral("control"), static_cast<double>(s->controls)}});
+                QJsonObject{{QStringLiteral("state"), s->state},
+                            {QStringLiteral("connected"),
+                             s->ready && ((s->tcp && (!s->peer || s->greeted)) || s->output)},
+                            {QStringLiteral("received"), static_cast<double>(s->accepted)},
+                            {QStringLiteral("rejected"), static_cast<double>(s->rejected)},
+                            {QStringLiteral("control"), static_cast<double>(s->controls)},
+                            {QStringLiteral("sent"), static_cast<double>(s->sent)},
+                            {QStringLiteral("output"), s->output}});
         }
         for (const auto &lan : lans_) {
             stats.insert(lan->id,
@@ -1210,6 +1249,11 @@ QString Servers::connectionStatus(const QString &id) const
         return entry.value(QStringLiteral("enabled")).toBool() ? tr("Connecting")
                                                                : tr("Disconnected");
     }
+    if (state.value(QStringLiteral("output")).toBool()) {
+        return tr("%1. Sent: %2.")
+            .arg(state.value(QStringLiteral("state")).toString(),
+                 QString::number(state.value(QStringLiteral("sent")).toDouble(), 'f', 0));
+    }
     return tr("%1. Received: %2. Rejected: %3. Queue drops: %4.")
         .arg(state.value(QStringLiteral("state")).toString(),
              QString::number(state.value(QStringLiteral("received")).toDouble(), 'f', 0),
@@ -1229,7 +1273,7 @@ QString Servers::send(const Event &event)
         }
     }
     if (!connected) {
-        return tr("No stream server or LAN peer is connected.");
+        return tr("No stream server, UDP output, or LAN peer is connected.");
     }
     const QMutexLocker lock(&mailbox_->mutex);
     if (mailbox_->generation != generation_ || mailbox_->outbound.size() >= 32) {

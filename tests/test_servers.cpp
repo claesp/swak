@@ -390,6 +390,45 @@ private slots:
         QVERIFY(!request.tls.error.isEmpty());
         QCOMPARE(fetch(client, request).error, request.tls.error);
     }
+    void udpOutput()
+    {
+        QUdpSocket receiver;
+        QVERIFY(receiver.bind(QHostAddress::LocalHost, 0));
+        auto v = source(receiver.localPort());
+        v.insert(QStringLiteral("protocol"), QStringLiteral("udpout"));
+        v.insert(QStringLiteral("host"), QStringLiteral("server.example"));
+        QVERIFY(validateServer(v).contains(QStringLiteral("numeric")));
+        v.insert(QStringLiteral("host"), QStringLiteral("239.2.3.1"));
+        QVERIFY(!validateServer(v).isEmpty());
+        v.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
+        QVERIFY(validateServer(v).isEmpty());
+        Store store;
+        Servers servers(store);
+        QVERIFY(servers.put(QStringLiteral("out"), v).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return servers.status(QStringLiteral("out")).startsWith(QStringLiteral("Sending"));
+            },
+            5000));
+        const auto event = sampleEvent();
+        QVERIFY(servers.send(event).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return receiver.hasPendingDatagrams();
+            },
+            5000));
+        QByteArray datagram(static_cast<qsizetype>(receiver.pendingDatagramSize()),
+                            Qt::Uninitialized);
+        receiver.readDatagram(datagram.data(), datagram.size());
+        QCOMPARE(datagram, encodeCot(event));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return servers.status(QStringLiteral("out")).contains(QStringLiteral("Sent: 1."));
+            },
+            5000));
+        // The output socket ignores input. Received events stay zero.
+        QCOMPARE(store.rowCount(), 0);
+    }
     void takStreamLogin()
     {
         auto v = source(1);
