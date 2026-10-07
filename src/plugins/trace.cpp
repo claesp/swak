@@ -60,7 +60,8 @@ public:
     }
     QList<SettingField> settingsFields() const override
     {
-        return {numberSetting(QStringLiteral("positions"), tr("Recorded positions"), 2, 50),
+        return {booleanSetting(QStringLiteral("visible"), tr("Show traces")),
+                numberSetting(QStringLiteral("positions"), tr("Recorded positions"), 2, 50),
                 numberSetting(QStringLiteral("opacity"), tr("Trace opacity"), 0.05, 1.0, 2),
                 numberSetting(QStringLiteral("width"), tr("Trace width"), 0.5, 5, 1)};
     }
@@ -72,6 +73,7 @@ public:
                                        {QStringLiteral("id"), record.id}});
         }
         return {{QStringLiteral("styleVersion"), 2},
+                {QStringLiteral("visible"), visible_},
                 {QStringLiteral("positions"), limit_},
                 {QStringLiteral("opacity"), opacity_},
                 {QStringLiteral("width"), width_},
@@ -79,6 +81,7 @@ public:
     }
     void restorePreferences(const QJsonObject &values) override
     {
+        visible_ = values.value(QStringLiteral("visible")).toBool(true);
         limit_ = preferenceInteger(values, QStringLiteral("positions"), 50, 2, 50);
         opacity_ = preferenceNumber(values, QStringLiteral("opacity"), 0.7, 0.05, 1.0);
         if (values.value(QStringLiteral("styleVersion")).toInt() < 2) {
@@ -175,6 +178,9 @@ public:
     QList<MapItem> itemsAt(const Viewport &view, QPointF position) const override
     {
         QList<MapItem> result;
+        if (!visible_) {
+            return result;
+        }
         const auto scale = view.scale();
         const auto origin =
             QPointF(view.size.width() / 2, view.size.height() / 2) - view.center * scale;
@@ -216,6 +222,10 @@ public:
     }
     void paint(QPainter &painter, const Viewport &view) const override
     {
+        // Hidden traces keep recording, so they return complete when shown again.
+        if (!visible_) {
+            return;
+        }
         painter.setClipRect(QRectF(QPointF{}, view.size));
         const auto scale = view.scale();
         const auto origin =
@@ -304,6 +314,7 @@ private:
     Store &store_;
     QPointer<UserObjects> objects_;
     QHash<QString, Record> records_, frozen_;
+    bool visible_ = true;
     int limit_ = 50;
     double opacity_ = 0.7;
     double width_ = 1.5;

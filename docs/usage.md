@@ -327,7 +327,7 @@ In File > Settings > CoT animation, set Prediction limit to zero to disable pred
 
 Right-click a CoT or local marker and select Trace. The checked action starts a history of distinct received or saved positions. Select Trace again to stop and remove that history. Tools > Plugins > Trace > Clear traces removes all histories and tracing choices.
 
-A trace retains at most 50 positions. The default opacity is 70 percent. Older segments appear more faintly, with a minimum of one-quarter of the configured opacity. File > Settings > Trace controls the position count, opacity, and line width.
+A trace retains at most 50 positions. The default opacity is 70 percent. Older segments appear more faintly, with a minimum of one-quarter of the configured opacity. File > Settings > Trace controls visibility, the position count, opacity, and line width. Clear Show traces to hide all traces. Recording continues, so the traces return complete when you show them again. Hidden traces cannot be clicked.
 
 At most 128 markers can have tracing enabled. Tracing choices survive restart. Position histories last only for the session and clear when the source marker disappears. Imported map features without stable marker identities do not offer Trace.
 
@@ -412,7 +412,7 @@ Predict collects recent CoT positions for each enabled object. After two distinc
 
 The latest movement supplies the current speed and heading. With three positions, the estimate also accounts for acceleration and heading change. These trends decay over time to avoid indefinite acceleration or circling. They do not account for roads, terrain, planned routes, or future turns. A stationary object produces overlapping endpoints.
 
-File > Settings > Predict controls the history window, line width, and opacity. The default history window is five minutes, with at most 50 samples per object. The latest three positions determine movement trends. The plugin supports at most 128 enabled objects. Enabled identities survive restart, but received history does not.
+File > Settings > Predict controls visibility, the history window, line width, and opacity. Clear Show predictions to hide all prediction lines. The history continues, so the lines return when you show them again. Hidden lines cannot be clicked. The default history window is five minutes, with at most 50 samples per object. The latest three positions determine movement trends. The plugin supports at most 128 enabled objects. Enabled identities survive restart, but received history does not.
 
 CoT animation controls forecast movement and fades. Long moves cover more distance within the same animation duration. Moves above the teleport threshold fade between positions. Forecast lines follow the displayed object position and fade with stale objects. Space freezes both objects and forecasts while message reception continues. Resume shows the latest positions immediately.
 

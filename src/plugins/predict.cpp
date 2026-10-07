@@ -69,7 +69,8 @@ public:
     }
     QList<SettingField> settingsFields() const override
     {
-        return {numberSetting(
+        return {booleanSetting(QStringLiteral("visible"), tr("Show predictions")),
+                numberSetting(
                     QStringLiteral("historySeconds"), tr("History window (seconds)"), 10, 600),
                 numberSetting(QStringLiteral("opacity"), tr("Prediction opacity"), 0.05, 1.0, 2),
                 numberSetting(QStringLiteral("width"), tr("Prediction width"), 0.5, 5, 1)};
@@ -80,13 +81,15 @@ public:
         for (auto it = records_.cbegin(); it != records_.cend(); ++it) {
             targets.append(it.key());
         }
-        return {{QStringLiteral("historySeconds"), historySeconds_},
+        return {{QStringLiteral("visible"), visible_},
+                {QStringLiteral("historySeconds"), historySeconds_},
                 {QStringLiteral("opacity"), opacity_},
                 {QStringLiteral("width"), width_},
                 {QStringLiteral("targets"), targets}};
     }
     void restorePreferences(const QJsonObject &values) override
     {
+        visible_ = values.value(QStringLiteral("visible")).toBool(true);
         historySeconds_ = preferenceInteger(values, QStringLiteral("historySeconds"), 300, 10, 600);
         opacity_ = preferenceNumber(values, QStringLiteral("opacity"), 0.75, 0.05, 1.0);
         width_ = preferenceNumber(values, QStringLiteral("width"), 1.5, 0.5, 5);
@@ -168,7 +171,7 @@ public:
     QList<MapItem> itemsAt(const Viewport &view, QPointF position) const override
     {
         QList<MapItem> result;
-        if (records_.isEmpty()) {
+        if (records_.isEmpty() || !visible_) {
             return result;
         }
         const auto ends = endpoints();
@@ -203,7 +206,8 @@ public:
     }
     void paint(QPainter &painter, const Viewport &view) const override
     {
-        if (records_.isEmpty()) {
+        // Hidden predictions keep their history, so they return complete when shown again.
+        if (records_.isEmpty() || !visible_) {
             return;
         }
         const auto ends = endpoints();
@@ -339,6 +343,7 @@ private:
     QJsonObject motionSettings_;
     double teleportKm_ = 100;
     QHash<QString, PredictionHistory> records_;
+    bool visible_ = true;
     int historySeconds_ = 300;
     double opacity_ = 0.75;
     double width_ = 1.5;

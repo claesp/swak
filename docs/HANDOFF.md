@@ -1528,3 +1528,7 @@ Tests cover both plugins' URLs, bodies, parsing, and validation. A local HTTPS f
 
 File > Settings > FOV now controls the FOV cones. The page comes from the cone map tool in the tracks plugin, with preference identifier `org.swak.fov`. It keeps the earlier visibility, angle, length, and fill opacity keys, and adds outline width and outline opacity. The outline is off by default, so existing cones look the same. CoT animation no longer lists or saves the cone style. Earlier profiles restore through the `org.swak.track-motion` fallback section. Per-object cone choices stay in TrackMotion. Tests cover the fields, fallback migration, range checks, the round trip, and a rendered outline.
 
+# 2026-10-07: Trace and Predict settings
+
+Trace and Predict already had Settings pages. Each page now starts with a visibility switch, Show traces or Show predictions, to match Show FOV cones. A hidden trace or prediction keeps its history, draws nothing, and reports no click hits. The switch defaults to on, so existing profiles look the same. A GUI test opens Settings and checks the FOV, Trace, and Predict fields. Core and GUI tests cover hiding and showing both aids.
+

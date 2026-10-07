@@ -841,6 +841,23 @@ private slots:
         QCOMPARE(traced.first().id, marker.id);
         QCOMPARE(traced.first().label, marker.title);
         QVERIFY(tools.itemsAt(view, QPointF(850, 80)).isEmpty());
+        // Show traces hides the lines and their hits. Recording continues.
+        auto hidden = settings->savePreferences();
+        QVERIFY(hidden.value(QStringLiteral("visible")).toBool());
+        hidden.insert(QStringLiteral("visible"), false);
+        settings->restorePreferences(hidden);
+        {
+            QImage blank(1000, 100, QImage::Format_ARGB32_Premultiplied);
+            blank.fill(Qt::transparent);
+            QPainter painter(&blank);
+            tools.paint(painter, view);
+            painter.end();
+            QCOMPARE(blank.pixelColor(850, 50).alpha(), 0);
+        }
+        QVERIFY(tools.itemsAt(view, QPointF(850, 52)).isEmpty());
+        hidden.insert(QStringLiteral("visible"), true);
+        settings->restorePreferences(hidden);
+        QCOMPARE(tools.itemsAt(view, QPointF(850, 52)).size(), 1);
         QCOMPARE(image.pixelColor(510, 50).alpha(), 0);
         const auto beforePause = image;
         store.motion().setPaused(true);

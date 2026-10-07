@@ -1510,6 +1510,38 @@ private slots:
         window.findChild<QAction *>(QStringLiteral("settingsAction"))->trigger();
         QVERIFY(tested);
     }
+    void traceFovAndPredictSettings()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("aids.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        bool tested = false;
+        QTimer::singleShot(0, &window, [&] {
+            auto *dialog = window.findChild<swak::SettingsDialog *>();
+            QVERIFY(dialog);
+            const auto close = qScopeGuard([dialog] {
+                dialog->reject();
+            });
+            // FOV, Trace, and Predict each have a Settings page with a visibility switch.
+            for (const auto *name : {"org.swak.fov/headingConeEnabled",
+                                     "org.swak.fov/headingConeOutline",
+                                     "org.swak.trace/visible",
+                                     "org.swak.trace/positions",
+                                     "org.swak.trace/opacity",
+                                     "org.swak.trace/width",
+                                     "org.swak.predict/visible",
+                                     "org.swak.predict/historySeconds",
+                                     "org.swak.predict/opacity",
+                                     "org.swak.predict/width"}) {
+                QVERIFY2(dialog->findChild<QWidget *>(QString::fromLatin1(name)), name);
+            }
+            tested = true;
+        });
+        window.findChild<QAction *>(QStringLiteral("settingsAction"))->trigger();
+        QVERIFY(tested);
+    }
     void internalEventsAndMapToolbar()
     {
         QTemporaryDir directory;
@@ -6134,6 +6166,16 @@ private slots:
             QCOMPARE(predicted.first().id, event.uid);
             QCOMPARE(predicted.first().label, event.callsign);
             QVERIFY(tool->itemsAt(forecastView, QPointF(terminal.x() - 20, 260)).isEmpty());
+            // Show predictions hides the lines and their hits but keeps the history.
+            auto *predictSettings = dynamic_cast<swak::SettingsParticipant *>(tool);
+            auto hidden = predictSettings->savePreferences();
+            hidden.insert(QStringLiteral("visible"), false);
+            predictSettings->restorePreferences(hidden);
+            QCOMPARE(image(), empty);
+            QVERIFY(tool->itemsAt(forecastView, QPointF(terminal.x() - 20, 202)).isEmpty());
+            hidden.insert(QStringLiteral("visible"), true);
+            predictSettings->restorePreferences(hidden);
+            QCOMPARE(image(), forecast);
             for (int x = qCeil(terminal.x()) + 2; x < forecast.width(); ++x) {
                 QVERIFY(forecast.pixelColor(x, 200).alpha() == 0);
             }
