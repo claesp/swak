@@ -29,15 +29,17 @@ void TrackMotion::setHeadingConeEnabled(const QString &uid, bool enabled)
     emit coneTargetsChanged();
     emit changed();
 }
+void TrackMotion::setHeadingConeStyle(const HeadingConeStyle &style)
+{
+    if (style == cone_) {
+        return;
+    }
+    cone_ = style;
+    emit changed();
+}
 QList<SettingField> TrackMotion::settingsFields() const
 {
     return {
-        booleanSetting(QStringLiteral("headingConeEnabled"), tr("Show heading cone")),
-        numberSetting(
-            QStringLiteral("headingConeAngle"), tr("Heading cone angle (degrees)"), 5, 180),
-        numberSetting(
-            QStringLiteral("headingConeLength"), tr("Heading cone length (pixels)"), 10, 200),
-        numberSetting(QStringLiteral("headingConeOpacity"), tr("Heading cone opacity"), .01, 1, 2),
         numberSetting(
             QStringLiteral("predictionMs"), tr("Prediction limit (milliseconds)"), 0, 5000),
         numberSetting(QStringLiteral("duration"), tr("Movement duration (milliseconds)"), 0, 5000),
@@ -60,11 +62,7 @@ QJsonObject TrackMotion::savePreferences() const
 }
 QJsonObject TrackMotion::animationPreferences() const
 {
-    return {{QStringLiteral("headingConeEnabled"), cone_.enabled},
-            {QStringLiteral("headingConeAngle"), cone_.angle},
-            {QStringLiteral("headingConeLength"), cone_.length},
-            {QStringLiteral("headingConeOpacity"), cone_.opacity},
-            {QStringLiteral("predictionMs"), prediction_},
+    return {{QStringLiteral("predictionMs"), prediction_},
             {QStringLiteral("duration"), duration_},
             {QStringLiteral("teleportKm"), threshold_},
             {QStringLiteral("fade"), fade_},
@@ -82,10 +80,6 @@ void TrackMotion::restorePreferences(const QJsonObject &v)
         }
     }
     emit coneTargetsChanged();
-    cone_.enabled = v.value("headingConeEnabled").toBool(true);
-    cone_.angle = preferenceNumber(v, "headingConeAngle", 60, 5, 180);
-    cone_.length = preferenceNumber(v, "headingConeLength", 60, 10, 200);
-    cone_.opacity = preferenceNumber(v, "headingConeOpacity", .15, .01, 1);
     prediction_ = preferenceInteger(v, QStringLiteral("predictionMs"), 3000, 0, 5000);
     duration_ = preferenceInteger(v, QStringLiteral("duration"), 600, 0, 5000);
     threshold_ = preferenceNumber(v, QStringLiteral("teleportKm"), 100, 0.01, 20000);

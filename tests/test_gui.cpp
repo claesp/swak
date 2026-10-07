@@ -890,8 +890,17 @@ private slots:
         QVERIFY(selection->item());
         QCOMPARE(selection->item()->id, event.uid);
         QCOMPARE(store.selected(), event.uid);
-        values.insert(QStringLiteral("headingConeEnabled"), false);
-        store.motion().restorePreferences(values);
+        // The FOV settings add an outline along the cone edges.
+        auto *fov = dynamic_cast<swak::SettingsParticipant *>(
+            window.findChild<QObject *>(QStringLiteral("fovSettings")));
+        QVERIFY(fov);
+        auto fovValues = fov->savePreferences();
+        const int plainEdge = render().pixelColor(235, 180).alpha();
+        fovValues.insert(QStringLiteral("headingConeOutline"), 3);
+        fov->restorePreferences(fovValues);
+        QVERIFY(render().pixelColor(235, 180).alpha() > plainEdge);
+        fovValues.insert(QStringLiteral("headingConeEnabled"), false);
+        fov->restorePreferences(fovValues);
         QCOMPARE(render().pixelColor(240, 200).alpha(), 0);
         QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, insideCone);
         QVERIFY(!selection->item());

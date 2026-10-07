@@ -39,12 +39,63 @@ QPainterPath headingCone(QPointF point, double heading, double radius, double an
     path.closeSubpath();
     return path;
 }
-class HeadingConeTool final : public MapTool
+class HeadingConeTool final : public MapTool, public SettingsParticipant
 {
 public:
     HeadingConeTool(TrackMotion &motion, QObject *parent) : MapTool(parent), motion_(motion)
     {
+        setObjectName(QStringLiteral("fovSettings"));
         connect(&motion_, &TrackMotion::coneTargetsChanged, this, &MapTool::actionsChanged);
+    }
+    QString preferenceId() const override
+    {
+        return QStringLiteral("org.swak.fov");
+    }
+    // Earlier profiles kept the cone style in the CoT animation settings.
+    QString preferenceFallbackId() const override
+    {
+        return QStringLiteral("org.swak.track-motion");
+    }
+    QString settingsTitle() const override
+    {
+        return tr("FOV");
+    }
+    QList<SettingField> settingsFields() const override
+    {
+        return {
+            booleanSetting(QStringLiteral("headingConeEnabled"), tr("Show FOV cones")),
+            numberSetting(QStringLiteral("headingConeAngle"), tr("Cone angle (degrees)"), 5, 180),
+            numberSetting(QStringLiteral("headingConeLength"), tr("Cone length (pixels)"), 10, 200),
+            numberSetting(QStringLiteral("headingConeOpacity"), tr("Fill opacity"), .01, 1, 2),
+            numberSetting(QStringLiteral("headingConeOutline"),
+                          tr("Outline width (pixels, 0 = none)"),
+                          0,
+                          5,
+                          1),
+            numberSetting(
+                QStringLiteral("headingConeOutlineOpacity"), tr("Outline opacity"), .05, 1, 2)};
+    }
+    QJsonObject savePreferences() const override
+    {
+        const auto &cone = motion_.headingConeStyle();
+        return {{QStringLiteral("headingConeEnabled"), cone.enabled},
+                {QStringLiteral("headingConeAngle"), cone.angle},
+                {QStringLiteral("headingConeLength"), cone.length},
+                {QStringLiteral("headingConeOpacity"), cone.opacity},
+                {QStringLiteral("headingConeOutline"), cone.outlineWidth},
+                {QStringLiteral("headingConeOutlineOpacity"), cone.outlineOpacity}};
+    }
+    void restorePreferences(const QJsonObject &values) override
+    {
+        HeadingConeStyle cone;
+        cone.enabled = values.value(QStringLiteral("headingConeEnabled")).toBool(true);
+        cone.angle = preferenceNumber(values, QStringLiteral("headingConeAngle"), 60, 5, 180);
+        cone.length = preferenceNumber(values, QStringLiteral("headingConeLength"), 60, 10, 200);
+        cone.opacity = preferenceNumber(values, QStringLiteral("headingConeOpacity"), .15, .01, 1);
+        cone.outlineWidth = preferenceNumber(values, QStringLiteral("headingConeOutline"), 0, 0, 5);
+        cone.outlineOpacity =
+            preferenceNumber(values, QStringLiteral("headingConeOutlineOpacity"), .6, .05, 1);
+        motion_.setHeadingConeStyle(cone);
     }
     bool handle(QEvent &, const Viewport &, QWidget &) override
     {
@@ -312,11 +363,19 @@ public:
             const auto &cone = store.motion().headingConeStyle();
             if (cone.enabled && store.motion().headingConeEnabled(event.uid) &&
                 visual.kinematics.heading) {
+                const auto path = headingCone(
+                    point, *visual.kinematics.heading, view.markerSize(cone.length), cone.angle);
                 painter.setOpacity(visual.opacity * cone.opacity);
                 painter.setPen(Qt::NoPen);
                 painter.setBrush(color);
-                painter.drawPath(headingCone(
-                    point, *visual.kinematics.heading, view.markerSize(cone.length), cone.angle));
+                painter.drawPath(path);
+                if (cone.outlineWidth > 0) {
+                    painter.setOpacity(visual.opacity * cone.outlineOpacity);
+                    painter.setPen(
+                        QPen(color, cone.outlineWidth, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+                    painter.setBrush(Qt::NoBrush);
+                    painter.drawPath(path);
+                }
                 painter.setOpacity(visual.opacity);
             }
             paintMarkerSymbol(

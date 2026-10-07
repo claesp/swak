@@ -475,7 +475,7 @@ TrackKinematics holds speed, heading, and flags that identify calculated speed a
 
 The shared groundMotion helper calculates ground speed and initial bearing from two positions and message timestamps. PredictionHistory uses the same helper. Estimates require intervals from 50 milliseconds through 10 minutes and speeds no greater than 1000 meters per second. TrackMotion also rejects estimates across its configured teleport distance or an expired track.
 
-The CoT layer draws a heading cone at the animated position. The cone uses the same opacity and stale color as its marker. Reported course takes priority over estimated heading. HeadingConeStyle exposes visibility, angle, length, and opacity through CoT animation configuration. Its length uses logical pixels and marker scaling.
+The CoT layer draws a heading cone at the animated position. The cone uses the same opacity and stale color as its marker. Reported course takes priority over estimated heading. HeadingConeStyle holds visibility, angle, length, fill opacity, outline width, and outline opacity. The tracks plugin owns the FOV settings page, `org.swak.fov`, and sets the style through `TrackMotion::setHeadingConeStyle`. The page falls back to the earlier `org.swak.track-motion` section. CoT animation configuration no longer contains the cone style. Its length uses logical pixels and marker scaling.
 
 The cone indicates direction, not a measured sensor field of view. The Information pane shows speed, heading, and their sources. Static objects without motion history receive no invented velocity.
 

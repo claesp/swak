@@ -1524,3 +1524,7 @@ The new optional interface `MapServiceProvider` lets TileRenderer start, use, an
 
 Tests cover both plugins' URLs, bodies, parsing, and validation. A local HTTPS fixture covers the session, tile, and attribution flow, a rejected session, a short session, missing credentials, and repeated views. The test tile server can now route requests. Untested: live Google and Azure services, session renewal on expiry or rejection, attribution failure that keeps the last text, and the Google logo, which SWAK replaces with the text Google Maps.
 
+# 2026-10-07: FOV settings page
+
+File > Settings > FOV now controls the FOV cones. The page comes from the cone map tool in the tracks plugin, with preference identifier `org.swak.fov`. It keeps the earlier visibility, angle, length, and fill opacity keys, and adds outline width and outline opacity. The outline is off by default, so existing cones look the same. CoT animation no longer lists or saves the cone style. Earlier profiles restore through the `org.swak.track-motion` fallback section. Per-object cone choices stay in TrackMotion. Tests cover the fields, fallback migration, range checks, the round trip, and a rendered outline.
+

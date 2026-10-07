@@ -477,7 +477,16 @@ Events, CoT Messages, Predict, and Trace provide Clear ... under Tools > Plugins
 
 View > Reset Layout ... appears last, after a separator. Its confirmation dialog protects the current arrangement from an accidental reset. Map Providers uses No map to deselect the current provider.
 
-Each CoT object starts with its FOV cone off. FOV means field of view. Select FOV cone in the object context menu or Information pane to enable it. The application saves this choice by object identity. CoT animation controls the shared cone appearance and its global visibility.
+Each CoT object starts with its FOV cone off. FOV means field of view. Select FOV cone in the object context menu or Information pane to enable it. The application saves this choice by object identity. File > Settings > FOV controls the shared cone appearance:
+
+- Show FOV cones turns all cones on or off. The default is on.
+- Cone angle sets the opening from 5 through 180 degrees. The default is 60.
+- Cone length sets the radius from 10 through 200 logical pixels. The default is 60. Marker scaling also applies.
+- Fill opacity sets the cone fill from 0.01 through 1. The default is 0.15.
+- Outline width draws the cone edges from 0 through 5 pixels. The default 0 draws no outline.
+- Outline opacity sets the edge opacity from 0.05 through 1. The default is 0.6.
+
+Earlier profiles kept these values under CoT animation. The FOV page reads them once and saves them in its own section.
 
 Circles and Lines have separate General, Panes, and Keybindings entries in Settings. Lines also contains the temporary Distance configuration. Older combined configuration initializes both sections. Later changes remain independent. The Identity command remains under File and no longer appears in Settings.
 

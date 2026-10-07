@@ -22,6 +22,10 @@ struct HeadingConeStyle
     double angle = 60;
     double length = 60;
     double opacity = .15;
+    // Zero width draws no outline.
+    double outlineWidth = 0;
+    double outlineOpacity = .6;
+    bool operator==(const HeadingConeStyle &) const = default;
 };
 struct VisualEvent
 {
@@ -73,6 +77,8 @@ public:
         return coneTargets_.contains(uid) || coneTargets_.size() < 4096;
     }
     void setHeadingConeEnabled(const QString &uid, bool enabled);
+    // The FOV settings own the cone style. The style is not part of the animation settings.
+    void setHeadingConeStyle(const HeadingConeStyle &style);
     qint64 time() const
     {
         return clock_.elapsed();

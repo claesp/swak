@@ -283,16 +283,80 @@ private slots:
         QVERIFY(formatSpeed(10, QLocale(QLocale::English, QLocale::UnitedStates)).endsWith(" mph"));
         QVERIFY(formatSpeed(-1).isEmpty());
         QVERIFY(formatSpeed(std::numeric_limits<double>::infinity()).isEmpty());
-        auto preferences = motion.savePreferences();
-        preferences.insert(QStringLiteral("headingConeEnabled"), false);
-        preferences.insert(QStringLiteral("headingConeAngle"), 90);
-        preferences.insert(QStringLiteral("headingConeLength"), 100);
-        preferences.insert(QStringLiteral("headingConeOpacity"), .3);
-        motion.restorePreferences(preferences);
-        QVERIFY(!motion.headingConeStyle().enabled);
+        // CoT animation no longer holds the cone style. The FOV settings own it.
+        for (const auto &field : motion.settingsFields()) {
+            QVERIFY(!field.path.startsWith(QStringLiteral("headingCone")));
+        }
+        QVERIFY(!motion.savePreferences().contains(QStringLiteral("headingConeAngle")));
+        HeadingConeStyle style;
+        style.angle = 90;
+        QSignalSpy changed(&motion, &TrackMotion::changed);
+        motion.setHeadingConeStyle(style);
+        motion.setHeadingConeStyle(style);
+        QCOMPARE(changed.count(), 1);
+        motion.restorePreferences(motion.savePreferences());
         QCOMPARE(motion.headingConeStyle().angle, 90.0);
-        QCOMPARE(motion.headingConeStyle().length, 100.0);
-        QCOMPARE(motion.headingConeStyle().opacity, .3);
+    }
+    void fovSettings()
+    {
+        Store store;
+        ActivityModel activity;
+        MapSources maps(QPluginLoader::staticInstances());
+        MapTools tools;
+        PluginServices services{store, activity, maps};
+        services.mapTools = &tools;
+        QMenu main;
+        for (auto *plugin : builtInPlugins()) {
+            if (QByteArray(plugin->metaObject()->className()).endsWith("TracksPlugin")) {
+                qobject_cast<MenuPlugin *>(plugin)->populateMenu(services, main);
+            }
+        }
+        auto *fov = dynamic_cast<SettingsParticipant *>(
+            main.findChild<QObject *>(QStringLiteral("fovSettings")));
+        QVERIFY(fov);
+        QCOMPARE(fov->settingsTitle(), QStringLiteral("FOV"));
+        QCOMPARE(fov->preferenceId(), QStringLiteral("org.swak.fov"));
+        QCOMPARE(fov->preferenceFallbackId(), QStringLiteral("org.swak.track-motion"));
+        QStringList paths;
+        for (const auto &field : fov->settingsFields()) {
+            paths.append(field.path);
+        }
+        QCOMPARE(paths,
+                 (QStringList{QStringLiteral("headingConeEnabled"),
+                              QStringLiteral("headingConeAngle"),
+                              QStringLiteral("headingConeLength"),
+                              QStringLiteral("headingConeOpacity"),
+                              QStringLiteral("headingConeOutline"),
+                              QStringLiteral("headingConeOutlineOpacity")}));
+        // An earlier CoT animation section restores through the fallback identifier.
+        fov->restorePreferences({{QStringLiteral("headingConeEnabled"), false},
+                                 {QStringLiteral("headingConeAngle"), 90},
+                                 {QStringLiteral("headingConeLength"), 100},
+                                 {QStringLiteral("headingConeOpacity"), .3},
+                                 {QStringLiteral("duration"), 50}});
+        const auto &cone = store.motion().headingConeStyle();
+        QVERIFY(!cone.enabled);
+        QCOMPARE(cone.angle, 90.0);
+        QCOMPARE(cone.length, 100.0);
+        QCOMPARE(cone.opacity, .3);
+        QCOMPARE(cone.outlineWidth, 0.0);
+        QCOMPARE(cone.outlineOpacity, .6);
+        // Values outside their ranges return to the defaults.
+        fov->restorePreferences({{QStringLiteral("headingConeAngle"), 1000},
+                                 {QStringLiteral("headingConeOpacity"), -1},
+                                 {QStringLiteral("headingConeOutline"), 9},
+                                 {QStringLiteral("headingConeOutlineOpacity"), 0}});
+        QVERIFY(cone.enabled);
+        QCOMPARE(cone.angle, 60.0);
+        QCOMPARE(cone.opacity, .15);
+        QCOMPARE(cone.outlineWidth, 0.0);
+        QCOMPARE(cone.outlineOpacity, .6);
+        auto values = fov->savePreferences();
+        values.insert(QStringLiteral("headingConeOutline"), 2.5);
+        values.insert(QStringLiteral("headingConeOutlineOpacity"), .8);
+        fov->restorePreferences(values);
+        QCOMPARE(fov->savePreferences(), values);
+        QCOMPARE(cone.outlineWidth, 2.5);
     }
     void animationConfigurationChanges()
     {
