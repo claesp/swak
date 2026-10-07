@@ -15,6 +15,8 @@ The parser rejects document type declarations, entity references, processing ins
 
 Text fields exclude control, format, and surrogate characters. This restriction excludes supplementary Unicode characters, including many emoji. The interface presents external text as plain text. The attribution link escapes all source text before it creates HTML. User actions can open HTTP or HTTPS license links through the default browser. Links with credentials or other schemes cannot open.
 
+SWAK keeps every detail child of a received event as canonical, escaped XML in `Event::detail`. It keeps at most 8192 characters. A larger detail keeps only the typed fields and marks the event. Namespaced detail elements are left out. Readers parse this text again with the same element and depth limits. Detail values are data. Links, URLs, file shares, and video addresses never start a download, a request, or a program by themselves.
+
 Coordinates must be finite decimal numbers within geographic ranges. Altitude must lie between minus 100 million and plus 100 million meters. Horizontal and vertical uncertainty must lie between zero and 100 million meters.
 
 Timestamps must include a timezone. The stale time must follow the start time and cannot precede the event time. SWAK rejects events with start or event times more than five minutes ahead.

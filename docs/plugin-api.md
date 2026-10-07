@@ -116,6 +116,14 @@ The model retains 500 events by default. File > Settings > Events allows 1 throu
 
 The status bar shows CoT and retained internal-event counts with separators. Incoming events do not open the history pane. Errors and fatal events use red text in the history table. Clearing the table also discards pending events for that model. It does not change text-output configuration.
 
+# CoT detail
+
+`Event::detail` holds all detail children of a CoT event as canonical XML, without the detail element. It holds at most `MaxDetailCharacters`, 8192 characters. `Event::detailTruncated` marks an event whose detail was larger. The typed fields, such as callsign, team, role, course, and speed, stay valid in that case.
+
+Read detail through `core/cot_detail.h`. `detailElements` and `detailElement` return small element trees. Typed readers cover `remarks`, the contact endpoint, `link`, `marti` destinations, `emergency`, `fileshare`, `__chat`, `__video`, `usericon`, color elements with signed ARGB values, and the `status` battery. Readers return empty values for missing or out-of-range data.
+
+`encodeCot` writes the typed fields and then the retained elements. A typed field replaces only its own attributes, so a changed callsign keeps the contact endpoint. Clearing team and role removes `__group`. Clearing course and speed removes `track`. Build new detail with `CotElement` and `detailText`, which skips invalid names and values.
+
 # Add a plugin
 
 Create a QObject plugin class and its MANIFEST under `src/plugins`. Implement `Plugin` and the required feature interfaces. Add the metadata file to `Q_PLUGIN_METADATA`. List all interfaces in `Q_INTERFACES`.

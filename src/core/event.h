@@ -28,6 +28,11 @@ struct Event
     double linearError = 9999999;
     std::optional<double> course = {};
     std::optional<double> speed = {};
+    // All detail children as canonical, escaped XML, without the detail element itself.
+    // It holds at most MaxDetailCharacters. Read it through core/cot_detail.h.
+    QString detail;
+    // True when the received detail exceeded the retained size. Typed fields remain valid.
+    bool detailTruncated = false;
 };
 
 struct DecodeResult

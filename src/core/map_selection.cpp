@@ -1,5 +1,6 @@
 #include "core/map_selection.h"
 
+#include "core/cot_detail.h"
 #include "core/marker_symbols.h"
 
 #include <QPainter>
@@ -42,6 +43,32 @@ MapItem cotMapItem(const Event &message)
                        {QStringLiteral("Time"), message.time.toString(Qt::ISODateWithMs)},
                        {QStringLiteral("Start"), message.start.toString(Qt::ISODateWithMs)},
                        {QStringLiteral("Stale"), message.stale.toString(Qt::ISODateWithMs)}};
+    // Values from the retained detail. They stay plain text and never start an action.
+    item.description = remarks(message);
+    if (const auto endpoint = contactEndpoint(message); !endpoint.isEmpty()) {
+        item.properties.insert(QStringLiteral("Endpoint"), endpoint);
+    }
+    if (const auto battery = batteryPercent(message)) {
+        item.properties.insert(QStringLiteral("Battery"), QStringLiteral("%1 %").arg(*battery));
+    }
+    if (const auto device = detailElement(message, u"takv")) {
+        const auto text = QStringList{device->attribute(u"platform"),
+                                      device->attribute(u"version"),
+                                      device->attribute(u"device")}
+                              .join(QLatin1Char(' '))
+                              .simplified()
+                              .left(256);
+        if (!text.isEmpty()) {
+            item.properties.insert(QStringLiteral("Device"), text);
+        }
+    }
+    if (const auto count = links(message).size()) {
+        item.properties.insert(QStringLiteral("Links"), static_cast<int>(count));
+    }
+    if (message.detailTruncated) {
+        item.properties.insert(QStringLiteral("Detail"),
+                               QStringLiteral("Too large to keep. Typed fields remain."));
+    }
     item.id = message.uid;
     return item;
 }

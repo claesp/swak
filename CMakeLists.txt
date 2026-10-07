@@ -79,6 +79,8 @@ add_library(
     src/core/settings_dialog.cpp
     src/core/server_browser.cpp
     src/core/cot.cpp
+    src/core/cot_detail.cpp
+    src/core/cot_detail.h
     src/core/cot_stream.cpp
     src/core/identity.cpp
     src/core/servers.cpp

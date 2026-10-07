@@ -183,7 +183,7 @@ The lowest zoom fills the map area. Zoom uses whole levels. Panning stops at the
 
 Data geometry follows the current map position and zoom. SWAK clips geometry and selection marks to the world bounds. It requests one extra tile ring by default, after visible tiles. Set the tile margin from zero through two in Settings. Each extra area contains at most 64 tiles. Extra tiles never displace visible vector tiles under memory pressure.
 
-Click a map object to open Information. The pane shows its label, type, description, and properties. The fields are read-only. Double-click a value, title, type, or description to copy its text through the OS clipboard. Descriptions from data feeds, such as KML balloons, often contain HTML. Information shows them as plain text without the markup, and it loads no images or links. Local and CoT descriptions appear exactly as written. Click empty map space to clear the selection and hide the pane.
+Click a map object to open Information. The pane shows its label, type, description, and properties. The fields are read-only. Double-click a value, title, type, or description to copy its text through the OS clipboard. Descriptions from data feeds, such as KML balloons, often contain HTML. Information shows them as plain text without the markup, and it loads no images or links. Local and CoT descriptions appear exactly as written. For CoT objects, the description is the TAK remarks text. Information also shows the contact endpoint, battery level, device, and link count when the sender includes them. Click empty map space to clear the selection and hide the pane.
 
 Selected points have a white outline. Selected routes use the inverse of their drawing color. Selected polygons have a dashed white edge and a faint white fill.
 

@@ -1,10 +1,13 @@
 #include "core/cot.h"
 
+#include "core/cot_detail.h"
+
 #include <QCoreApplication>
 #include <QRegularExpression>
 #include <QXmlStreamReader>
 #include <QXmlStreamWriter>
 
+#include <algorithm>
 #include <cmath>
 #include <optional>
 namespace swak {
@@ -37,6 +40,11 @@ DecodeResult decodeCot(const QByteArray &data)
     bool contact = false;
     bool group = false;
     bool track = false;
+    // The decoder copies every detail child into canonical text. Namespaced elements and their
+    // children are left out, because a copy without the namespace declaration is not valid XML.
+    QString detailCopy;
+    QXmlStreamWriter detailWriter(&detailCopy);
+    int skipFrom = 0;
     const auto timestamp = [](const QString &value) {
         static const QRegularExpression zone(QStringLiteral("(?:Z|[+-][0-9]{2}:[0-9]{2})\\z"));
         if (!zone.match(value).hasMatch()) {
@@ -105,15 +113,31 @@ DecodeResult decodeCot(const QByteArray &data)
                 inDetail = true;
             } else if (!inDetail) {
                 return fail(tr("The event contains an unsupported element outside its detail."));
-            } else if (depth == 3 && xml.name() == QLatin1String("contact") &&
-                       xml.namespaceUri().isEmpty()) {
+            }
+            if (inDetail && depth >= 3) {
+                if (!skipFrom && !xml.namespaceUri().isEmpty()) {
+                    skipFrom = depth;
+                }
+                if (!skipFrom) {
+                    detailWriter.writeStartElement(xml.name().toString());
+                    for (const auto &attribute : attrs) {
+                        if (attribute.namespaceUri().isEmpty()) {
+                            detailWriter.writeAttribute(attribute.name().toString(),
+                                                        attribute.value().toString());
+                        }
+                    }
+                }
+            }
+            if (!inDetail || depth != 3) {
+                continue;
+            }
+            if (xml.name() == QLatin1String("contact") && xml.namespaceUri().isEmpty()) {
                 if (contact) {
                     return fail(tr("The event contains more than one contact."));
                 }
                 contact = true;
                 event.callsign = field("callsign");
-            } else if (depth == 3 && xml.name() == QLatin1String("track") &&
-                       xml.namespaceUri().isEmpty()) {
+            } else if (xml.name() == QLatin1String("track") && xml.namespaceUri().isEmpty()) {
                 if (track) {
                     return fail(tr("The event contains more than one track."));
                 }
@@ -137,8 +161,7 @@ DecodeResult decodeCot(const QByteArray &data)
                         event.speed = value;
                     }
                 }
-            } else if (depth == 3 && xml.name() == QLatin1String("__group") &&
-                       xml.namespaceUri().isEmpty()) {
+            } else if (xml.name() == QLatin1String("__group") && xml.namespaceUri().isEmpty()) {
                 if (group) {
                     return fail(tr("The event contains more than one group."));
                 }
@@ -150,13 +173,30 @@ DecodeResult decodeCot(const QByteArray &data)
             if (depth == 2) {
                 inDetail = false;
             }
+            if (inDetail && depth >= 3) {
+                if (!skipFrom) {
+                    detailWriter.writeEndElement();
+                } else if (skipFrom == depth) {
+                    skipFrom = 0;
+                }
+            }
             --depth;
-        } else if (token == QXmlStreamReader::Characters && !xml.isWhitespace() && !inDetail) {
-            return fail(tr("The event contains unexpected text."));
+        } else if (token == QXmlStreamReader::Characters && !xml.isWhitespace()) {
+            if (!inDetail) {
+                return fail(tr("The event contains unexpected text."));
+            }
+            if (depth >= 3 && !skipFrom) {
+                detailWriter.writeCharacters(xml.text().toString());
+            }
         }
     }
     if (xml.hasError() || !root || !point || depth != 0) {
         return fail(tr("The XML is incomplete or malformed."));
+    }
+    if (detailCopy.size() > MaxDetailCharacters || detailWriter.hasError()) {
+        event.detailTruncated = true;
+    } else {
+        event.detail = detailCopy;
     }
     const auto error = eventError(event);
     if (!error.isEmpty()) {
@@ -191,27 +231,60 @@ QByteArray encodeCot(const Event &event)
     attr("le", QString::number(event.linearError, 'f', 3));
     xml.writeEndElement();
     xml.writeStartElement(QStringLiteral("detail"));
-    if (!event.callsign.isEmpty()) {
-        xml.writeStartElement(QStringLiteral("contact"));
-        attr("callsign", event.callsign);
-        xml.writeEndElement();
+    // Typed fields replace their attributes in the retained elements. Other attributes,
+    // children, and elements stay as received, so a forwarded event keeps its detail.
+    auto elements = detailElements(event.detail);
+    const auto typed = [&elements](const QString &name) -> CotElement & {
+        const auto found = std::find_if(elements.begin(), elements.end(), [&name](const auto &e) {
+            return e.name == name;
+        });
+        if (found != elements.end()) {
+            return *found;
+        }
+        elements.insert(elements.begin(), CotElement{name, {}, {}, {}});
+        return elements.front();
+    };
+    const auto remove = [&elements](const QString &name) {
+        elements.erase(std::remove_if(elements.begin(),
+                                      elements.end(),
+                                      [&name](const auto &e) {
+                                          return e.name == name;
+                                      }),
+                       elements.end());
+    };
+    if (event.team.isEmpty() && event.role.isEmpty()) {
+        remove(QStringLiteral("__group"));
+    } else {
+        auto &group = typed(QStringLiteral("__group"));
+        group.setAttribute(QStringLiteral("name"), event.team);
+        group.setAttribute(QStringLiteral("role"), event.role);
     }
-    if (event.course || event.speed) {
-        xml.writeStartElement(QStringLiteral("track"));
+    if (!event.course && !event.speed) {
+        remove(QStringLiteral("track"));
+    } else {
+        auto &track = typed(QStringLiteral("track"));
+        track.attributes.removeIf([](const auto &pair) {
+            return pair.first == u"course" || pair.first == u"speed";
+        });
         if (event.course) {
-            attr("course", QString::number(*event.course, 'f', 6));
+            track.setAttribute(QStringLiteral("course"), QString::number(*event.course, 'f', 6));
         }
         if (event.speed) {
-            attr("speed", QString::number(*event.speed, 'f', 6));
+            track.setAttribute(QStringLiteral("speed"), QString::number(*event.speed, 'f', 6));
         }
-        xml.writeEndElement();
     }
-    if (!event.team.isEmpty() || !event.role.isEmpty()) {
-        xml.writeStartElement(QStringLiteral("__group"));
-        attr("name", event.team);
-        attr("role", event.role);
-        xml.writeEndElement();
+    if (!event.callsign.isEmpty()) {
+        typed(QStringLiteral("contact")).setAttribute(QStringLiteral("callsign"), event.callsign);
+    } else {
+        for (auto &element : elements) {
+            if (element.name == u"contact") {
+                element.attributes.removeIf([](const auto &pair) {
+                    return pair.first == u"callsign";
+                });
+            }
+        }
     }
+    writeDetail(xml, elements);
     xml.writeEndElement();
     xml.writeEndElement();
     xml.writeEndDocument();

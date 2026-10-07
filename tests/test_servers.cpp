@@ -1,7 +1,9 @@
 #include "core/cot.h"
+#include "core/cot_detail.h"
 #include "core/cot_stream.h"
 #include "core/identity.h"
 #include "core/lan_protocol.h"
+#include "core/map_selection.h"
 #include "core/projection.h"
 #include "core/server_browser.h"
 #include "core/servers.h"
@@ -134,6 +136,146 @@ private slots:
         xml = encodeCot(sampleEvent());
         xml.replace("lat=\"0.00000000\"", "lat=\"NaN\"");
         QVERIFY(!decodeCot(xml).event);
+    }
+    void cotDetailModel()
+    {
+        const auto event = [](const QByteArray &detail) {
+            return QByteArray("<?xml version='1.0' encoding='UTF-8'?>"
+                              "<event version='2.0' uid='ANDROID-1' type='a-f-G-U-C' how='m-g' "
+                              "time='2026-10-07T10:00:00.000Z' start='2026-10-07T10:00:00.000Z' "
+                              "stale='2026-10-07T10:05:00.000Z'>"
+                              "<point lat='59.3' lon='18.1' hae='12' ce='5' le='9'/><detail>") +
+                   detail + "</detail></event>";
+        };
+        const QByteArray detail =
+            "<contact endpoint='192.168.1.5:4242:tcp' callsign='VIPER' phone='123'/>"
+            "<__group name='Cyan' role='Team Lead'/>"
+            "<status battery='87'/>"
+            "<takv device='Pixel' platform='ATAK-CIV' os='34' version='5.4.0'/>"
+            "<track course='90.5' speed='2.5'/>"
+            "<remarks source='BAO.F.ATAK'>Hold &amp; observe</remarks>"
+            "<link uid='RP-1' type='b-m-p-w' relation='c' point='59.3,18.1' "
+            "parent_callsign='VIPER'/>"
+            "<marti><dest callsign='HAWK'/><dest uid='ANDROID-2'/><dest mission='Ops'/></marti>"
+            "<emergency type='911 Alert'>VIPER</emergency>"
+            "<usericon iconsetpath='COT_MAPPING_SPOTMAP/b-m-p-s-m/-65536'/>"
+            "<color argb='-1'/><strokeColor value='-16776961'/>"
+            "<fileshare filename='plan.zip' name='Plan' senderUrl='https://tak:8443/Marti/sync/"
+            "content?hash=ab' sizeInBytes='2048' sha256='" +
+            QByteArray(64, 'a') +
+            "' senderUid='ANDROID-1' senderCallsign='VIPER'/>"
+            "<__chat parent='RootContactGroup' groupOwner='false' messageId='m-1' "
+            "chatroom='All Chat Rooms' id='All Chat Rooms' senderCallsign='VIPER'/>"
+            "<__video><ConnectionEntry protocol='rtsp' address='10.0.0.9' port='554' "
+            "path='/live'/></__video>"
+            "<x:extension xmlns:x='urn:example'><x:inner/></x:extension>";
+        const auto decoded = decodeCot(event(detail));
+        QVERIFY2(decoded.event, qPrintable(decoded.error));
+        const auto &e = *decoded.event;
+        QCOMPARE(e.callsign, QStringLiteral("VIPER"));
+        QCOMPARE(e.team, QStringLiteral("Cyan"));
+        QVERIFY(!e.detailTruncated);
+        // Namespaced elements are left out, because their copy would not be valid XML.
+        QVERIFY(!e.detail.contains(QStringLiteral("urn:example")));
+        QVERIFY(!e.detail.contains(QStringLiteral("extension")));
+        QCOMPARE(remarks(e), QStringLiteral("Hold & observe"));
+        QCOMPARE(contactEndpoint(e), QStringLiteral("192.168.1.5:4242:tcp"));
+        QCOMPARE(batteryPercent(e), std::optional<int>(87));
+        const auto pointLinks = links(e);
+        QCOMPARE(pointLinks.size(), 1);
+        QCOMPARE(pointLinks.first().uid, QStringLiteral("RP-1"));
+        QCOMPARE(pointLinks.first().callsign, QStringLiteral("VIPER"));
+        const auto targets = destinations(e);
+        QCOMPARE(targets.size(), 3);
+        QCOMPARE(targets.at(0).callsign, QStringLiteral("HAWK"));
+        QCOMPARE(targets.at(1).uid, QStringLiteral("ANDROID-2"));
+        QCOMPARE(targets.at(2).mission, QStringLiteral("Ops"));
+        const auto alert = emergency(e);
+        QVERIFY(alert && !alert->cancel);
+        QCOMPARE(alert->type, QStringLiteral("911 Alert"));
+        QCOMPARE(iconsetPath(e), QStringLiteral("COT_MAPPING_SPOTMAP/b-m-p-s-m/-65536"));
+        QCOMPARE(detailColor(e, u"color"), std::optional<QColor>(QColor::fromRgba(0xffffffff)));
+        QCOMPARE(detailColor(e, u"strokeColor")->rgba(), 0xff0000ffu);
+        QVERIFY(!detailColor(e, u"fillColor"));
+        const auto share = fileShare(e);
+        QVERIFY(share);
+        QCOMPARE(share->sizeInBytes, 2048);
+        QCOMPARE(share->sha256, QString(64, 'a'));
+        QCOMPARE(share->senderCallsign, QStringLiteral("VIPER"));
+        QCOMPARE(chat(e)->chatroom, QStringLiteral("All Chat Rooms"));
+        QCOMPARE(videoUrl(e), QStringLiteral("rtsp://10.0.0.9:554/live"));
+        // Information shows the remarks and selected detail values.
+        const auto item = cotMapItem(e);
+        QCOMPARE(item.description, QStringLiteral("Hold & observe"));
+        QCOMPARE(item.properties.value(QStringLiteral("Endpoint")).toString(),
+                 QStringLiteral("192.168.1.5:4242:tcp"));
+        QCOMPARE(item.properties.value(QStringLiteral("Battery")).toString(),
+                 QStringLiteral("87 %"));
+        QCOMPARE(item.properties.value(QStringLiteral("Device")).toString(),
+                 QStringLiteral("ATAK-CIV 5.4.0 Pixel"));
+        QCOMPARE(item.properties.value(QStringLiteral("Links")).toInt(), 1);
+        // Encoding keeps the detail. Typed fields replace their own attributes only.
+        auto edited = e;
+        edited.callsign = QStringLiteral("COBRA");
+        edited.speed.reset();
+        const auto again = decodeCot(encodeCot(edited));
+        QVERIFY(again.event);
+        QCOMPARE(again.event->callsign, QStringLiteral("COBRA"));
+        QCOMPARE(contactEndpoint(*again.event), QStringLiteral("192.168.1.5:4242:tcp"));
+        QCOMPARE(detailElement(*again.event, u"contact")->attribute(u"phone"),
+                 QStringLiteral("123"));
+        QCOMPARE(again.event->course, e.course);
+        QVERIFY(!again.event->speed);
+        QCOMPARE(remarks(*again.event), remarks(e));
+        QCOMPARE(destinations(*again.event).size(), 3);
+        QCOMPARE(videoUrl(*again.event), videoUrl(e));
+        QCOMPARE(decodeCot(encodeCot(*again.event)).event->detail, again.event->detail);
+        // Clearing typed fields removes their elements or attributes.
+        edited = *again.event;
+        edited.team.clear();
+        edited.role.clear();
+        edited.course.reset();
+        edited.callsign.clear();
+        const auto cleared = decodeCot(encodeCot(edited));
+        QVERIFY(cleared.event);
+        QVERIFY(!detailElement(*cleared.event, u"__group"));
+        QVERIFY(!detailElement(*cleared.event, u"track"));
+        QVERIFY(detailElement(*cleared.event, u"contact")->attribute(u"callsign").isEmpty());
+        // Detail beyond the retained size keeps only the typed fields.
+        const auto large =
+            decodeCot(event("<contact callsign='BIG'/><remarks>" +
+                            QByteArray(MaxDetailCharacters + 1, 'r') + "</remarks>"));
+        QVERIFY(large.event);
+        QVERIFY(large.event->detailTruncated);
+        QVERIFY(large.event->detail.isEmpty());
+        QCOMPARE(large.event->callsign, QStringLiteral("BIG"));
+        // Readers reject bad values. Writers skip invalid names.
+        const auto bad = decodeCot(event("<fileshare sha256='xyz' sizeInBytes='-4'/>"
+                                         "<color argb='99999999999'/><status battery='300'/>"));
+        QVERIFY(bad.event);
+        QVERIFY(fileShare(*bad.event)->sha256.isEmpty());
+        QCOMPARE(fileShare(*bad.event)->sizeInBytes, -1);
+        QVERIFY(!detailColor(*bad.event, u"color"));
+        QVERIFY(!batteryPercent(*bad.event));
+        QVERIFY(detailElements(QStringLiteral("<a><b></a>")).empty());
+        QVERIFY(detailElements(QStringLiteral("<!DOCTYPE x><a/>")).empty());
+        QString deep;
+        for (int i = 0; i < 12; ++i) {
+            deep += QStringLiteral("<n>");
+        }
+        for (int i = 0; i < 12; ++i) {
+            deep += QStringLiteral("</n>");
+        }
+        QVERIFY(detailElements(deep).empty());
+        CotElement invalid;
+        invalid.name = QStringLiteral("bad name");
+        CotElement valid;
+        valid.name = QStringLiteral("remarks");
+        valid.text = QStringLiteral("ok");
+        valid.setAttribute(QStringLiteral("source"), QStringLiteral("SWAK"));
+        valid.setAttribute(QStringLiteral("source"), QStringLiteral("SWAK-2"));
+        QCOMPARE(detailText({invalid, valid}),
+                 QStringLiteral("<remarks source=\"SWAK-2\">ok</remarks>"));
     }
     void identityRoundTrip()
     {

@@ -1554,3 +1554,7 @@ The user decided: enrollment supports generated and supplied keys through OpenSS
 
 `src/core/proto/tak_protocol.proto` is SWAK's own schema for TAK Protocol version 1. Its package is `swak.tak.v1`, and its names and comments differ from TAK. A protoc 3.21.12 descriptor comparison matched field numbers, wire types, and labels with the TAK Server 5.7 schema in all 10 messages. The build does not compile the file yet. Phase 1 adds the Protobuf lite runtime and protoc. Development protoc lives under build/dev-tools.
 
+# 2026-10-07: Phase 0 CoT detail model
+
+Received CoT keeps all detail children in `Event::detail`, up to 8192 characters. `core/cot_detail.*` parses it into element trees and provides typed readers. The encoder merges typed fields with the retained elements, so events round-trip. Information shows remarks, endpoint, battery, device, and link count. The 16 KiB message limit, 256-element limit, and depth limit stay unchanged. Large ATAK routes can exceed them, and Phase 2 must revisit these limits. `cotDetailModel` in the server tests covers parsing, readers, round trips, merging, truncation, and rejection.
+
