@@ -24,7 +24,9 @@ namespace {
 constexpr int MaxShapes = 10000;
 constexpr int MaxFeatures = 100000;
 constexpr int MaxCoordinates = 100000;
-constexpr int MaxLayers = 64;
+// KML folders become layers. NOAA NDBC groups about 110 station owners into folders.
+// The feature, shape, and coordinate limits still bound the total work.
+constexpr int MaxLayers = 1024;
 constexpr int MaxGeometryDepth = 8;
 constexpr int MaxProperties = 256;
 constexpr int MaxArchiveEntries = 256;

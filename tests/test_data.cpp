@@ -178,6 +178,32 @@ class DataTest final : public QObject
 {
     Q_OBJECT
 private slots:
+    void manyKmlFolders()
+    {
+        // NOAA NDBC groups its stations in about 110 owner folders. Each folder is a layer.
+        const auto document = [](int folders) {
+            QByteArray kml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                             "<kml xmlns=\"http://www.opengis.net/kml/2.2\"><Document>";
+            for (int i = 0; i < folders; ++i) {
+                kml += "<Folder><name>Owner " + QByteArray::number(i) +
+                       "</name><Placemark><name>Station " + QByteArray::number(i) +
+                       "</name><description><![CDATA[<b>Wave height:</b> 1.3 ft<br/>]]>"
+                       "</description><Point><coordinates>" +
+                       QByteArray::number(-150 + i * 0.1) +
+                       ",59</coordinates></Point>"
+                       "</Placemark></Folder>";
+            }
+            return kml + "</Document></kml>";
+        };
+        std::atomic_bool cancelled = false;
+        const auto decoded = format()->decode(document(120), cancelled);
+        QVERIFY2(decoded.error.isEmpty(), qPrintable(decoded.error));
+        QCOMPARE(decoded.shapes.size(), 120);
+        QVERIFY(decoded.shapes.first().description.contains(QStringLiteral("<b>")));
+        const auto excessive = format()->decode(document(1025), cancelled);
+        QVERIFY(excessive.error.contains(QStringLiteral("layers")));
+        QVERIFY(excessive.shapes.isEmpty());
+    }
     void parser()
     {
         QVERIFY(format());
