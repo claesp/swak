@@ -11,6 +11,7 @@
 #include "core/servers.h"
 #include "core/store.h"
 #include "core/tak_enrollment.h"
+#include "core/tak_protocol.h"
 #include "core/tak_server_api.h"
 
 #include <QAbstractItemModelTester>
@@ -43,6 +44,7 @@
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
 #include <optional>
+#include <tak_protocol.pb.h>
 using namespace swak;
 static Event sampleEvent(const QString &id = QStringLiteral("test"))
 {
@@ -337,6 +339,54 @@ static QByteArray fixtureCertificateBase64()
     return file.open(QIODevice::ReadOnly) ? QSslCertificate(file.readAll()).toDer().toBase64()
                                           : QByteArray{};
 }
+// A plaintext TAK stream server that offers TAK Protocol version 1 like TAK Server.
+class NegotiatingServer final : public QTcpServer
+{
+public:
+    QByteArray received;
+    QByteArray afterResponse;
+    QPointer<QTcpSocket> client;
+    static QByteArray control(const QString &type, const QString &inner)
+    {
+        const auto now = QDateTime::currentDateTimeUtc();
+        return QStringLiteral(
+                   "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>"
+                   "<event version='2.0' uid='negotiation' type='%1' time='%2' start='%2' "
+                   "stale='%3' how='m-g'><point lat='0.0' lon='0.0' hae='0.0' "
+                   "ce='999999' le='999999'/><detail><TakControl>%4</TakControl></detail>"
+                   "</event>")
+            .arg(type,
+                 now.toString(Qt::ISODateWithMs),
+                 now.addSecs(60).toString(Qt::ISODateWithMs),
+                 inner)
+            .toUtf8();
+    }
+
+protected:
+    void incomingConnection(qintptr descriptor) override
+    {
+        auto *socket = new QTcpSocket(this);
+        socket->setSocketDescriptor(descriptor);
+        client = socket;
+        answered_ = false;
+        socket->write(
+            control(QStringLiteral("t-x-takp-v"),
+                    QStringLiteral("<TakProtocolSupport version='1'/>"
+                                   "<TakServerVersionInfo serverVersion='5.7' apiVersion='3'/>")));
+        connect(socket, &QTcpSocket::readyRead, socket, [this, socket] {
+            received.append(socket->readAll());
+            if (!answered_ && received.contains("t-x-takp-q")) {
+                answered_ = true;
+                socket->write(control(QStringLiteral("t-x-takp-r"),
+                                      QStringLiteral("<TakResponse status='true'/>")) +
+                              afterResponse);
+            }
+        });
+    }
+
+private:
+    bool answered_ = false;
+};
 class ServerTest final : public QObject
 {
     Q_OBJECT
@@ -665,14 +715,20 @@ private slots:
         const QHostAddress group(QStringLiteral("239.255.71.71"));
         QCOMPARE(sender.writeDatagram(encodeCot(sampleEvent()), group, port),
                  encodeCot(sampleEvent()).size());
-        QCOMPARE(sender.writeDatagram(QByteArray("\xbf\x01\xbf\x12\x00", 5), group, port), 5);
+        // ATAK can also send TAK Protocol version 1 mesh datagrams.
+        auto binary = sampleEvent();
+        binary.uid = QStringLiteral("mesh-binary");
+        const auto datagram = takMeshDatagram(encodeTakMessage(binary));
+        QCOMPARE(sender.writeDatagram(datagram, group, port), datagram.size());
+        QCOMPARE(sender.writeDatagram(QByteArray("\xbf\x02\xbf\x12\x00", 5), group, port), 5);
         QVERIFY(QTest::qWaitFor(
             [&] {
-                return store.rowCount() == 1 &&
+                return store.rowCount() == 2 &&
                        servers.status(QStringLiteral("mesh"))
-                           .contains(QStringLiteral("Binary, not decoded: 1."));
+                           .contains(QStringLiteral("TAK Protocol 1 datagrams: 2."));
             },
             5000));
+        QVERIFY(servers.status(QStringLiteral("mesh")).contains(QStringLiteral("Rejected: 1.")));
     }
     void quicStream()
     {
@@ -757,6 +813,187 @@ private slots:
                 server.received.startsWith("<auth><cot username=\"alice\" password=\"secret\""));
             QVERIFY(server.received.contains("uid=\"SWAK-Q\""));
         }
+    }
+    void takProtocolMessages()
+    {
+        const auto event =
+            decodeCot(
+                QByteArray("<event version='2.0' uid='ANDROID-1' type='a-f-G-U-C' how='m-g' "
+                           "time='2026-10-07T10:00:00.123Z' start='2026-10-07T10:00:00.123Z' "
+                           "stale='2030-10-07T10:05:00.000Z'><point lat='59.3' lon='18.1' hae='12' "
+                           "ce='5' le='9'/><detail><contact endpoint='10.0.0.5:4242:tcp' "
+                           "callsign='VIPER'/>"
+                           "<__group name='Cyan' role='Team Lead'/><status battery='87'/>"
+                           "<takv device='Pixel' platform='ATAK-CIV' os='34' version='5.4'/>"
+                           "<track course='90.5' speed='2.5'/><precisionlocation geopointsrc='GPS' "
+                           "altsrc='GPS'/>"
+                           "<remarks>Hold &amp; observe</remarks><link uid='RP-1' type='b-m-p-w' "
+                           "relation='c'/>"
+                           "</detail></event>"))
+                .event;
+        QVERIFY(event);
+        const auto payload = encodeTakMessage(*event);
+        QVERIFY(!payload.isEmpty());
+        // Typed elements use their protobuf fields. The rest travels as XML.
+        swak::tak::v1::TakMessage message;
+        QVERIFY(message.ParseFromArray(payload.constData(), static_cast<int>(payload.size())));
+        QCOMPARE(message.event().time_ms(), static_cast<quint64>(event->time.toMSecsSinceEpoch()));
+        QCOMPARE(QString::fromStdString(message.event().detail().contact().endpoint()),
+                 QStringLiteral("10.0.0.5:4242:tcp"));
+        QCOMPARE(message.event().detail().status().battery_percent(), 87U);
+        QCOMPARE(message.event().detail().track().course(), 90.5);
+        QVERIFY(message.event().detail().has_device_version());
+        QVERIFY(message.event().detail().has_precision_location());
+        const auto other = QString::fromStdString(message.event().detail().other_xml());
+        QVERIFY(other.contains(QStringLiteral("<remarks>Hold &amp; observe</remarks>")));
+        QVERIFY(!other.contains(QStringLiteral("contact")));
+        const auto decoded = decodeTakMessage(payload);
+        QVERIFY2(decoded.event, qPrintable(decoded.error));
+        QCOMPARE(decoded.event->uid, event->uid);
+        QCOMPARE(decoded.event->time, event->time);
+        QCOMPARE(decoded.event->stale, event->stale);
+        QCOMPARE(decoded.event->latitude, event->latitude);
+        QCOMPARE(decoded.event->callsign, QStringLiteral("VIPER"));
+        QCOMPARE(decoded.event->team, QStringLiteral("Cyan"));
+        QCOMPARE(decoded.event->course, event->course);
+        QCOMPARE(decoded.event->speed, event->speed);
+        QCOMPARE(remarks(*decoded.event), QStringLiteral("Hold & observe"));
+        QCOMPARE(contactEndpoint(*decoded.event), QStringLiteral("10.0.0.5:4242:tcp"));
+        QCOMPARE(batteryPercent(*decoded.event), std::optional<int>(87));
+        QCOMPARE(links(*decoded.event).size(), 1);
+        // A contact with more attributes and a partial track stay XML, so no value is lost.
+        auto extra = *event;
+        extra.detail.replace(QStringLiteral("callsign=\"VIPER\""),
+                             QStringLiteral("callsign=\"VIPER\" phone=\"123\""));
+        extra.speed.reset();
+        const auto extraPayload = encodeTakMessage(extra);
+        QVERIFY(message.ParseFromArray(extraPayload.constData(),
+                                       static_cast<int>(extraPayload.size())));
+        QVERIFY(!message.event().detail().has_contact());
+        QVERIFY(!message.event().detail().has_track());
+        const auto extraDecoded = decodeTakMessage(extraPayload);
+        QVERIFY(extraDecoded.event);
+        QCOMPARE(detailElement(*extraDecoded.event, u"contact")->attribute(u"phone"),
+                 QStringLiteral("123"));
+        QVERIFY(!extraDecoded.event->speed);
+        // A control-only message, encoded by hand from the field numbers: control { 1: 1, 2: 1 }.
+        QVERIFY(decodeTakMessage(QByteArray("\x0a\x04\x08\x01\x10\x01", 6)).control);
+        QVERIFY(!decodeTakMessage(QByteArray("\x12\xff", 2)).error.isEmpty());
+        QVERIFY(!decodeTakMessage({}).error.isEmpty());
+        // Detail XML cannot leave its element or add a second event.
+        QVERIFY(message.ParseFromArray(payload.constData(), static_cast<int>(payload.size())));
+        message.mutable_event()->mutable_detail()->set_other_xml(
+            "</detail></event><event version='2.0'><detail>");
+        std::string injected;
+        QVERIFY(message.SerializeToString(&injected));
+        QVERIFY(!decodeTakMessage(QByteArray::fromStdString(injected)).event);
+        message.mutable_event()->mutable_detail()->set_other_xml("<!DOCTYPE x><x/>");
+        QVERIFY(message.SerializeToString(&injected));
+        QVERIFY(!decodeTakMessage(QByteArray::fromStdString(injected)).event);
+        message.mutable_event()->mutable_detail()->clear_other_xml();
+        message.mutable_event()->set_latitude(std::numeric_limits<double>::quiet_NaN());
+        QVERIFY(message.SerializeToString(&injected));
+        QVERIFY(!decodeTakMessage(QByteArray::fromStdString(injected)).event);
+        // Stream frames: split reads, two frames, and failures.
+        const auto frame = takStreamFrame(payload);
+        QCOMPARE(frame.at(0), TakMagic);
+        TakStream stream;
+        QVERIFY(stream.feed(frame.left(1)).isEmpty());
+        QVERIFY(stream.feed(frame.mid(1, 2)).isEmpty());
+        QVERIFY(stream.pending());
+        const auto payloads = stream.feed(frame.mid(3) + frame);
+        QCOMPARE(payloads.size(), 2);
+        QCOMPARE(payloads.first(), payload);
+        QVERIFY(!stream.pending());
+        for (const QByteArray &bad : {QByteArray("<event"),
+                                      QByteArray("\xbf\x00", 2),
+                                      QByteArray("\xbf\xff\xff\xff\xff\xff", 6),
+                                      QByteArray("\xbf\x81\x81\x01", 4)}) {
+            TakStream broken;
+            broken.feed(bad);
+            QVERIFY2(broken.failed(), bad.toHex().constData());
+        }
+        QVERIFY(takStreamFrame(QByteArray(MaxMessageBytes + 1, 'x')).isEmpty());
+        // Mesh datagrams: 0xbf, version 1, 0xbf, payload.
+        const auto datagram = takMeshDatagram(payload);
+        QVERIFY(datagram.startsWith(QByteArray("\xbf\x01\xbf", 3)));
+        QCOMPARE(takMeshPayload(datagram), std::optional<QByteArray>(payload));
+        QVERIFY(!takMeshPayload(QByteArray("\xbf\x02\xbf", 3) + payload));
+        QVERIFY(!takMeshPayload(QByteArray("\xbf\x01\x00", 3) + payload));
+        QVERIFY(!takMeshPayload(QByteArray("<event")));
+    }
+    void takProtocolNegotiation()
+    {
+        auto binaryEvent = sampleEvent();
+        binaryEvent.uid = QStringLiteral("after-switch");
+        NegotiatingServer server;
+        // The response and the first binary frame arrive in one write.
+        server.afterResponse = takStreamFrame(encodeTakMessage(binaryEvent));
+        QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+        Store store;
+        Servers servers(store);
+        QVERIFY(servers.put(QStringLiteral("tak"), source(server.serverPort())).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return store.rowCount() == 1;
+            },
+            5000));
+        QCOMPARE(store.events().first().uid, QStringLiteral("after-switch"));
+        QVERIFY(server.received.contains("type=\"t-x-takp-q\""));
+        QVERIFY(server.received.contains("<TakRequest version=\"1\"/>"));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return servers.status(QStringLiteral("tak"))
+                    .contains(QStringLiteral("TAK Protocol 1"));
+            },
+            5000));
+        // After the switch, SWAK sends binary frames.
+        server.received.clear();
+        auto outgoing = sampleEvent();
+        outgoing.uid = QStringLiteral("from-swak");
+        QVERIFY(servers.send(outgoing).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                TakStream reader;
+                const auto frames = reader.feed(server.received);
+                return std::any_of(frames.cbegin(), frames.cend(), [](const QByteArray &item) {
+                    const auto result = decodeTakMessage(item);
+                    return result.event && result.event->uid == u"from-swak";
+                });
+            },
+            5000));
+        QVERIFY(!server.received.contains("<event"));
+        // An invalid binary frame stops the connection with a reason.
+        server.client->write(QByteArray("\xbf\x00", 2));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return servers.status(QStringLiteral("tak"))
+                    .contains(QStringLiteral("TAK Protocol stream"));
+            },
+            5000));
+        // XML only never asks for the switch.
+        NegotiatingServer plain;
+        QVERIFY(plain.listen(QHostAddress::LocalHost, 0));
+        Store xmlStore;
+        Servers xmlServers(xmlStore);
+        auto xml = source(plain.serverPort());
+        xml.insert(QStringLiteral("takProtocol"), QStringLiteral("xml"));
+        QVERIFY(xmlServers.put(QStringLiteral("xml"), xml).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return xmlServers.status(QStringLiteral("xml"))
+                    .startsWith(QStringLiteral("Connected"));
+            },
+            5000));
+        QVERIFY(xmlServers.send(sampleEvent()).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return plain.received.contains("<event");
+            },
+            5000));
+        QVERIFY(!plain.received.contains("t-x-takp-q"));
+        xml.insert(QStringLiteral("takProtocol"), QStringLiteral("other"));
+        QVERIFY(!validateServer(xml).isEmpty());
     }
     void takStreamLogin()
     {

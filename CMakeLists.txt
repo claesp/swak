@@ -91,6 +91,8 @@ add_library(
     src/core/tak_enrollment.h
     src/core/quic_stream.cpp
     src/core/quic_stream.h
+    src/core/tak_protocol.cpp
+    src/core/tak_protocol.h
     src/core/cot_stream.cpp
     src/core/identity.cpp
     src/core/servers.cpp
@@ -153,6 +155,30 @@ add_library(
     src/core/logging.cpp
     src/core/logging.h
 )
+# TAK Protocol version 1 uses SWAK's own schema and the Protobuf lite runtime. The generated code
+# builds in its own library without the SWAK warning flags. Its header is a system header.
+find_package(Protobuf 3.12 REQUIRED)
+add_library(swak_tak_proto STATIC src/core/proto/tak_protocol.proto)
+protobuf_generate(
+    TARGET
+    swak_tak_proto
+    LANGUAGE
+    cpp
+    IMPORT_DIRS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/core/proto"
+    PROTOC_OUT_DIR
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/proto"
+)
+target_include_directories(
+    swak_tak_proto SYSTEM PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/generated/proto"
+)
+target_compile_features(swak_tak_proto PUBLIC cxx_std_20)
+target_link_libraries(swak_tak_proto PUBLIC protobuf::libprotobuf-lite)
+if(SWAK_SANITIZERS)
+    target_compile_options(
+        swak_tak_proto PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer
+    )
+endif()
 target_include_directories(swak_core PUBLIC src)
 target_link_libraries(
     swak_core PUBLIC swak_build LibArchive::LibArchive Qt6::Widgets Qt6::Network Qt6::Concurrent
@@ -170,6 +196,7 @@ target_link_libraries(swak_core PRIVATE CURL::libcurl)
 # use the OpenSSL QUIC client, which OpenSSL 3.2 added. 3.5 adds the server side that the tests use.
 find_package(OpenSSL 3.2 REQUIRED COMPONENTS Crypto SSL)
 target_link_libraries(swak_core PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+target_link_libraries(swak_core PRIVATE swak_tak_proto)
 target_link_libraries(swak_core PUBLIC "${GEOGRAPHICLIB_LIBRARY}")
 
 function(swak_plugin name file)
@@ -274,7 +301,7 @@ if(BUILD_TESTING)
     target_link_libraries(swak_tak_compat PRIVATE swak_core Qt6::Test)
     add_executable(swak_server_tests tests/test_servers.cpp)
     target_link_libraries(
-        swak_server_tests PRIVATE swak_core Qt6::Test OpenSSL::SSL OpenSSL::Crypto
+        swak_server_tests PRIVATE swak_core swak_tak_proto Qt6::Test OpenSSL::SSL OpenSSL::Crypto
     )
     add_test(NAME servers COMMAND swak_server_tests)
     set_tests_properties(servers PROPERTIES TIMEOUT 60 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

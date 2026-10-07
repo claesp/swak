@@ -21,6 +21,8 @@ A TAK login sends a username and password inside the TLS stream before the first
 
 Certificate enrollment sends the account password with HTTP Basic authentication over HTTPS only, with certificate checks. SWAK keeps the password in memory for the two requests and then clears its copies, within the limits of Qt containers. The enrollment XML and JSON replies have a 256 KiB limit. SWAK rejects document type declarations and a CN entry in the required subject. It accepts at most 16 subject entries and eight CA certificates, and checks that the signed certificate matches the private key. Key files and certificates go to an owner-only folder. A new key is encrypted when the entry names a password variable.
 
+TAK Protocol version 1 frames have a limit of 16 KiB per message, the same as XML. The frame reader rejects a wrong magic byte, a zero or oversized length, and a varint longer than five bytes. A waiting frame never holds more than one maximum frame. SWAK converts each binary message to CoT XML with an escaping writer and validates it with the XML decoder. The XML detail inside a message therefore cannot leave the detail element or add a second event.
+
 QUIC entries use the OpenSSL QUIC client with certificate and host checks and the `takstream` ALPN name. They read client credentials through the same reader as TLS entries. Received stream data passes the same CoT frame reader and limits as TLS. Host names resolve without blocking the connection worker.
 
 Multicast mesh entries join one IPv4 group on one selected interface. They use a time-to-live of one and turn off multicast loopback. Their datagrams are plaintext and unauthenticated, like Local LAN. Received datagrams pass the same 16 KiB limit and CoT decoder as other inputs.

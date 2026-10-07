@@ -26,7 +26,11 @@ SWAK links libcurl directly for HTTPS requests to TAK Server. The user decided o
 
 SWAK links OpenSSL `libcrypto` and `libssl` 3.2 or later directly. Enrollment uses them for keys and certificate requests. QUIC streams use the OpenSSL QUIC client, which OpenSSL 3.2 added. The tests also use the QUIC server of OpenSSL 3.5. Qt cannot create key pairs or certificate requests. The user decided on October 7, 2026 to use OpenSSL for these tasks. The Qt TLS backend and libcurl already load OpenSSL, so the runtime adds no package. Install `libssl-dev` to build SWAK. OpenSSL 3 uses the Apache License 2.0.
 
-Qt, libarchive, GeographicLib, GDAL, libcurl, and OpenSSL are system dependencies. Read the build manual for their required components.
+# Protobuf
+
+SWAK uses the Protobuf lite runtime for TAK Protocol version 1. The user decided on October 7, 2026 to use the Protobuf library. The schema is SWAK's own file, `src/core/proto/tak_protocol.proto`, which matches the TAK wire format and copies no TAK file. The build runs `protoc` and compiles the generated code in a separate library without the SWAK warning flags. Install `libprotobuf-dev` and `protobuf-compiler` to build SWAK. The runtime package is `libprotobuf-lite32t64` on Debian 13. Protobuf uses a BSD 3-clause license.
+
+Qt, libarchive, GeographicLib, GDAL, libcurl, OpenSSL, and Protobuf are system dependencies. Read the build manual for their required components.
 
 Marker collections also use the existing system libarchive dependency. The shared collection service reads ZIP, TAR, and gzip-compressed TAR, and writes ZIP or compressed TAR. It enables no external decompression programs and extracts no files. The additional archive use avoids a separate ZIP implementation or dependency. Read [Marker collections](marker-collections.md) for the one-file format and resource limits.
 

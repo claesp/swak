@@ -36,6 +36,12 @@ The generator uses this identity when it opens and when the identity changes. Us
 
 Generate event normally adds a local event. Enable Send generated CoT to connected servers and LAN peers to transmit it. Only connected TCP, TLS, UDP output, and established LAN sessions receive generated messages. UDP inputs remain receive-only. SWAK never forwards received events automatically. This rule prevents forwarding loops across servers and peers.
 
+# TAK Protocol version 1
+
+TAK Server can switch a stream from CoT XML to TAK Protocol version 1, a smaller binary format. The server offers the switch with a `t-x-takp-v` event after the connection and any login. By default, SWAK answers with a `t-x-takp-q` request for version 1. After a positive `t-x-takp-r` response, both directions use binary frames. TAK message format controls this for TLS, TCP, and QUIC entries. Select XML only to keep XML. Without an offer, the stream stays XML. The status then shows `Connected, TAK Protocol 1`.
+
+A binary frame is the byte 0xbf, a length, and one message. SWAK keeps detail elements that have only the typed values, such as contact, group, track, status, device, and position source, in their binary fields. All other detail elements travel as XML text inside the message, as TAK expects. SWAK checks each received message with the same XML decoder and limits as an XML event. An invalid frame stops the connection, and the normal retry applies.
+
 # QUIC
 
 TAK Server 5.7 adds a QUIC input, normally on port 8090. Select QUIC CoT stream (TAK Server 5.7) as the protocol. QUIC uses the same CA, client certificate, key, password variable, TAK login, and REST API port as a TLS entry. SWAK uses the OpenSSL QUIC client with the ALPN name `takstream`. It checks the server certificate against the host name or address. After the handshake, SWAK sends a ping, because the client opens the single TAK stream with its first write. The stream then carries CoT XML like a TLS stream, with the same limits, timeouts, and pings. QUIC uses UDP, so a firewall must allow UDP to the server port.
@@ -44,7 +50,7 @@ TAK Server 5.7 adds a QUIC input, normally on port 8090. Select QUIC CoT stream 
 
 ATAK and WinTAK share positions without a server through multicast. Add a server with the protocol Multicast mesh (ATAK). Select an IPv4 interface. For situational awareness, use group 239.2.3.1 and port 6969. For GeoChat, add a second entry with group 224.10.10.1 and port 17012.
 
-The entry joins the group on the selected interface. It receives CoT XML datagrams and sends generated CoT when sending is enabled. Datagrams use a time-to-live of one, so they stay on the local network segment. SWAK does not receive its own datagrams. Multicast mesh uses plaintext without authentication. Use it only on a trusted network. ATAK can also send TAK Protocol version 1 datagrams, which start with byte 0xbf. SWAK counts these as binary messages and decodes them after it adds Protobuf support.
+The entry joins the group on the selected interface. It receives CoT XML datagrams and sends generated CoT when sending is enabled. Datagrams use a time-to-live of one, so they stay on the local network segment. SWAK does not receive its own datagrams. Multicast mesh uses plaintext without authentication. Use it only on a trusted network. ATAK can also send TAK Protocol version 1 datagrams, which start with 0xbf, the version 1, and 0xbf. SWAK decodes them and counts them in the status. SWAK sends XML on the mesh, which ATAK also accepts.
 
 # Local LAN servers
 

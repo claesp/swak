@@ -3,6 +3,7 @@ namespace swak {
 void CotStream::reset()
 {
     frame_.clear();
+    remainder_.clear();
     tag_ = 0;
     depth_ = 0;
     quote_ = 0;
@@ -10,14 +11,16 @@ void CotStream::reset()
     root_ = false;
     failed_ = false;
 }
-QList<QByteArray> CotStream::feed(const QByteArray &bytes)
+QList<QByteArray> CotStream::feed(const QByteArray &bytes,
+                                  const std::function<bool(const QByteArray &)> &stop)
 {
     QList<QByteArray> frames;
     if (failed_ || bytes.size() > MaxMessageBytes) {
         failed_ = true;
         return frames;
     }
-    for (const char ch : bytes) {
+    for (qsizetype index = 0; index < bytes.size(); ++index) {
+        const char ch = bytes.at(index);
         if (frame_.isEmpty() && (ch == ' ' || ch == '\r' || ch == '\n' || ch == '\t')) {
             continue;
         }
@@ -98,6 +101,10 @@ QList<QByteArray> CotStream::feed(const QByteArray &bytes)
             if (depth_ == 0) {
                 frames.append(frame_);
                 reset();
+                if (stop && stop(frames.last())) {
+                    remainder_ = bytes.mid(index + 1);
+                    return frames;
+                }
             }
         }
     }

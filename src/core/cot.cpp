@@ -204,33 +204,8 @@ DecodeResult decodeCot(const QByteArray &data)
     }
     return {event, {}};
 }
-QByteArray encodeCot(const Event &event)
+std::vector<CotElement> mergedDetail(const Event &event)
 {
-    if (!eventError(event).isEmpty()) {
-        return {};
-    }
-    QByteArray output;
-    QXmlStreamWriter xml(&output);
-    xml.writeStartDocument();
-    xml.writeStartElement(QStringLiteral("event"));
-    const auto attr = [&xml](const char *key, const QString &value) {
-        xml.writeAttribute(QLatin1String(key), value);
-    };
-    attr("version", QStringLiteral("2.0"));
-    attr("uid", event.uid);
-    attr("type", event.type);
-    attr("how", event.how);
-    attr("time", event.time.toUTC().toString(Qt::ISODateWithMs));
-    attr("start", event.start.toUTC().toString(Qt::ISODateWithMs));
-    attr("stale", event.stale.toUTC().toString(Qt::ISODateWithMs));
-    xml.writeStartElement(QStringLiteral("point"));
-    attr("lat", QString::number(event.latitude, 'f', 8));
-    attr("lon", QString::number(event.longitude, 'f', 8));
-    attr("hae", QString::number(event.altitude, 'f', 3));
-    attr("ce", QString::number(event.circularError, 'f', 3));
-    attr("le", QString::number(event.linearError, 'f', 3));
-    xml.writeEndElement();
-    xml.writeStartElement(QStringLiteral("detail"));
     // Typed fields replace their attributes in the retained elements. Other attributes,
     // children, and elements stay as received, so a forwarded event keeps its detail.
     auto elements = detailElements(event.detail);
@@ -284,7 +259,36 @@ QByteArray encodeCot(const Event &event)
             }
         }
     }
-    writeDetail(xml, elements);
+    return elements;
+}
+QByteArray encodeCot(const Event &event)
+{
+    if (!eventError(event).isEmpty()) {
+        return {};
+    }
+    QByteArray output;
+    QXmlStreamWriter xml(&output);
+    xml.writeStartDocument();
+    xml.writeStartElement(QStringLiteral("event"));
+    const auto attr = [&xml](const char *key, const QString &value) {
+        xml.writeAttribute(QLatin1String(key), value);
+    };
+    attr("version", QStringLiteral("2.0"));
+    attr("uid", event.uid);
+    attr("type", event.type);
+    attr("how", event.how);
+    attr("time", event.time.toUTC().toString(Qt::ISODateWithMs));
+    attr("start", event.start.toUTC().toString(Qt::ISODateWithMs));
+    attr("stale", event.stale.toUTC().toString(Qt::ISODateWithMs));
+    xml.writeStartElement(QStringLiteral("point"));
+    attr("lat", QString::number(event.latitude, 'f', 8));
+    attr("lon", QString::number(event.longitude, 'f', 8));
+    attr("hae", QString::number(event.altitude, 'f', 3));
+    attr("ce", QString::number(event.circularError, 'f', 3));
+    attr("le", QString::number(event.linearError, 'f', 3));
+    xml.writeEndElement();
+    xml.writeStartElement(QStringLiteral("detail"));
+    writeDetail(xml, mergedDetail(event));
     xml.writeEndElement();
     xml.writeEndElement();
     xml.writeEndDocument();

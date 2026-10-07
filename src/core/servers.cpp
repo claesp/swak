@@ -1,11 +1,13 @@
 #include "core/servers.h"
 
 #include "core/cot.h"
+#include "core/cot_detail.h"
 #include "core/cot_stream.h"
 #include "core/lan_protocol.h"
 #include "core/logging.h"
 #include "core/quic_stream.h"
 #include "core/store.h"
+#include "core/tak_protocol.h"
 #include "core/tls_files.h"
 
 #include <QBuffer>
@@ -72,6 +74,7 @@ QJsonObject serverDefaults()
             {QStringLiteral("apiPort"), 8443},
             {QStringLiteral("authUser"), QString{}},
             {QStringLiteral("authPasswordEnv"), QString{}},
+            {QStringLiteral("takProtocol"), QStringLiteral("binary")},
             {QStringLiteral("retrySeconds"), 5},
             {QStringLiteral("timeoutSeconds"), 15}};
 }
@@ -133,6 +136,10 @@ QList<SettingField> serverFields(const QJsonObject &source)
         textSetting(QStringLiteral("passwordEnv"), tr("Password environment variable"), 128),
         numberSetting(QStringLiteral("apiPort"), tr("TAK REST API port (0 = off)"), 0, 65535),
         textSetting(QStringLiteral("authUser"), tr("TAK username (optional)"), 128),
+        choiceSetting(QStringLiteral("takProtocol"),
+                      tr("TAK message format"),
+                      {tr("Use TAK Protocol 1 (binary) when the server offers it"), tr("XML only")},
+                      {QStringLiteral("binary"), QStringLiteral("xml")}),
         textSetting(QStringLiteral("authPasswordEnv"),
                     tr("TAK password environment variable (SWAK_COT_...)"),
                     128),
@@ -142,6 +149,10 @@ QList<SettingField> serverFields(const QJsonObject &source)
                       2,
                       120)};
     for (auto &field : fields) {
+        if (field.path == "takProtocol") {
+            field.enabledBy = QStringLiteral("protocol");
+            field.enabledValue = QJsonArray{"tls", "stcp", "quic"};
+        }
         if (field.path == "host" || field.path == "port") {
             field.enabledBy = QStringLiteral("protocol");
             field.enabledValue = QJsonArray{"tls", "stcp", "quic", "udp", "udpout", "mcast"};
@@ -238,6 +249,11 @@ QString validateServer(const QJsonObject &v)
     static const QRegularExpression envName(QStringLiteral("\\ASWAK_COT_[A-Z0-9_]{1,96}\\z"));
     if (!env.isEmpty() && !envName.match(env).hasMatch()) {
         return tr("Use a dedicated SWAK_COT_ environment variable for the certificate password.");
+    }
+    if (const auto format = v.value(QStringLiteral("takProtocol"));
+        !format.isUndefined() && format != QStringLiteral("binary") &&
+        format != QStringLiteral("xml")) {
+        return tr("Select a TAK message format.");
     }
     // TAK file and LDAP inputs accept a username and password before the first CoT event.
     const auto user = v.value(QStringLiteral("authUser")).toString();
@@ -349,10 +365,10 @@ public:
         for (const auto &s : sessions_) {
             if (s->tcp && s->ready && (!s->peer || s->greeted) &&
                 s->tcp->bytesToWrite() + payload.size() <= 256 * 1024) {
-                s->tcp->write(payload);
+                writeTo(*s, payload);
             } else if (s->quic && s->ready &&
                        s->quic->bytesToWrite() + payload.size() <= 256 * 1024) {
-                s->quic->write(payload);
+                writeTo(*s, payload);
             } else if ((s->output || s->mesh) && s->udp && s->ready) {
                 // One event per datagram. The 16 KiB message limit stays below the UDP limit.
                 const QHostAddress target(s->source.value(QStringLiteral("host")).toString());
@@ -379,10 +395,13 @@ private:
         std::unique_ptr<QTcpSocket> tcp;
         std::unique_ptr<QUdpSocket> udp;
         std::unique_ptr<QuicStream> quic;
+        // TAK Protocol version 1 after a successful negotiation.
+        TakStream proto;
+        bool binary = false, requested = false;
         int lookup = -1;
         CotStream stream;
         QString state;
-        quint64 accepted = 0, rejected = 0, controls = 0, sent = 0, binary = 0;
+        quint64 accepted = 0, rejected = 0, controls = 0, sent = 0, binaryDatagrams = 0;
         qint64 next = 0, started = 0, partial = 0, lastRead = 0, lastPing = 0;
         int failures = 0;
         bool ready = false, peer = false, greeted = false, output = false, mesh = false;
@@ -438,6 +457,9 @@ private:
         }
         s.ready = false;
         s.stream.reset();
+        s.proto.reset();
+        s.binary = false;
+        s.requested = false;
         s.partial = 0;
         s.greeting.clear();
         s.greeted = false;
@@ -620,8 +642,17 @@ private:
         }
     }
     // Writes to the stream of a TCP, TLS, or QUIC session.
-    void writeTo(Session &s, const QByteArray &bytes)
+    void writeTo(Session &s, const QByteArray &xmlBytes)
     {
+        auto bytes = xmlBytes;
+        if (s.binary) {
+            // Generated events are CoT XML. Convert them after the switch.
+            const auto event = decodeCot(xmlBytes).event;
+            bytes = event ? takStreamFrame(encodeTakMessage(*event)) : QByteArray{};
+            if (bytes.isEmpty()) {
+                return;
+            }
+        }
         if (s.tcp) {
             s.tcp->write(bytes);
         } else if (s.quic) {
@@ -798,12 +829,72 @@ private:
     }
     void decode(Session &s, const QByteArray &frame)
     {
-        const auto result = decodeCot(frame);
+        accept(s, decodeCot(frame));
+    }
+    void decodeBinary(Session &s, const QByteArray &payload)
+    {
+        auto result = decodeTakMessage(payload);
+        if (result.control) {
+            ++s.controls;
+            return;
+        }
+        accept(s, {std::move(result.event), result.error});
+    }
+    // Handles the TAK protocol offer and response on a stream in XML mode.
+    void negotiate(Session &s, const Event &event)
+    {
+        const bool stream = (s.tcp && !s.peer) || s.quic;
+        if (!stream || s.source.value(QStringLiteral("takProtocol")).toString() == u"xml") {
+            return;
+        }
+        const auto control = detailElement(event, u"TakControl");
+        if (!control) {
+            return;
+        }
+        if (event.type == u"t-x-takp-v" && !s.requested && !s.binary) {
+            const bool versionOne = std::any_of(
+                control->children.cbegin(), control->children.cend(), [](const auto &child) {
+                    return child.name == u"TakProtocolSupport" &&
+                           child.attribute(u"version") == u"1";
+                });
+            if (versionOne) {
+                Event request;
+                request.uid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+                request.type = QStringLiteral("t-x-takp-q");
+                request.how = QStringLiteral("m-g");
+                request.time = request.start = QDateTime::currentDateTimeUtc();
+                request.stale = request.time.addSecs(60);
+                CotElement ask{QStringLiteral("TakRequest"),
+                               {{QStringLiteral("version"), QStringLiteral("1")}},
+                               {},
+                               {}};
+                CotElement wrapper{QStringLiteral("TakControl"), {}, {}, {ask}};
+                request.detail = detailText({wrapper});
+                writeTo(s, encodeCot(request));
+                s.requested = true;
+            }
+        } else if (event.type == u"t-x-takp-r" && s.requested && !s.binary) {
+            const auto *response = control->child(u"TakResponse");
+            if (response &&
+                response->attribute(u"status").compare(u"true", Qt::CaseInsensitive) == 0) {
+                // From now on both directions use TAK Protocol version 1.
+                s.binary = true;
+                state(s, tr("Connected, TAK Protocol 1"));
+            }
+        }
+    }
+    void accept(Session &s, const DecodeResult &result)
+    {
         if (!result.event) {
             ++s.rejected;
             return;
         }
-        if (result.event->type.startsWith(QLatin1String("t-x-takp-")) ||
+        if (result.event->type.startsWith(QLatin1String("t-x-takp-"))) {
+            ++s.controls;
+            negotiate(s, *result.event);
+            return;
+        }
+        if (result.event->type == QLatin1String("t-x-c-t") ||
             result.event->type == QLatin1String("t-x-c-t") ||
             result.event->type == QLatin1String("t-x-c-t-r")) {
             ++s.controls;
@@ -849,9 +940,14 @@ private:
                 QByteArray bytes(static_cast<qsizetype>(size), Qt::Uninitialized);
                 if (s.udp->readDatagram(bytes.data(), bytes.size()) != size) {
                     ++s.rejected;
-                } else if (s.mesh && bytes.startsWith('\xbf')) {
-                    // TAK Protocol version 1 mesh datagram. Decoding arrives with Protobuf.
-                    ++s.binary;
+                } else if (s.mesh && bytes.startsWith(TakMagic)) {
+                    // TAK Protocol version 1 mesh datagram.
+                    ++s.binaryDatagrams;
+                    if (const auto payload = takMeshPayload(bytes)) {
+                        decodeBinary(s, *payload);
+                    } else {
+                        ++s.rejected;
+                    }
                 } else {
                     decode(s, bytes);
                 }
@@ -908,12 +1004,28 @@ private:
                 s.greeting.clear();
                 bytes.remove(0, end + 1);
             }
-            const auto frames = s.stream.feed(bytes);
+            if (s.binary) {
+                return consumeBinary(s, bytes);
+            }
+            // Stop after a protocol response. Binary data can follow it in the same read.
+            const auto frames = s.stream.feed(bytes, [](const QByteArray &frame) {
+                return frame.contains("t-x-takp-r");
+            });
             if (!frames.isEmpty()) {
                 s.partial = 0;
             }
             for (const auto &frame : frames) {
                 decode(s, frame);
+            }
+            if (s.binary) {
+                const auto rest = s.stream.takeRemainder();
+                s.stream.reset();
+                return rest.isEmpty() || consumeBinary(s, rest);
+            }
+            const auto rest = s.stream.takeRemainder();
+            if (!rest.isEmpty()) {
+                // The response kept XML mode. Read the rest as XML.
+                return consume(s, rest);
             }
             if (s.stream.failed()) {
                 ++s.rejected;
@@ -926,6 +1038,19 @@ private:
                 s.partial = clock_.elapsed();
             }
         }
+        return true;
+    }
+    bool consumeBinary(Session &s, const QByteArray &bytes)
+    {
+        for (const auto &payload : s.proto.feed(bytes)) {
+            decodeBinary(s, payload);
+        }
+        if (s.proto.failed()) {
+            ++s.rejected;
+            fail(s, tr("Invalid or oversized TAK Protocol stream."));
+            return false;
+        }
+        s.partial = s.proto.pending() ? (s.partial ? s.partial : clock_.elapsed()) : 0;
         return true;
     }
     // Applies stream timeouts and sends the keepalive ping.
@@ -1142,18 +1267,19 @@ private:
     {
         QJsonObject stats;
         for (const auto &s : sessions_) {
-            stats.insert(s->id,
-                         QJsonObject{{QStringLiteral("state"), s->state},
-                                     {QStringLiteral("connected"),
-                                      s->ready && ((s->tcp && (!s->peer || s->greeted)) ||
-                                                   s->quic || s->output || s->mesh)},
-                                     {QStringLiteral("received"), static_cast<double>(s->accepted)},
-                                     {QStringLiteral("rejected"), static_cast<double>(s->rejected)},
-                                     {QStringLiteral("control"), static_cast<double>(s->controls)},
-                                     {QStringLiteral("sent"), static_cast<double>(s->sent)},
-                                     {QStringLiteral("binary"), static_cast<double>(s->binary)},
-                                     {QStringLiteral("mesh"), s->mesh},
-                                     {QStringLiteral("output"), s->output}});
+            stats.insert(
+                s->id,
+                QJsonObject{{QStringLiteral("state"), s->state},
+                            {QStringLiteral("connected"),
+                             s->ready && ((s->tcp && (!s->peer || s->greeted)) || s->quic ||
+                                          s->output || s->mesh)},
+                            {QStringLiteral("received"), static_cast<double>(s->accepted)},
+                            {QStringLiteral("rejected"), static_cast<double>(s->rejected)},
+                            {QStringLiteral("control"), static_cast<double>(s->controls)},
+                            {QStringLiteral("sent"), static_cast<double>(s->sent)},
+                            {QStringLiteral("binary"), static_cast<double>(s->binaryDatagrams)},
+                            {QStringLiteral("mesh"), s->mesh},
+                            {QStringLiteral("output"), s->output}});
         }
         for (const auto &lan : lans_) {
             stats.insert(lan->id,
@@ -1423,7 +1549,7 @@ QString Servers::connectionStatus(const QString &id) const
                                                                : tr("Disconnected");
     }
     if (state.value(QStringLiteral("mesh")).toBool()) {
-        return tr("%1. Received: %2. Sent: %3. Rejected: %4. Binary, not decoded: %5.")
+        return tr("%1. Received: %2. Sent: %3. Rejected: %4. TAK Protocol 1 datagrams: %5.")
             .arg(state.value(QStringLiteral("state")).toString(),
                  QString::number(state.value(QStringLiteral("received")).toDouble(), 'f', 0),
                  QString::number(state.value(QStringLiteral("sent")).toDouble(), 'f', 0),
