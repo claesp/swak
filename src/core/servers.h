@@ -45,6 +45,8 @@ public:
     void reconnect();
     // Adds a line from another service, such as the TAK REST check, to the entry status.
     void setServerInfo(const QString &id, const QString &text);
+    // The sender UID and callsign for TAK logins. Only entries with a login reconnect.
+    void setSenderIdentity(const QString &uid, const QString &callsign);
 signals:
     void changed();
     void statusChanged();
@@ -62,6 +64,7 @@ private:
     QJsonObject sources_;
     QJsonObject stats_;
     QHash<QString, QString> info_;
+    QJsonObject sender_;
     quint64 generation_ = 0;
 };
 } // namespace swak

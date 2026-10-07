@@ -62,6 +62,7 @@ public:
     QSslCertificate certificate;
     QSslKey key;
     QByteArray payload;
+    QByteArray received;
     bool requireClient = false;
     void incomingConnection(qintptr descriptor) override
     {
@@ -79,6 +80,9 @@ public:
         }
         connect(socket, &QSslSocket::encrypted, socket, [this, socket] {
             socket->write(payload);
+        });
+        connect(socket, &QSslSocket::readyRead, socket, [this, socket] {
+            received.append(socket->readAll().left(64 * 1024));
         });
         connect(socket, &QSslSocket::disconnected, socket, &QObject::deleteLater);
         socket->startServerEncryption();
@@ -385,6 +389,60 @@ private slots:
         request.tls = readTlsFiles(entry);
         QVERIFY(!request.tls.error.isEmpty());
         QCOMPARE(fetch(client, request).error, request.tls.error);
+    }
+    void takStreamLogin()
+    {
+        auto v = source(1);
+        v.insert(QStringLiteral("authUser"), QStringLiteral("alice"));
+        v.insert(QStringLiteral("authPasswordEnv"), QStringLiteral("SWAK_COT_TEST_LOGIN"));
+        QVERIFY(validateServer(v).contains(QStringLiteral("TLS")));
+        v.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        QVERIFY(validateServer(v).isEmpty());
+        v.insert(QStringLiteral("authPasswordEnv"), QString{});
+        QVERIFY(!validateServer(v).isEmpty());
+        v.insert(QStringLiteral("authPasswordEnv"), QStringLiteral("PASSWORD"));
+        QVERIFY(!validateServer(v).isEmpty());
+        v.insert(QStringLiteral("authPasswordEnv"), QStringLiteral("SWAK_COT_TEST_LOGIN"));
+        v.insert(QStringLiteral("authUser"), QString(129, 'a'));
+        QVERIFY(!validateServer(v).isEmpty());
+        TlsHarness listener;
+        QFile cert(QFINDTESTDATA("fixtures/map-test-cert.pem")),
+            key(QFINDTESTDATA("fixtures/map-test-key.pem"));
+        QVERIFY(cert.open(QIODevice::ReadOnly) && key.open(QIODevice::ReadOnly));
+        listener.certificate = QSslCertificate(cert.readAll());
+        listener.key = QSslKey(key.readAll(), QSsl::Rsa);
+        QVERIFY(listener.listen(QHostAddress::LocalHost, 0));
+        qputenv("SWAK_COT_TEST_LOGIN", "p&w'\"<x>");
+        Store store;
+        Servers servers(store);
+        servers.setSenderIdentity(QStringLiteral("SWAK-1"), QStringLiteral("VIPER"));
+        v = source(listener.serverPort());
+        v.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        v.insert(QStringLiteral("ca"), cert.fileName());
+        v.insert(QStringLiteral("authUser"), QStringLiteral("alice"));
+        v.insert(QStringLiteral("authPasswordEnv"), QStringLiteral("SWAK_COT_TEST_LOGIN"));
+        QVERIFY(servers.put(QStringLiteral("login"), v).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return listener.received.contains("</auth>");
+            },
+            5000));
+        // The login comes first, escaped, with the sender identity.
+        QVERIFY(listener.received.startsWith("<auth><cot username=\"alice\""));
+        QVERIFY(listener.received.contains("password=\"p&amp;w'&quot;&lt;x&gt;\""));
+        QVERIFY(listener.received.contains("uid=\"SWAK-1\""));
+        QVERIFY(listener.received.contains("callsign=\"VIPER\""));
+        // A missing password stops the connection with a reason.
+        qunsetenv("SWAK_COT_TEST_LOGIN");
+        listener.received.clear();
+        servers.reconnect();
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return servers.status(QStringLiteral("login"))
+                    .contains(QStringLiteral("TAK password is unavailable"));
+            },
+            5000));
+        QVERIFY(!listener.received.contains("<auth>"));
     }
     void takServerApi()
     {

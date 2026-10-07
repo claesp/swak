@@ -1562,3 +1562,7 @@ Received CoT keeps all detail children in `Event::detail`, up to 8192 characters
 
 `core/network_client.*` is a libcurl HTTPS client with one joined worker thread and a curl multi handle. `core/tls_files.*` reads the CA, client certificate, key, and password once for both the CoT stream and HTTPS. `core/tak_server_api.*` builds `/Marti/api` requests and reads `/version/config` after each new TLS connection. Server entries gain `apiPort`, default 8443, and the status shows the server version. `PluginServices` gains `network` and `tak`. Credits shows the loaded libcurl version. libcurl is now a direct dependency with a version check for 7.85. Server tests cover requests, POST bodies, size and time limits, redirects, cancellation, context destruction, destination checks, header injection, PEM and PKCS12 client certificates, URL building, reply parsing, and the full check against local servers.
 
+# 2026-10-07: Phase 1 TAK login
+
+TLS server entries accept `authUser` and `authPasswordEnv`. After the handshake, the worker sends `<auth><cot username password uid callsign/></auth>`, as TAK file and LDAP inputs require. `Servers::setSenderIdentity` supplies the UID and callsign from Identity. Validation rejects a login on plaintext entries or without a `SWAK_COT_` variable. `takStreamLogin` covers order, escaping, identity, validation, and a missing password. A live TAK Server with `auth="file"` remains untested.
+

@@ -25,6 +25,7 @@
 #include <QTcpServer>
 #include <QUdpSocket>
 #include <QUuid>
+#include <QXmlStreamWriter>
 
 #include <algorithm>
 #include <deque>
@@ -67,6 +68,8 @@ QJsonObject serverDefaults()
             {QStringLiteral("key"), QString{}},
             {QStringLiteral("passwordEnv"), QString{}},
             {QStringLiteral("apiPort"), 8443},
+            {QStringLiteral("authUser"), QString{}},
+            {QStringLiteral("authPasswordEnv"), QString{}},
             {QStringLiteral("retrySeconds"), 5},
             {QStringLiteral("timeoutSeconds"), 15}};
 }
@@ -119,6 +122,10 @@ QList<SettingField> serverFields(const QJsonObject &source)
         textSetting(QStringLiteral("key"), tr("Private key (PEM, for PEM certificate)"), 4096),
         textSetting(QStringLiteral("passwordEnv"), tr("Password environment variable"), 128),
         numberSetting(QStringLiteral("apiPort"), tr("TAK REST API port (0 = off)"), 0, 65535),
+        textSetting(QStringLiteral("authUser"), tr("TAK username (optional)"), 128),
+        textSetting(QStringLiteral("authPasswordEnv"),
+                    tr("TAK password environment variable (SWAK_COT_...)"),
+                    128),
         numberSetting(QStringLiteral("retrySeconds"), tr("Retry interval (seconds)"), 1, 60),
         numberSetting(QStringLiteral("timeoutSeconds"),
                       tr("Connection and frame timeout (seconds)"),
@@ -133,7 +140,9 @@ QList<SettingField> serverFields(const QJsonObject &source)
                         QStringLiteral("certificate"),
                         QStringLiteral("key"),
                         QStringLiteral("passwordEnv"),
-                        QStringLiteral("apiPort")}
+                        QStringLiteral("apiPort"),
+                        QStringLiteral("authUser"),
+                        QStringLiteral("authPasswordEnv")}
                 .contains(field.path)) {
             field.enabledBy = QStringLiteral("protocol");
             field.enabledValue = QStringLiteral("tls");
@@ -204,6 +213,16 @@ QString validateServer(const QJsonObject &v)
     static const QRegularExpression envName(QStringLiteral("\\ASWAK_COT_[A-Z0-9_]{1,96}\\z"));
     if (!env.isEmpty() && !envName.match(env).hasMatch()) {
         return tr("Use a dedicated SWAK_COT_ environment variable for the certificate password.");
+    }
+    // TAK file and LDAP inputs accept a username and password before the first CoT event.
+    const auto user = v.value(QStringLiteral("authUser")).toString();
+    const auto userPassword = v.value(QStringLiteral("authPasswordEnv")).toString();
+    if (!safe(user, 128, true) ||
+        (!userPassword.isEmpty() && !envName.match(userPassword).hasMatch())) {
+        return tr("Use a TAK username up to 128 characters and a SWAK_COT_ password variable.");
+    }
+    if (!user.isEmpty() && (protocol != QLatin1String("tls") || userPassword.isEmpty())) {
+        return tr("A TAK username needs TLS and a SWAK_COT_ password environment variable.");
     }
     return {};
 }
@@ -501,7 +520,42 @@ private:
         state(s, s.peer ? tr("LAN handshake") : tr("Connected"));
         if (s.peer) {
             s.tcp->write("SWAK-COT/1 " + localId_.toLatin1() + '\n');
+        } else if (!s.source.value(QStringLiteral("authUser")).toString().isEmpty()) {
+            sendLogin(s);
         }
+    }
+    // Sends the TAK login element before any CoT. TAK reads it on file and LDAP inputs.
+    void sendLogin(Session &s)
+    {
+        const auto variable =
+            s.source.value(QStringLiteral("authPasswordEnv")).toString().toLatin1();
+        auto password = qgetenv(variable.constData());
+        if (password.isEmpty() || password.size() > 1024) {
+            password.fill('\0');
+            fail(s,
+                 tr("The TAK password is unavailable. Set its SWAK_COT_ environment variable "
+                    "before you start SWAK."));
+            return;
+        }
+        QByteArray login;
+        QXmlStreamWriter xml(&login);
+        xml.writeStartElement(QStringLiteral("auth"));
+        xml.writeStartElement(QStringLiteral("cot"));
+        xml.writeAttribute(QStringLiteral("username"),
+                           s.source.value(QStringLiteral("authUser")).toString());
+        xml.writeAttribute(QStringLiteral("password"), QString::fromUtf8(password));
+        for (const auto &[attribute, key] :
+             {std::pair{"uid", "senderUid"}, std::pair{"callsign", "senderCallsign"}}) {
+            const auto value = s.source.value(QLatin1String(key)).toString();
+            if (!value.isEmpty()) {
+                xml.writeAttribute(QLatin1String(attribute), value);
+            }
+        }
+        xml.writeEndElement();
+        xml.writeEndElement();
+        password.fill('\0');
+        s.tcp->write(login);
+        login.fill('\0');
     }
     bool bindInterface(Session &s)
     {
@@ -1057,11 +1111,35 @@ void Servers::reconnect()
         },
         Qt::QueuedConnection);
 }
+void Servers::setSenderIdentity(const QString &uid, const QString &callsign)
+{
+    const QJsonObject sender{{QStringLiteral("senderUid"), uid.left(128)},
+                             {QStringLiteral("senderCallsign"), callsign.left(128)}};
+    if (sender == sender_) {
+        return;
+    }
+    sender_ = sender;
+    // Only entries with a TAK login carry the sender, so other connections stay open.
+    if (std::any_of(sources_.begin(), sources_.end(), [](const QJsonValue &value) {
+            return !value.toObject().value(QStringLiteral("authUser")).toString().isEmpty();
+        })) {
+        configure();
+    }
+}
 void Servers::configure()
 {
     ++generation_;
     stats_ = {};
-    const auto sourceValues = sources_;
+    auto sourceValues = sources_;
+    for (auto it = sourceValues.begin(); it != sourceValues.end(); ++it) {
+        auto source = it.value().toObject();
+        if (!source.value(QStringLiteral("authUser")).toString().isEmpty()) {
+            for (auto field = sender_.begin(); field != sender_.end(); ++field) {
+                source.insert(field.key(), field.value());
+            }
+            it.value() = source;
+        }
+    }
     const auto generation = generation_;
     QMetaObject::invokeMethod(
         worker_,

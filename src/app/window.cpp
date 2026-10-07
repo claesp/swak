@@ -189,6 +189,13 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     services.network = new NetworkClient(this);
     services.network->setObjectName(QStringLiteral("networkClient"));
     if (servers) {
+        const auto sendIdentity = [servers, identity] {
+            Event sender;
+            identity->apply(sender);
+            servers->setSenderIdentity(sender.uid, sender.callsign);
+        };
+        connect(identity, &Identity::changed, servers, sendIdentity);
+        sendIdentity();
         services.tak = new TakServerApi(*servers, *services.network, servers);
         services.tak->setObjectName(QStringLiteral("takServerApi"));
     }

@@ -17,6 +17,8 @@ Text fields exclude control, format, and surrogate characters. This restriction 
 
 SWAK keeps every detail child of a received event as canonical, escaped XML in `Event::detail`. It keeps at most 8192 characters. A larger detail keeps only the typed fields and marks the event. Namespaced detail elements are left out. Readers parse this text again with the same element and depth limits. Detail values are data. Links, URLs, file shares, and video addresses never start a download, a request, or a program by themselves.
 
+A TAK login sends a username and password inside the TLS stream before the first CoT event. The profile stores only the username and the name of a `SWAK_COT_` environment variable. SWAK refuses a login on a plaintext entry. The XML writer escapes the values. SWAK clears its copies of the password after the write, within the limits of Qt containers.
+
 The HTTPS client uses libcurl on one worker thread. Each request uses HTTPS only, certificate and host checks, TLS 1.2 or later, no redirects, no cookies, a reply size limit, and a time limit. It accepts only GET, HEAD, POST, PUT, and DELETE, and rejects header names or values with line breaks. Before it connects, it checks that the URL scheme, host, and port match the configured server. Certificates and keys reach libcurl from memory. Passwords come from `SWAK_COT_` environment variables. libcurl honors the proxy environment variables. Error texts name the failure class and contain no URL or credential.
 
 Coordinates must be finite decimal numbers within geographic ranges. Altitude must lie between minus 100 million and plus 100 million meters. Horizontal and vertical uncertainty must lie between zero and 100 million meters.
