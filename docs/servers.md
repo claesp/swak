@@ -67,7 +67,7 @@ The [example configuration](https://github.com/TAK-Product-Center/Server/blob/51
 
 The [streaming test client](https://github.com/TAK-Product-Center/Server/blob/5187abd46d827d37cfc5708805eced197a837e49/src/testing/load_test/pyTakStreamingCot.py) demonstrates TLS, CoT streams, and heartbeats. SWAK uses its own bounded XML frame reader. It handles quoted attributes, comments, and CDATA before the CoT decoder validates each complete document.
 
-This implementation does not provide TAK account enrollment, LDAP authentication, mission APIs, QUIC, federation, or binary-only CoT endpoints. The local harness tests protocol behavior without a full TAK Server deployment. A deployment test against a real TAK Server remains separate.
+This implementation does not provide TAK account enrollment, LDAP authentication, mission APIs, QUIC, federation, or binary-only CoT endpoints. Read [TAK Server feature plan](tak-server-feature-plan.md) for the proposed client features. The local harness tests protocol behavior without a full TAK Server deployment. A deployment test against a real TAK Server remains separate.
 
 # CoT field pickers
 

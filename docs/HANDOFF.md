@@ -1542,3 +1542,7 @@ NDBC descriptions are HTML. Information now converts HTML descriptions from data
 
 Marker mode now uses Shift+M, like Shift+A for Area and Shift+R for Route. The marker key setting accepts one letter with or without Shift. A profile without `markerShortcutVersion` 2 that still holds the old default M changes to Shift+M once. Other custom keys stay unchanged. The status indicator still shows M. GUI tests press Shift+M and cover the conversion, the tooltip, and key validation.
 
+# 2026-10-07: TAK Server feature plan
+
+`docs/tak-server-feature-plan.md` compares TAK Server 5.7-RELEASE-14, commit `5187abd`, with SWAK. It maps about 35 client-facing server capabilities to eight phases. Phase 0 adds a full CoT detail model and a TAK REST client. Later phases add enrollment, shared drawings, chat, data packages, missions, and server resources. The plan lists five open decisions, including OpenSSL for enrollment and the protobuf decoder. No code changed.
+
