@@ -1619,6 +1619,7 @@ private slots:
             QCOMPARE(menu->actions().at(menu->actions().size() - 2), none);
             QVERIFY(menu->actions().at(menu->actions().size() - 3)->isSeparator());
             QVERIFY(none->isChecked());
+            QCOMPARE(button->toolTip(), QStringLiteral("Map provider: Disabled"));
             provider->trigger();
             QVERIFY(!maps->activeSource().isEmpty());
             QCOMPARE(button->text(), maps->activeSource().value(QStringLiteral("name")).toString());

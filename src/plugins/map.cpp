@@ -1496,7 +1496,7 @@ public:
         setToolbarSection(*toolbar.addWidget(mapButton), ToolbarSection::Providers, 0);
         const auto updateMapButton = [mapButton, mapSources] {
             const auto source = mapSources->activeSource();
-            mapButton->setText(source.isEmpty() ? tr("No map provider")
+            mapButton->setText(source.isEmpty() ? tr("Disabled")
                                                 : source.value(QStringLiteral("name")).toString());
             mapButton->setToolTip(tr("Map provider: %1").arg(mapButton->text()));
         };
