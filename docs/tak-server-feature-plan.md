@@ -122,7 +122,7 @@ The server starts in XML mode. A client can ask for protobuf mode through `t-x-t
 - Benefit: smaller messages and less parsing work on busy servers.
 - Design: decode `TakMessage`, `CotEvent`, and `Detail` messages with the Protobuf library. Convert them to the same `Event` and detail model. Keep XML as the fallback. Check each frame length before decoding.
 - Dependency: Protobuf, with the lite runtime (`libprotobuf-lite`) and `protoc` at build time. Debian 13 supplies runtime 3.21.12. The build needs `libprotobuf-dev` and `protobuf-compiler`. Protobuf uses a BSD 3-clause license.
-- Schema license: the `.proto` files in the TAK Server repository are under GPL version 3. SWAK declares no license yet. Before SWAK copies these files, decide the SWAK license. Alternatively, write SWAK's own schema files with the same field numbers and types. Field numbers are interface facts.
+- Schema: SWAK uses its own schema, `src/core/proto/tak_protocol.proto`. It copies no TAK file, because those files are under GPL version 3. The package, message names, field names, and comments are SWAK's own. Only field numbers and wire types match TAK, because they define the binary format. On October 7, 2026, a descriptor comparison with protoc 3.21.12 found the same field numbers, wire types, and labels as the TAK Server 5.7 schema in all 10 messages.
 
 ## Multicast mesh
 
@@ -286,7 +286,7 @@ The user made these decisions on October 7, 2026.
 4. Connectivity: evaluate libcurl for all related connections. The result is below.
 5. Sharing: share an object only after an explicit Share action. A global setting can share new objects automatically.
 
-One question remains open: the SWAK license, which controls whether SWAK can copy the GPL `.proto` files.
+The user then chose SWAK's own `.proto` schema instead of the GPL files. This removed the license question for the protocol.
 
 # libcurl evaluation
 

@@ -1550,3 +1550,7 @@ Marker mode now uses Shift+M, like Shift+A for Area and Shift+R for Route. The m
 
 The user decided: enrollment supports generated and supplied keys through OpenSSL `libcrypto`; TAK Protocol version 1 uses the Protobuf library; video plays inside SWAK through Qt Multimedia after a protocol test; sharing needs an explicit Share action, with a global automatic setting. The libcurl evaluation recommends libcurl for all HTTPS work, starting with the TAK REST client. libcurl cannot carry TAK QUIC, because TAK uses ALPN `takstream` with a raw stream, not HTTP/3. The OpenSSL 3.5 QUIC client covers QUIC. The SWAK license remains open, because the TAK `.proto` files are GPL version 3.
 
+# 2026-10-07: TAK protocol schema
+
+`src/core/proto/tak_protocol.proto` is SWAK's own schema for TAK Protocol version 1. Its package is `swak.tak.v1`, and its names and comments differ from TAK. A protoc 3.21.12 descriptor comparison matched field numbers, wire types, and labels with the TAK Server 5.7 schema in all 10 messages. The build does not compile the file yet. Phase 1 adds the Protobuf lite runtime and protoc. Development protoc lives under build/dev-tools.
+

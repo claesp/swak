@@ -1,0 +1,101 @@
+// SWAK schema for TAK Protocol version 1.
+//
+// SWAK wrote this file. It copies no TAK source file. Only the field numbers and wire
+// types must match the TAK protocol, because they define the binary format. Message and
+// field names, the package, and the comments are SWAK's own. Names do not travel on the wire.
+//
+// A streaming frame is the byte 0xbf, a varint length, and one TakMessage.
+// A mesh datagram is 0xbf, a varint protocol version, 0xbf, and one TakMessage.
+syntax = "proto3";
+
+package swak.tak.v1;
+
+option optimize_for = LITE_RUNTIME;
+
+// One protocol unit. It carries a control part, an event, or both.
+message TakMessage {
+    // Protocol version range. Without it, the last control values stay in effect.
+    TakControl control = 1;
+    // The CoT event.
+    CotEvent event = 2;
+    // Times in milliseconds since the Unix epoch. Servers fill these in.
+    uint64 submission_time_ms = 3;
+    uint64 creation_time_ms = 4;
+}
+
+// The protocol versions that a sender supports. Zero means version 1.
+message TakControl {
+    uint32 minimum_version = 1;
+    uint32 maximum_version = 2;
+}
+
+// The event element and its point, with times in milliseconds since the Unix epoch.
+message CotEvent {
+    string type = 1;
+    string access = 2;
+    string qos = 3;
+    string opex = 4;
+    string uid = 5;
+    uint64 time_ms = 6;
+    uint64 start_ms = 7;
+    uint64 stale_ms = 8;
+    string how = 9;
+    // Point. Unknown height and errors use 999999.
+    double latitude = 10;
+    double longitude = 11;
+    double height_above_ellipsoid = 12;
+    double circular_error = 13;
+    double linear_error = 14;
+    Detail detail = 15;
+    string caveat = 16;
+    string releasable_to = 17;
+}
+
+// The detail element. Common elements have typed fields. Other elements stay as XML text.
+message Detail {
+    // The remaining detail children as XML, without the enclosing detail element.
+    string other_xml = 1;
+    Contact contact = 2;
+    Group group = 3;
+    PrecisionLocation precision_location = 4;
+    Status status = 5;
+    DeviceVersion device_version = 6;
+    Track track = 7;
+}
+
+// The contact element.
+message Contact {
+    string endpoint = 1;
+    string callsign = 2;
+}
+
+// The __group element: team color and role.
+message Group {
+    string team = 1;
+    string role = 2;
+}
+
+// The precisionlocation element: position and altitude sources.
+message PrecisionLocation {
+    string position_source = 1;
+    string altitude_source = 2;
+}
+
+// The status element.
+message Status {
+    uint32 battery_percent = 1;
+}
+
+// The takv element: the sending device and software.
+message DeviceVersion {
+    string device = 1;
+    string platform = 2;
+    string operating_system = 3;
+    string version = 4;
+}
+
+// The track element: speed in meters per second and course in degrees true.
+message Track {
+    double speed = 1;
+    double course = 2;
+}
