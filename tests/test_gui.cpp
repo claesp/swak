@@ -1985,6 +1985,8 @@ private slots:
         QVERIFY(missingList->item(0, 2)->text().contains(QStringLiteral("unavailable")));
         QVERIFY(!missing.findChild<QRadioButton *>()->isEnabled());
         QVERIFY(absent.activeSource().isEmpty());
+        QCOMPARE(missing.findChild<QLabel *>(QStringLiteral("mapManagerStatus"))->text(),
+                 QStringLiteral("Map provider: Disabled"));
         missing.findChild<QPushButton *>(QStringLiteral("editMapProvider"))->click();
     }
     void mapInformationPane()

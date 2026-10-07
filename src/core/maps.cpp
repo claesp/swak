@@ -194,7 +194,7 @@ QJsonObject MapSources::activeSource() const
 }
 QList<SettingField> MapSources::settingsFields() const
 {
-    QStringList names{tr("No map provider")};
+    QStringList names{tr("Disable")};
     QJsonArray ids{QString{}};
     const auto entries = sources();
     for (auto it = entries.begin(); it != entries.end(); ++it) {

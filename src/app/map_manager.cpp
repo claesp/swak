@@ -100,6 +100,7 @@ MapManager::MapManager(MapSources &sources,
     });
     layout->addLayout(row);
     status_ = new QLabel(this);
+    status_->setObjectName(QStringLiteral("mapManagerStatus"));
     status_->setWordWrap(true);
     status_->setMinimumHeight(status_->fontMetrics().lineSpacing() * 2);
     status_->setTextFormat(Qt::PlainText);
@@ -230,7 +231,7 @@ void MapManager::refresh()
         list_->setCurrentCell(0, 1);
     }
     const auto source = sources_.activeSource();
-    status_->setText(source.isEmpty() ? tr("No map provider selected.")
+    status_->setText(source.isEmpty() ? tr("Map provider: Disabled")
                                       : tr("Active: %1%2")
                                             .arg(source.value(QStringLiteral("name")).toString(),
                                                  source.value(QStringLiteral("ignoreTls")).toBool()

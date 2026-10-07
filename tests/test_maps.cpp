@@ -1011,6 +1011,14 @@ private slots:
     {
         MapSources sources(QPluginLoader::staticInstances());
         QCOMPARE(sources.providers().size(), 4);
+        // The first provider choice in Settings clears the selection.
+        const auto fields = sources.settingsFields();
+        const auto active = std::find_if(fields.cbegin(), fields.cend(), [](const auto &field) {
+            return field.path == u"active";
+        });
+        QVERIFY(active != fields.cend());
+        QCOMPARE(active->choices.value(0), QStringLiteral("Disable"));
+        QCOMPARE(active->choiceValues.at(0).toString(), QString{});
         QVERIFY(!sources.networkEnabled());
         QVERIFY(sources.activeSource().isEmpty());
         for (auto *provider : sources.providers()) {
