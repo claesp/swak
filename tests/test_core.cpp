@@ -711,6 +711,25 @@ private slots:
         main.findChild<QAction *>(QStringLiteral("clearPredictions"))->trigger();
         QVERIFY(settings->savePreferences().value(QStringLiteral("targets")).toArray().isEmpty());
     }
+    void dataDescriptions()
+    {
+        MapItem item;
+        item.owner = QStringLiteral("org.swak.data/ndbc");
+        item.description = QStringLiteral(
+            "<b>Alaska Ocean Observing System</b><br /><b>Location:</b> 59.598N 151.828W\n"
+            "<br /><b>Water Temperature:</b> 47.7 &#176;F&nbsp;<br />");
+        const auto text = displayDescription(item);
+        QVERIFY(!text.contains('<'));
+        QVERIFY(!text.contains(QStringLiteral("&#")));
+        QVERIFY(text.startsWith(QStringLiteral("Alaska Ocean Observing System\nLocation:")));
+        QVERIFY(text.contains(QStringLiteral("47.7 °F")));
+        // Plain feed text and local descriptions stay as written.
+        item.description = QStringLiteral("Wave height a < b & c");
+        QCOMPARE(displayDescription(item), item.description);
+        item.owner = QStringLiteral("org.swak.markers");
+        item.description = QStringLiteral("<b>typed by the user</b>");
+        QCOMPARE(displayDescription(item), item.description);
+    }
     void lineDistances()
     {
         const QPolygonF line{QPointF(0, 0), QPointF(10, 0), QPointF(10, 10)};

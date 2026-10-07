@@ -45,6 +45,9 @@ struct MapItem
     Qt::PenStyle outlineStyle = Qt::DashLine;
 };
 MapItem cotMapItem(const Event &message);
+// Returns the description as plain text for display. Data feed descriptions, such as KML
+// balloons, often contain HTML. Local and CoT descriptions stay as the user wrote them.
+QString displayDescription(const MapItem &item);
 class MapSelection final : public QObject
 {
     Q_OBJECT

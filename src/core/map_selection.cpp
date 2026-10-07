@@ -3,11 +3,26 @@
 #include "core/marker_symbols.h"
 
 #include <QPainter>
+#include <QTextDocument>
+#include <QTextDocumentFragment>
 
 #include <algorithm>
 #include <cmath>
 #include <optional>
 namespace swak {
+QString displayDescription(const MapItem &item)
+{
+    if (!item.owner.startsWith(QStringLiteral("org.swak.data/")) ||
+        !Qt::mightBeRichText(item.description)) {
+        return item.description;
+    }
+    // Rich text conversion only reads markup here. It loads no images or links.
+    auto text = QTextDocumentFragment::fromHtml(item.description).toPlainText();
+    text.replace(QChar::LineSeparator, QLatin1Char('\n'))
+        .replace(QChar::ParagraphSeparator, QLatin1Char('\n'))
+        .replace(QChar::Nbsp, QLatin1Char(' '));
+    return text.trimmed();
+}
 MapItem cotMapItem(const Event &message)
 {
     MapItem item;

@@ -133,7 +133,7 @@ public:
                                            ? cotFieldDescription(CotField::Type, item->type)
                                            : item->type)
                                     : QString{});
-                description_->setPlainText(item ? item->description : QString{});
+                description_->setPlainText(item ? displayDescription(*item) : QString{});
                 properties_->setRowCount(0);
                 if (item) {
                     auto keys = item->properties.keys();

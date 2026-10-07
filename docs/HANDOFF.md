@@ -1532,3 +1532,9 @@ File > Settings > FOV now controls the FOV cones. The page comes from the cone m
 
 Trace and Predict already had Settings pages. Each page now starts with a visibility switch, Show traces or Show predictions, to match Show FOV cones. A hidden trace or prediction keeps its history, draws nothing, and reports no click hits. The switch defaults to on, so existing profiles look the same. A GUI test opens Settings and checks the FOV, Trace, and Predict fields. Core and GUI tests cover hiding and showing both aids.
 
+# 2026-10-07: NOAA NDBC feed fix
+
+The NOAA NDBC preset failed after the GDAL change on October 5. GDAL reads each KML folder as a layer, and the feed groups its stations into 108 owner folders. The GDAL vector reader rejected documents with more than 64 layers, so the feed showed no stations and kept a stale status. The limit is now 1024 layers. The feature, shape, coordinate, and metadata limits still bound the work. The live feed now decodes 1714 stations in about 45 ms.
+
+NDBC descriptions are HTML. Information now converts HTML descriptions from data feeds to plain text through `displayDescription`. Local and CoT descriptions stay unchanged. Tests cover 120 folders, the 1025-folder rejection, and the description conversion.
+
