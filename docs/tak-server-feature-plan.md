@@ -100,7 +100,7 @@ Add a core service that sends HTTPS requests to the server of a stream entry. It
 
 On connect, read `/api/version/config` and `/api/version`. Show the server version in the server list. Enable REST features only when the server answers. Log the version through the shared logger.
 
-Status, October 7, 2026: Phase 0 is complete. The CoT detail model, the libcurl client, the TAK REST API service, and the version check are in place.
+Status, October 7, 2026: Phase 0 is complete. In Phase 1, enrollment, the TAK login, UDP output, multicast mesh, and QUIC are complete. TAK Protocol version 1 waits for the Protobuf development packages. The CoT detail model, the libcurl client, the TAK REST API service, and the version check are in place.
 
 # Phase 1: Connection and identity
 

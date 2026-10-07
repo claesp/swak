@@ -24,7 +24,7 @@ SWAK links libcurl directly for HTTPS requests to TAK Server. The user decided o
 
 # OpenSSL
 
-SWAK links OpenSSL `libcrypto` 3.0 or later directly for TAK certificate enrollment. Qt cannot create key pairs or certificate requests. The user decided on October 7, 2026 to use OpenSSL for these tasks. The Qt TLS backend and libcurl already load OpenSSL, so the runtime adds no package. Install `libssl-dev` to build SWAK. OpenSSL 3 uses the Apache License 2.0.
+SWAK links OpenSSL `libcrypto` and `libssl` 3.2 or later directly. Enrollment uses them for keys and certificate requests. QUIC streams use the OpenSSL QUIC client, which OpenSSL 3.2 added. The tests also use the QUIC server of OpenSSL 3.5. Qt cannot create key pairs or certificate requests. The user decided on October 7, 2026 to use OpenSSL for these tasks. The Qt TLS backend and libcurl already load OpenSSL, so the runtime adds no package. Install `libssl-dev` to build SWAK. OpenSSL 3 uses the Apache License 2.0.
 
 Qt, libarchive, GeographicLib, GDAL, libcurl, and OpenSSL are system dependencies. Read the build manual for their required components.
 

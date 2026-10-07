@@ -36,6 +36,10 @@ The generator uses this identity when it opens and when the identity changes. Us
 
 Generate event normally adds a local event. Enable Send generated CoT to connected servers and LAN peers to transmit it. Only connected TCP, TLS, UDP output, and established LAN sessions receive generated messages. UDP inputs remain receive-only. SWAK never forwards received events automatically. This rule prevents forwarding loops across servers and peers.
 
+# QUIC
+
+TAK Server 5.7 adds a QUIC input, normally on port 8090. Select QUIC CoT stream (TAK Server 5.7) as the protocol. QUIC uses the same CA, client certificate, key, password variable, TAK login, and REST API port as a TLS entry. SWAK uses the OpenSSL QUIC client with the ALPN name `takstream`. It checks the server certificate against the host name or address. After the handshake, SWAK sends a ping, because the client opens the single TAK stream with its first write. The stream then carries CoT XML like a TLS stream, with the same limits, timeouts, and pings. QUIC uses UDP, so a firewall must allow UDP to the server port.
+
 # Multicast mesh
 
 ATAK and WinTAK share positions without a server through multicast. Add a server with the protocol Multicast mesh (ATAK). Select an IPv4 interface. For situational awareness, use group 239.2.3.1 and port 6969. For GeoChat, add a second entry with group 224.10.10.1 and port 17012.

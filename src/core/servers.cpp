@@ -4,6 +4,7 @@
 #include "core/cot_stream.h"
 #include "core/lan_protocol.h"
 #include "core/logging.h"
+#include "core/quic_stream.h"
 #include "core/store.h"
 #include "core/tls_files.h"
 
@@ -12,6 +13,7 @@
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QHostAddress>
+#include <QHostInfo>
 #include <QMap>
 #include <QMutex>
 #include <QMutexLocker>
@@ -110,12 +112,14 @@ QList<SettingField> serverFields(const QJsonObject &source)
                       tr("Protocol"),
                       {tr("TLS CoT stream"),
                        tr("TCP CoT stream"),
+                       tr("QUIC CoT stream (TAK Server 5.7)"),
                        tr("UDP input"),
                        tr("UDP output to a server"),
                        tr("Multicast mesh (ATAK)"),
                        tr("Local LAN")},
                       {QStringLiteral("tls"),
                        QStringLiteral("stcp"),
+                       QStringLiteral("quic"),
                        QStringLiteral("udp"),
                        QStringLiteral("udpout"),
                        QStringLiteral("mcast"),
@@ -140,7 +144,7 @@ QList<SettingField> serverFields(const QJsonObject &source)
     for (auto &field : fields) {
         if (field.path == "host" || field.path == "port") {
             field.enabledBy = QStringLiteral("protocol");
-            field.enabledValue = QJsonArray{"tls", "stcp", "udp", "udpout", "mcast"};
+            field.enabledValue = QJsonArray{"tls", "stcp", "quic", "udp", "udpout", "mcast"};
         }
         if (QStringList{QStringLiteral("ca"),
                         QStringLiteral("certificate"),
@@ -151,7 +155,7 @@ QList<SettingField> serverFields(const QJsonObject &source)
                         QStringLiteral("authPasswordEnv")}
                 .contains(field.path)) {
             field.enabledBy = QStringLiteral("protocol");
-            field.enabledValue = QStringLiteral("tls");
+            field.enabledValue = QJsonArray{"tls", "quic"};
         }
     }
     return fields;
@@ -163,8 +167,9 @@ QString validateServer(const QJsonObject &v)
     }
     const auto protocol = v.value(QStringLiteral("protocol")).toString();
     if (protocol != QLatin1String("tls") && protocol != QLatin1String("stcp") &&
-        protocol != QLatin1String("udp") && protocol != QLatin1String("udpout") &&
-        protocol != QLatin1String("mcast") && protocol != QLatin1String("lan")) {
+        protocol != QLatin1String("quic") && protocol != QLatin1String("udp") &&
+        protocol != QLatin1String("udpout") && protocol != QLatin1String("mcast") &&
+        protocol != QLatin1String("lan")) {
         return tr("The server protocol is unavailable.");
     }
     if (v.contains("localAddress") && !v.value("localAddress").isString()) {
@@ -241,8 +246,10 @@ QString validateServer(const QJsonObject &v)
         (!userPassword.isEmpty() && !envName.match(userPassword).hasMatch())) {
         return tr("Use a TAK username up to 128 characters and a SWAK_COT_ password variable.");
     }
-    if (!user.isEmpty() && (protocol != QLatin1String("tls") || userPassword.isEmpty())) {
-        return tr("A TAK username needs TLS and a SWAK_COT_ password environment variable.");
+    const bool encrypted = protocol == QLatin1String("tls") || protocol == QLatin1String("quic");
+    if (!user.isEmpty() && (!encrypted || userPassword.isEmpty())) {
+        return tr(
+            "A TAK username needs TLS or QUIC and a SWAK_COT_ password environment variable.");
     }
     return {};
 }
@@ -343,6 +350,9 @@ public:
             if (s->tcp && s->ready && (!s->peer || s->greeted) &&
                 s->tcp->bytesToWrite() + payload.size() <= 256 * 1024) {
                 s->tcp->write(payload);
+            } else if (s->quic && s->ready &&
+                       s->quic->bytesToWrite() + payload.size() <= 256 * 1024) {
+                s->quic->write(payload);
             } else if ((s->output || s->mesh) && s->udp && s->ready) {
                 // One event per datagram. The 16 KiB message limit stays below the UDP limit.
                 const QHostAddress target(s->source.value(QStringLiteral("host")).toString());
@@ -368,6 +378,8 @@ private:
         QJsonObject source;
         std::unique_ptr<QTcpSocket> tcp;
         std::unique_ptr<QUdpSocket> udp;
+        std::unique_ptr<QuicStream> quic;
+        int lookup = -1;
         CotStream stream;
         QString state;
         quint64 accepted = 0, rejected = 0, controls = 0, sent = 0, binary = 0;
@@ -418,6 +430,11 @@ private:
         if (s.udp) {
             s.udp->close();
             s.udp.reset();
+        }
+        s.quic.reset();
+        if (s.lookup >= 0) {
+            QHostInfo::abortHostLookup(s.lookup);
+            s.lookup = -1;
         }
         s.ready = false;
         s.stream.reset();
@@ -550,7 +567,70 @@ private:
             s.tcp->write("SWAK-COT/1 " + localId_.toLatin1() + '\n');
         } else if (!s.source.value(QStringLiteral("authUser")).toString().isEmpty()) {
             sendLogin(s);
+        } else if (s.quic) {
+            // A QUIC client opens the TAK stream with its first write. Send a ping now.
+            sendPing(s);
         }
+    }
+    // Resolves the host without blocking the worker, then starts the QUIC handshake.
+    void startQuic(Session &s)
+    {
+        s.quic = std::make_unique<QuicStream>();
+        const auto host = s.source.value(QStringLiteral("host")).toString();
+        const QHostAddress address(host);
+        if (!address.isNull()) {
+            connectQuic(s, address);
+            return;
+        }
+        const auto id = s.id;
+        s.lookup = QHostInfo::lookupHost(host, this, [this, id](const QHostInfo &info) {
+            const auto found =
+                std::find_if(sessions_.begin(), sessions_.end(), [&id](const auto &item) {
+                    return item->id == id && !item->peer;
+                });
+            if (found == sessions_.end() || !(*found)->quic ||
+                (*found)->lookup != info.lookupId()) {
+                return;
+            }
+            auto &session = **found;
+            session.lookup = -1;
+            if (info.error() != QHostInfo::NoError || info.addresses().isEmpty()) {
+                fail(session, tr("The server host name cannot be resolved."));
+                return;
+            }
+            connectQuic(session, info.addresses().first());
+        });
+    }
+    void connectQuic(Session &s, const QHostAddress &address)
+    {
+        const auto files = readTlsFiles(s.source);
+        if (!files.error.isEmpty()) {
+            fail(s, files.error);
+            return;
+        }
+        const auto local = s.source.value(QStringLiteral("localAddress")).toString();
+        const auto error =
+            s.quic->start(address,
+                          static_cast<quint16>(s.source.value(QStringLiteral("port")).toInt()),
+                          s.source.value(QStringLiteral("host")).toString(),
+                          files,
+                          local.isEmpty() ? QHostAddress{} : QHostAddress(local));
+        if (!error.isEmpty()) {
+            fail(s, error);
+        }
+    }
+    // Writes to the stream of a TCP, TLS, or QUIC session.
+    void writeTo(Session &s, const QByteArray &bytes)
+    {
+        if (s.tcp) {
+            s.tcp->write(bytes);
+        } else if (s.quic) {
+            s.quic->write(bytes);
+        }
+    }
+    qsizetype pendingWrite(const Session &s) const
+    {
+        return s.tcp ? s.tcp->bytesToWrite() : s.quic ? s.quic->bytesToWrite() : 0;
     }
     // Joins an ATAK multicast group on one interface. The socket receives and sends CoT.
     void startMesh(Session &s)
@@ -616,7 +696,7 @@ private:
         xml.writeEndElement();
         xml.writeEndElement();
         password.fill('\0');
-        s.tcp->write(login);
+        writeTo(s, login);
         login.fill('\0');
     }
     bool bindInterface(Session &s)
@@ -633,6 +713,10 @@ private:
         s.started = clock_.elapsed();
         if (s.source.value(QStringLiteral("protocol")) == QLatin1String("mcast")) {
             startMesh(s);
+            return;
+        }
+        if (s.source.value(QStringLiteral("protocol")) == QLatin1String("quic")) {
+            startQuic(s);
             return;
         }
         if (s.source.value(QStringLiteral("protocol")) == QLatin1String("udpout")) {
@@ -774,25 +858,50 @@ private:
             }
             return;
         }
+        if (s.quic) {
+            QByteArray bytes;
+            if (!s.quic->poll(bytes, MaxMessageBytes)) {
+                // Copy the text. fail() destroys the QUIC stream that owns it.
+                const QString error = s.quic->error();
+                fail(s, error);
+                return;
+            }
+            if (!s.ready && s.quic->connected()) {
+                connected(s);
+            }
+            if (!s.ready || (!bytes.isEmpty() && !consume(s, bytes))) {
+                return;
+            }
+            maintain(s);
+            return;
+        }
         if (!s.tcp || !s.ready) {
             return;
         }
-        if (s.tcp->bytesAvailable()) {
-            auto bytes = s.tcp->read(MaxMessageBytes);
+        if (s.tcp->bytesAvailable() && !consume(s, s.tcp->read(MaxMessageBytes))) {
+            return;
+        }
+        maintain(s);
+    }
+    // Handles received stream bytes. Returns false after the session failed.
+    bool consume(Session &s, QByteArray bytes)
+    {
+        {
             s.lastRead = clock_.elapsed();
             if (s.peer && !s.greeted) {
                 const auto end = bytes.indexOf('\n');
                 s.greeting.append(end < 0 ? bytes : bytes.left(end));
                 if (s.greeting.size() > 47) {
                     fail(s, tr("Invalid LAN greeting."));
-                    return;
+                    return false;
                 }
                 if (end < 0) {
-                    return;
+                    // Wait for the rest of the greeting.
+                    return true;
                 }
                 if (s.greeting != "SWAK-COT/1 " + s.peerId.toLatin1()) {
                     fail(s, tr("LAN identity does not match discovery."));
-                    return;
+                    return false;
                 }
                 s.greeted = true;
                 state(s, tr("Connected"));
@@ -809,7 +918,7 @@ private:
             if (s.stream.failed()) {
                 ++s.rejected;
                 fail(s, tr("Invalid or oversized CoT stream."));
-                return;
+                return false;
             }
             if (!s.stream.pending()) {
                 s.partial = 0;
@@ -817,6 +926,11 @@ private:
                 s.partial = clock_.elapsed();
             }
         }
+        return true;
+    }
+    // Applies stream timeouts and sends the keepalive ping.
+    void maintain(Session &s)
+    {
         const auto now = clock_.elapsed();
         if ((s.partial &&
              now - s.partial > s.source.value(QStringLiteral("timeoutSeconds")).toInt(15) * 1000) ||
@@ -829,16 +943,20 @@ private:
             fail(s, tr("Idle connection timed out."));
             return;
         }
-        if (now - s.lastPing > 30000 && s.tcp->bytesToWrite() < 64 * 1024) {
-            Event ping;
-            ping.uid = localId_;
-            ping.type = QStringLiteral("t-x-c-t");
-            ping.how = QStringLiteral("m-g");
-            ping.time = ping.start = QDateTime::currentDateTimeUtc();
-            ping.stale = ping.time.addSecs(60);
-            s.tcp->write(encodeCot(ping));
-            s.lastPing = now;
+        if (now - s.lastPing > 30000 && pendingWrite(s) < 64 * 1024) {
+            sendPing(s);
         }
+    }
+    void sendPing(Session &s)
+    {
+        Event ping;
+        ping.uid = localId_;
+        ping.type = QStringLiteral("t-x-c-t");
+        ping.how = QStringLiteral("m-g");
+        ping.time = ping.start = QDateTime::currentDateTimeUtc();
+        ping.stale = ping.time.addSecs(60);
+        writeTo(s, encodeCot(ping));
+        s.lastPing = clock_.elapsed();
     }
     bool onLink(const Lan &lan, const QHostAddress &address) const
     {
@@ -1028,7 +1146,7 @@ private:
                          QJsonObject{{QStringLiteral("state"), s->state},
                                      {QStringLiteral("connected"),
                                       s->ready && ((s->tcp && (!s->peer || s->greeted)) ||
-                                                   s->output || s->mesh)},
+                                                   s->quic || s->output || s->mesh)},
                                      {QStringLiteral("received"), static_cast<double>(s->accepted)},
                                      {QStringLiteral("rejected"), static_cast<double>(s->rejected)},
                                      {QStringLiteral("control"), static_cast<double>(s->controls)},
@@ -1091,10 +1209,10 @@ private:
             }
             auto &s = *sessions_[cursor_++];
             const auto now = clock_.elapsed();
-            if (!s.tcp && !s.udp && now >= s.next) {
+            if (!s.tcp && !s.udp && !s.quic && now >= s.next) {
                 start(s);
             }
-            if (s.tcp && !s.ready &&
+            if ((s.tcp || s.quic) && !s.ready &&
                 now - s.started >
                     s.source.value(QStringLiteral("timeoutSeconds")).toInt(15) * 1000) {
                 fail(s,

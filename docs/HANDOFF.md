@@ -1578,3 +1578,7 @@ A new server protocol, `udpout`, sends generated CoT to a server UDP input. It n
 
 The `mcast` server protocol joins an IPv4 multicast group on a selected interface, such as ATAK SA on 239.2.3.1:6969 or GeoChat on 224.10.10.1:17012. It receives CoT XML and sends generated events with TTL 1 and loopback off. Datagrams that start with 0xbf are TAK Protocol version 1 and count as binary until Protobuf support exists. `multicastMesh` covers validation, joining, XML reception, and binary counting on a real interface with a TTL 0 test sender. Automated tests do not send from SWAK, because those datagrams would reach the local network. A two-device ATAK check remains open.
 
+# 2026-10-07: Phase 1 QUIC
+
+`core/quic_stream.*` is a non-blocking OpenSSL QUIC client with ALPN `takstream`, server certificate and host checks, and PEM or PKCS12 client certificates. The `quic` server protocol uses it in the worker. The worker resolves host names asynchronously, sends a ping to open the stream, and then shares the TLS frame handling, login, pings, and timeouts. Receive handling moved into `consume` and `maintain`, and writes go through `writeTo`. TAK REST checks also apply to QUIC entries. OpenSSL is now required at 3.2 or later with libssl. `quicStream` uses an OpenSSL 3.5 QUIC listener in the test to cover the exchange, a missing CA, PKCS12 client certificates, and the login. A live TAK Server QUIC input remains untested.
+

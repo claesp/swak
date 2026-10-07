@@ -22,8 +22,9 @@ int apiPort(const QJsonObject &source)
 }
 bool usesApi(const QJsonObject &source)
 {
-    return source.value(QStringLiteral("protocol")).toString() == u"tls" &&
-           validateServer(source).isEmpty() && apiPort(source) > 0;
+    const auto protocol = source.value(QStringLiteral("protocol")).toString();
+    return (protocol == u"tls" || protocol == u"quic") && validateServer(source).isEmpty() &&
+           apiPort(source) > 0;
 }
 } // namespace
 TakServerInfo readTakServerConfig(const QByteArray &reply)

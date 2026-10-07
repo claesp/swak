@@ -6,6 +6,7 @@
 #include "core/map_selection.h"
 #include "core/network_client.h"
 #include "core/projection.h"
+#include "core/quic_stream.h"
 #include "core/server_browser.h"
 #include "core/servers.h"
 #include "core/store.h"
@@ -35,8 +36,11 @@
 #include <QUuid>
 
 #include <algorithm>
+#include <arpa/inet.h>
 #include <functional>
+#include <openssl/err.h>
 #include <openssl/pem.h>
+#include <openssl/ssl.h>
 #include <openssl/x509.h>
 #include <optional>
 using namespace swak;
@@ -161,6 +165,124 @@ public:
         connect(socket, &QSslSocket::disconnected, socket, &QObject::deleteLater);
         socket->startServerEncryption();
     }
+};
+// A QUIC server for TAK stream tests on the OpenSSL 3.5 listener API. A timer in the test
+// thread drives it without blocking. It accepts one connection and one client stream.
+class QuicHarness final : public QObject
+{
+public:
+    QByteArray payload;
+    QByteArray received;
+    bool requireClient = false;
+    bool sawClientCertificate = false;
+    quint16 port = 0;
+    ~QuicHarness() override
+    {
+        SSL_free(stream_);
+        SSL_free(connection_);
+        SSL_free(listener_);
+        SSL_CTX_free(context_);
+    }
+    bool start()
+    {
+        const auto cert = QFINDTESTDATA("fixtures/map-test-cert.pem").toUtf8();
+        const auto key = QFINDTESTDATA("fixtures/map-test-key.pem").toUtf8();
+        context_ = SSL_CTX_new(OSSL_QUIC_server_method());
+        if (!context_ || SSL_CTX_use_certificate_chain_file(context_, cert.constData()) != 1 ||
+            SSL_CTX_use_PrivateKey_file(context_, key.constData(), SSL_FILETYPE_PEM) != 1) {
+            return false;
+        }
+        SSL_CTX_set_alpn_select_cb(
+            context_,
+            [](SSL *,
+               const unsigned char **out,
+               unsigned char *outLength,
+               const unsigned char *in,
+               unsigned int inLength,
+               void *) {
+                static const unsigned char supported[] = {
+                    9, 't', 'a', 'k', 's', 't', 'r', 'e', 'a', 'm'};
+                unsigned char *selected = nullptr;
+                if (SSL_select_next_proto(
+                        &selected, outLength, supported, sizeof(supported), in, inLength) !=
+                    OPENSSL_NPN_NEGOTIATED) {
+                    return SSL_TLSEXT_ERR_ALERT_FATAL;
+                }
+                *out = selected;
+                return SSL_TLSEXT_ERR_OK;
+            },
+            nullptr);
+        if (requireClient) {
+            SSL_CTX_set_verify(
+                context_, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, nullptr);
+            SSL_CTX_load_verify_locations(context_, cert.constData(), nullptr);
+        }
+        const int socket = BIO_socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP, 0);
+        sockaddr_in address{};
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        socklen_t length = sizeof(address);
+        if (socket < 0 ||
+            ::bind(socket, reinterpret_cast<sockaddr *>(&address), sizeof(address)) != 0 ||
+            ::getsockname(socket, reinterpret_cast<sockaddr *>(&address), &length) != 0 ||
+            BIO_socket_nbio(socket, 1) != 1) {
+            return false;
+        }
+        port = ntohs(address.sin_port);
+        listener_ = SSL_new_listener(context_, 0);
+        if (!listener_ || SSL_set_fd(listener_, socket) != 1 ||
+            SSL_set_blocking_mode(listener_, 0) != 1 || SSL_listen(listener_) != 1) {
+            return false;
+        }
+        timer_.setInterval(2);
+        connect(&timer_, &QTimer::timeout, this, [this] {
+            poll();
+        });
+        timer_.start();
+        return true;
+    }
+
+private:
+    void poll()
+    {
+        SSL_handle_events(listener_);
+        if (!connection_) {
+            connection_ = SSL_accept_connection(listener_, SSL_ACCEPT_CONNECTION_NO_BLOCK);
+            if (connection_) {
+                SSL_set_blocking_mode(connection_, 0);
+                SSL_set_default_stream_mode(connection_, SSL_DEFAULT_STREAM_MODE_NONE);
+            }
+        }
+        if (connection_ && !stream_) {
+            SSL_handle_events(connection_);
+            stream_ = SSL_accept_stream(connection_, SSL_ACCEPT_STREAM_NO_BLOCK);
+        }
+        if (stream_) {
+            char buffer[4096];
+            size_t count = 0;
+            while (SSL_read_ex(stream_, buffer, sizeof(buffer), &count) == 1) {
+                received.append(buffer, static_cast<qsizetype>(count));
+            }
+            if (!wrote_ && !received.isEmpty()) {
+                X509 *peer = SSL_get1_peer_certificate(connection_);
+                sawClientCertificate = peer != nullptr;
+                X509_free(peer);
+                size_t written = 0;
+                wrote_ = SSL_write_ex(stream_,
+                                      payload.constData(),
+                                      static_cast<size_t>(payload.size()),
+                                      &written) == 1;
+            }
+            SSL_handle_events(connection_);
+        }
+        ERR_clear_error();
+    }
+    SSL_CTX *context_ = nullptr;
+    SSL *listener_ = nullptr;
+    SSL *connection_ = nullptr;
+    SSL *stream_ = nullptr;
+    bool wrote_ = false;
+    QTimer timer_;
 };
 // Signs a base64 DER certificate request with the fixture CA. Returns base64 DER.
 static QByteArray signRequest(const QByteArray &base64, QString *subject)
@@ -551,6 +673,90 @@ private slots:
                            .contains(QStringLiteral("Binary, not decoded: 1."));
             },
             5000));
+    }
+    void quicStream()
+    {
+        QVERIFY(quicAvailable());
+        auto v = source(8090);
+        v.insert(QStringLiteral("protocol"), QStringLiteral("quic"));
+        QVERIFY(validateServer(v).isEmpty());
+        v.insert(QStringLiteral("authUser"), QStringLiteral("alice"));
+        v.insert(QStringLiteral("authPasswordEnv"), QStringLiteral("SWAK_COT_QUIC_LOGIN"));
+        QVERIFY(validateServer(v).isEmpty());
+        QCOMPARE(TakServerApi::apiUrl(v, QStringLiteral("/version")).port(), 8443);
+        // A trusted server accepts the stream. SWAK opens it with a ping.
+        {
+            QuicHarness server;
+            server.payload = encodeCot(sampleEvent());
+            QVERIFY(server.start());
+            Store store;
+            Servers servers(store);
+            auto entry = source(server.port);
+            entry.insert(QStringLiteral("protocol"), QStringLiteral("quic"));
+            entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+            entry.insert(QStringLiteral("apiPort"), 0);
+            QVERIFY(servers.put(QStringLiteral("quic"), entry).isEmpty());
+            QVERIFY(QTest::qWaitFor(
+                [&] {
+                    return store.rowCount() == 1;
+                },
+                10000));
+            QVERIFY(server.received.contains("type=\"t-x-c-t\""));
+            QVERIFY(QTest::qWaitFor(
+                [&] {
+                    return servers.status(QStringLiteral("quic"))
+                        .startsWith(QStringLiteral("Connected"));
+                },
+                5000));
+        }
+        // Without the CA, certificate validation fails.
+        {
+            QuicHarness server;
+            QVERIFY(server.start());
+            Store store;
+            Servers servers(store);
+            auto entry = source(server.port);
+            entry.insert(QStringLiteral("protocol"), QStringLiteral("quic"));
+            entry.insert(QStringLiteral("apiPort"), 0);
+            QVERIFY(servers.put(QStringLiteral("quic"), entry).isEmpty());
+            QVERIFY(QTest::qWaitFor(
+                [&] {
+                    return servers.status(QStringLiteral("quic"))
+                        .contains(QStringLiteral("certificate validation"));
+                },
+                10000));
+        }
+        // A client certificate and a login travel over QUIC.
+        {
+            qputenv("SWAK_COT_TEST_PASSWORD", "swak-test-only");
+            qputenv("SWAK_COT_QUIC_LOGIN", "secret");
+            QuicHarness server;
+            server.requireClient = true;
+            server.payload = encodeCot(sampleEvent());
+            QVERIFY(server.start());
+            Store store;
+            Servers servers(store);
+            servers.setSenderIdentity(QStringLiteral("SWAK-Q"), QStringLiteral("QUIC"));
+            auto entry = source(server.port);
+            entry.insert(QStringLiteral("protocol"), QStringLiteral("quic"));
+            entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+            entry.insert(QStringLiteral("certificate"),
+                         QFINDTESTDATA("fixtures/cot-test-client.p12"));
+            entry.insert(QStringLiteral("passwordEnv"), QStringLiteral("SWAK_COT_TEST_PASSWORD"));
+            entry.insert(QStringLiteral("authUser"), QStringLiteral("alice"));
+            entry.insert(QStringLiteral("authPasswordEnv"), QStringLiteral("SWAK_COT_QUIC_LOGIN"));
+            entry.insert(QStringLiteral("apiPort"), 0);
+            QVERIFY(servers.put(QStringLiteral("quic"), entry).isEmpty());
+            QVERIFY(QTest::qWaitFor(
+                [&] {
+                    return store.rowCount() == 1;
+                },
+                10000));
+            QVERIFY(server.sawClientCertificate);
+            QVERIFY(
+                server.received.startsWith("<auth><cot username=\"alice\" password=\"secret\""));
+            QVERIFY(server.received.contains("uid=\"SWAK-Q\""));
+        }
     }
     void takStreamLogin()
     {
