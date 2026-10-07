@@ -112,11 +112,13 @@ QList<SettingField> serverFields(const QJsonObject &source)
                        tr("TCP CoT stream"),
                        tr("UDP input"),
                        tr("UDP output to a server"),
+                       tr("Multicast mesh (ATAK)"),
                        tr("Local LAN")},
                       {QStringLiteral("tls"),
                        QStringLiteral("stcp"),
                        QStringLiteral("udp"),
                        QStringLiteral("udpout"),
+                       QStringLiteral("mcast"),
                        QStringLiteral("lan")}),
         choiceSetting(
             QStringLiteral("localAddress"), tr("Interface"), interfaceLabels, interfaceValues),
@@ -138,7 +140,7 @@ QList<SettingField> serverFields(const QJsonObject &source)
     for (auto &field : fields) {
         if (field.path == "host" || field.path == "port") {
             field.enabledBy = QStringLiteral("protocol");
-            field.enabledValue = QJsonArray{"tls", "stcp", "udp", "udpout"};
+            field.enabledValue = QJsonArray{"tls", "stcp", "udp", "udpout", "mcast"};
         }
         if (QStringList{QStringLiteral("ca"),
                         QStringLiteral("certificate"),
@@ -162,7 +164,7 @@ QString validateServer(const QJsonObject &v)
     const auto protocol = v.value(QStringLiteral("protocol")).toString();
     if (protocol != QLatin1String("tls") && protocol != QLatin1String("stcp") &&
         protocol != QLatin1String("udp") && protocol != QLatin1String("udpout") &&
-        protocol != QLatin1String("lan")) {
+        protocol != QLatin1String("mcast") && protocol != QLatin1String("lan")) {
         return tr("The server protocol is unavailable.");
     }
     if (v.contains("localAddress") && !v.value("localAddress").isString()) {
@@ -180,6 +182,16 @@ QString validateServer(const QJsonObject &v)
         if (local.isEmpty() || localAddress.isLoopback() ||
             localAddress.protocol() != QAbstractSocket::IPv4Protocol) {
             return tr("Local LAN requires a non-loopback IPv4 interface.");
+        }
+    } else if (protocol == QLatin1String("mcast")) {
+        // ATAK uses 239.2.3.1:6969 for SA and 224.10.10.1:17012 for GeoChat.
+        QHostAddress group;
+        if (!group.setAddress(v.value(QStringLiteral("host")).toString()) || !group.isMulticast() ||
+            group.protocol() != QAbstractSocket::IPv4Protocol) {
+            return tr("Multicast mesh needs an IPv4 multicast group, such as 239.2.3.1.");
+        }
+        if (local.isEmpty() || localAddress.protocol() != QAbstractSocket::IPv4Protocol) {
+            return tr("Multicast mesh needs an IPv4 interface.");
         }
     } else {
         const auto host = v.value(QStringLiteral("host")).toString();
@@ -331,7 +343,7 @@ public:
             if (s->tcp && s->ready && (!s->peer || s->greeted) &&
                 s->tcp->bytesToWrite() + payload.size() <= 256 * 1024) {
                 s->tcp->write(payload);
-            } else if (s->output && s->udp && s->ready) {
+            } else if ((s->output || s->mesh) && s->udp && s->ready) {
                 // One event per datagram. The 16 KiB message limit stays below the UDP limit.
                 const QHostAddress target(s->source.value(QStringLiteral("host")).toString());
                 const auto port =
@@ -358,10 +370,10 @@ private:
         std::unique_ptr<QUdpSocket> udp;
         CotStream stream;
         QString state;
-        quint64 accepted = 0, rejected = 0, controls = 0, sent = 0;
+        quint64 accepted = 0, rejected = 0, controls = 0, sent = 0, binary = 0;
         qint64 next = 0, started = 0, partial = 0, lastRead = 0, lastPing = 0;
         int failures = 0;
-        bool ready = false, peer = false, greeted = false, output = false;
+        bool ready = false, peer = false, greeted = false, output = false, mesh = false;
         QByteArray greeting;
         QString peerId, lanId;
         QJsonObject lanSource;
@@ -540,6 +552,40 @@ private:
             sendLogin(s);
         }
     }
+    // Joins an ATAK multicast group on one interface. The socket receives and sends CoT.
+    void startMesh(Session &s)
+    {
+        const QHostAddress group(s.source.value(QStringLiteral("host")).toString());
+        const QHostAddress local(s.source.value(QStringLiteral("localAddress")).toString());
+        const auto port = static_cast<quint16>(s.source.value(QStringLiteral("port")).toInt());
+        QNetworkInterface selected;
+        for (const auto &interface : QNetworkInterface::allInterfaces()) {
+            for (const auto &entry : interface.addressEntries()) {
+                if (entry.ip() == local) {
+                    selected = interface;
+                }
+            }
+        }
+        s.udp = std::make_unique<QUdpSocket>();
+        if (!selected.isValid() ||
+            !s.udp->bind(QHostAddress::AnyIPv4,
+                         port,
+                         QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint) ||
+            !s.udp->joinMulticastGroup(group, selected)) {
+            fail(s,
+                 tr("Cannot join the multicast group on the selected interface: %1.")
+                     .arg(s.udp->errorString().left(256)));
+            return;
+        }
+        s.udp->setMulticastInterface(selected);
+        // Stay on the local network, and do not receive the datagrams that SWAK sends.
+        s.udp->setSocketOption(QAbstractSocket::MulticastTtlOption, 1);
+        s.udp->setSocketOption(QAbstractSocket::MulticastLoopbackOption, 0);
+        s.udp->setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption, 256 * 1024);
+        s.mesh = true;
+        s.ready = true;
+        state(s, tr("Joined multicast group"));
+    }
     // Sends the TAK login element before any CoT. TAK reads it on file and LDAP inputs.
     void sendLogin(Session &s)
     {
@@ -585,6 +631,10 @@ private:
     void start(Session &s)
     {
         s.started = clock_.elapsed();
+        if (s.source.value(QStringLiteral("protocol")) == QLatin1String("mcast")) {
+            startMesh(s);
+            return;
+        }
         if (s.source.value(QStringLiteral("protocol")) == QLatin1String("udpout")) {
             // Output only. The socket sends datagrams and reads nothing.
             s.udp = std::make_unique<QUdpSocket>();
@@ -713,10 +763,13 @@ private:
                     continue;
                 }
                 QByteArray bytes(static_cast<qsizetype>(size), Qt::Uninitialized);
-                if (s.udp->readDatagram(bytes.data(), bytes.size()) == size) {
-                    decode(s, bytes);
-                } else {
+                if (s.udp->readDatagram(bytes.data(), bytes.size()) != size) {
                     ++s.rejected;
+                } else if (s.mesh && bytes.startsWith('\xbf')) {
+                    // TAK Protocol version 1 mesh datagram. Decoding arrives with Protobuf.
+                    ++s.binary;
+                } else {
+                    decode(s, bytes);
                 }
             }
             return;
@@ -971,16 +1024,18 @@ private:
     {
         QJsonObject stats;
         for (const auto &s : sessions_) {
-            stats.insert(
-                s->id,
-                QJsonObject{{QStringLiteral("state"), s->state},
-                            {QStringLiteral("connected"),
-                             s->ready && ((s->tcp && (!s->peer || s->greeted)) || s->output)},
-                            {QStringLiteral("received"), static_cast<double>(s->accepted)},
-                            {QStringLiteral("rejected"), static_cast<double>(s->rejected)},
-                            {QStringLiteral("control"), static_cast<double>(s->controls)},
-                            {QStringLiteral("sent"), static_cast<double>(s->sent)},
-                            {QStringLiteral("output"), s->output}});
+            stats.insert(s->id,
+                         QJsonObject{{QStringLiteral("state"), s->state},
+                                     {QStringLiteral("connected"),
+                                      s->ready && ((s->tcp && (!s->peer || s->greeted)) ||
+                                                   s->output || s->mesh)},
+                                     {QStringLiteral("received"), static_cast<double>(s->accepted)},
+                                     {QStringLiteral("rejected"), static_cast<double>(s->rejected)},
+                                     {QStringLiteral("control"), static_cast<double>(s->controls)},
+                                     {QStringLiteral("sent"), static_cast<double>(s->sent)},
+                                     {QStringLiteral("binary"), static_cast<double>(s->binary)},
+                                     {QStringLiteral("mesh"), s->mesh},
+                                     {QStringLiteral("output"), s->output}});
         }
         for (const auto &lan : lans_) {
             stats.insert(lan->id,
@@ -1248,6 +1303,14 @@ QString Servers::connectionStatus(const QString &id) const
     if (state.isEmpty()) {
         return entry.value(QStringLiteral("enabled")).toBool() ? tr("Connecting")
                                                                : tr("Disconnected");
+    }
+    if (state.value(QStringLiteral("mesh")).toBool()) {
+        return tr("%1. Received: %2. Sent: %3. Rejected: %4. Binary, not decoded: %5.")
+            .arg(state.value(QStringLiteral("state")).toString(),
+                 QString::number(state.value(QStringLiteral("received")).toDouble(), 'f', 0),
+                 QString::number(state.value(QStringLiteral("sent")).toDouble(), 'f', 0),
+                 QString::number(state.value(QStringLiteral("rejected")).toDouble(), 'f', 0),
+                 QString::number(state.value(QStringLiteral("binary")).toDouble(), 'f', 0));
     }
     if (state.value(QStringLiteral("output")).toBool()) {
         return tr("%1. Sent: %2.")

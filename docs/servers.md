@@ -36,6 +36,12 @@ The generator uses this identity when it opens and when the identity changes. Us
 
 Generate event normally adds a local event. Enable Send generated CoT to connected servers and LAN peers to transmit it. Only connected TCP, TLS, UDP output, and established LAN sessions receive generated messages. UDP inputs remain receive-only. SWAK never forwards received events automatically. This rule prevents forwarding loops across servers and peers.
 
+# Multicast mesh
+
+ATAK and WinTAK share positions without a server through multicast. Add a server with the protocol Multicast mesh (ATAK). Select an IPv4 interface. For situational awareness, use group 239.2.3.1 and port 6969. For GeoChat, add a second entry with group 224.10.10.1 and port 17012.
+
+The entry joins the group on the selected interface. It receives CoT XML datagrams and sends generated CoT when sending is enabled. Datagrams use a time-to-live of one, so they stay on the local network segment. SWAK does not receive its own datagrams. Multicast mesh uses plaintext without authentication. Use it only on a trusted network. ATAK can also send TAK Protocol version 1 datagrams, which start with byte 0xbf. SWAK counts these as binary messages and decodes them after it adds Protobuf support.
+
 # Local LAN servers
 
 Local LAN provides serverless discovery and direct CoT exchange. To add a Local LAN entry, do these steps:

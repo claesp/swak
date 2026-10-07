@@ -228,6 +228,8 @@ void ServerBrowser::refresh()
                 ? tr("UDP")
             : source.value(QStringLiteral("protocol")).toString() == QLatin1String("udpout")
                 ? tr("UDP output")
+            : source.value(QStringLiteral("protocol")).toString() == QLatin1String("mcast")
+                ? tr("Multicast mesh")
                 : tr("Unavailable"),
             source.value("protocol") == QLatin1String("lan")
                 ? source.value("localAddress").toString()

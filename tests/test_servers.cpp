@@ -18,6 +18,7 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QNetworkInterface>
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QRegularExpression>
@@ -487,6 +488,69 @@ private slots:
             5000));
         // The output socket ignores input. Received events stay zero.
         QCOMPARE(store.rowCount(), 0);
+    }
+    void multicastMesh()
+    {
+        auto v = source(17999);
+        v.insert(QStringLiteral("protocol"), QStringLiteral("mcast"));
+        v.insert(QStringLiteral("host"), QStringLiteral("10.0.0.1"));
+        v.insert(QStringLiteral("localAddress"), QStringLiteral("127.0.0.1"));
+        QVERIFY(validateServer(v).contains(QStringLiteral("multicast group")));
+        v.insert(QStringLiteral("host"), QStringLiteral("239.255.71.71"));
+        v.insert(QStringLiteral("localAddress"), QString{});
+        QVERIFY(validateServer(v).contains(QStringLiteral("interface")));
+        // Use a real multicast interface. The test sender uses TTL 0, so no datagram leaves
+        // this computer. SWAK's own sends use TTL 1, so this test does not send.
+        QNetworkInterface selected;
+        QHostAddress local;
+        for (const auto &interface : QNetworkInterface::allInterfaces()) {
+            const auto flags = interface.flags();
+            if (!flags.testFlag(QNetworkInterface::IsUp) ||
+                !flags.testFlag(QNetworkInterface::CanMulticast) ||
+                flags.testFlag(QNetworkInterface::IsLoopBack)) {
+                continue;
+            }
+            for (const auto &entry : interface.addressEntries()) {
+                if (entry.ip().protocol() == QAbstractSocket::IPv4Protocol && local.isNull()) {
+                    selected = interface;
+                    local = entry.ip();
+                }
+            }
+        }
+        if (local.isNull()) {
+            QSKIP("No IPv4 multicast interface is available.");
+        }
+        QUdpSocket probe;
+        QVERIFY(probe.bind(QHostAddress::AnyIPv4, 0));
+        const auto port = probe.localPort();
+        probe.close();
+        v.insert(QStringLiteral("port"), port);
+        v.insert(QStringLiteral("localAddress"), local.toString());
+        QVERIFY(validateServer(v).isEmpty());
+        Store store;
+        Servers servers(store);
+        QVERIFY(servers.put(QStringLiteral("mesh"), v).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return servers.status(QStringLiteral("mesh")).startsWith(QStringLiteral("Joined"));
+            },
+            5000));
+        QUdpSocket sender;
+        QVERIFY(sender.bind(local, 0));
+        sender.setMulticastInterface(selected);
+        sender.setSocketOption(QAbstractSocket::MulticastTtlOption, 0);
+        sender.setSocketOption(QAbstractSocket::MulticastLoopbackOption, 1);
+        const QHostAddress group(QStringLiteral("239.255.71.71"));
+        QCOMPARE(sender.writeDatagram(encodeCot(sampleEvent()), group, port),
+                 encodeCot(sampleEvent()).size());
+        QCOMPARE(sender.writeDatagram(QByteArray("\xbf\x01\xbf\x12\x00", 5), group, port), 5);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return store.rowCount() == 1 &&
+                       servers.status(QStringLiteral("mesh"))
+                           .contains(QStringLiteral("Binary, not decoded: 1."));
+            },
+            5000));
     }
     void takStreamLogin()
     {
