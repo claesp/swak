@@ -12,6 +12,7 @@
 
 #include <GeographicLib/Config.h>
 #include <archive.h>
+#include <curl/curl.h>
 
 namespace swak {
 void showCredits(QWidget *parent)
@@ -103,11 +104,16 @@ void showCredits(QWidget *parent)
            QStringLiteral("LGPL-2.1"),
            QStringLiteral("GEOS contributors"),
            QStringLiteral("https://libgeos.org/"));
-    linked(QStringLiteral("libcurl"),
-           QStringLiteral("CURL_VERSION"),
-           QStringLiteral("curl (MIT-style)"),
-           QStringLiteral("Daniel Stenberg and contributors"),
-           QStringLiteral("https://curl.se/"));
+    // SWAK links libcurl directly for HTTPS, so the row shows the loaded library and its TLS.
+    const auto *curl = curl_version_info(CURLVERSION_NOW);
+    add(QStringLiteral("libcurl"),
+        QString::fromLatin1(curl->version) +
+            (curl->ssl_version
+                 ? QStringLiteral(" (") + QString::fromLatin1(curl->ssl_version) + QLatin1Char(')')
+                 : QString{}),
+        QStringLiteral("curl (MIT-style)"),
+        QStringLiteral("Daniel Stenberg and contributors"),
+        QStringLiteral("https://curl.se/"));
     add(QObject::tr("GDAL format libraries"),
         QObject::tr("Installed system packages"),
         QObject::tr("Several; see each package"),

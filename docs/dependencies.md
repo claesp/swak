@@ -18,7 +18,11 @@ SWAK also keeps its own limits around GDAL. Read [Data providers](data-providers
 
 The earlier versions of SWAK included protozero 1.8.2 headers for MVT decoding. GDAL replaced them, and the source tree no longer contains them.
 
-Qt, libarchive, GeographicLib, and GDAL are system dependencies. Read the build manual for their required components.
+# libcurl
+
+SWAK links libcurl directly for HTTPS requests to TAK Server. The user decided on October 7, 2026 to use libcurl for all HTTPS connectivity. Read the libcurl evaluation in [TAK Server feature plan](tak-server-feature-plan.md). GDAL already loaded libcurl, so the runtime adds no package. Install `libcurl4-openssl-dev` to build SWAK. SWAK needs libcurl 7.85 or later. The client passes certificates and keys to libcurl from memory, so libcurl must use OpenSSL. libcurl uses the curl license, a permissive MIT-style license.
+
+Qt, libarchive, GeographicLib, GDAL, and libcurl are system dependencies. Read the build manual for their required components.
 
 Marker collections also use the existing system libarchive dependency. The shared collection service reads ZIP, TAR, and gzip-compressed TAR, and writes ZIP or compressed TAR. It enables no external decompression programs and extracts no files. The additional archive use avoids a separate ZIP implementation or dependency. Read [Marker collections](marker-collections.md) for the one-file format and resource limits.
 
@@ -62,7 +66,7 @@ The grid renderer limits entries, visible lines, sampling points, coordinate for
 
 # Credits inventory
 
-Help > Credits uses the existing library version APIs and pinned asset versions. It adds no dependencies. GDAL reports the PROJ, GEOS, and libcurl versions through its build information. One row names the other format libraries that GDAL loads from the system. The table names direct application dependencies, bundled headers and icons, libarchive compression backends, and the active Qt TLS backend. System graphics and desktop dependencies vary with the host.
+Help > Credits uses the existing library version APIs and pinned asset versions. It adds no dependencies. GDAL reports the PROJ and GEOS versions through its build information. The libcurl row shows the loaded libcurl version and its TLS library. One row names the other format libraries that GDAL loads from the system. The table names direct application dependencies, bundled headers and icons, libarchive compression backends, and the active Qt TLS backend. System graphics and desktop dependencies vary with the host.
 
 The license references include [Qt licensing](https://doc.qt.io/qt-6/licensing.html), [libarchive](https://www.libarchive.org/), [GeographicLib](https://github.com/geographiclib/geographiclib), and [GDAL](https://gdal.org/license.html). Bundled Lucide notices remain under third_party. The table summarizes license families and does not replace the distributed notices.
 

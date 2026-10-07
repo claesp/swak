@@ -2,10 +2,10 @@
 
 #include "core/cot.h"
 #include "core/cot_stream.h"
-#include "core/files.h"
 #include "core/lan_protocol.h"
 #include "core/logging.h"
 #include "core/store.h"
+#include "core/tls_files.h"
 
 #include <QBuffer>
 #include <QCollator>
@@ -66,6 +66,7 @@ QJsonObject serverDefaults()
             {QStringLiteral("certificate"), QString{}},
             {QStringLiteral("key"), QString{}},
             {QStringLiteral("passwordEnv"), QString{}},
+            {QStringLiteral("apiPort"), 8443},
             {QStringLiteral("retrySeconds"), 5},
             {QStringLiteral("timeoutSeconds"), 15}};
 }
@@ -117,6 +118,7 @@ QList<SettingField> serverFields(const QJsonObject &source)
         textSetting(QStringLiteral("certificate"), tr("Client certificate (PEM or PKCS12)"), 4096),
         textSetting(QStringLiteral("key"), tr("Private key (PEM, for PEM certificate)"), 4096),
         textSetting(QStringLiteral("passwordEnv"), tr("Password environment variable"), 128),
+        numberSetting(QStringLiteral("apiPort"), tr("TAK REST API port (0 = off)"), 0, 65535),
         numberSetting(QStringLiteral("retrySeconds"), tr("Retry interval (seconds)"), 1, 60),
         numberSetting(QStringLiteral("timeoutSeconds"),
                       tr("Connection and frame timeout (seconds)"),
@@ -130,7 +132,8 @@ QList<SettingField> serverFields(const QJsonObject &source)
         if (QStringList{QStringLiteral("ca"),
                         QStringLiteral("certificate"),
                         QStringLiteral("key"),
-                        QStringLiteral("passwordEnv")}
+                        QStringLiteral("passwordEnv"),
+                        QStringLiteral("apiPort")}
                 .contains(field.path)) {
             field.enabledBy = QStringLiteral("protocol");
             field.enabledValue = QStringLiteral("tls");
@@ -185,6 +188,12 @@ QString validateServer(const QJsonObject &v)
         if (!n.isDouble() || n.toDouble() != n.toInt() || n.toInt() < low || n.toInt() > high) {
             return tr("A server number is outside its allowed range.");
         }
+    }
+    // Entries from earlier profiles have no API port. They use the default 8443.
+    if (const auto api = v.value(QStringLiteral("apiPort"));
+        !api.isUndefined() && (!api.isDouble() || api.toDouble() != api.toInt() ||
+                               api.toInt() < 0 || api.toInt() > 65535)) {
+        return tr("A server number is outside its allowed range.");
     }
     for (const auto *key : {"ca", "certificate", "key"}) {
         if (!safe(v.value(QLatin1String(key)).toString(), 4096, true)) {
@@ -394,57 +403,41 @@ private:
         auto configuration = QSslConfiguration::defaultConfiguration();
         configuration.setProtocol(QSsl::TlsV1_2OrLater);
         configuration.setPeerVerifyMode(QSslSocket::VerifyPeer);
-        const auto caPath = source.value(QStringLiteral("ca")).toString();
-        if (!caPath.isEmpty()) {
-            const auto ca = readRegularFile(caPath, 64 * 1024);
-            if (!ca.error.isEmpty()) {
-                return false;
-            }
-            const auto certs = QSslCertificate::fromData(ca.bytes);
+        auto files = readTlsFiles(source);
+        if (!files.error.isEmpty()) {
+            return false;
+        }
+        if (!files.ca.isEmpty()) {
+            const auto certs = QSslCertificate::fromData(files.ca);
             if (certs.isEmpty()) {
                 return false;
             }
             configuration.setCaCertificates(certs);
         }
-        const auto certPath = source.value(QStringLiteral("certificate")).toString();
-        if (!certPath.isEmpty()) {
-            const auto input = readRegularFile(certPath, 64 * 1024);
-            if (!input.error.isEmpty()) {
-                return false;
-            }
-            const auto env = source.value(QStringLiteral("passwordEnv")).toString().toLatin1();
-            QByteArray password = env.isEmpty() ? QByteArray{} : qgetenv(env.constData());
-            if (password.size() > 1024) {
-                return false;
-            }
+        if (!files.certificate.isEmpty()) {
             QSslKey key;
             QList<QSslCertificate> chain;
-            const auto keyPath = source.value(QStringLiteral("key")).toString();
-            if (keyPath.isEmpty()) {
+            if (files.pkcs12) {
                 QBuffer buffer;
-                buffer.setData(input.bytes);
+                buffer.setData(files.certificate);
                 buffer.open(QIODevice::ReadOnly);
                 QSslCertificate cert;
                 QList<QSslCertificate> extra;
-                if (!QSslCertificate::importPkcs12(&buffer, &key, &cert, &extra, password)) {
+                if (!QSslCertificate::importPkcs12(&buffer, &key, &cert, &extra, files.password)) {
                     return false;
                 }
                 chain.append(cert);
                 chain.append(extra);
             } else {
-                chain = QSslCertificate::fromData(input.bytes);
-                const auto keyInput = readRegularFile(keyPath, 64 * 1024);
-                if (!keyInput.error.isEmpty()) {
-                    return false;
-                }
+                chain = QSslCertificate::fromData(files.certificate);
                 for (const auto algorithm : {QSsl::Rsa, QSsl::Ec, QSsl::Dsa}) {
-                    key = QSslKey(keyInput.bytes, algorithm, QSsl::Pem, QSsl::PrivateKey, password);
+                    key =
+                        QSslKey(files.key, algorithm, QSsl::Pem, QSsl::PrivateKey, files.password);
                     if (!key.isNull()) {
                         break;
                     }
                 }
             }
-            password.fill('\0');
             if (key.isNull() || chain.isEmpty()) {
                 return false;
             }
@@ -1104,7 +1097,25 @@ QJsonObject Servers::statistics() const
 {
     return stats_;
 }
+void Servers::setServerInfo(const QString &id, const QString &text)
+{
+    if (info_.value(id) == text) {
+        return;
+    }
+    if (text.isEmpty()) {
+        info_.remove(id);
+    } else {
+        info_.insert(id, text.left(512));
+    }
+    emit statusChanged();
+}
 QString Servers::status(const QString &id) const
+{
+    const auto base = connectionStatus(id);
+    const auto extra = info_.value(id);
+    return extra.isEmpty() ? base : base + QLatin1Char('\n') + extra;
+}
+QString Servers::connectionStatus(const QString &id) const
 {
     const auto entry = sources_.value(id).toObject();
     if (!entry.isEmpty() && !validateServer(entry).isEmpty()) {

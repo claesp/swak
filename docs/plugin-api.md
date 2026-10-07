@@ -124,6 +124,12 @@ Read detail through `core/cot_detail.h`. `detailElements` and `detailElement` re
 
 `encodeCot` writes the typed fields and then the retained elements. A typed field replaces only its own attributes, so a changed callsign keeps the contact endpoint. Clearing team and role removes `__group`. Clearing course and speed removes `track`. Build new detail with `CotElement` and `detailText`, which skips invalid names and values.
 
+# HTTPS and TAK Server API
+
+`PluginServices::network` is the shared `NetworkClient`. `send(request, context, callback)` starts a request and returns its identifier. The callback runs once on the interface thread with a `NetworkReply`. It does not run after `cancel(id)` or after the context object dies. Each `NetworkRequest` names its expected host and port. The client rejects a URL that does not match. Set `maxBytes` and `timeoutMs` for each request. Fill `tls` with `readTlsFiles` to present a client certificate.
+
+`PluginServices::tak` is the `TakServerApi`. It is null when no server service exists. `request(serverId, method, path, body, context, callback)` sends a request to `https://host:apiPort/Marti/api` of a TLS server entry with that entry's credentials. `info(serverId)` returns the server version from the last check, and `infoChanged` reports changes. `apiUrl` builds the URL and rejects paths without a leading slash or with `..`.
+
 # Add a plugin
 
 Create a QObject plugin class and its MANIFEST under `src/plugins`. Implement `Plugin` and the required feature interfaces. Add the metadata file to `Q_PLUGIN_METADATA`. List all interfaces in `Q_INTERFACES`.

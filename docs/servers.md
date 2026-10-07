@@ -6,7 +6,9 @@ The browser replaces the UDP receiver. The application removes the automatic Leg
 
 TLS is the default protocol. The default port is 8089. Certificate validation remains required.
 
-Set the CA certificate path for a private server authority. Set the client certificate path for certificate authentication. PEM certificates require a separate PEM private key. PKCS12 files contain the certificate and key together.
+Set the CA certificate path for a private server authority.
+
+TLS entries also use the TAK Server REST API. TAK Server serves it on port 8443 under `/Marti/api`. TAK REST API port sets the port. Set it to 0 to turn the API off for the entry. Each request uses the same CA and client certificate as the CoT stream. After each new TLS connection, SWAK reads `/Marti/api/version/config`. The server status then shows a line such as `TAK Server 5.7.14-RELEASE, REST API 3.` A failed check shows its reason and repeats after five minutes while the stream stays connected. Later TAK features use this API. Set the client certificate path for certificate authentication. PEM certificates require a separate PEM private key. PKCS12 files contain the certificate and key together.
 
 For an encrypted key or PKCS12 file, set Password environment variable to a dedicated `SWAK_COT_` name. Set that variable before you start SWAK. The profile stores the variable name, not its value. Certificate files remain external to the profile. Update their paths after you move a profile to another computer. Use trusted profiles because they choose credential destinations.
 

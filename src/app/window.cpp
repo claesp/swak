@@ -15,11 +15,13 @@
 #include "core/map_tools.h"
 #include "core/menu_order.h"
 #include "core/modal.h"
+#include "core/network_client.h"
 #include "core/provider_toolbar.h"
 #include "core/routing.h"
 #include "core/server_browser.h"
 #include "core/servers.h"
 #include "core/settings_dialog.h"
+#include "core/tak_server_api.h"
 #include "core/toolbar.h"
 #include "core/ui_behavior.h"
 #include "core/user_objects.h"
@@ -184,6 +186,12 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
                             identity,
                             servers};
     services.routes = new RouteSources(plugins, this);
+    services.network = new NetworkClient(this);
+    services.network->setObjectName(QStringLiteral("networkClient"));
+    if (servers) {
+        services.tak = new TakServerApi(*servers, *services.network, servers);
+        services.tak->setObjectName(QStringLiteral("takServerApi"));
+    }
     auto *mainViews = new QTabWidget(this);
     mainViews->setObjectName(QStringLiteral("mainViews"));
     mainViews->setDocumentMode(true);

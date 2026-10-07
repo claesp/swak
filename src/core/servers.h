@@ -2,6 +2,7 @@
 #include "core/event.h"
 #include "core/settings.h"
 
+#include <QHash>
 #include <QObject>
 #include <QThread>
 #include <QTimer>
@@ -42,6 +43,8 @@ public:
     QJsonObject statistics() const;
     QString send(const Event &event);
     void reconnect();
+    // Adds a line from another service, such as the TAK REST check, to the entry status.
+    void setServerInfo(const QString &id, const QString &text);
 signals:
     void changed();
     void statusChanged();
@@ -49,6 +52,7 @@ signals:
 
 private:
     void configure();
+    QString connectionStatus(const QString &id) const;
     void collect();
     Store &store_;
     QThread thread_;
@@ -57,6 +61,7 @@ private:
     QTimer timer_;
     QJsonObject sources_;
     QJsonObject stats_;
+    QHash<QString, QString> info_;
     quint64 generation_ = 0;
 };
 } // namespace swak

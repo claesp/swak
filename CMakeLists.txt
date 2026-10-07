@@ -81,6 +81,12 @@ add_library(
     src/core/cot.cpp
     src/core/cot_detail.cpp
     src/core/cot_detail.h
+    src/core/tls_files.cpp
+    src/core/tls_files.h
+    src/core/network_client.cpp
+    src/core/network_client.h
+    src/core/tak_server_api.cpp
+    src/core/tak_server_api.h
     src/core/cot_stream.cpp
     src/core/identity.cpp
     src/core/servers.cpp
@@ -150,6 +156,12 @@ target_link_libraries(
 
 target_include_directories(swak_core SYSTEM PRIVATE "${GEOGRAPHICLIB_INCLUDE_DIR}")
 target_link_libraries(swak_core PRIVATE GDAL::GDAL)
+# The HTTPS client needs CURLOPT_PROTOCOLS_STR, which libcurl 7.85 added.
+find_package(CURL REQUIRED)
+if(CURL_VERSION_STRING VERSION_LESS 7.85)
+    message(FATAL_ERROR "SWAK needs libcurl 7.85 or later. Found ${CURL_VERSION_STRING}.")
+endif()
+target_link_libraries(swak_core PRIVATE CURL::libcurl)
 target_link_libraries(swak_core PUBLIC "${GEOGRAPHICLIB_LIBRARY}")
 
 function(swak_plugin name file)

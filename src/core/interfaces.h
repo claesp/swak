@@ -23,6 +23,8 @@ class MarkerCollections;
 class Identity;
 class Servers;
 class RouteSources;
+class NetworkClient;
+class TakServerApi;
 // Per-window services for plugin factories and callbacks.
 //
 // The struct itself is a local value in the Window constructor. It exists only during the
@@ -75,6 +77,10 @@ struct PluginServices
     QList<QAction *> viewActions = {};
     // Window child. Lives until step 4.
     RouteSources *routes = nullptr;
+    // Window child. Lives until step 4. The shared HTTPS client on libcurl.
+    NetworkClient *network = nullptr;
+    // Child of servers, so it dies with servers in step 2. Null when servers is null.
+    TakServerApi *tak = nullptr;
 };
 class Plugin
 {

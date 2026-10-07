@@ -1558,3 +1558,7 @@ The user decided: enrollment supports generated and supplied keys through OpenSS
 
 Received CoT keeps all detail children in `Event::detail`, up to 8192 characters. `core/cot_detail.*` parses it into element trees and provides typed readers. The encoder merges typed fields with the retained elements, so events round-trip. Information shows remarks, endpoint, battery, device, and link count. The 16 KiB message limit, 256-element limit, and depth limit stay unchanged. Large ATAK routes can exceed them, and Phase 2 must revisit these limits. `cotDetailModel` in the server tests covers parsing, readers, round trips, merging, truncation, and rejection.
 
+# 2026-10-07: Phase 0 HTTPS client and TAK capability check
+
+`core/network_client.*` is a libcurl HTTPS client with one joined worker thread and a curl multi handle. `core/tls_files.*` reads the CA, client certificate, key, and password once for both the CoT stream and HTTPS. `core/tak_server_api.*` builds `/Marti/api` requests and reads `/version/config` after each new TLS connection. Server entries gain `apiPort`, default 8443, and the status shows the server version. `PluginServices` gains `network` and `tak`. Credits shows the loaded libcurl version. libcurl is now a direct dependency with a version check for 7.85. Server tests cover requests, POST bodies, size and time limits, redirects, cancellation, context destruction, destination checks, header injection, PEM and PKCS12 client certificates, URL building, reply parsing, and the full check against local servers.
+

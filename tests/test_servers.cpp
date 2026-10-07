@@ -4,10 +4,12 @@
 #include "core/identity.h"
 #include "core/lan_protocol.h"
 #include "core/map_selection.h"
+#include "core/network_client.h"
 #include "core/projection.h"
 #include "core/server_browser.h"
 #include "core/servers.h"
 #include "core/store.h"
+#include "core/tak_server_api.h"
 
 #include <QAbstractItemModelTester>
 #include <QElapsedTimer>
@@ -15,6 +17,7 @@
 #include <QJsonDocument>
 #include <QPlainTextEdit>
 #include <QPointer>
+#include <QRegularExpression>
 #include <QSignalSpy>
 #include <QSslConfiguration>
 #include <QSslKey>
@@ -27,6 +30,8 @@
 #include <QUuid>
 
 #include <algorithm>
+#include <functional>
+#include <optional>
 using namespace swak;
 static Event sampleEvent(const QString &id = QStringLiteral("test"))
 {
@@ -74,6 +79,73 @@ public:
         }
         connect(socket, &QSslSocket::encrypted, socket, [this, socket] {
             socket->write(payload);
+        });
+        connect(socket, &QSslSocket::disconnected, socket, &QObject::deleteLater);
+        socket->startServerEncryption();
+    }
+};
+// An HTTPS server for client tests. It reads one request and answers through respond.
+class HttpsHarness final : public QTcpServer
+{
+public:
+    QSslCertificate certificate;
+    QSslKey key;
+    bool requireClient = false;
+    bool hold = false;
+    QList<QByteArray> requests;
+    int clientCertificates = 0;
+    std::function<QByteArray(const QByteArray &)> respond = [](const QByteArray &) {
+        const QByteArray body = "{\"ok\":true}";
+        return QByteArray("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                          "Content-Length: ") +
+               QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
+    };
+    bool load()
+    {
+        QFile cert(QFINDTESTDATA("fixtures/map-test-cert.pem")),
+            secret(QFINDTESTDATA("fixtures/map-test-key.pem"));
+        if (!cert.open(QIODevice::ReadOnly) || !secret.open(QIODevice::ReadOnly)) {
+            return false;
+        }
+        certificate = QSslCertificate(cert.readAll());
+        key = QSslKey(secret.readAll(), QSsl::Rsa);
+        return !certificate.isNull() && !key.isNull() && listen(QHostAddress::LocalHost, 0);
+    }
+    void incomingConnection(qintptr descriptor) override
+    {
+        auto *socket = new QSslSocket(this);
+        socket->setLocalCertificate(certificate);
+        socket->setPrivateKey(key);
+        auto configuration = socket->sslConfiguration();
+        configuration.setCaCertificates({certificate});
+        configuration.setPeerVerifyMode(requireClient ? QSslSocket::VerifyPeer
+                                                      : QSslSocket::VerifyNone);
+        socket->setSslConfiguration(configuration);
+        if (!socket->setSocketDescriptor(descriptor)) {
+            delete socket;
+            return;
+        }
+        auto input = std::make_shared<QByteArray>();
+        connect(socket, &QSslSocket::readyRead, socket, [this, socket, input] {
+            input->append(socket->readAll());
+            const auto end = input->indexOf("\r\n\r\n");
+            if (end < 0) {
+                return;
+            }
+            static const QRegularExpression length(QStringLiteral("(?i)content-length: *(\\d+)"));
+            const auto match = length.match(QString::fromLatin1(input->left(end)));
+            const auto expected = end + 4 + (match.hasMatch() ? match.captured(1).toInt() : 0);
+            if (input->size() < expected) {
+                return;
+            }
+            requests.append(*input);
+            if (!socket->peerCertificate().isNull()) {
+                ++clientCertificates;
+            }
+            if (!hold) {
+                socket->write(respond(*input));
+                socket->disconnectFromHost();
+            }
         });
         connect(socket, &QSslSocket::disconnected, socket, &QObject::deleteLater);
         socket->startServerEncryption();
@@ -136,6 +208,276 @@ private slots:
         xml = encodeCot(sampleEvent());
         xml.replace("lat=\"0.00000000\"", "lat=\"NaN\"");
         QVERIFY(!decodeCot(xml).event);
+    }
+    static NetworkReply fetch(NetworkClient &client, NetworkRequest request, int waitMs = 10000)
+    {
+        std::optional<NetworkReply> result;
+        QObject context;
+        client.send(std::move(request), &context, [&result](const NetworkReply &reply) {
+            result = reply;
+        });
+        [[maybe_unused]] const bool answered = QTest::qWaitFor(
+            [&result] {
+                return result.has_value();
+            },
+            waitMs);
+        NetworkReply missing;
+        missing.error = QStringLiteral("no reply");
+        return result.value_or(missing);
+    }
+    static NetworkRequest localRequest(const HttpsHarness &server, const QString &path)
+    {
+        NetworkRequest request;
+        request.url =
+            QUrl(QStringLiteral("https://127.0.0.1:%1%2").arg(server.serverPort()).arg(path));
+        request.expectedHost = QStringLiteral("127.0.0.1");
+        request.expectedPort = server.serverPort();
+        QFile ca(QFINDTESTDATA("fixtures/map-test-cert.pem"));
+        if (ca.open(QIODevice::ReadOnly)) {
+            request.tls.ca = ca.readAll();
+        }
+        return request;
+    }
+    void networkClient()
+    {
+        HttpsHarness server;
+        QVERIFY(server.load());
+        NetworkClient client;
+        auto reply = fetch(client, localRequest(server, QStringLiteral("/hello?x=1")));
+        QVERIFY2(reply.ok(), qPrintable(reply.error));
+        QCOMPARE(reply.body, QByteArray("{\"ok\":true}"));
+        QCOMPARE(reply.contentType, QByteArray("application/json"));
+        QVERIFY(server.requests.last().startsWith("GET /hello?x=1 HTTP/"));
+        QVERIFY(server.requests.last().contains("User-Agent: SWAK/"));
+        // An unknown CA fails certificate validation.
+        auto untrusted = localRequest(server, QStringLiteral("/"));
+        untrusted.tls.ca.clear();
+        QVERIFY(fetch(client, untrusted).error.contains(QStringLiteral("TLS")));
+        // The client rejects other hosts, ports, and schemes before it connects.
+        const auto before = server.requests.size();
+        auto other = localRequest(server, QStringLiteral("/"));
+        other.expectedHost = QStringLiteral("localhost");
+        QVERIFY(fetch(client, other).error.contains(QStringLiteral("configured HTTPS server")));
+        other = localRequest(server, QStringLiteral("/"));
+        other.expectedPort = 1;
+        QVERIFY(!fetch(client, other).error.isEmpty());
+        other = localRequest(server, QStringLiteral("/"));
+        other.url.setScheme(QStringLiteral("http"));
+        QVERIFY(!fetch(client, other).error.isEmpty());
+        other = localRequest(server, QStringLiteral("/"));
+        other.headers.append(qMakePair(QByteArray("X-Test"), QByteArray("a\r\nInjected: b")));
+        QVERIFY(fetch(client, other).error.contains(QStringLiteral("header")));
+        other = localRequest(server, QStringLiteral("/"));
+        other.method = "TRACE";
+        QVERIFY(!fetch(client, other).error.isEmpty());
+        QCOMPARE(server.requests.size(), before);
+        // A reply above the limit fails. A redirect is not followed.
+        server.respond = [](const QByteArray &) {
+            return QByteArray("HTTP/1.1 200 OK\r\nContent-Length: 2000\r\n\r\n") +
+                   QByteArray(2000, 'x');
+        };
+        auto limited = localRequest(server, QStringLiteral("/large"));
+        limited.maxBytes = 100;
+        QVERIFY(fetch(client, limited).error.contains(QStringLiteral("size limit")));
+        server.respond = [](const QByteArray &) {
+            return QByteArray("HTTP/1.1 302 Found\r\nLocation: https://example.test/\r\n"
+                              "Content-Length: 0\r\n\r\n");
+        };
+        const auto redirects = server.requests.size();
+        reply = fetch(client, localRequest(server, QStringLiteral("/moved")));
+        QVERIFY(reply.error.isEmpty());
+        QCOMPARE(reply.status, 302);
+        QVERIFY(!reply.ok());
+        QCOMPARE(server.requests.size(), redirects + 1);
+        // POST sends the body and headers.
+        server.respond = [](const QByteArray &) {
+            return QByteArray("HTTP/1.1 201 Created\r\nContent-Length: 0\r\n\r\n");
+        };
+        auto post = localRequest(server, QStringLiteral("/submit"));
+        post.method = "POST";
+        post.body = "{\"name\":\"value\"}";
+        post.headers.append(qMakePair(QByteArray("Content-Type"), QByteArray("application/json")));
+        reply = fetch(client, post);
+        QCOMPARE(reply.status, 201);
+        QVERIFY(server.requests.last().startsWith("POST /submit HTTP/"));
+        QVERIFY(server.requests.last().endsWith("{\"name\":\"value\"}"));
+        QVERIFY(server.requests.last().contains("Content-Type: application/json"));
+        // A silent server times out. Cancel and a destroyed context stop the callback.
+        server.hold = true;
+        auto slow = localRequest(server, QStringLiteral("/slow"));
+        slow.timeoutMs = 500;
+        slow.connectTimeoutMs = 400;
+        QVERIFY(fetch(client, slow).error.contains(QStringLiteral("in time")));
+        bool called = false;
+        {
+            QObject context;
+            const auto id = client.send(localRequest(server, QStringLiteral("/cancel")),
+                                        &context,
+                                        [&called](const NetworkReply &) {
+                                            called = true;
+                                        });
+            QVERIFY(id);
+            client.cancel(id);
+        }
+        auto *context = new QObject;
+        client.send(
+            localRequest(server, QStringLiteral("/gone")), context, [&called](const auto &) {
+                called = true;
+            });
+        delete context;
+        QVERIFY(QTest::qWaitFor(
+            [&client] {
+                return client.activeCount() == 1;
+            },
+            5000));
+        server.hold = false;
+        QTest::qWait(300);
+        QVERIFY(!called);
+        // Destruction with a pending request joins the worker without a callback.
+        {
+            NetworkClient pending;
+            QObject owner;
+            pending.send(
+                localRequest(server, QStringLiteral("/pending")), &owner, [&called](const auto &) {
+                    called = true;
+                });
+        }
+        QVERIFY(!called);
+    }
+    void networkClientCertificates()
+    {
+        qputenv("SWAK_COT_TEST_PASSWORD", "swak-test-only");
+        qputenv("SWAK_COT_TEST_WRONG", "wrong");
+        HttpsHarness server;
+        QVERIFY(server.load());
+        server.requireClient = true;
+        NetworkClient client;
+        // TLS 1.3 servers reject a missing client certificate after the handshake, so the
+        // client can see a closed connection instead of a TLS error.
+        const auto anonymous = fetch(client, localRequest(server, QStringLiteral("/")));
+        QVERIFY(!anonymous.ok());
+        QVERIFY(!anonymous.error.isEmpty());
+        QCOMPARE(server.clientCertificates, 0);
+        auto entry = serverDefaults();
+        entry.insert(QStringLiteral("certificate"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+        entry.insert(QStringLiteral("key"), QFINDTESTDATA("fixtures/map-test-key.pem"));
+        auto request = localRequest(server, QStringLiteral("/pem"));
+        auto ca = request.tls.ca;
+        request.tls = readTlsFiles(entry);
+        request.tls.ca = ca;
+        QVERIFY2(fetch(client, request).ok(), "PEM client certificate");
+        QCOMPARE(server.clientCertificates, 1);
+        entry.insert(QStringLiteral("certificate"), QFINDTESTDATA("fixtures/cot-test-client.p12"));
+        entry.insert(QStringLiteral("key"), QString{});
+        entry.insert(QStringLiteral("passwordEnv"), QStringLiteral("SWAK_COT_TEST_PASSWORD"));
+        request = localRequest(server, QStringLiteral("/p12"));
+        request.tls = readTlsFiles(entry);
+        request.tls.ca = ca;
+        QVERIFY(request.tls.pkcs12);
+        const auto pkcs12 = fetch(client, request);
+        QVERIFY2(pkcs12.ok(), qPrintable(pkcs12.error));
+        QCOMPARE(server.clientCertificates, 2);
+        entry.insert(QStringLiteral("passwordEnv"), QStringLiteral("SWAK_COT_TEST_WRONG"));
+        request.tls = readTlsFiles(entry);
+        request.tls.ca = ca;
+        QVERIFY(!fetch(client, request).ok());
+        entry.insert(QStringLiteral("certificate"), QStringLiteral("/missing/client.p12"));
+        request.tls = readTlsFiles(entry);
+        QVERIFY(!request.tls.error.isEmpty());
+        QCOMPARE(fetch(client, request).error, request.tls.error);
+    }
+    void takServerApi()
+    {
+        auto entry = serverDefaults();
+        entry.insert(QStringLiteral("name"), QStringLiteral("TAK"));
+        entry.insert(QStringLiteral("host"), QStringLiteral("tak.example"));
+        QCOMPARE(TakServerApi::apiUrl(entry, QStringLiteral("/version/config")),
+                 QUrl(QStringLiteral("https://tak.example:8443/Marti/api/version/config")));
+        QCOMPARE(TakServerApi::apiUrl(entry, QStringLiteral("/missions?tool=public"))
+                     .toString(QUrl::FullyEncoded),
+                 QStringLiteral("https://tak.example:8443/Marti/api/missions?tool=public"));
+        QVERIFY(TakServerApi::apiUrl(entry, QStringLiteral("version")).isEmpty());
+        QVERIFY(TakServerApi::apiUrl(entry, QStringLiteral("/../admin")).isEmpty());
+        auto off = entry;
+        off.insert(QStringLiteral("apiPort"), 0);
+        QVERIFY(TakServerApi::apiUrl(off, QStringLiteral("/version")).isEmpty());
+        off = entry;
+        off.insert(QStringLiteral("protocol"), QStringLiteral("stcp"));
+        QVERIFY(TakServerApi::apiUrl(off, QStringLiteral("/version")).isEmpty());
+        off = entry;
+        off.insert(QStringLiteral("apiPort"), 70000);
+        QVERIFY(!validateServer(off).isEmpty());
+        off.remove(QStringLiteral("apiPort"));
+        QVERIFY(validateServer(off).isEmpty());
+        QCOMPARE(TakServerApi::apiUrl(off, QStringLiteral("/v")).port(), 8443);
+        const auto good = readTakServerConfig(
+            "{\"version\":\"3\",\"type\":\"ServerConfig\",\"data\":{\"version\":"
+            "\"5.7.14-RELEASE\",\"api\":\"3\",\"hostname\":\"tak\"},\"nodeId\":\"n\"}");
+        QVERIFY(good.available());
+        QCOMPARE(good.version, QStringLiteral("5.7.14-RELEASE"));
+        QCOMPARE(good.api, QStringLiteral("3"));
+        QVERIFY(!readTakServerConfig("{\"type\":\"Other\",\"data\":{}}").available());
+        QVERIFY(!readTakServerConfig("{\"type\":\"ServerConfig\",\"data\":{\"version\":"
+                                     "\"<b>\",\"api\":\"3\"}}")
+                     .available());
+        QVERIFY(!readTakServerConfig("not json").available());
+    }
+    void takServerCapabilityCheck()
+    {
+        TlsHarness stream;
+        QFile cert(QFINDTESTDATA("fixtures/map-test-cert.pem")),
+            key(QFINDTESTDATA("fixtures/map-test-key.pem"));
+        QVERIFY(cert.open(QIODevice::ReadOnly) && key.open(QIODevice::ReadOnly));
+        stream.certificate = QSslCertificate(cert.readAll());
+        stream.key = QSslKey(key.readAll(), QSsl::Rsa);
+        QVERIFY(stream.listen(QHostAddress::LocalHost, 0));
+        HttpsHarness api;
+        QVERIFY(api.load());
+        api.respond = [](const QByteArray &) {
+            const QByteArray body = "{\"version\":\"3\",\"type\":\"ServerConfig\",\"data\":"
+                                    "{\"version\":\"5.7.14-RELEASE\",\"api\":\"3\"}}";
+            return QByteArray("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                              "Content-Length: ") +
+                   QByteArray::number(body.size()) + "\r\n\r\n" + body;
+        };
+        Store store;
+        Servers servers(store);
+        NetworkClient network;
+        TakServerApi tak(servers, network);
+        auto v = source(stream.serverPort());
+        v.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        v.insert(QStringLiteral("ca"), cert.fileName());
+        v.insert(QStringLiteral("apiPort"), api.serverPort());
+        QVERIFY(servers.put(QStringLiteral("tak"), v).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return tak.info(QStringLiteral("tak")).available();
+            },
+            10000));
+        QCOMPARE(tak.info(QStringLiteral("tak")).version, QStringLiteral("5.7.14-RELEASE"));
+        QVERIFY(api.requests.first().startsWith("GET /Marti/api/version/config HTTP/"));
+        QVERIFY(servers.status(QStringLiteral("tak"))
+                    .contains(QStringLiteral("TAK Server 5.7.14-RELEASE, REST API 3.")));
+        // A failed check shows the reason. Turning the API off removes the line.
+        api.respond = [](const QByteArray &) {
+            return QByteArray("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
+        };
+        v.insert(QStringLiteral("retrySeconds"), 2);
+        QVERIFY(servers.put(QStringLiteral("tak"), v).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return servers.status(QStringLiteral("tak"))
+                    .contains(QStringLiteral("HTTP status 404"));
+            },
+            10000));
+        v.insert(QStringLiteral("apiPort"), 0);
+        QVERIFY(servers.put(QStringLiteral("tak"), v).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return !servers.status(QStringLiteral("tak")).contains(QStringLiteral("REST"));
+            },
+            5000));
+        QVERIFY(!tak.info(QStringLiteral("tak")).checking);
     }
     void cotDetailModel()
     {
