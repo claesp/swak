@@ -1514,7 +1514,7 @@ The Events table no longer shows Urgency. It has four columns, named by `Activit
 
 # 2026-10-06: Map menu names
 
-The map provider dropdown names its clear command Disable instead of No map provider. Disable now sits in the footer, directly before More .... The View menu names the map decorations Scale and Zoom Level. Settings > Map keeps the longer field labels, and the provider button tooltip still reads No map provider when no provider is active.
+The map provider dropdown names its clear command Disable instead of No map provider. Disable now sits in the footer, directly before More .... The View menu names the map decorations Scale and Zoom Level. Settings > Map now uses the same Scale and Zoom Level labels. The provider button tooltip still reads No map provider when no provider is active.
 
 # 2026-10-06: Google Maps and Azure Maps
 

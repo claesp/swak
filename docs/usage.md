@@ -434,7 +434,7 @@ The Information pane shows Restricted as Yes or No for each Area.
 
 # Map view and reference controls
 
-The main view appears in the Map tab. Its keyboard, mouse, overlay, and lock controls retain their behavior. Map scale appears at the lower left. The scale uses the local ground distance at its latitude. Units follow the operating system locale, with meters and kilometers or feet and miles.
+The main view appears in the Map tab. Its keyboard, mouse, overlay, and lock controls retain their behavior. The scale appears at the lower left. The scale uses the local ground distance at its latitude. Units follow the operating system locale, with meters and kilometers or feet and miles.
 
 The faded indicator at the right edge shows the supported zoom levels. The scale and the zoom indicator have no background panel. A thin white outline keeps their black marks visible on dark maps. A longer tick marks the current level. View > Scale and View > Zoom Level control visibility. Both choices survive restart.
 

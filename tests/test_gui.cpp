@@ -1127,6 +1127,14 @@ private slots:
             QVERIFY(scale->isChecked() && zoom->isChecked());
             QCOMPARE(scale->text(), QStringLiteral("Scale"));
             QCOMPARE(zoom->text(), QStringLiteral("Zoom Level"));
+            // Settings > Map uses the same names as the View menu.
+            QStringList labels;
+            for (const auto &field : settings->settingsFields()) {
+                if (field.path == u"scaleLegend" || field.path == u"zoomIndicator") {
+                    labels.append(field.label);
+                }
+            }
+            QCOMPARE(labels, (QStringList{QStringLiteral("Scale"), QStringLiteral("Zoom Level")}));
             const swak::Viewport legendView{map->size(), {.5, .5}, 8};
             const auto legend = swak::mapZoomLegendRect(legendView);
             QVERIFY(legend.left() > map->width() / 2);

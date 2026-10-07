@@ -455,8 +455,8 @@ public:
                           0,
                           1,
                           2),
-            booleanSetting(QStringLiteral("scaleLegend"), tr("Map scale")),
-            booleanSetting(QStringLiteral("zoomIndicator"), tr("Map zoom level")),
+            booleanSetting(QStringLiteral("scaleLegend"), tr("Scale")),
+            booleanSetting(QStringLiteral("zoomIndicator"), tr("Zoom Level")),
             booleanSetting(QStringLiteral("smooth"), tr("Smooth image scaling")),
             booleanSetting(QStringLiteral("antialias"), tr("Smooth vector edges"))};
     }
