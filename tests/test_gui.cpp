@@ -2547,7 +2547,7 @@ private slots:
             auto *objects = window.findChild<swak::UserObjects *>();
             auto *selection = window.findChild<swak::MapSelection *>();
             map->setFocus();
-            QTest::keyClick(map, Qt::Key_M);
+            QTest::keyClick(map, Qt::Key_M, Qt::ShiftModifier);
             QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
             auto *collection = editor->findChild<QComboBox *>(QStringLiteral("objectCollection"));
             auto *type = editor->findChild<QComboBox *>(QStringLiteral("objectType"));
@@ -2604,7 +2604,7 @@ private slots:
         QVERIFY(editor->newCollection().isEmpty());
         auto *map = restored.findChild<QOpenGLWidget *>();
         map->setFocus();
-        QTest::keyClick(map, Qt::Key_M);
+        QTest::keyClick(map, Qt::Key_M, Qt::ShiftModifier);
         QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
         QVERIFY(!editor->draft());
         QCOMPARE(objects->items().size(), 1);
@@ -2626,7 +2626,7 @@ private slots:
             auto *objects = window.findChild<swak::UserObjects *>();
             auto *selection = window.findChild<swak::MapSelection *>();
             map->setFocus();
-            QTest::keyClick(map, Qt::Key_M);
+            QTest::keyClick(map, Qt::Key_M, Qt::ShiftModifier);
             QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
             auto *type = editor->findChild<QComboBox *>(QStringLiteral("objectType"));
             auto *collection = editor->findChild<QComboBox *>(QStringLiteral("objectCollection"));
@@ -2712,7 +2712,7 @@ private slots:
             auto *objects = window.findChild<swak::UserObjects *>();
             auto *selection = window.findChild<swak::MapSelection *>();
             map->setFocus();
-            QTest::keyClick(map, Qt::Key_M);
+            QTest::keyClick(map, Qt::Key_M, Qt::ShiftModifier);
             QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
             auto *type = editor->findChild<QComboBox *>(QStringLiteral("objectType"));
             QVERIFY(type);
@@ -2853,7 +2853,7 @@ private slots:
             return map->hasFocus();
         }));
         for (int cycle = 0; cycle < 6; ++cycle) {
-            QTest::keyClick(QApplication::focusWidget(), Qt::Key_M);
+            QTest::keyClick(QApplication::focusWidget(), Qt::Key_M, Qt::ShiftModifier);
             QCOMPARE(status->text(), QStringLiteral("M"));
             QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
             QVERIFY(editor->draft());
@@ -2877,7 +2877,7 @@ private slots:
                      }),
                      "Saving must return keyboard focus to the map without another user action");
         }
-        QTest::keyClick(QApplication::focusWidget(), Qt::Key_M);
+        QTest::keyClick(QApplication::focusWidget(), Qt::Key_M, Qt::ShiftModifier);
         QCOMPARE(status->text(), QStringLiteral("M"));
         QTest::keyClick(QApplication::focusWidget(), Qt::Key_Escape);
         QVERIFY(status->text().isEmpty());
@@ -2898,7 +2898,7 @@ private slots:
         auto *overlay = map->findChild<QWidget *>(QStringLiteral("mapToolOverlay"));
         QVERIFY(overlay);
         map->setFocus();
-        QTest::keyClick(map, Qt::Key_M);
+        QTest::keyClick(map, Qt::Key_M, Qt::ShiftModifier);
         const QPoint current(210, 180);
         QCursor::setPos(map->mapToGlobal(current));
         QVERIFY(QTest::qWaitFor([&] {
@@ -2987,18 +2987,18 @@ private slots:
             auto *modeStatus = window.findChild<QLabel *>(QStringLiteral("mapToolStatus"));
             QVERIFY(modeStatus);
             QVERIFY(modeStatus->text().isEmpty());
-            QTest::keyClick(map, Qt::Key_M);
+            QTest::keyClick(map, Qt::Key_M, Qt::ShiftModifier);
             QCOMPARE(map->cursor().shape(), Qt::CrossCursor);
             QCOMPARE(modeStatus->text(), QStringLiteral("M"));
             QKeyEvent repeat(
-                QEvent::KeyPress, Qt::Key_M, Qt::NoModifier, QStringLiteral("m"), true);
+                QEvent::KeyPress, Qt::Key_M, Qt::ShiftModifier, QStringLiteral("M"), true);
             QApplication::sendEvent(map, &repeat);
             QCOMPARE(modeStatus->text(), QStringLiteral("M"));
-            QTest::keyClick(map, Qt::Key_M);
+            QTest::keyClick(map, Qt::Key_M, Qt::ShiftModifier);
             QVERIFY(modeStatus->text().isEmpty());
             QVERIFY(map->cursor().shape() != Qt::CrossCursor);
             QVERIFY(!modeTools->guidesActive());
-            QTest::keyClick(map, Qt::Key_M);
+            QTest::keyClick(map, Qt::Key_M, Qt::ShiftModifier);
             QCOMPARE(modeStatus->text(), QStringLiteral("M"));
             QVERIFY(modeTools->guidesActive());
             auto *tools = window.findChild<swak::MapTools *>();
@@ -3143,7 +3143,7 @@ private slots:
             context(QStringLiteral("moveMarker"));
             QCOMPARE(modeStatus->text(), QStringLiteral("M"));
             QTest::mouseMove(map, position() + QPoint(40, 30));
-            QTest::keyClick(map, Qt::Key_M);
+            QTest::keyClick(map, Qt::Key_M, Qt::ShiftModifier);
             QCOMPARE(objects->find(id)->geometry, original);
             QVERIFY(modeStatus->text().isEmpty());
             context(QStringLiteral("moveMarker"));
@@ -3180,19 +3180,19 @@ private slots:
             undo->trigger();
             QCOMPARE(objects->items().size(), 1);
             map->setFocus();
-            QTest::keyClick(map, Qt::Key_M);
+            QTest::keyClick(map, Qt::Key_M, Qt::ShiftModifier);
             QTest::keyClick(map, Qt::Key_Escape);
             QVERIFY(!editor->draft());
             QCOMPARE(objects->items().size(), 1);
             map->setFocus();
-            QTest::keyClick(map, Qt::Key_M);
+            QTest::keyClick(map, Qt::Key_M, Qt::ShiftModifier);
             QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
             QVERIFY(editor->draft());
             QTest::keyClick(title, Qt::Key_Escape);
             QVERIFY(!editor->draft());
             QCOMPARE(objects->items().size(), 1);
             map->setFocus();
-            QTest::keyClick(map, Qt::Key_M);
+            QTest::keyClick(map, Qt::Key_M, Qt::ShiftModifier);
             QTest::mouseClick(map, Qt::LeftButton, Qt::NoModifier, map->rect().center());
             QTest::keyClick(title, Qt::Key_Return);
             QCOMPARE(objects->items().size(), 2);
@@ -3237,7 +3237,7 @@ private slots:
             QVERIFY(configuration->validateSettings(options).isEmpty());
             configuration->restorePreferences(options);
             map->setFocus();
-            QTest::keyClick(map, Qt::Key_M);
+            QTest::keyClick(map, Qt::Key_M, Qt::ShiftModifier);
             QVERIFY(map->cursor().shape() != Qt::CrossCursor);
             QTest::keyClick(map, Qt::Key_N);
             QCOMPARE(map->cursor().shape(), Qt::CrossCursor);
@@ -4958,7 +4958,7 @@ private slots:
             QTest::keyClick(map, Qt::Key_A, Qt::ShiftModifier);
             QCOMPARE(tools->statusText(), QStringLiteral("A"));
             QCOMPARE(map->cursor().shape(), Qt::CrossCursor);
-            QTest::keyClick(map, Qt::Key_M);
+            QTest::keyClick(map, Qt::Key_M, Qt::ShiftModifier);
             QCOMPARE(tools->statusText(), QStringLiteral("M"));
             QTest::keyClick(map, Qt::Key_A, Qt::ShiftModifier);
             QCOMPARE(tools->statusText(), QStringLiteral("A"));
@@ -5218,7 +5218,7 @@ private slots:
         QCOMPARE(objects->items().size(), 1);
         action->trigger();
         QCOMPARE(tools->statusText(), QStringLiteral("M"));
-        QTest::keyClick(map, Qt::Key_M);
+        QTest::keyClick(map, Qt::Key_M, Qt::ShiftModifier);
         QVERIFY(tools->statusText().isEmpty());
     }
     void providerEndpointToolTips()
@@ -5547,6 +5547,30 @@ private slots:
         auto *editor = window.findChild<swak::ObjectEditor *>(QStringLiteral("polygonEditor"));
         auto *settings = dynamic_cast<swak::SettingsParticipant *>(editor);
         QVERIFY(settings);
+        // Marker mode uses Shift+M. Earlier profiles with the old M default move to Shift+M.
+        auto *markers = dynamic_cast<swak::SettingsParticipant *>(
+            window.findChild<swak::ObjectEditor *>(QStringLiteral("objectEditor")));
+        QVERIFY(markers);
+        QCOMPARE(markers->savePreferences().value(QStringLiteral("createKey")).toString(),
+                 QStringLiteral("Shift+M"));
+        QVERIFY(
+            window.findChild<QAction *>(QStringLiteral("markerModeAction"))
+                ->toolTip()
+                .contains(
+                    QKeySequence(QStringLiteral("Shift+M")).toString(QKeySequence::NativeText)));
+        markers->restorePreferences({{QStringLiteral("createKey"), QStringLiteral("M")}});
+        QCOMPARE(markers->savePreferences().value(QStringLiteral("createKey")).toString(),
+                 QStringLiteral("Shift+M"));
+        markers->restorePreferences({{QStringLiteral("createKey"), QStringLiteral("M")},
+                                     {QStringLiteral("markerShortcutVersion"), 2}});
+        QCOMPARE(markers->savePreferences().value(QStringLiteral("createKey")).toString(),
+                 QStringLiteral("M"));
+        auto markerKey = markers->savePreferences();
+        markerKey.insert(QStringLiteral("createKey"), QStringLiteral("Ctrl+M"));
+        QVERIFY(!markers->validateSettings(markerKey).isEmpty());
+        markerKey.insert(QStringLiteral("createKey"), QStringLiteral("Shift+K"));
+        QVERIFY(markers->validateSettings(markerKey).isEmpty());
+        markers->restorePreferences({});
         settings->restorePreferences({{QStringLiteral("createKey"), QStringLiteral("P")}});
         QCOMPARE(settings->savePreferences().value(QStringLiteral("createKey")).toString(),
                  QStringLiteral("Shift+A"));

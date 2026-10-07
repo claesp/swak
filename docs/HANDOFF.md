@@ -1538,3 +1538,7 @@ The NOAA NDBC preset failed after the GDAL change on October 5. GDAL reads each 
 
 NDBC descriptions are HTML. Information now converts HTML descriptions from data feeds to plain text through `displayDescription`. Local and CoT descriptions stay unchanged. Tests cover 120 folders, the 1025-folder rejection, and the description conversion.
 
+# 2026-10-07: Marker shortcut
+
+Marker mode now uses Shift+M, like Shift+A for Area and Shift+R for Route. The marker key setting accepts one letter with or without Shift. A profile without `markerShortcutVersion` 2 that still holds the old default M changes to Shift+M once. Other custom keys stay unchanged. The status indicator still shows M. GUI tests press Shift+M and cover the conversion, the tooltip, and key validation.
+

@@ -209,7 +209,7 @@ The map keeps clickable attribution at its bottom-right edge. Status text uses a
 
 # Local markers
 
-To create a marker, focus the map. Then press M. The pointer changes to the standard crosshair. Black horizontal and vertical guide lines follow the pointer at 50 percent opacity.
+To create a marker, focus the map. Then press Shift+M. The pointer changes to the standard crosshair. Black horizontal and vertical guide lines follow the pointer at 50 percent opacity.
 
 Click a map position to place a draft circle. The Edit marker pane opens with editable title, description, and properties. An empty title uses New Marker.
 
@@ -239,7 +239,7 @@ Help > About shows the application version and full Git SHA. The SHA identifies 
 The grid stays below data-feed and local markers. Choose No grid in Grids to hide it.
 
 
-After Apply or Enter saves a marker, keyboard focus returns to the map. Press M to create the next marker without closing Information or clicking the map first. This also applies when the editor or Information pane is detached.
+After Apply or Enter saves a marker, keyboard focus returns to the map. Press Shift+M to create the next marker without closing Information or clicking the map first. This also applies when the editor or Information pane is detached.
 
 
 # Overlay panes and marker colors
@@ -248,7 +248,7 @@ Attached panes cover the map instead of reducing its size. Opening Information k
 
 The marker editor shows Title, Collection, Type, Color, Description, and properties in that order. Type lists symbols from the selected collection. Core offers Generic marker with a circle icon. The palette includes eight general colors and colors from registered collections. Select a color button before Apply.
 
-Orange is the default color. File > Settings > Markers changes the default for new markers. Existing markers retain their own colors.
+Orange is the default color. File > Settings > Markers changes the default for new markers and the Create marker shortcut. The shortcut is one letter with or without Shift. The default is Shift+M. Profiles that still use the earlier default M change to Shift+M once. A custom letter stays as you set it. Existing markers retain their own colors.
 
 # Ground-unit symbols
 
@@ -287,7 +287,7 @@ Escape during a corner move restores its previous position in the draft. Escape 
 
 Area previews label each edge with its length. Labels update for the live edge and the closing edge. They also appear during vertex editing. Distances use the operating system unit system.
 
-A toggles Area mode. M switches to marker creation. A tool switch discards an unfinished shape or edit. File > Settings > Keybindings contains the area shortcut. The Areas section controls corner size, outline width, fill opacity, and guide opacity.
+Shift+A toggles Area mode. Shift+M switches to marker creation. A tool switch discards an unfinished shape or edit. File > Settings > Keybindings contains the area shortcut. The Areas section controls corner size, outline width, fill opacity, and guide opacity.
 
 Information formats area with the system locale and measurement system. Metric locales use m² below 1000 m² and km² from that threshold. Imperial locales use ft², acres, and mi² as the area increases. Area uses a spherical Earth radius of 6371008.8 meters and integrates along the straight map edges. It is an estimate, not an ellipsoidal survey measurement. The shape follows the displayed world and does not wrap across the date line.
 

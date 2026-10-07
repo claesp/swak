@@ -68,6 +68,7 @@ public:
     {
         auto state = editorState();
         state.insert(QStringLiteral("guideStyleVersion"), 2);
+        state.insert(QStringLiteral("markerShortcutVersion"), 2);
         state.insert(QStringLiteral("createKey"),
                      QKeySequence(key_).toString(QKeySequence::PortableText));
         state.insert(QStringLiteral("radius"), radius_);
@@ -78,7 +79,7 @@ public:
     QString validateSettings(const QJsonObject &values) const override
     {
         if (!readKey(values)) {
-            return tr("Use one letter without modifiers to create a marker.");
+            return tr("Use one letter, with or without Shift, to create a marker.");
         }
         const auto color =
             values.value(QStringLiteral("color")).toString(QStringLiteral("#ffc857"));
@@ -90,7 +91,7 @@ public:
     void restorePreferences(const QJsonObject &values) override
     {
         const int key = readKey(values);
-        key_ = key ? key : Qt::Key_M;
+        key_ = key ? key : DefaultKey;
         radius_ = preferenceNumber(values, QStringLiteral("radius"), 7, 3, 24);
         guideOpacity_ = preferenceNumber(values, QStringLiteral("guideOpacity"), 0.5, 0, 1);
         if (!values.contains(QStringLiteral("guideStyleVersion")) && guideOpacity_ == 0.6) {
@@ -122,19 +123,24 @@ public:
 private:
     static int readKey(const QJsonObject &values)
     {
-        const auto text = values.value(QStringLiteral("createKey")).toString(QStringLiteral("M"));
+        auto text = values.value(QStringLiteral("createKey")).toString(QStringLiteral("Shift+M"));
         if (text.size() > 32) {
             return 0;
         }
+        // Earlier profiles used M. Shift+M is the new default, as Shift+A and Shift+R are.
+        if (values.value(QStringLiteral("markerShortcutVersion")).toInt() < 2 &&
+            text == QStringLiteral("M")) {
+            text = QStringLiteral("Shift+M");
+        }
         const auto key = QKeySequence::fromString(text, QKeySequence::PortableText);
-        if (key.count() != 1 || key[0].keyboardModifiers() != Qt::NoModifier) {
+        if (key.count() != 1 || (key[0].keyboardModifiers() != Qt::NoModifier &&
+                                 key[0].keyboardModifiers() != Qt::ShiftModifier)) {
             return 0;
         }
-        return key[0].key() >= Qt::Key_A && key[0].key() <= Qt::Key_Z
-                   ? static_cast<int>(key[0].key())
-                   : 0;
+        return key[0].key() >= Qt::Key_A && key[0].key() <= Qt::Key_Z ? key[0].toCombined() : 0;
     }
-    int key_ = Qt::Key_M;
+    static constexpr int DefaultKey = QKeyCombination(Qt::ShiftModifier, Qt::Key_M).toCombined();
+    int key_ = DefaultKey;
     double radius_ = 7;
     QColor color_{"#ffc857"};
     double guideOpacity_ = 0.5;
@@ -240,13 +246,14 @@ public:
         map_ = &map;
         if (event.type() == QEvent::KeyPress) {
             auto &key = static_cast<QKeyEvent &>(event);
-            if (key.modifiers() != Qt::NoModifier) {
+            const bool create = key.keyCombination().toCombined() == editor_.createKey();
+            if (!create && key.modifiers() != Qt::NoModifier) {
                 return false;
             }
             if (key.key() == Qt::Key_Escape) {
                 return cancel();
             }
-            if (key.key() == editor_.createKey()) {
+            if (create) {
                 if (!key.isAutoRepeat()) {
                     if (mode_ != Mode::Idle) {
                         cancel();
