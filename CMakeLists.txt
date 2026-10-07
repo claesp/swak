@@ -87,6 +87,8 @@ add_library(
     src/core/network_client.h
     src/core/tak_server_api.cpp
     src/core/tak_server_api.h
+    src/core/tak_enrollment.cpp
+    src/core/tak_enrollment.h
     src/core/cot_stream.cpp
     src/core/identity.cpp
     src/core/servers.cpp
@@ -162,6 +164,9 @@ if(CURL_VERSION_STRING VERSION_LESS 7.85)
     message(FATAL_ERROR "SWAK needs libcurl 7.85 or later. Found ${CURL_VERSION_STRING}.")
 endif()
 target_link_libraries(swak_core PRIVATE CURL::libcurl)
+# TAK certificate enrollment creates keys and certificate requests with OpenSSL 3.
+find_package(OpenSSL 3.0 REQUIRED COMPONENTS Crypto)
+target_link_libraries(swak_core PRIVATE OpenSSL::Crypto)
 target_link_libraries(swak_core PUBLIC "${GEOGRAPHICLIB_LIBRARY}")
 
 function(swak_plugin name file)
@@ -265,7 +270,7 @@ if(BUILD_TESTING)
     add_executable(swak_tak_compat tools/tak_compat.cpp)
     target_link_libraries(swak_tak_compat PRIVATE swak_core Qt6::Test)
     add_executable(swak_server_tests tests/test_servers.cpp)
-    target_link_libraries(swak_server_tests PRIVATE swak_core Qt6::Test)
+    target_link_libraries(swak_server_tests PRIVATE swak_core Qt6::Test OpenSSL::Crypto)
     add_test(NAME servers COMMAND swak_server_tests)
     set_tests_properties(servers PROPERTIES TIMEOUT 60 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_executable(swak_vector_tests tests/test_vector.cpp)

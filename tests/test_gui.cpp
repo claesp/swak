@@ -29,6 +29,7 @@
 #include "core/routing.h"
 #include "core/servers.h"
 #include "core/settings_dialog.h"
+#include "core/tak_server_api.h"
 #include "core/tiles.h"
 #include "core/toolbar.h"
 #include "core/ui_icons.h"
@@ -7379,6 +7380,63 @@ private slots:
         process.terminate();
         QVERIFY(process.waitForFinished(3000));
         QCOMPARE(process.exitCode(), 0);
+    }
+    void serverEnrollmentDialog()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("enroll-ui.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *servers = window.findChild<swak::Servers *>();
+        QVERIFY(servers && servers->findChild<swak::TakServerApi *>());
+        auto *enroll = window.findChild<QPushButton *>(QStringLiteral("enrollServer"));
+        auto *status = window.findChild<QLabel *>(QStringLiteral("enrollStatus"));
+        QVERIFY(enroll && status);
+        enroll->click();
+        QCOMPARE(status->text(), QStringLiteral("Select a TLS server entry first."));
+        auto entry = swak::serverDefaults();
+        entry.insert(QStringLiteral("name"), QStringLiteral("TAK"));
+        entry.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
+        entry.insert(QStringLiteral("authUser"), QStringLiteral("alice"));
+        entry.insert(QStringLiteral("authPasswordEnv"), QStringLiteral("SWAK_COT_UI_TEST"));
+        QVERIFY(servers->put(QStringLiteral("tak"), entry).isEmpty());
+        auto *list = window.findChild<QTableWidget *>(QStringLiteral("serverList"));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return list->rowCount() == 1;
+            },
+            2000));
+        list->setCurrentCell(0, 1);
+        bool checked = false;
+        QTimer::singleShot(0, &window, [&] {
+            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            QVERIFY(dialog);
+            QCOMPARE(dialog->objectName(), QStringLiteral("enrollDialog"));
+            QCOMPARE(dialog->findChild<QLineEdit *>(QStringLiteral("enrollUser"))->text(),
+                     QStringLiteral("alice"));
+            QCOMPARE(dialog->findChild<QLineEdit *>(QStringLiteral("enrollPassword"))->echoMode(),
+                     QLineEdit::Password);
+            QCOMPARE(dialog->findChild<QSpinBox *>(QStringLiteral("enrollPort"))->value(), 8446);
+            auto *keyFile = dialog->findChild<QLineEdit *>(QStringLiteral("enrollKeyFile"));
+            QVERIFY(!keyFile->isEnabled());
+            dialog->findChild<QComboBox *>(QStringLiteral("enrollKeyChoice"))->setCurrentIndex(1);
+            QVERIFY(keyFile->isEnabled());
+            checked = true;
+            dialog->reject();
+        });
+        enroll->click();
+        QVERIFY(checked);
+        QVERIFY(status->text().isEmpty() ||
+                status->text() == QStringLiteral("Select a TLS server entry first."));
+        QTimer::singleShot(0, &window, [&] {
+            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            QVERIFY(dialog);
+            dialog->accept();
+        });
+        enroll->click();
+        QCOMPARE(status->text(), QStringLiteral("Enter the password of the TAK account."));
+        QVERIFY(enroll->isEnabled());
     }
     void serverBrowserAndIdentity()
     {

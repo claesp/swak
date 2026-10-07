@@ -1570,3 +1570,7 @@ TLS server entries accept `authUser` and `authPasswordEnv`. After the handshake,
 
 A new server protocol, `udpout`, sends generated CoT to a server UDP input. It needs a numeric unicast address, binds an ephemeral local port, sends one event per datagram, and discards input. Its status shows the sent count. `udpOutput` covers validation, the datagram content, the count, and ignored input.
 
+# 2026-10-07: Phase 1 certificate enrollment
+
+`core/tak_enrollment.*` creates or reads a PEM key with OpenSSL 3, builds a SHA-256 PKCS#10 request with CN=username and the subject entries from `/Marti/api/tls/config`, and posts it to `/Marti/api/tls/signClient/v2` with HTTP Basic authentication. It checks that the signed certificate matches the key and stores `client.key`, `client.pem`, and `ca.pem` in an owner-only folder under the application data directory. The server browser has Enroll .... Tests use OpenSSL as a test CA: `enrollmentPieces` covers keys, passwords, the subject, config parsing, and reply checks; `enrollmentFlow` covers TLS trust, wrong passwords, the full flow, file permissions, key encryption, a mutual-TLS stream with the new certificate, an existing key, cancellation, and invalid input; `serverEnrollmentDialog` covers the dialog. The enrollment data package and a live TAK Server remain untested. Key generation runs on the interface thread and takes about 0.1 seconds.
+

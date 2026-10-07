@@ -47,6 +47,10 @@ public:
     void setServerInfo(const QString &id, const QString &text);
     // The sender UID and callsign for TAK logins. Only entries with a login reconnect.
     void setSenderIdentity(const QString &uid, const QString &callsign);
+    QString senderUid() const
+    {
+        return sender_.value(QStringLiteral("senderUid")).toString();
+    }
 signals:
     void changed();
     void statusChanged();

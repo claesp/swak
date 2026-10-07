@@ -22,7 +22,11 @@ The earlier versions of SWAK included protozero 1.8.2 headers for MVT decoding. 
 
 SWAK links libcurl directly for HTTPS requests to TAK Server. The user decided on October 7, 2026 to use libcurl for all HTTPS connectivity. Read the libcurl evaluation in [TAK Server feature plan](tak-server-feature-plan.md). GDAL already loaded libcurl, so the runtime adds no package. Install `libcurl4-openssl-dev` to build SWAK. SWAK needs libcurl 7.85 or later. The client passes certificates and keys to libcurl from memory, so libcurl must use OpenSSL. libcurl uses the curl license, a permissive MIT-style license.
 
-Qt, libarchive, GeographicLib, GDAL, and libcurl are system dependencies. Read the build manual for their required components.
+# OpenSSL
+
+SWAK links OpenSSL `libcrypto` 3.0 or later directly for TAK certificate enrollment. Qt cannot create key pairs or certificate requests. The user decided on October 7, 2026 to use OpenSSL for these tasks. The Qt TLS backend and libcurl already load OpenSSL, so the runtime adds no package. Install `libssl-dev` to build SWAK. OpenSSL 3 uses the Apache License 2.0.
+
+Qt, libarchive, GeographicLib, GDAL, libcurl, and OpenSSL are system dependencies. Read the build manual for their required components.
 
 Marker collections also use the existing system libarchive dependency. The shared collection service reads ZIP, TAR, and gzip-compressed TAR, and writes ZIP or compressed TAR. It enables no external decompression programs and extracts no files. The additional archive use avoids a separate ZIP implementation or dependency. Read [Marker collections](marker-collections.md) for the one-file format and resource limits.
 

@@ -9,12 +9,15 @@
 #include "core/server_browser.h"
 #include "core/servers.h"
 #include "core/store.h"
+#include "core/tak_enrollment.h"
 #include "core/tak_server_api.h"
 
 #include <QAbstractItemModelTester>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QRegularExpression>
@@ -25,12 +28,15 @@
 #include <QTableWidget>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QTemporaryDir>
 #include <QTest>
 #include <QUdpSocket>
 #include <QUuid>
 
 #include <algorithm>
 #include <functional>
+#include <openssl/pem.h>
+#include <openssl/x509.h>
 #include <optional>
 using namespace swak;
 static Event sampleEvent(const QString &id = QStringLiteral("test"))
@@ -155,6 +161,59 @@ public:
         socket->startServerEncryption();
     }
 };
+// Signs a base64 DER certificate request with the fixture CA. Returns base64 DER.
+static QByteArray signRequest(const QByteArray &base64, QString *subject)
+{
+    QFile certFile(QFINDTESTDATA("fixtures/map-test-cert.pem")),
+        keyFile(QFINDTESTDATA("fixtures/map-test-key.pem"));
+    if (!certFile.open(QIODevice::ReadOnly) || !keyFile.open(QIODevice::ReadOnly)) {
+        return {};
+    }
+    const auto certPem = certFile.readAll();
+    const auto keyPem = keyFile.readAll();
+    const auto der = QByteArray::fromBase64(base64);
+    const auto *cursor = reinterpret_cast<const unsigned char *>(der.constData());
+    X509_REQ *request = d2i_X509_REQ(nullptr, &cursor, static_cast<long>(der.size()));
+    BIO *certBio = BIO_new_mem_buf(certPem.constData(), static_cast<int>(certPem.size()));
+    BIO *keyBio = BIO_new_mem_buf(keyPem.constData(), static_cast<int>(keyPem.size()));
+    X509 *issuer = PEM_read_bio_X509(certBio, nullptr, nullptr, nullptr);
+    EVP_PKEY *issuerKey = PEM_read_bio_PrivateKey(keyBio, nullptr, nullptr, nullptr);
+    QByteArray result;
+    if (request && issuer && issuerKey &&
+        X509_REQ_verify(request, X509_REQ_get0_pubkey(request)) == 1) {
+        char text[256] = {};
+        X509_NAME_oneline(X509_REQ_get_subject_name(request), text, sizeof(text));
+        *subject = QString::fromUtf8(text);
+        X509 *certificate = X509_new();
+        X509_set_version(certificate, 2);
+        ASN1_INTEGER_set(X509_get_serialNumber(certificate), 4242);
+        X509_set_issuer_name(certificate, X509_get_subject_name(issuer));
+        X509_set_subject_name(certificate, X509_REQ_get_subject_name(request));
+        X509_gmtime_adj(X509_getm_notBefore(certificate), -60);
+        X509_gmtime_adj(X509_getm_notAfter(certificate), 3600);
+        X509_set_pubkey(certificate, X509_REQ_get0_pubkey(request));
+        if (X509_sign(certificate, issuerKey, EVP_sha256()) > 0) {
+            const int size = i2d_X509(certificate, nullptr);
+            QByteArray out(size, Qt::Uninitialized);
+            auto *write = reinterpret_cast<unsigned char *>(out.data());
+            i2d_X509(certificate, &write);
+            result = out.toBase64();
+        }
+        X509_free(certificate);
+    }
+    X509_REQ_free(request);
+    X509_free(issuer);
+    EVP_PKEY_free(issuerKey);
+    BIO_free(certBio);
+    BIO_free(keyBio);
+    return result;
+}
+static QByteArray fixtureCertificateBase64()
+{
+    QFile file(QFINDTESTDATA("fixtures/map-test-cert.pem"));
+    return file.open(QIODevice::ReadOnly) ? QSslCertificate(file.readAll()).toDer().toBase64()
+                                          : QByteArray{};
+}
 class ServerTest final : public QObject
 {
     Q_OBJECT
@@ -482,6 +541,195 @@ private slots:
             },
             5000));
         QVERIFY(!listener.received.contains("<auth>"));
+    }
+    void enrollmentPieces()
+    {
+        const auto plain = generateEnrollmentKey({});
+        QVERIFY2(plain.error.isEmpty(), qPrintable(plain.error));
+        QVERIFY(plain.pem.contains("BEGIN PRIVATE KEY"));
+        QVERIFY(readEnrollmentKey(plain.pem, {}).error.isEmpty());
+        const auto locked = generateEnrollmentKey("secret");
+        QVERIFY(locked.pem.contains("ENCRYPTED"));
+        QVERIFY(readEnrollmentKey(locked.pem, "secret").error.isEmpty());
+        QVERIFY(!readEnrollmentKey(locked.pem, "wrong").error.isEmpty());
+        QVERIFY(!readEnrollmentKey(locked.pem, {}).error.isEmpty());
+        QVERIFY(!readEnrollmentKey("not a key", {}).error.isEmpty());
+        QList<SubjectEntry> entries;
+        QVERIFY(readCertificateConfig(
+            "<?xml version=\"1.0\"?><ns2:certificateConfig xmlns:ns2=\"com.bbn.marti.config\">"
+            "<nameEntries><nameEntry name=\"O\" value=\"TAK\"/>"
+            "<nameEntry name=\"OU\" value=\"Ops Team\"/></nameEntries></ns2:certificateConfig>",
+            &entries));
+        QCOMPARE(entries.size(), 2);
+        QCOMPARE(entries.at(1), (SubjectEntry{QStringLiteral("OU"), QStringLiteral("Ops Team")}));
+        QList<SubjectEntry> rejected;
+        QVERIFY(!readCertificateConfig("<certificateConfig><nameEntry name=\"CN\" value=\"x\"/>"
+                                       "</certificateConfig>",
+                                       &rejected));
+        QVERIFY(!readCertificateConfig("<!DOCTYPE x><certificateConfig/>", &rejected));
+        QVERIFY(!readCertificateConfig("<other/>", &rejected));
+        QVERIFY(!readCertificateConfig("<certificateConfig><nameEntry name=\"1\" value=\"x\"/>"
+                                       "</certificateConfig>",
+                                       &rejected));
+        QString error;
+        const auto csr =
+            enrollmentRequest(locked.pem, "secret", QStringLiteral("alice"), entries, &error);
+        QVERIFY2(!csr.isEmpty(), qPrintable(error));
+        QString subject;
+        const auto signedCert = signRequest(csr, &subject);
+        QCOMPARE(subject, QStringLiteral("/CN=alice/O=TAK/OU=Ops Team"));
+        QVERIFY(enrollmentRequest("bad", {}, QStringLiteral("alice"), entries, &error).isEmpty());
+        QVERIFY(!error.isEmpty());
+        // The reply must hold valid certificates that match the key.
+        const auto reply =
+            QJsonDocument(
+                QJsonObject{
+                    {QStringLiteral("signedCert"), QString::fromLatin1(signedCert)},
+                    {QStringLiteral("ca0"), QString::fromLatin1(fixtureCertificateBase64())}})
+                .toJson();
+        const auto result = readEnrollmentReply(reply, locked.pem, "secret");
+        QVERIFY2(result.error.isEmpty(), qPrintable(result.error));
+        QVERIFY(result.certificate.startsWith("-----BEGIN CERTIFICATE-----"));
+        QCOMPARE(QSslCertificate::fromData(result.authorities).size(), 1);
+        QVERIFY(!readEnrollmentReply(reply, plain.pem, {}).error.isEmpty());
+        QVERIFY(
+            !readEnrollmentReply("{\"signedCert\":\"!!\"}", locked.pem, "secret").error.isEmpty());
+        QVERIFY(!readEnrollmentReply(
+                     QJsonDocument(QJsonObject{{QStringLiteral("signedCert"),
+                                                QString::fromLatin1(signedCert)},
+                                               {QStringLiteral("ca0"), QStringLiteral("bad")}})
+                         .toJson(),
+                     locked.pem,
+                     "secret")
+                     .error.isEmpty());
+    }
+    void enrollmentFlow()
+    {
+        HttpsHarness enroll;
+        QVERIFY(enroll.load());
+        QString subject;
+        enroll.respond = [&subject](const QByteArray &request) {
+            const auto ok = [](const QByteArray &type, const QByteArray &body) {
+                return QByteArray("HTTP/1.1 200 OK\r\nContent-Type: ") + type +
+                       "\r\nContent-Length: " + QByteArray::number(body.size()) + "\r\n\r\n" + body;
+            };
+            if (!request.contains("Authorization: Basic " + QByteArray("alice:pa:ss").toBase64())) {
+                return QByteArray("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n");
+            }
+            if (request.startsWith("GET /Marti/api/tls/config ")) {
+                return ok("application/xml",
+                          "<certificateConfig><nameEntries><nameEntry name=\"O\" value=\"TAK\"/>"
+                          "</nameEntries></certificateConfig>");
+            }
+            if (request.startsWith("POST /Marti/api/tls/signClient/v2?")) {
+                const auto body = request.mid(request.indexOf("\r\n\r\n") + 4);
+                const auto signedCert = signRequest(body, &subject);
+                return ok(
+                    "application/json",
+                    QJsonDocument(
+                        QJsonObject{{QStringLiteral("signedCert"), QString::fromLatin1(signedCert)},
+                                    {QStringLiteral("ca0"),
+                                     QString::fromLatin1(fixtureCertificateBase64())}})
+                        .toJson());
+            }
+            return QByteArray("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
+        };
+        TlsHarness stream;
+        QFile cert(QFINDTESTDATA("fixtures/map-test-cert.pem")),
+            key(QFINDTESTDATA("fixtures/map-test-key.pem"));
+        QVERIFY(cert.open(QIODevice::ReadOnly) && key.open(QIODevice::ReadOnly));
+        stream.certificate = QSslCertificate(cert.readAll());
+        stream.key = QSslKey(key.readAll(), QSsl::Rsa);
+        stream.requireClient = true;
+        stream.payload = encodeCot(sampleEvent());
+        QVERIFY(stream.listen(QHostAddress::LocalHost, 0));
+        QTemporaryDir directory;
+        Store store;
+        Servers servers(store);
+        NetworkClient network;
+        TakEnrollment enrollment(servers, network);
+        enrollment.setDirectory(directory.path());
+        auto v = source(stream.serverPort());
+        v.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        v.insert(QStringLiteral("apiPort"), 0);
+        v.insert(QStringLiteral("passwordEnv"), QStringLiteral("SWAK_COT_TEST_KEY"));
+        v.insert(QStringLiteral("enabled"), false);
+        QVERIFY(servers.put(QStringLiteral("tak/1"), v).isEmpty());
+        qputenv("SWAK_COT_TEST_KEY", "key-secret");
+        QSignalSpy finished(&enrollment, &TakEnrollment::finished);
+        TakEnrollment::Options options;
+        options.serverId = QStringLiteral("tak/1");
+        options.username = QStringLiteral("alice");
+        options.password = "wrong";
+        options.port = enroll.serverPort();
+        options.clientUid = QStringLiteral("SWAK-1");
+        // Without the CA in the entry, the server certificate is not trusted.
+        QVERIFY(enrollment.start(options).isEmpty());
+        QVERIFY(finished.wait(10000));
+        QVERIFY(finished.last().first().toString().contains(QStringLiteral("TLS")));
+        v.insert(QStringLiteral("ca"), cert.fileName());
+        QVERIFY(servers.put(QStringLiteral("tak/1"), v).isEmpty());
+        QVERIFY(enrollment.start(options).isEmpty());
+        QVERIFY(!enrollment.start(options).isEmpty());
+        QVERIFY(finished.wait(10000));
+        QVERIFY(
+            finished.last().first().toString().contains(QStringLiteral("username or password")));
+        options.password = "pa:ss";
+        QVERIFY(enrollment.start(options).isEmpty());
+        QVERIFY(finished.wait(20000));
+        QVERIFY2(finished.last().first().toString().isEmpty(),
+                 qPrintable(finished.last().first().toString()));
+        QCOMPARE(subject, QStringLiteral("/CN=alice/O=TAK"));
+        QVERIFY(enroll.requests.last().contains("clientUid=SWAK-1"));
+        QVERIFY(enroll.requests.last().contains("version=SWAK"));
+        // The entry points at the new files. The folder and files are private.
+        const auto updated = servers.sources().value(QStringLiteral("tak/1")).toObject();
+        const auto keyPath = updated.value(QStringLiteral("key")).toString();
+        const auto certPath = updated.value(QStringLiteral("certificate")).toString();
+        QVERIFY(keyPath.startsWith(directory.path()));
+        QCOMPARE(updated.value(QStringLiteral("ca")).toString(), cert.fileName());
+        QCOMPARE(QFile::permissions(keyPath) & 0x0077, QFileDevice::Permissions{});
+        QCOMPARE(QFile::permissions(QFileInfo(keyPath).path()),
+                 QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner |
+                     QFileDevice::ReadUser | QFileDevice::WriteUser | QFileDevice::ExeUser);
+        QFile keyFile(keyPath);
+        QVERIFY(keyFile.open(QIODevice::ReadOnly));
+        QVERIFY(keyFile.readAll().contains("ENCRYPTED"));
+        QVERIFY(QFile::exists(certPath));
+        // The new certificate authenticates a CoT stream that requires client certificates.
+        auto enabled = updated;
+        enabled.insert(QStringLiteral("enabled"), true);
+        QVERIFY(servers.put(QStringLiteral("tak/1"), enabled).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return store.rowCount() == 1;
+            },
+            10000));
+        // An existing key file stays in place. A cancelled enrollment reports so.
+        enabled.insert(QStringLiteral("enabled"), false);
+        QVERIFY(servers.put(QStringLiteral("tak/1"), enabled).isEmpty());
+        options.keyFile = keyPath;
+        QVERIFY(enrollment.start(options).isEmpty());
+        QVERIFY(finished.wait(20000));
+        QVERIFY(finished.last().first().toString().isEmpty());
+        QCOMPARE(servers.sources()
+                     .value(QStringLiteral("tak/1"))
+                     .toObject()
+                     .value(QStringLiteral("key"))
+                     .toString(),
+                 keyPath);
+        enroll.hold = true;
+        QVERIFY(enrollment.start(options).isEmpty());
+        enrollment.cancel();
+        QCOMPARE(finished.last().first().toString(), QStringLiteral("Enrollment cancelled."));
+        QVERIFY(!enrollment.running());
+        options.username = QStringLiteral("a:b");
+        QVERIFY(!enrollment.start(options).isEmpty());
+        options.username = QStringLiteral("alice");
+        options.keyFile = QStringLiteral("/missing.key");
+        QVERIFY(!enrollment.start(options).isEmpty());
+        options.serverId = QStringLiteral("missing");
+        QVERIFY(!enrollment.start(options).isEmpty());
     }
     void takServerApi()
     {

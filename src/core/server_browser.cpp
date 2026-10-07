@@ -6,12 +6,21 @@
 #include "core/servers.h"
 #include "core/settings_dialog.h"
 #include "core/single_line_label.h"
+#include "core/tak_enrollment.h"
+#include "core/tak_server_api.h"
 
 #include <QCollator>
+#include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFormLayout>
 #include <QHeaderView>
+#include <QLabel>
+#include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSignalBlocker>
+#include <QSpinBox>
 #include <QTableWidget>
 #include <QUuid>
 #include <QVBoxLayout>
@@ -124,7 +133,8 @@ ServerBrowser::ServerBrowser(Servers &servers, QWidget *parent) : QWidget(parent
     auto *layout = new QVBoxLayout(this);
     auto *notice =
         new SingleLineLabel(tr("Enable multiple connections. TLS validates certificates. TCP and "
-                               "LAN peers use plaintext. UDP listens on a local address."),
+                               "LAN peers use plaintext. UDP input listens on a local address, "
+                               "and UDP output sends to a server."),
                             this);
     layout->addWidget(notice);
     table_ = new ProviderTable(false, this);
@@ -163,7 +173,16 @@ ServerBrowser::ServerBrowser(Servers &servers, QWidget *parent) : QWidget(parent
             &QPushButton::clicked,
             &servers_,
             &Servers::reconnect);
+    enroll_ = button(tr("Enroll ..."), QStringLiteral("enrollServer"));
+    enroll_->setToolTip(tr("Request a client certificate from TAK Server for the selected TLS "
+                           "entry."));
+    connect(enroll_, &QPushButton::clicked, this, &ServerBrowser::enroll);
     layout->addLayout(row);
+    enrollStatus_ = new SingleLineLabel(QString{}, this);
+    enrollStatus_->setObjectName(QStringLiteral("enrollStatus"));
+    // The line appears only with a message, so the pane keeps its earlier minimum size.
+    enrollStatus_->hide();
+    layout->addWidget(enrollStatus_);
     status_ = new QPlainTextEdit(this);
     status_->setObjectName(QStringLiteral("serverStatus"));
     status_->setAccessibleName(tr("Connection details"));
@@ -207,6 +226,8 @@ void ServerBrowser::refresh()
                 ? tr("Local LAN")
             : source.value(QStringLiteral("protocol")).toString() == QLatin1String("udp")
                 ? tr("UDP")
+            : source.value(QStringLiteral("protocol")).toString() == QLatin1String("udpout")
+                ? tr("UDP output")
                 : tr("Unavailable"),
             source.value("protocol") == QLatin1String("lan")
                 ? source.value("localAddress").toString()
@@ -233,6 +254,94 @@ void ServerBrowser::refresh()
         table_->setCurrentCell(0, 1);
     }
     status();
+}
+void ServerBrowser::showEnrollStatus(const QString &text)
+{
+    enrollStatus_->setText(text);
+    enrollStatus_->setVisible(!text.isEmpty());
+}
+void ServerBrowser::enroll()
+{
+    const auto id = table_->selectedId();
+    auto *api = servers_.findChild<TakServerApi *>();
+    const auto entry = servers_.sources().value(id).toObject();
+    if (!api || entry.value(QStringLiteral("protocol")).toString() != u"tls") {
+        showEnrollStatus(tr("Select a TLS server entry first."));
+        return;
+    }
+    Modal<QDialog> dialog(this);
+    dialog->setObjectName(QStringLiteral("enrollDialog"));
+    dialog->setWindowTitle(tr("Enroll for a client certificate"));
+    auto *layout = new QVBoxLayout(dialog.get());
+    auto *notice = new QLabel(
+        tr("SWAK asks TAK Server to sign a client certificate for this entry. The password is "
+           "used once and is not saved. The key and certificates are saved in a private folder. "
+           "The entry's password variable, when set, encrypts the key."),
+        dialog.get());
+    notice->setWordWrap(true);
+    layout->addWidget(notice);
+    auto *form = new QFormLayout;
+    auto *user = new QLineEdit(entry.value(QStringLiteral("authUser")).toString(), dialog.get());
+    user->setObjectName(QStringLiteral("enrollUser"));
+    user->setMaxLength(128);
+    auto *password = new QLineEdit(dialog.get());
+    password->setObjectName(QStringLiteral("enrollPassword"));
+    password->setEchoMode(QLineEdit::Password);
+    password->setMaxLength(1024);
+    auto *port = new QSpinBox(dialog.get());
+    port->setObjectName(QStringLiteral("enrollPort"));
+    port->setRange(1, 65535);
+    port->setValue(8446);
+    auto *keyChoice = new QComboBox(dialog.get());
+    keyChoice->setObjectName(QStringLiteral("enrollKeyChoice"));
+    keyChoice->addItems({tr("Create a new key"), tr("Use an existing PEM key file")});
+    auto *keyFile = new QLineEdit(dialog.get());
+    keyFile->setObjectName(QStringLiteral("enrollKeyFile"));
+    keyFile->setPlaceholderText(tr("Path to the PEM private key"));
+    keyFile->setEnabled(false);
+    connect(keyChoice, &QComboBox::currentIndexChanged, keyFile, [keyFile](int index) {
+        keyFile->setEnabled(index == 1);
+    });
+    form->addRow(tr("Username"), user);
+    form->addRow(tr("Password"), password);
+    form->addRow(tr("Enrollment port"), port);
+    form->addRow(tr("Private key"), keyChoice);
+    form->addRow(tr("Key file"), keyFile);
+    layout->addLayout(form);
+    auto *buttons =
+        new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dialog.get());
+    buttons->button(QDialogButtonBox::Ok)->setText(tr("Enroll"));
+    connect(buttons, &QDialogButtonBox::accepted, dialog.get(), &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, dialog.get(), &QDialog::reject);
+    layout->addWidget(buttons);
+    if (dialog->exec() != QDialog::Accepted || !dialog) {
+        if (dialog) {
+            password->clear();
+        }
+        return;
+    }
+    if (!enrollment_) {
+        enrollment_ = new TakEnrollment(servers_, api->network(), this);
+        connect(enrollment_, &TakEnrollment::progress, this, &ServerBrowser::showEnrollStatus);
+        connect(enrollment_, &TakEnrollment::finished, this, [this](const QString &error) {
+            showEnrollStatus(error.isEmpty()
+                                 ? tr("Enrollment complete. The entry uses the new client "
+                                      "certificate.")
+                                 : error);
+            enroll_->setEnabled(true);
+        });
+    }
+    TakEnrollment::Options options;
+    options.serverId = id;
+    options.username = user->text().trimmed();
+    options.password = password->text().toUtf8();
+    password->clear();
+    options.port = port->value();
+    options.keyFile = keyChoice->currentIndex() == 1 ? keyFile->text().trimmed() : QString{};
+    options.clientUid = servers_.senderUid();
+    const auto error = enrollment_->start(std::move(options));
+    showEnrollStatus(error);
+    enroll_->setEnabled(!enrollment_->running());
 }
 void ServerBrowser::status()
 {

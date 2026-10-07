@@ -8,6 +8,16 @@ TLS is the default protocol. The default port is 8089. Certificate validation re
 
 Set the CA certificate path for a private server authority.
 
+# Certificate enrollment
+
+TAK Server can issue a client certificate to a user with a TAK account. Select a TLS entry and then Enroll .... Enter the username and password of the account. The enrollment port is normally 8446. Choose Create a new key, or Use an existing PEM key file. Then select Enroll.
+
+SWAK reads the required certificate subject from `/Marti/api/tls/config`. It builds a certificate request with CN set to the username and exactly the required entries, such as O and OU. It signs the request with SHA-256 and sends it to `/Marti/api/tls/signClient/v2`, with the sender UID and the SWAK version. Both requests use HTTP Basic authentication over HTTPS. They trust only the CA of the entry, or the system CAs when the entry has none. Set the CA first when the server uses a private authority.
+
+A new key is an RSA 2048-bit key. SWAK checks that the signed certificate matches the key. It saves the files in a private folder under the application data directory, `certificates/<entry>`. The folder allows access only by the owner. `client.key` holds a new key, `client.pem` holds the signed certificate and its chain, and `ca.pem` holds the returned CA certificates. The entry then uses these files. An entry without a CA also receives `ca.pem`. An existing key file stays where it is.
+
+When the entry names a password variable, that password encrypts a new key with AES-256 and decrypts an existing key. Without a password variable, the new key file is not encrypted and relies on the private folder. The account password is used for the two requests only and is never saved. The enrollment data package, with server preferences, is not read yet.
+
 TAK Server inputs with `auth="file"` or `auth="ldap"` expect a username and password before the first CoT event. Set TAK username and TAK password environment variable for such a server. The variable name starts with `SWAK_COT_`. Set it before you start SWAK. After the TLS handshake, SWAK sends an `auth` element with the username, password, sender UID, and callsign. A username needs TLS, so the password never crosses the network in plain text. An unset variable stops the connection with a reason. A change of sender identity reconnects only the entries with a login.
 
 TLS entries also use the TAK Server REST API. TAK Server serves it on port 8443 under `/Marti/api`. TAK REST API port sets the port. Set it to 0 to turn the API off for the entry. Each request uses the same CA and client certificate as the CoT stream. After each new TLS connection, SWAK reads `/Marti/api/version/config`. The server status then shows a line such as `TAK Server 5.7.14-RELEASE, REST API 3.` A failed check shows its reason and repeats after five minutes while the stream stays connected. Later TAK features use this API. Set the client certificate path for certificate authentication. PEM certificates require a separate PEM private key. PKCS12 files contain the certificate and key together.

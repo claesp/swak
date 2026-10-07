@@ -50,6 +50,10 @@ public:
                     qsizetype maxBytes = 1024 * 1024);
     void cancel(quint64 id);
     TakServerInfo info(const QString &serverId) const;
+    NetworkClient &network() const
+    {
+        return network_;
+    }
 signals:
     void infoChanged(const QString &serverId);
 
