@@ -3,6 +3,7 @@
 #include "core/cot_detail.h"
 
 #include <QLocale>
+#include <QSet>
 
 #include <algorithm>
 
@@ -93,7 +94,7 @@ QString Store::accept(const Event &event, const QDateTime &now)
         return {};
     }
     if (event.type == QLatin1String("b-t-f") || event.type.startsWith(QLatin1String("b-t-f-")) ||
-        event.type == QLatin1String("b-f-t-r")) {
+        event.type == QLatin1String("b-f-t-r") || event.type.startsWith(QLatin1String("t-x-m-"))) {
         emit messageReceived(event);
         return {};
     }
@@ -188,6 +189,21 @@ void Store::expire(const QDateTime &now)
 }
 // TAK deletes an object with a t-x-d-d event. Its link elements name the objects. SWAK
 // removes only objects from the same origin, so one server cannot delete another's objects.
+void Store::removeOrigin(const QString &origin)
+{
+    if (origin.isEmpty()) {
+        return;
+    }
+    QStringList uids;
+    for (const auto &event : std::as_const(events_)) {
+        if (event.origin == origin) {
+            uids.append(event.uid);
+        }
+    }
+    if (!uids.isEmpty()) {
+        removeEvents(uids);
+    }
+}
 bool Store::deleteRequest(const Event &event)
 {
     // An emergency cancel replaces the emergency with the same UID. SWAK removes the alert and
@@ -220,9 +236,11 @@ void Store::removeEvents(const QStringList &uids)
     if (uids.contains(selected_)) {
         select({});
     }
+    // A set keeps a large removal linear, for example when a mission hides.
+    const QSet<QString> remove(uids.cbegin(), uids.cend());
     removing_ = true;
     for (int row = rowCount() - 1; row >= 0; --row) {
-        if (!uids.contains(events_.at(row).uid)) {
+        if (!remove.contains(events_.at(row).uid)) {
             continue;
         }
         motion_->remove(events_.at(row).uid);

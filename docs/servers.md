@@ -105,6 +105,16 @@ Send Package ... builds a package from the chosen local objects, uploads it to `
 
 Server shows the TAK Server file list from `/Marti/sync/search`. Search reads at most 1000 files. Download ... imports a file in the same way as an offer, and Received shows the result. Delete ... asks first and sends `/Marti/sync/delete`. TAK Server answers with an error when your user cannot delete the file.
 
+# Missions (Data Sync)
+
+Tools > Plugins > Missions shows the Missions pane. Choose a TAK Server entry with a REST API port and select Refresh to read `/Marti/api/missions`. Select a mission and Subscribe ..., or double-click it. SWAK asks for the password of a protected mission. It subscribes with your identity UID and keeps the token from the server in memory only. The preferences keep the server, the mission name, and the visibility. At start, SWAK subscribes again. A protected mission then shows an error until you subscribe with the password again.
+
+SWAK loads the mission CoT from `/missions/{name}/cot`, the files from the mission record, and the log from `/missions/{name}/log`. Mission objects show on the map with the origin `mission/<server>/<name>`. They stay current while the mission holds them, also when their own stale time is past. The check box of a mission hides or shows its objects. A mission change event (`t-x-m-c`) from the same server reloads the mission after 2 seconds. Objects that left the mission leave the map. A mission delete event (`t-x-m-d`) ends the subscription. An invitation (`t-x-m-i`) shows in the status line. SWAK also reloads each mission every hour.
+
+Right-click a local marker, circle, line, area, or route and select Add to Mission. SWAK sends its CoT with a `marti` mission destination, so TAK Server adds it to the mission. Later changes to the object need Add to Mission again. Right-click a mission object and select Remove from <mission> to send `DELETE /missions/{name}/contents`. Add writes a log entry. Download File ... imports a mission file through the Files pane. Export ... saves the mission archive. A read-only role disables these edits.
+
+Limits: 1000 missions in a list, 32 subscriptions, 2048 objects and 256 files for each mission, 500 log entries, and 16 MiB of mission CoT. Mission hierarchy (COP), keywords and expiration edits, mission layers, and data feeds are not implemented.
+
 # Emergency alerts
 
 TAK clients send emergency alerts as CoT. SWAK recognizes 911 Alert (`b-a-o-tbl`), Ring The Bell (`b-a-o-pan`), Troops In Contact (`b-a-o-opn`), Geo-fence Breached (`b-a-g`), and the ATAK custom alert (`b-a-o-c`). An active alert has a red double ring and a label with its type and the callsign of the person in distress. The emergency button at the right end of the toolbar turns red while any alert is active. Its tooltip lists the alerts. Its menu centers the map on an alert and selects it. Each new alert adds one Warning to Events. TAK Server repeats active alerts, and SWAK ignores these repeats.

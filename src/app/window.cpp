@@ -17,6 +17,7 @@
 #include "core/map_selection.h"
 #include "core/map_tools.h"
 #include "core/menu_order.h"
+#include "core/missions.h"
 #include "core/modal.h"
 #include "core/network_client.h"
 #include "core/object_sharing.h"
@@ -208,6 +209,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     services.chat = new Chat(store_, servers, identity, this);
     services.files = new FileShares(
         store_, servers, services.tak, identity, objects, dataSources, mapSources, this);
+    services.missions = new Missions(store_, servers, services.tak, identity, this);
     auto *mainViews = new QTabWidget(this);
     mainViews->setObjectName(QStringLiteral("mainViews"));
     mainViews->setDocumentMode(true);

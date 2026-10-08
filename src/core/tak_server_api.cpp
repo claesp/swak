@@ -117,7 +117,8 @@ quint64 TakServerApi::martiRequest(const QString &serverId,
                                    QObject *context,
                                    NetworkClient::Callback done,
                                    qsizetype maxBytes,
-                                   int timeoutMs)
+                                   int timeoutMs,
+                                   const QList<std::pair<QByteArray, QByteArray>> &headers)
 {
     const auto source = servers_.sources().value(serverId).toObject();
     NetworkRequest outgoing;
@@ -130,6 +131,9 @@ quint64 TakServerApi::martiRequest(const QString &serverId,
     outgoing.expectedPort = apiPort(source);
     if (!contentType.isEmpty()) {
         outgoing.headers.append(qMakePair(QByteArray("Content-Type"), contentType));
+    }
+    for (const auto &[name, value] : headers) {
+        outgoing.headers.append(qMakePair(name, value));
     }
     if (outgoing.url.isValid()) {
         outgoing.tls = readTlsFiles(source);

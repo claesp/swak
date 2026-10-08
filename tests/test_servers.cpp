@@ -11,6 +11,7 @@
 #include "core/map_selection.h"
 #include "core/marker_collections.h"
 #include "core/measure.h"
+#include "core/missions.h"
 #include "core/network_client.h"
 #include "core/object_sharing.h"
 #include "core/package_import.h"
@@ -2859,6 +2860,349 @@ private slots:
         QVERIFY(!offline.send(QStringLiteral("tak"), QStringLiteral("x"), {}, {}).isEmpty());
         QVERIFY(
             !offline.download(QStringLiteral("tak"), QString::fromLatin1(packageHash)).isEmpty());
+    }
+    void missionParsing()
+    {
+        QVERIFY(validMissionName(QStringLiteral("Ops 1")));
+        for (const auto &bad : {QString{},
+                                QStringLiteral("a/b"),
+                                QStringLiteral(".."),
+                                QStringLiteral("a?b"),
+                                QStringLiteral("a%20"),
+                                QString(129, QLatin1Char('a')),
+                                QStringLiteral("a\nb")}) {
+            QVERIFY(!validMissionName(bad));
+        }
+        const QByteArray list =
+            "{\"version\":\"3\",\"type\":\"Mission\",\"data\":["
+            "{\"name\":\"Ops\",\"description\":\"Operations\",\"creatorUid\":\"ANDROID-1\","
+            "\"tool\":\"public\","
+            "\"keywords\":[\"a\"],\"createTime\":\"2026-10-08T10:00:00.000Z\","
+            "\"passwordProtected\":false,"
+            "\"uids\":[{},{}],\"contents\":[{}]},"
+            "{\"name\":\"Secret\",\"passwordProtected\":true,\"createTime\":1791000000000},"
+            "{\"name\":\"bad/name\"}]}";
+        QList<Mission> missions;
+        QVERIFY(readMissions(list, &missions));
+        QCOMPARE(missions.size(), 2);
+        QCOMPARE(missions.at(0).description, QStringLiteral("Operations"));
+        QCOMPARE(missions.at(0).objects, 2);
+        QCOMPARE(missions.at(0).files, 1);
+        QVERIFY(missions.at(0).created.isValid());
+        QVERIFY(missions.at(1).passwordProtected);
+        QVERIFY(missions.at(1).created.isValid());
+        QVERIFY(!readMissions("[]", &missions));
+        QVERIFY(!readMissions("{\"data\":{}}", &missions));
+        const auto files = readMissionFiles("{\"data\":[{\"contents\":[{\"data\":{\"hash\":\"" +
+                                            QByteArray(64, 'A') +
+                                            "\",\"name\":\"map.kmz\",\"submitter\":\"bob\","
+                                            "\"size\":10}},{\"data\":{\"hash\":\"x\"}},"
+                                            "{\"data\":{\"hash\":\"" +
+                                            QByteArray(64, 'b') + "\"}}]}]}");
+        QCOMPARE(files.size(), 2);
+        QCOMPARE(files.at(0).hash, QString(64, QLatin1Char('a')));
+        QCOMPARE(files.at(0).size, 10);
+        QCOMPARE(files.at(1).name, QString(12, QLatin1Char('b')));
+        const auto logs = readMissionLogs(
+            "{\"data\":[{\"id\":\"2\",\"content\":\"second\",\"dtg\":\"2026-10-08T11:00:00.000Z\"},"
+            "{\"id\":\"1\",\"content\":\"first\",\"servertime\":\"2026-10-08T10:00:00.000Z\"},"
+            "{\"id\":\"3\",\"content\":\"\"}]}");
+        QCOMPARE(logs.size(), 2);
+        QCOMPARE(logs.at(0).content, QStringLiteral("first"));
+        MissionSubscription::Role role = MissionSubscription::Role::Owner;
+        QString token;
+        QVERIFY(readSubscription("{\"data\":{\"token\":\"abc.def\",\"role\":{\"type\":\"MISSION_"
+                                 "READONLY_SUBSCRIBER\"}}}",
+                                 &role,
+                                 &token));
+        QCOMPARE(role, MissionSubscription::Role::ReadOnly);
+        QCOMPARE(token, QStringLiteral("abc.def"));
+        QVERIFY(
+            readSubscription("{\"data\":{\"role\":{\"type\":\"MISSION_OWNER\"}}}", &role, &token));
+        QCOMPARE(role, MissionSubscription::Role::Owner);
+        QVERIFY(token.isEmpty());
+        QVERIFY(!readSubscription("{\"data\":{\"token\":\"a b\"}}", &role, &token));
+        QVERIFY(!readSubscription("[]", &role, &token));
+        const auto marker = sampleEvent(QStringLiteral("m-1"));
+        const auto events =
+            readMissionEvents("<?xml version=\"1.0\"?><events>" +
+                              encodeCot(marker).mid(encodeCot(marker).indexOf("<event")) +
+                              "<eventual/><event broken></event>" +
+                              encodeCot(sampleEvent(QStringLiteral("m-2"))).mid(38) + "</events>");
+        QCOMPARE(events.size(), 2);
+        QCOMPARE(events.at(0).uid, QStringLiteral("m-1"));
+        QVERIFY(readMissionEvents("<event never closed").isEmpty());
+        QCOMPARE(missionOrigin(QStringLiteral("tak"), QStringLiteral("Ops")),
+                 QStringLiteral("mission/tak/Ops"));
+    }
+    void missionService()
+    {
+        auto first = sampleEvent(QStringLiteral("mission-1"));
+        first.time = first.start = first.time.addDays(-3);
+        first.stale = first.time.addSecs(60);
+        const auto second = sampleEvent(QStringLiteral("mission-2"));
+        QByteArray cot = "<events>" + encodeCot(first) + encodeCot(second) + "</events>";
+        HttpsHarness api;
+        QVERIFY(api.load());
+        api.respond = [&](const QByteArray &request) {
+            const auto line = request.left(request.indexOf("\r\n"));
+            QByteArray body = "{}";
+            int status = 200;
+            if (line.startsWith("GET /Marti/api/missions?passwordProtected=true ")) {
+                body = "{\"data\":[{\"name\":\"Ops\"},{\"name\":\"Secret\",\"passwordProtected\":"
+                       "true}]}";
+            } else if (line.startsWith("PUT /Marti/api/missions/Ops/subscription?uid=SWAK-1 ")) {
+                body = "{\"data\":{\"token\":\"tok\",\"role\":{\"type\":\"MISSION_SUBSCRIBER\"}}}";
+            } else if (line.startsWith("PUT /Marti/api/missions/Watch/subscription")) {
+                body = "{\"data\":{\"role\":{\"type\":\"MISSION_READONLY_SUBSCRIBER\"}}}";
+            } else if (line.startsWith("PUT /Marti/api/missions/Secret/subscription")) {
+                status = line.contains("password=pw") ? 200 : 403;
+                body = "{\"data\":{\"token\":\"secret\"}}";
+            } else if (line.startsWith("PUT /Marti/api/missions/Odd/subscription")) {
+                body = "not json";
+            } else if (line.contains("/cot ")) {
+                body = cot;
+            } else if (line.startsWith("GET /Marti/api/missions/Ops/log ")) {
+                body = "{\"data\":[{\"id\":\"1\",\"content\":\"Started\",\"dtg\":\"2026-10-08T10:"
+                       "00:00.000Z\"}]}";
+            } else if (line.startsWith("GET /Marti/api/missions/Ops ")) {
+                body = "{\"data\":[{\"name\":\"Ops\",\"contents\":[{\"data\":{\"hash\":\"" +
+                       QByteArray(64, 'c') + "\",\"name\":\"map.kmz\"}}]}]}";
+            } else if (line.startsWith("GET /Marti/api/missions/Ops/archive ")) {
+                body = "PK archive";
+            } else if (line.startsWith("GET /Marti/api/missions/Gone")) {
+                status = 404;
+            }
+            return QByteArray("HTTP/1.1 ") + QByteArray::number(status) +
+                   " X\r\nContent-Length: " + QByteArray::number(body.size()) + "\r\n\r\n" + body;
+        };
+        QUdpSocket receiver;
+        QVERIFY(receiver.bind(QHostAddress::LocalHost, 0));
+        Store store;
+        Servers servers(store);
+        NetworkClient network;
+        TakServerApi tak(servers, network);
+        Identity identity;
+        auto values = identity.savePreferences();
+        values.insert(QStringLiteral("uid"), QStringLiteral("SWAK-1"));
+        identity.restorePreferences(values);
+        Missions missions(store, &servers, &tak, &identity);
+        auto entry = source(9);
+        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        entry.insert(QStringLiteral("enabled"), false);
+        entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+        entry.insert(QStringLiteral("apiPort"), api.serverPort());
+        QVERIFY(servers.put(QStringLiteral("tak"), entry).isEmpty());
+        QSignalSpy listed(&missions, &Missions::listed);
+        QSignalSpy subscribed(&missions, &Missions::subscribed);
+        missions.list(QStringLiteral("tak"));
+        QVERIFY(listed.wait(10000));
+        QCOMPARE(listed.last().at(1).value<QList<Mission>>().size(), 2);
+        // Subscribe loads CoT, files, and the log. Old mission objects stay current for a day.
+        QVERIFY(!missions.subscribe(QStringLiteral("tak"), QStringLiteral("a/b")).isEmpty());
+        QVERIFY(missions.subscribe(QStringLiteral("tak"), QStringLiteral("Ops")).isEmpty());
+        QVERIFY(subscribed.wait(10000));
+        QVERIFY(subscribed.last().at(2).toString().isEmpty());
+        const auto origin = missionOrigin(QStringLiteral("tak"), QStringLiteral("Ops"));
+        const auto inMission = [&store, &origin] {
+            return std::count_if(
+                store.events().cbegin(), store.events().cend(), [&origin](const Event &event) {
+                    return event.origin == origin;
+                });
+        };
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return inMission() == 2;
+            },
+            10000));
+        QVERIFY(store.events().first().stale > QDateTime::currentDateTimeUtc().addSecs(3600));
+        const auto *ops = missions.subscription(QStringLiteral("tak"), QStringLiteral("Ops"));
+        QVERIFY(ops);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return ops->files.size() == 1 && ops->logs.size() == 1;
+            },
+            10000));
+        QCOMPARE(ops->role, MissionSubscription::Role::Subscriber);
+        QCOMPARE(ops->objects, 2);
+        QVERIFY(
+            std::any_of(api.requests.cbegin(), api.requests.cend(), [](const QByteArray &request) {
+                return request.contains("/cot ") && request.contains("Authorization: Bearer tok");
+            }));
+        // Visibility hides and shows the mission objects.
+        missions.setVisible(QStringLiteral("tak"), QStringLiteral("Ops"), false);
+        QCOMPARE(inMission(), 0);
+        missions.setVisible(QStringLiteral("tak"), QStringLiteral("Ops"), true);
+        QCOMPARE(inMission(), 2);
+        // A change event reloads the mission. Removed objects leave the map.
+        cot = "<events>" + encodeCot(second) + "</events>";
+        auto change = sampleEvent(QStringLiteral("change-1"));
+        change.type = QStringLiteral("t-x-m-c");
+        change.origin = QStringLiteral("tak");
+        change.detail = QStringLiteral("<mission type=\"CHANGE\" name=\"Ops\"/>");
+        QVERIFY(store.accept(change).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return inMission() == 1;
+            },
+            10000));
+        auto other = change;
+        other.detail = QStringLiteral("<mission name=\"Other\"/>");
+        QVERIFY(store.accept(other).isEmpty());
+        other.detail = QStringLiteral("<mission name=\"bad/name\"/>");
+        QVERIFY(store.accept(other).isEmpty());
+        // Invitations appear once.
+        QSignalSpy invited(&missions, &Missions::invited);
+        auto invitation = change;
+        invitation.type = QStringLiteral("t-x-m-i");
+        invitation.detail = QStringLiteral("<mission name=\"Plans\"/>");
+        QVERIFY(store.accept(invitation).isEmpty());
+        QVERIFY(store.accept(invitation).isEmpty());
+        QCOMPARE(invited.size(), 1);
+        QCOMPARE(missions.invitations().size(), 1);
+        // Edits: add through the stream, remove and log through REST, and export.
+        auto output = source(receiver.localPort());
+        output.insert(QStringLiteral("protocol"), QStringLiteral("udpout"));
+        QVERIFY(servers.put(QStringLiteral("out"), output).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return servers.status(QStringLiteral("out")).startsWith(QStringLiteral("Sending"));
+            },
+            5000));
+        auto added = sampleEvent(QStringLiteral("added-1"));
+        added.detail =
+            QStringLiteral("<marti><dest callsign=\"Old\"/></marti><remarks>keep</remarks>");
+        QVERIFY(missions.addEvent(QStringLiteral("tak"), QStringLiteral("Ops"), added).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return receiver.hasPendingDatagrams();
+            },
+            5000));
+        QByteArray datagram(static_cast<qsizetype>(receiver.pendingDatagramSize()),
+                            Qt::Uninitialized);
+        receiver.readDatagram(datagram.data(), datagram.size());
+        const auto sent = decodeCot(datagram).event;
+        QVERIFY(sent);
+        QCOMPARE(destinations(*sent).size(), 1);
+        QCOMPARE(destinations(*sent).first().mission, QStringLiteral("Ops"));
+        QCOMPARE(remarks(*sent), QStringLiteral("keep"));
+        QVERIFY(
+            !missions.addEvent(QStringLiteral("tak"), QStringLiteral("Unknown"), added).isEmpty());
+        QVERIFY(missions
+                    .removeObject(
+                        QStringLiteral("tak"), QStringLiteral("Ops"), QStringLiteral("mission-2"))
+                    .isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return std::any_of(
+                    api.requests.cbegin(), api.requests.cend(), [](const QByteArray &request) {
+                        return request.startsWith(
+                            "DELETE "
+                            "/Marti/api/missions/Ops/contents?uid=mission-2&creatorUid=SWAK-1 ");
+                    });
+            },
+            10000));
+        QVERIFY(!missions.addLog(QStringLiteral("tak"), QStringLiteral("Ops"), QStringLiteral("  "))
+                     .isEmpty());
+        QVERIFY(missions
+                    .addLog(QStringLiteral("tak"),
+                            QStringLiteral("Ops"),
+                            QStringLiteral("Checkpoint reached"))
+                    .isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return std::any_of(
+                    api.requests.cbegin(), api.requests.cend(), [](const QByteArray &request) {
+                        return request.startsWith("POST /Marti/api/missions/logs/entries ") &&
+                               request.contains("\"missionNames\":[\"Ops\"]") &&
+                               request.contains("Checkpoint reached");
+                    });
+            },
+            10000));
+        QSignalSpy exported(&missions, &Missions::exported);
+        QVERIFY(missions.exportArchive(QStringLiteral("tak"), QStringLiteral("Ops")).isEmpty());
+        QVERIFY(exported.wait(10000));
+        QCOMPARE(exported.last().at(2).toByteArray(), QByteArray("PK archive"));
+        QVERIFY(
+            !missions.exportArchive(QStringLiteral("tak"), QStringLiteral("Unknown")).isEmpty());
+        // Read-only missions refuse edits. Password missions need the password.
+        QVERIFY(missions.subscribe(QStringLiteral("tak"), QStringLiteral("Watch")).isEmpty());
+        QVERIFY(subscribed.wait(10000));
+        QCOMPARE(missions.subscription(QStringLiteral("tak"), QStringLiteral("Watch"))->role,
+                 MissionSubscription::Role::ReadOnly);
+        QVERIFY(
+            !missions.addEvent(QStringLiteral("tak"), QStringLiteral("Watch"), added).isEmpty());
+        QVERIFY(
+            !missions
+                 .removeObject(QStringLiteral("tak"), QStringLiteral("Watch"), QStringLiteral("x"))
+                 .isEmpty());
+        QVERIFY(
+            !missions.addLog(QStringLiteral("tak"), QStringLiteral("Watch"), QStringLiteral("x"))
+                 .isEmpty());
+        QVERIFY(missions.subscribe(QStringLiteral("tak"), QStringLiteral("Secret")).isEmpty());
+        QVERIFY(subscribed.wait(10000));
+        QVERIFY(subscribed.last().at(2).toString().contains(QStringLiteral("password")));
+        QVERIFY(
+            missions
+                .subscribe(QStringLiteral("tak"), QStringLiteral("Secret"), QStringLiteral("pw"))
+                .isEmpty());
+        QVERIFY(subscribed.wait(10000));
+        QVERIFY(subscribed.last().at(2).toString().isEmpty());
+        QVERIFY(missions.subscribe(QStringLiteral("tak"), QStringLiteral("Odd")).isEmpty());
+        QVERIFY(subscribed.wait(10000));
+        QVERIFY(!subscribed.last().at(2).toString().isEmpty());
+        // Preferences keep names and visibility, never tokens. A restore subscribes again.
+        const auto saved = missions.savePreferences();
+        QVERIFY(!QJsonDocument(saved).toJson().contains("tok"));
+        QCOMPARE(saved.value(QStringLiteral("subscriptions")).toArray().size(), 4);
+        Store otherStore;
+        Missions restored(otherStore, &servers, &tak, &identity);
+        QSignalSpy restoredSubscribed(&restored, &Missions::subscribed);
+        restored.restorePreferences(saved);
+        QCOMPARE(restored.subscriptions().size(), 4);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return restoredSubscribed.size() == 4;
+            },
+            15000));
+        restored.restorePreferences(
+            {{QStringLiteral("subscriptions"),
+              QJsonArray{QJsonObject{{QStringLiteral("server"), QStringLiteral("tak")},
+                                     {QStringLiteral("name"), QStringLiteral("a/b")}}}}});
+        QCOMPARE(restored.subscriptions().size(), 4);
+        // A mission delete event ends the subscription and removes its objects.
+        auto removed = change;
+        removed.type = QStringLiteral("t-x-m-d");
+        QVERIFY(store.accept(removed).isEmpty());
+        QVERIFY(!missions.subscription(QStringLiteral("tak"), QStringLiteral("Ops")));
+        QCOMPARE(inMission(), 0);
+        // Unsubscribe tells the server.
+        missions.unsubscribe(QStringLiteral("tak"), QStringLiteral("Watch"));
+        QVERIFY(!missions.subscription(QStringLiteral("tak"), QStringLiteral("Watch")));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return std::any_of(
+                    api.requests.cbegin(), api.requests.cend(), [](const QByteArray &r) {
+                        return r.startsWith(
+                            "DELETE /Marti/api/missions/Watch/subscription?uid=SWAK-1 ");
+                    });
+            },
+            10000));
+        missions.unsubscribe(QStringLiteral("tak"), QStringLiteral("Unknown"));
+        // A failed reload reports the error.
+        QVERIFY(missions.subscribe(QStringLiteral("tak"), QStringLiteral("Gone")).isEmpty());
+        QVERIFY(subscribed.wait(10000));
+        // Without a REST API, nothing starts.
+        Missions offline(store, nullptr, nullptr, nullptr);
+        QSignalSpy offlineListed(&offline, &Missions::listed);
+        offline.list(QStringLiteral("tak"));
+        QCOMPARE(offlineListed.size(), 1);
+        QVERIFY(!offline.subscribe(QStringLiteral("tak"), QStringLiteral("Ops")).isEmpty());
+        QVERIFY(!offline.addLog(QStringLiteral("tak"), QStringLiteral("Ops"), QStringLiteral("x"))
+                     .isEmpty());
+        QVERIFY(
+            !offline.removeObject(QStringLiteral("tak"), QStringLiteral("Ops"), QStringLiteral("x"))
+                 .isEmpty());
     }
     void takServerApi()
     {

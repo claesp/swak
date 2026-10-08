@@ -47,6 +47,8 @@ public:
         return events_;
     }
     void select(const QString &uid);
+    // Removes all events of one origin, for example a hidden mission.
+    void removeOrigin(const QString &origin);
     // A value remains valid after the selection changes. QString shares its storage.
     // cppcheck-suppress returnByReference
     QString selected() const
@@ -55,8 +57,9 @@ public:
     }
 signals:
     void eventAccepted(const swak::Event &event);
-    // A valid chat message, chat receipt (b-t-f types), or file offer (b-f-t-r). The Store
-    // does not keep these events, so messages cannot fill the map and the event table.
+    // A valid chat message, chat receipt (b-t-f types), file offer (b-f-t-r), or mission
+    // control event (t-x-m types). The Store does not keep these events, so messages cannot
+    // fill the map and the event table.
     void messageReceived(const swak::Event &event);
     void changed();
     void selectionChanged();

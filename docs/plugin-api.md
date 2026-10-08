@@ -150,6 +150,10 @@ Read detail through `core/cot_detail.h`. `detailElements` and `detailElement` re
 
 `PluginServices::files` is the per-window `FileShares` service in `core/file_shares.h`. It lists offers, downloads and imports them, reads and deletes server files, and sends packages. `core/data_package.h` reads and writes zip packages with their limits. `core/package_import.h` imports a package into `UserObjects`, `DataSources`, and `MapSources`. `localObjectFromCot` in `core/tak_shapes.h` converts CoT to local objects. `TakServerApi::martiUrl` and `martiRequest` reach paths below `/Marti`, such as `/sync/content`, with the same entry checks as `apiUrl`. `Store::messageReceived` also delivers `b-f-t-r` offers. The files plugin implements `PanePlugin`, and its MANIFEST declares `pane`.
 
+# Missions
+
+`PluginServices::missions` is the per-window `Missions` service in `core/missions.h`. It lists, subscribes, loads, edits, and exports missions and implements `PreferenceParticipant` under `org.swak.missions`. `Store::removeOrigin` removes the objects of one origin, and `Store::messageReceived` also delivers `t-x-m` mission events. `TakServerApi::martiRequest` takes extra headers, such as the mission bearer token. The missions plugin implements `PanePlugin`, and its MANIFEST declares `pane`. Its pane saves the splitter state under `org.swak.missions.view` and registers a map tool for Add to Mission and Remove from a mission.
+
 # Emergency alerts
 
 `core/emergency.h` provides `emergencyKinds`, `emergencyEvent`, `emergencyCancelEvent`, `activeEmergency`, and `emergencyLabel`. The emergencies plugin implements `MapLayer` and `ToolbarPlugin`. Its manifest declares `map-layer` and `toolbar`. It reads the Store and does not change it. It centers the map through `MapTools::centerRequested`. Its toolbar button is a trailing action with `swakToolbarTrailingOrder` -1, so it stays left of the navigation lock. Trailing actions sort by this property, and the default is 0.

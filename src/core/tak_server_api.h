@@ -60,7 +60,8 @@ public:
                          QObject *context,
                          NetworkClient::Callback done,
                          qsizetype maxBytes,
-                         int timeoutMs);
+                         int timeoutMs,
+                         const QList<std::pair<QByteArray, QByteArray>> &headers = {});
     void cancel(quint64 id);
     TakServerInfo info(const QString &serverId) const;
     NetworkClient &network() const

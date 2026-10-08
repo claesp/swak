@@ -27,6 +27,7 @@
 #include "core/marker_collections.h"
 #include "core/measure.h"
 #include "core/menu_order.h"
+#include "core/missions.h"
 #include "core/modal.h"
 #include "core/object_editor.h"
 #include "core/object_sharing.h"
@@ -1572,6 +1573,129 @@ private slots:
         QVERIFY(sharing->automatic());
         sharing->setAutomatic(false);
         QVERIFY(!automatic->isChecked());
+    }
+    void missionsPane()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("missions.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *dock = window.findChild<QDockWidget *>(QStringLiteral("org.swak.missions.view.pane"));
+        auto *serverChoice = window.findChild<QComboBox *>(QStringLiteral("missionServer"));
+        auto *subscriptions =
+            window.findChild<QListWidget *>(QStringLiteral("missionSubscriptions"));
+        auto *status = window.findChild<QLabel *>(QStringLiteral("missionsStatus"));
+        auto *missions = window.findChild<swak::Missions *>(QStringLiteral("missions"));
+        auto *servers = window.findChild<swak::Servers *>();
+        auto *tools = window.findChild<swak::MapTools *>();
+        auto *objects = window.findChild<swak::UserObjects *>();
+        QVERIFY(dock && serverChoice && subscriptions && status && missions && servers && tools &&
+                objects);
+        dock->show();
+        const auto click = [&window](const QString &name) {
+            window.findChild<QPushButton *>(name)->click();
+        };
+        click(QStringLiteral("listMissions"));
+        QVERIFY(status->text().contains(QStringLiteral("REST API")));
+        auto entry = swak::serverDefaults();
+        entry.insert(QStringLiteral("name"), QStringLiteral("Test TAK"));
+        entry.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
+        entry.insert(QStringLiteral("port"), 9);
+        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        entry.insert(QStringLiteral("enabled"), false);
+        entry.insert(QStringLiteral("apiPort"), 9);
+        QVERIFY(servers->put(QStringLiteral("tak"), entry).isEmpty());
+        QCOMPARE(serverChoice->count(), 1);
+        click(QStringLiteral("listMissions"));
+        QVERIFY(status->text().contains(QStringLiteral("Reading")));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return !status->text().contains(QStringLiteral("Reading"));
+            },
+            15000));
+        click(QStringLiteral("subscribeMission"));
+        QCOMPARE(status->text(), QStringLiteral("Select a mission."));
+        // A restored subscription shows even when the server cannot answer.
+        missions->restorePreferences(
+            {{QStringLiteral("subscriptions"),
+              QJsonArray{QJsonObject{{QStringLiteral("server"), QStringLiteral("tak")},
+                                     {QStringLiteral("name"), QStringLiteral("Ops")},
+                                     {QStringLiteral("visible"), true}}}}});
+        QCOMPARE(subscriptions->count(), 1);
+        QVERIFY(subscriptions->item(0)->text().startsWith(QStringLiteral("Ops")));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return !subscriptions->item(0)->text().contains(QStringLiteral("Subscribing"));
+            },
+            15000));
+        subscriptions->item(0)->setCheckState(Qt::Unchecked);
+        QVERIFY(!missions->subscription(QStringLiteral("tak"), QStringLiteral("Ops"))->visible);
+        click(QStringLiteral("downloadMissionFile"));
+        QCOMPARE(status->text(), QStringLiteral("Select a mission file."));
+        window.findChild<QLineEdit *>(QStringLiteral("missionLogInput"))
+            ->setText(QStringLiteral("Note"));
+        click(QStringLiteral("addMissionLog"));
+        QVERIFY(status->isHidden());
+        click(QStringLiteral("exportMission"));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return !status->text().contains(QStringLiteral("Downloading"));
+            },
+            15000));
+        QVERIFY(!status->text().isEmpty());
+        click(QStringLiteral("reloadMission"));
+        // Map menus add local objects to missions and remove mission objects.
+        swak::UserObject marker;
+        marker.id = QStringLiteral("m1");
+        marker.type = QStringLiteral("circle");
+        marker.title = QStringLiteral("Rally");
+        marker.geometry = {{QStringLiteral("x"), 0.5}, {QStringLiteral("y"), 0.3}};
+        QVERIFY(objects->put(marker).isEmpty());
+        swak::MapItem item;
+        item.owner = QStringLiteral("org.swak.markers");
+        item.id = marker.id;
+        QMenu menu;
+        tools->populateContextMenu(item, menu);
+        auto *add = menu.findChild<QMenu *>(QStringLiteral("addToMission"));
+        QVERIFY(add && add->actions().size() == 1);
+        QCOMPARE(add->actions().first()->text(), QStringLiteral("Ops"));
+        add->actions().first()->trigger();
+        swak::Event inMission;
+        inMission.uid = QStringLiteral("mission-object");
+        inMission.type = QStringLiteral("a-f-G");
+        inMission.how = QStringLiteral("h-e");
+        inMission.origin = swak::missionOrigin(QStringLiteral("tak"), QStringLiteral("Ops"));
+        inMission.time = inMission.start = QDateTime::currentDateTimeUtc();
+        inMission.stale = inMission.time.addSecs(600);
+        QVERIFY(window.store().accept(inMission).isEmpty());
+        item.owner = QStringLiteral("org.swak.events");
+        item.id = inMission.uid;
+        QMenu eventMenu;
+        tools->populateContextMenu(item, eventMenu);
+        auto *remove = eventMenu.findChild<QAction *>(QStringLiteral("removeFromMission"));
+        QVERIFY(remove);
+        remove->trigger();
+        item.id = QStringLiteral("missing");
+        QMenu emptyMenu;
+        tools->populateContextMenu(item, emptyMenu);
+        QVERIFY(!emptyMenu.findChild<QAction *>(QStringLiteral("removeFromMission")));
+        // An invitation shows in the status line.
+        swak::Event invitation = inMission;
+        invitation.uid = QStringLiteral("invite");
+        invitation.type = QStringLiteral("t-x-m-i");
+        invitation.origin = QStringLiteral("tak");
+        invitation.detail = QStringLiteral("<mission name=\"Plans\"/>");
+        QVERIFY(window.store().accept(invitation).isEmpty());
+        QVERIFY(status->text().contains(QStringLiteral("Plans")));
+        dock->raise();
+        QVERIFY(window.grab().save(QStringLiteral("missions-pane.png")));
+        click(QStringLiteral("unsubscribeMission"));
+        QCOMPARE(subscriptions->count(), 0);
+        auto *pane = dynamic_cast<swak::PreferenceParticipant *>(
+            window.findChild<QWidget *>(QStringLiteral("missionsPane")));
+        QVERIFY(pane);
+        pane->restorePreferences(pane->savePreferences());
     }
     void filesPane()
     {
@@ -6377,7 +6501,7 @@ private slots:
             QVERIFY(!action->isChecked());
             dock->setFloating(false);
         }
-        QCOMPARE(activated, 12);
+        QCOMPARE(activated, 13);
         QVERIFY(window.grab().save(QStringLiteral("plugin-labels-smoke.png")));
     }
     void clearEventsMenu()
@@ -7065,7 +7189,7 @@ private slots:
                 auto *tabs = dialog->findChild<QTabWidget *>();
                 auto *panes =
                     dialog->findChild<QListWidget *>(QStringLiteral("paneSettingsSections"));
-                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 17) {
+                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 18) {
                     dialog->reject();
                     QFAIL("The pane tab is incomplete.");
                     return;
@@ -8478,7 +8602,7 @@ private slots:
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         const auto docks = window.findChildren<QDockWidget *>();
-        QCOMPARE(docks.size(), 17);
+        QCOMPARE(docks.size(), 18);
         QVERIFY(!window.findChild<QWidget *>(QStringLiteral("toolsDock")));
         auto *viewMenu = window.findChild<QMenu *>(QStringLiteral("viewMenu"));
         auto *fileMenu = window.findChild<QMenu *>(QStringLiteral("fileMenu"));
