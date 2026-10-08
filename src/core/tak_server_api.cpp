@@ -61,6 +61,13 @@ TakServerApi::~TakServerApi()
 }
 QUrl TakServerApi::apiUrl(const QJsonObject &source, const QString &path)
 {
+    if (!path.startsWith(QLatin1Char('/'))) {
+        return {};
+    }
+    return martiUrl(source, QStringLiteral("/api") + path);
+}
+QUrl TakServerApi::martiUrl(const QJsonObject &source, const QString &path)
+{
     if (!usesApi(source) || !path.startsWith(QLatin1Char('/')) ||
         path.contains(QStringLiteral(".."))) {
         return {};
@@ -70,7 +77,7 @@ QUrl TakServerApi::apiUrl(const QJsonObject &source, const QString &path)
     url.setHost(source.value(QStringLiteral("host")).toString());
     url.setPort(apiPort(source));
     const auto question = path.indexOf(QLatin1Char('?'));
-    url.setPath(QStringLiteral("/Marti/api") + path.left(question < 0 ? path.size() : question));
+    url.setPath(QStringLiteral("/Marti") + path.left(question < 0 ? path.size() : question));
     if (question >= 0) {
         url.setQuery(path.mid(question + 1));
     }
@@ -101,6 +108,33 @@ quint64 TakServerApi::request(const QString &serverId,
         request.tls = readTlsFiles(source);
     }
     return network_.send(std::move(request), context, std::move(done));
+}
+quint64 TakServerApi::martiRequest(const QString &serverId,
+                                   const QByteArray &method,
+                                   const QString &path,
+                                   const QByteArray &body,
+                                   const QByteArray &contentType,
+                                   QObject *context,
+                                   NetworkClient::Callback done,
+                                   qsizetype maxBytes,
+                                   int timeoutMs)
+{
+    const auto source = servers_.sources().value(serverId).toObject();
+    NetworkRequest outgoing;
+    outgoing.url = martiUrl(source, path);
+    outgoing.method = method;
+    outgoing.body = body;
+    outgoing.maxBytes = maxBytes;
+    outgoing.timeoutMs = timeoutMs;
+    outgoing.expectedHost = source.value(QStringLiteral("host")).toString();
+    outgoing.expectedPort = apiPort(source);
+    if (!contentType.isEmpty()) {
+        outgoing.headers.append(qMakePair(QByteArray("Content-Type"), contentType));
+    }
+    if (outgoing.url.isValid()) {
+        outgoing.tls = readTlsFiles(source);
+    }
+    return network_.send(std::move(outgoing), context, std::move(done));
 }
 void TakServerApi::cancel(quint64 id)
 {

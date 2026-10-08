@@ -102,6 +102,12 @@ add_library(
     src/core/tak_channels.cpp
     src/core/tak_channels.h
     src/core/chat.cpp
+    src/core/data_package.cpp
+    src/core/file_shares.cpp
+    src/core/file_shares.h
+    src/core/data_package.h
+    src/core/package_import.cpp
+    src/core/package_import.h
     src/core/chat.h
     src/core/contacts.cpp
     src/core/contacts.h
@@ -228,6 +234,7 @@ swak_plugin(swak_contacts src/plugins/contacts.cpp)
 swak_plugin(swak_sharing src/plugins/sharing.cpp)
 swak_plugin(swak_takdrawings src/plugins/takdrawings.cpp)
 swak_plugin(swak_chat src/plugins/chat.cpp)
+swak_plugin(swak_files src/plugins/files.cpp)
 swak_plugin(swak_milstd2525 src/plugins/milstd2525.cpp)
 swak_plugin(swak_polygons src/plugins/polygons.cpp)
 swak_plugin(swak_markers src/plugins/markers.cpp)
@@ -290,6 +297,7 @@ target_link_libraries(
             swak_sharing
             swak_takdrawings
             swak_chat
+            swak_files
 )
 install(TARGETS swak RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES packaging/org.swak.Swak.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
@@ -367,6 +375,7 @@ if(BUILD_TESTING)
                 swak_sharing
                 swak_takdrawings
                 swak_chat
+                swak_files
                 Qt6::Test
     )
     add_test(NAME maps COMMAND swak_map_tests)
@@ -401,6 +410,7 @@ if(BUILD_TESTING)
                 swak_sharing
                 swak_takdrawings
                 swak_chat
+                swak_files
                 Qt6::Test
                 Qt6::Network
     )
@@ -461,6 +471,7 @@ if(BUILD_TESTING)
                 swak_sharing
                 swak_takdrawings
                 swak_chat
+                swak_files
                 Qt6::Test
                 Qt6::Network
     )
@@ -514,6 +525,7 @@ if(BUILD_TESTING)
                 swak_sharing
                 swak_takdrawings
                 swak_chat
+                swak_files
                 Qt6::Test
                 Qt6::Network
                 Qt6::OpenGLWidgets

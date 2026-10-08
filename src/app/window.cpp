@@ -10,6 +10,7 @@
 #include "core/contacts.h"
 #include "core/credits.h"
 #include "core/delete_confirmation.h"
+#include "core/file_shares.h"
 #include "core/identity.h"
 #include "core/interfaces.h"
 #include "core/logging.h"
@@ -205,6 +206,8 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     services.contacts = new Contacts(store_, servers, services.tak, this);
     services.sharing = new ObjectSharing(*objects, servers, identity, this);
     services.chat = new Chat(store_, servers, identity, this);
+    services.files = new FileShares(
+        store_, servers, services.tak, identity, objects, dataSources, mapSources, this);
     auto *mainViews = new QTabWidget(this);
     mainViews->setObjectName(QStringLiteral("mainViews"));
     mainViews->setDocumentMode(true);

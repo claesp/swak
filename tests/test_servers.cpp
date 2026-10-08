@@ -3,7 +3,9 @@
 #include "core/cot.h"
 #include "core/cot_detail.h"
 #include "core/cot_stream.h"
+#include "core/data_package.h"
 #include "core/emergency.h"
+#include "core/file_shares.h"
 #include "core/identity.h"
 #include "core/lan_protocol.h"
 #include "core/map_selection.h"
@@ -11,6 +13,7 @@
 #include "core/measure.h"
 #include "core/network_client.h"
 #include "core/object_sharing.h"
+#include "core/package_import.h"
 #include "core/polygon.h"
 #include "core/projection.h"
 #include "core/quic_stream.h"
@@ -26,6 +29,8 @@
 #include "core/user_objects.h"
 
 #include <QAbstractItemModelTester>
+#include <QCryptographicHash>
+#include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
@@ -49,6 +54,8 @@
 #include <QUuid>
 
 #include <algorithm>
+#include <archive.h>
+#include <archive_entry.h>
 #include <arpa/inet.h>
 #include <functional>
 #include <openssl/err.h>
@@ -122,6 +129,44 @@ static Event geoChat(const QString &messageId,
             "<remarks source=\"BAO.F.ATAK.%4\" to=\"%3\">%5</remarks>")
             .arg(parent, messageId, roomId, senderUid, escaped);
     return event;
+}
+// Builds a zip archive with raw entries, including entries that SWAK must reject.
+struct RawEntry
+{
+    QByteArray path;
+    QByteArray bytes;
+    bool symlink = false;
+};
+static QByteArray rawZip(const QList<RawEntry> &entries)
+{
+    QByteArray output(4 * 1024 * 1024, '\0');
+    size_t used = 0;
+    archive *writer = archive_write_new();
+    archive_write_set_format_zip(writer);
+    archive_write_open_memory(writer, output.data(), static_cast<size_t>(output.size()), &used);
+    for (const auto &entry : entries) {
+        archive_entry *header = archive_entry_new();
+        archive_entry_set_pathname(header, entry.path.constData());
+        if (entry.symlink) {
+            archive_entry_set_filetype(header, AE_IFLNK);
+            archive_entry_set_symlink(header, "/etc/passwd");
+            archive_entry_set_size(header, 0);
+        } else {
+            archive_entry_set_filetype(header, AE_IFREG);
+            archive_entry_set_size(header, entry.bytes.size());
+        }
+        archive_entry_set_perm(header, 0644);
+        archive_write_header(writer, header);
+        if (!entry.symlink) {
+            archive_write_data(
+                writer, entry.bytes.constData(), static_cast<size_t>(entry.bytes.size()));
+        }
+        archive_entry_free(header);
+    }
+    archive_write_close(writer);
+    archive_write_free(writer);
+    output.truncate(static_cast<qsizetype>(used));
+    return output;
 }
 static QJsonObject source(quint16 port)
 {
@@ -2229,6 +2274,591 @@ private slots:
         Chat anonymous(quietStore, nullptr, nullptr);
         QCOMPARE(anonymous.rooms().size(), 1);
         QVERIFY(!anonymous.send(AllChatRooms, QStringLiteral("x")).isEmpty());
+    }
+    void dataPackages()
+    {
+        QVERIFY(safePackagePath(QStringLiteral("a/b.cot")));
+        for (const auto *bad :
+             {"", "/etc/passwd", "../x", "a/../x", "a//b", "./a", "a\\b", "c:x", "a/."}) {
+            QVERIFY2(!safePackagePath(QString::fromLatin1(bad)), bad);
+        }
+        QVERIFY(!safePackagePath(QString(256, QLatin1Char('a'))));
+        QVERIFY(!safePackagePath(QStringLiteral("a") + QChar(0x202E)));
+        // A written package reads back with its manifest data.
+        QString error;
+        const QList<PackageEntry> entries{{QStringLiteral("one/one.cot"), "<event/>"},
+                                          {QStringLiteral("two.kml"), "<kml/>"}};
+        const auto zip =
+            writeDataPackage(QStringLiteral("pkg-1"), QStringLiteral("Patrol"), entries, &error);
+        QVERIFY2(!zip.isEmpty(), qPrintable(error));
+        auto package = readDataPackage(zip);
+        QVERIFY2(package.error.isEmpty(), qPrintable(package.error));
+        QCOMPARE(package.uid, QStringLiteral("pkg-1"));
+        QCOMPARE(package.name, QStringLiteral("Patrol"));
+        QCOMPARE(package.entries.size(), 2);
+        QCOMPARE(package.entries.at(0).path, QStringLiteral("one/one.cot"));
+        QCOMPARE(package.entries.at(1).bytes, QByteArray("<kml/>"));
+        // The writer rejects unsafe content.
+        QVERIFY(writeDataPackage(QStringLiteral("x"), {}, {{QStringLiteral("../x"), "x"}}, &error)
+                    .isEmpty());
+        QVERIFY(writeDataPackage(QStringLiteral("x"),
+                                 {},
+                                 {{QStringLiteral("a"), "x"}, {QStringLiteral("a"), "y"}},
+                                 &error)
+                    .isEmpty());
+        QVERIFY(
+            writeDataPackage(
+                QStringLiteral("x"), {}, {{QStringLiteral("MANIFEST/manifest.xml"), "x"}}, &error)
+                .isEmpty());
+        QVERIFY(writeDataPackage({}, {}, {}, &error).isEmpty());
+        QVERIFY(writeDataPackage(QStringLiteral("x\ny"), {}, {}, nullptr).isEmpty());
+        // A manifest selects and ignores entries. Missing entries are skipped.
+        const QByteArray manifest =
+            "<MissionPackageManifest version=\"2\"><Configuration>"
+            "<Parameter name=\"uid\" value=\"u\"/><Parameter name=\"name\" value=\"N\"/>"
+            "</Configuration><Contents><Content zipEntry=\"keep.cot\"/>"
+            "<Content zipEntry=\"skip.cot\" ignore=\"true\"/><Content zipEntry=\"missing.cot\"/>"
+            "<Content zipEntry=\"keep.cot\"/></Contents></MissionPackageManifest>";
+        package = readDataPackage(rawZip({{"MANIFEST/manifest.xml", manifest},
+                                          {"keep.cot", "a"},
+                                          {"skip.cot", "b"},
+                                          {"other.cot", "c"}}));
+        QVERIFY(package.error.isEmpty());
+        QCOMPARE(package.entries.size(), 1);
+        QCOMPARE(package.entries.first().path, QStringLiteral("keep.cot"));
+        // Without a manifest, all files count. Folders are skipped.
+        package = readDataPackage(rawZip({{"folder/", {}}, {"a.cot", "a"}, {"b/c.kml", "c"}}));
+        QVERIFY(package.error.isEmpty());
+        QCOMPARE(package.entries.size(), 2);
+        QVERIFY(package.uid.isEmpty());
+        // Unsafe archives fail.
+        const auto rejected = [](const QByteArray &bytes) {
+            return !readDataPackage(bytes).error.isEmpty();
+        };
+        QVERIFY(rejected({}));
+        QVERIFY(rejected("not a zip"));
+        QVERIFY(rejected(rawZip({{"../evil.cot", "x"}})));
+        QVERIFY(rejected(rawZip({{"/abs.cot", "x"}})));
+        QVERIFY(rejected(rawZip({{"a.cot", "x"}, {"a.cot", "y"}})));
+        QVERIFY(rejected(rawZip({{"link", {}, true}})));
+        QVERIFY(rejected(rawZip({{"MANIFEST/manifest.xml", "<!DOCTYPE x><x/>"}})));
+        QVERIFY(rejected(rawZip({{"MANIFEST/manifest.xml", "<a><b>"}})));
+        QVERIFY(
+            rejected(rawZip({{"MANIFEST/manifest.xml",
+                              "<a><a><a><a><a><a><a><a><a/></a></a></a></a></a></a></a></a>"}})));
+        QByteArray many = "<M><Contents>";
+        for (int i = 0; i <= 1024; ++i) {
+            many += "<Content zipEntry=\"x\"/>";
+        }
+        QVERIFY(rejected(rawZip({{"MANIFEST/manifest.xml", many + "</Contents></M>"}})));
+        QVERIFY(rejected(rawZip({{"MANIFEST/manifest.xml", QByteArray(300 * 1024, ' ')}})));
+        QList<RawEntry> crowd;
+        for (int i = 0; i <= MaxPackageEntries; ++i) {
+            crowd.append({QByteArray("f") + QByteArray::number(i), "x"});
+        }
+        QVERIFY(rejected(rawZip(crowd)));
+        QVERIFY(rejected(QByteArray(MaxPackageBytes + 1, 'x')));
+        auto damaged = zip;
+        damaged.truncate(damaged.size() / 2);
+        QVERIFY(rejected(damaged));
+    }
+    void cotToLocalObjects()
+    {
+        auto marker = sampleEvent(QStringLiteral("spot-1"));
+        marker.type = QStringLiteral("b-m-p-s-m");
+        marker.callsign = QStringLiteral("Rally");
+        marker.latitude = 59.5;
+        marker.longitude = 18.25;
+        marker.detail = QStringLiteral("<color argb=\"-16711936\"/><remarks>Meet here</remarks>");
+        auto item = localObjectFromCot(marker);
+        QVERIFY(item);
+        QCOMPARE(item->id, QStringLiteral("spot-1"));
+        QCOMPARE(item->type, QStringLiteral("circle"));
+        QCOMPARE(item->title, QStringLiteral("Rally"));
+        QCOMPARE(item->description, QStringLiteral("Meet here"));
+        QCOMPARE(item->color, QStringLiteral("#00ff00"));
+        QVERIFY(item->symbol.isEmpty());
+        auto unit = marker;
+        unit.type = QStringLiteral("a-h-G-U-C-A");
+        unit.uid = QStringLiteral("unit with spaces");
+        unit.detail.clear();
+        item = localObjectFromCot(unit);
+        QVERIFY(item);
+        QCOMPARE(item->symbol, QStringLiteral("a-h-G-U-C-A"));
+        QCOMPARE(item->collection, MilitaryMarkerCollection);
+        QVERIFY(item->id.startsWith(QStringLiteral("cot-")));
+        QCOMPARE(item->id.size(), 36);
+        QCOMPARE(item->color, QStringLiteral("#ffc857"));
+        // Shapes and routes keep their geometry kind.
+        auto sender = sampleEvent(QStringLiteral("SWAK-1"));
+        sender.type = QStringLiteral("a-f-G-U-C");
+        const auto now = QDateTime::currentDateTimeUtc();
+        const auto roundTrip = [&](const UserObject &object) {
+            return localObjectFromCot(*sharedObjectEvent(object, sender, {}, now));
+        };
+        const auto circle = localObject(QStringLiteral("c1"),
+                                        QStringLiteral("range-circle"),
+                                        vertices({{59, 18}, {59.01, 18}}));
+        item = roundTrip(circle);
+        QVERIFY(item);
+        QCOMPARE(item->type, QStringLiteral("range-circle"));
+        const auto points = polygonVertices(item->geometry);
+        QVERIFY(std::abs(groundDistance(points.at(0), points.at(1)) - 1112) < 15);
+        const auto area = localObject(QStringLiteral("a1"),
+                                      QStringLiteral("polygon"),
+                                      vertices({{59, 18}, {59.1, 18}, {59.1, 18.1}}));
+        QCOMPARE(roundTrip(area)->type, QStringLiteral("polygon"));
+        QCOMPARE(polygonVertices(roundTrip(area)->geometry).size(), 3);
+        const auto line = localObject(
+            QStringLiteral("l1"), QStringLiteral("line"), vertices({{59, 18}, {59.1, 18.1}}));
+        QCOMPARE(roundTrip(line)->type, QStringLiteral("line"));
+        const auto route = localObject(QStringLiteral("r1"),
+                                       QStringLiteral("route"),
+                                       vertices({{59, 18}, {59.1, 18}, {59.2, 18.1}}));
+        QCOMPARE(roundTrip(route)->type, QStringLiteral("route"));
+        QCOMPARE(roundTrip(route)->color, QStringLiteral("#ff0000"));
+        auto open = *sharedObjectEvent(route, sender, {}, now);
+        open.type = QStringLiteral("u-d-f");
+        QCOMPARE(localObjectFromCot(open)->type, QStringLiteral("route"));
+        // Unknown types and shapes beyond the local limits give no object.
+        auto other = marker;
+        other.type = QStringLiteral("t-x-c-t");
+        QVERIFY(!localObjectFromCot(other));
+        QString big;
+        for (int i = 0; i < 70; ++i) {
+            big += QStringLiteral("<link point=\"%1,%2\"/>")
+                       .arg(59 + std::sin(i * 0.09) * 0.1)
+                       .arg(18 + std::cos(i * 0.09) * 0.1);
+        }
+        auto large = marker;
+        large.type = QStringLiteral("u-d-f");
+        // A closed shape with 70 corners exceeds the local area limit of 64 corners.
+        large.detail = big + big.left(big.indexOf(QStringLiteral("/>")) + 2);
+        QVERIFY(!localObjectFromCot(large));
+        auto unnamed = marker;
+        unnamed.callsign.clear();
+        unnamed.uid = QStringLiteral("named-by-uid");
+        QCOMPARE(localObjectFromCot(unnamed)->title, QStringLiteral("named-by-uid"));
+    }
+    void packageImport()
+    {
+        QTemporaryDir folder;
+        UserObjects objects;
+        auto marker = sampleEvent(QStringLiteral("spot-1"));
+        marker.type = QStringLiteral("b-m-p-s-m");
+        marker.callsign = QStringLiteral("Rally");
+        marker.latitude = 59.5;
+        marker.longitude = 18.25;
+        auto unknown = marker;
+        unknown.type = QStringLiteral("t-x-c-t");
+        DataPackage package;
+        package.name = QStringLiteral("Patrol");
+        package.entries = {{QStringLiteral("a/marker.cot"), encodeCot(marker)},
+                           {QStringLiteral("b/marker.xml"), encodeCot(marker)},
+                           {QStringLiteral("unknown.cot"), encodeCot(unknown)},
+                           {QStringLiteral("broken.cot"), "<event"},
+                           {QStringLiteral("notes.xml"), "<notes/>"},
+                           {QStringLiteral("photo.png"), "png"},
+                           {QStringLiteral("layer/roads.kml"), "<kml/>"},
+                           {QStringLiteral("layer/roads.dbf"), "dbf"},
+                           {QStringLiteral("map.tif"), "tif"}};
+        auto result = importDataPackage(package,
+                                        QStringLiteral("0123456789abcdef0123"),
+                                        folder.filePath(QStringLiteral("pkg")),
+                                        &objects,
+                                        nullptr,
+                                        nullptr);
+        QCOMPARE(result.objects, 2);
+        QCOMPARE(objects.items().size(), 1);
+        QVERIFY(result.errors.isEmpty());
+        QCOMPARE(result.skipped,
+                 (QStringList{QStringLiteral("notes.xml"),
+                              QStringLiteral("photo.png"),
+                              QStringLiteral("unknown.cot"),
+                              QStringLiteral("broken.cot"),
+                              QStringLiteral("layer/roads.kml"),
+                              QStringLiteral("map.tif")}));
+        // Files stay in a private folder.
+        const QFileInfo kml(folder.filePath(QStringLiteral("pkg/layer/roads.kml")));
+        QVERIFY(kml.exists());
+        QCOMPARE(kml.permissions() & (QFileDevice::ReadOther | QFileDevice::ReadGroup),
+                 QFileDevice::Permissions{});
+        QVERIFY(QFileInfo::exists(folder.filePath(QStringLiteral("pkg/layer/roads.dbf"))));
+        QVERIFY(!QFileInfo::exists(folder.filePath(QStringLiteral("pkg/photo.png"))));
+        QVERIFY(result.summary().contains(QStringLiteral("2 objects")));
+        QVERIFY(result.summary().contains(QStringLiteral("6 files skipped")));
+        // A full object store reports errors.
+        for (int i = 0; objects.items().size() < 256; ++i) {
+            auto item = localObjectFromCot(marker);
+            item->id = QStringLiteral("fill-%1").arg(i);
+            if (!objects.put(*item).isEmpty()) {
+                break;
+            }
+        }
+        auto next = marker;
+        next.uid = QStringLiteral("new-marker");
+        package.entries = {{QStringLiteral("new.cot"), encodeCot(next)}};
+        result = importDataPackage(package,
+                                   QStringLiteral("k"),
+                                   folder.filePath(QStringLiteral("pkg2")),
+                                   &objects,
+                                   nullptr,
+                                   nullptr);
+        QCOMPARE(result.objects, 0);
+        QCOMPARE(result.errors.size(), 1);
+        QVERIFY(result.summary().contains(QStringLiteral("Nothing imported.")));
+        // A folder that cannot exist stops the import.
+        QFile blocker(folder.filePath(QStringLiteral("file")));
+        QVERIFY(blocker.open(QIODevice::WriteOnly));
+        blocker.close();
+        package.entries = {{QStringLiteral("x.kml"), "<kml/>"}};
+        result = importDataPackage(package,
+                                   QStringLiteral("k"),
+                                   folder.filePath(QStringLiteral("file/sub")),
+                                   &objects,
+                                   nullptr,
+                                   nullptr);
+        QCOMPARE(result.errors.size(), 1);
+    }
+    void fileTransfers()
+    {
+        // Server file lists.
+        const QByteArray hashA(64, 'a');
+        const QByteArray list = "{\"resultCount\":3,\"results\":["
+                                "{\"hash\":\"" +
+                                hashA.toUpper() +
+                                "\",\"name\":\"Patrol\",\"filename\":\"patrol.zip\","
+                                "\"submitter\":\"alice\",\"mimeType\":\"application/"
+                                "zip\",\"keywords\":[\"missionpackage\"],"
+                                "\"size\":1234,\"submissionTime\":\"2026-10-08T10:00:00.000Z\"},"
+                                "{\"hash\":\"short\"},{\"hash\":\"" +
+                                QByteArray(64, 'b') + "\",\"filename\":\"x.kml\",\"size\":-5}]}";
+        QList<ServerFile> files;
+        QVERIFY(readServerFiles(list, &files));
+        QCOMPARE(files.size(), 2);
+        QCOMPARE(files.at(0).hash, QString::fromLatin1(hashA));
+        QCOMPARE(files.at(0).keywords, QStringList{QStringLiteral("missionpackage")});
+        QCOMPARE(files.at(0).size, 1234);
+        QVERIFY(files.at(0).time.isValid());
+        QCOMPARE(files.at(1).name, QStringLiteral("x.kml"));
+        QCOMPARE(files.at(1).size, -1);
+        QVERIFY(!readServerFiles("[]", &files));
+        QVERIFY(!readServerFiles("{\"results\":{}}", &files));
+        // Offer events read back.
+        auto sender = sampleEvent(QStringLiteral("SWAK-1"));
+        sender.callsign = QStringLiteral("Swak");
+        const auto offer = fileOfferEvent(
+            sender,
+            QStringLiteral("https://tak.example:8443/Marti/sync/content?hash=") + hashA,
+            QStringLiteral("Patrol"),
+            QStringLiteral("patrol.zip"),
+            QString::fromLatin1(hashA),
+            99,
+            {{QStringLiteral("ANDROID-1"), QStringLiteral("Bravo")}},
+            QDateTime::currentDateTimeUtc());
+        QVERIFY(eventError(offer).isEmpty());
+        QCOMPARE(fileShare(offer)->sha256, QString::fromLatin1(hashA));
+        QCOMPARE(fileShare(offer)->sizeInBytes, 99);
+        QCOMPARE(destinations(offer).first().callsign, QStringLiteral("Bravo"));
+        QVERIFY(detailElement(offer, u"ackrequest"));
+        // A package on the test server.
+        auto marker = sampleEvent(QStringLiteral("spot-1"));
+        marker.type = QStringLiteral("b-m-p-s-m");
+        marker.callsign = QStringLiteral("Rally");
+        marker.latitude = 59.5;
+        marker.longitude = 18.25;
+        QString error;
+        const auto package = writeDataPackage(QStringLiteral("p"),
+                                              QStringLiteral("Patrol"),
+                                              {{QStringLiteral("m/m.cot"), encodeCot(marker)}},
+                                              &error);
+        const auto packageHash =
+            QCryptographicHash::hash(package, QCryptographicHash::Sha256).toHex();
+        const QByteArray kml = "<kml/>";
+        const auto kmlHash = QCryptographicHash::hash(kml, QCryptographicHash::Sha256).toHex();
+        const QByteArray broken = "PK broken";
+        const auto brokenHash =
+            QCryptographicHash::hash(broken, QCryptographicHash::Sha256).toHex();
+        HttpsHarness api;
+        QVERIFY(api.load());
+        int status = 200;
+        api.respond = [&](const QByteArray &request) {
+            QByteArray body;
+            if (request.startsWith("GET /Marti/sync/content?hash=" + packageHash)) {
+                body = package;
+            } else if (request.startsWith("GET /Marti/sync/content?hash=" + kmlHash)) {
+                body = kml;
+            } else if (request.startsWith("GET /Marti/sync/content?hash=" + brokenHash)) {
+                body = broken;
+            } else if (request.startsWith("GET /Marti/sync/content?hash=" + QByteArray(64, 'c'))) {
+                body = "wrong content";
+            } else if (request.startsWith("GET /Marti/sync/search ")) {
+                body = status == 200 ? list : "not json";
+                return QByteArray("HTTP/1.1 200 OK\r\nContent-Length: ") +
+                       QByteArray::number(body.size()) + "\r\n\r\n" + body;
+            } else if (!request.startsWith("DELETE ") && !request.startsWith("POST ")) {
+                return QByteArray("HTTP/1.1 404 X\r\nContent-Length: 0\r\n\r\n");
+            }
+            return QByteArray("HTTP/1.1 ") + QByteArray::number(status) +
+                   " X\r\nContent-Length: " + QByteArray::number(body.size()) + "\r\n\r\n" + body;
+        };
+        QUdpSocket receiver;
+        QVERIFY(receiver.bind(QHostAddress::LocalHost, 0));
+        QTemporaryDir folder;
+        Store store;
+        Servers servers(store);
+        NetworkClient network;
+        TakServerApi tak(servers, network);
+        Identity identity;
+        UserObjects objects;
+        FileShares shares(store, &servers, &tak, &identity, &objects, nullptr, nullptr);
+        shares.setDirectory(folder.path());
+        QSignalSpy changed(&shares, &FileShares::changed);
+        auto entry = source(9);
+        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        entry.insert(QStringLiteral("enabled"), false);
+        entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+        entry.insert(QStringLiteral("apiPort"), api.serverPort());
+        QVERIFY(servers.put(QStringLiteral("tak"), entry).isEmpty());
+        QVERIFY(servers.put(QStringLiteral("udp"), source(9)).isEmpty());
+        const auto offerFor = [&](const QByteArray &hash,
+                                  const QString &fileName,
+                                  qint64 size,
+                                  const QString &origin) {
+            auto event = fileOfferEvent(sender,
+                                        {},
+                                        QStringLiteral("File ") + fileName,
+                                        fileName,
+                                        QString::fromLatin1(hash),
+                                        size,
+                                        {},
+                                        QDateTime::currentDateTimeUtc());
+            event.origin = origin;
+            return event;
+        };
+        // Offers from servers appear. Local offers and offers without a valid hash do not.
+        QVERIFY(store
+                    .accept(offerFor(packageHash,
+                                     QStringLiteral("patrol.zip"),
+                                     package.size(),
+                                     QStringLiteral("tak")))
+                    .isEmpty());
+        QVERIFY(store
+                    .accept(offerFor(packageHash,
+                                     QStringLiteral("patrol.zip"),
+                                     package.size(),
+                                     QStringLiteral("tak")))
+                    .isEmpty());
+        QVERIFY(store.accept(offerFor(packageHash, QStringLiteral("local.zip"), 1, {})).isEmpty());
+        QVERIFY(store.accept(offerFor("bad", QStringLiteral("bad.zip"), 1, QStringLiteral("tak")))
+                    .isEmpty());
+        QVERIFY(store
+                    .accept(offerFor(QByteArray(64, 'd'),
+                                     QStringLiteral("huge.zip"),
+                                     MaxPackageBytes + 1,
+                                     QStringLiteral("tak")))
+                    .isEmpty());
+        QVERIFY(store
+                    .accept(offerFor(
+                        QByteArray(64, 'e'), QStringLiteral("mesh.zip"), 1, QStringLiteral("udp")))
+                    .isEmpty());
+        QVERIFY(store.events().isEmpty());
+        QCOMPARE(shares.offers().size(), 3);
+        QCOMPARE(shares.offers().at(0).state, FileOffer::State::Offered);
+        QCOMPARE(shares.offers().at(1).state, FileOffer::State::Failed);
+        QCOMPARE(shares.offers().at(2).state, FileOffer::State::Failed);
+        QVERIFY(!shares.download(QStringLiteral("tak"), QString(64, QLatin1Char('d'))).isEmpty());
+        QVERIFY(!shares.download(QStringLiteral("tak"), QStringLiteral("missing")).isEmpty());
+        // A download checks the hash and imports the package.
+        QVERIFY(shares.download(QStringLiteral("tak"), QString::fromLatin1(packageHash)).isEmpty());
+        QVERIFY(
+            !shares.download(QStringLiteral("tak"), QString::fromLatin1(packageHash)).isEmpty());
+        QCOMPARE(shares.offers().at(0).state, FileOffer::State::Downloading);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return shares.offers().at(0).state == FileOffer::State::Imported;
+            },
+            10000));
+        QVERIFY(objects.find(QStringLiteral("spot-1")));
+        QVERIFY(shares.offers().at(0).status.contains(QStringLiteral("1 objects")));
+        // A single shared file imports as a one-file package.
+        QVERIFY(store
+                    .accept(offerFor(
+                        kmlHash, QStringLiteral("roads.kml"), kml.size(), QStringLiteral("tak")))
+                    .isEmpty());
+        QVERIFY(shares.download(QStringLiteral("tak"), QString::fromLatin1(kmlHash)).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return shares.offers().last().state == FileOffer::State::Imported;
+            },
+            10000));
+        QVERIFY(shares.offers().last().status.contains(QStringLiteral("1 files skipped")));
+        // A damaged zip, a wrong hash, and a missing file fail.
+        QVERIFY(
+            store
+                .accept(offerFor(
+                    brokenHash, QStringLiteral("broken.zip"), broken.size(), QStringLiteral("tak")))
+                .isEmpty());
+        QVERIFY(shares.download(QStringLiteral("tak"), QString::fromLatin1(brokenHash)).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return shares.offers().last().state == FileOffer::State::Failed;
+            },
+            10000));
+        QVERIFY(
+            store
+                .accept(offerFor(
+                    QByteArray(64, 'c'), QStringLiteral("wrong.zip"), 13, QStringLiteral("tak")))
+                .isEmpty());
+        QVERIFY(shares.download(QStringLiteral("tak"), QString(64, QLatin1Char('c'))).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return shares.offers().last().state == FileOffer::State::Failed;
+            },
+            10000));
+        QVERIFY(shares.offers().last().status.contains(QStringLiteral("SHA-256")));
+        QVERIFY(store
+                    .accept(offerFor(
+                        QByteArray(64, 'f'), QStringLiteral("gone.zip"), 13, QStringLiteral("tak")))
+                    .isEmpty());
+        QVERIFY(shares.download(QStringLiteral("tak"), QString(64, QLatin1Char('f'))).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return shares.offers().last().state == FileOffer::State::Failed;
+            },
+            10000));
+        QVERIFY(shares.offers().last().status.contains(QStringLiteral("does not have")));
+        const auto count = shares.offers().size();
+        shares.dismiss(QStringLiteral("tak"), QString(64, QLatin1Char('f')));
+        QCOMPARE(shares.offers().size(), count - 1);
+        // The server file list, downloads from it, and deletes.
+        QSignalSpy searched(&shares, &FileShares::searched);
+        shares.search(QStringLiteral("tak"));
+        QVERIFY(searched.wait(10000));
+        QVERIFY(searched.last().at(2).toString().isEmpty());
+        QCOMPARE(searched.last().at(1).value<QList<ServerFile>>().size(), 2);
+        status = 500;
+        shares.search(QStringLiteral("tak"));
+        QVERIFY(searched.wait(10000));
+        QVERIFY(!searched.last().at(2).toString().isEmpty());
+        status = 200;
+        ServerFile listed;
+        listed.hash = QString::fromLatin1(kmlHash);
+        listed.name = QStringLiteral("Roads");
+        QVERIFY(!shares.downloadServerFile(QStringLiteral("tak"), ServerFile{}).isEmpty());
+        listed.hash = QString(64, QLatin1Char('9'));
+        QVERIFY(shares.downloadServerFile(QStringLiteral("tak"), listed).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return shares.offers().last().state == FileOffer::State::Failed;
+            },
+            10000));
+        QSignalSpy removed(&shares, &FileShares::removed);
+        shares.remove(QStringLiteral("tak"), QString::fromLatin1(hashA));
+        QVERIFY(removed.wait(10000));
+        QVERIFY(removed.last().at(2).toString().isEmpty());
+        QVERIFY(api.requests.last().startsWith("DELETE /Marti/sync/delete?hash=" + hashA));
+        status = 403;
+        shares.remove(QStringLiteral("tak"), QString::fromLatin1(hashA));
+        QVERIFY(removed.wait(10000));
+        QVERIFY(removed.last().at(2).toString().contains(QStringLiteral("does not allow")));
+        shares.remove(QStringLiteral("tak"), QStringLiteral("bad"));
+        QVERIFY(!removed.last().at(2).toString().isEmpty());
+        status = 200;
+        // Send uploads a package and offers it to the recipients.
+        auto output = source(receiver.localPort());
+        output.insert(QStringLiteral("protocol"), QStringLiteral("udpout"));
+        QVERIFY(servers.put(QStringLiteral("out"), output).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return servers.status(QStringLiteral("out")).startsWith(QStringLiteral("Sending"));
+            },
+            5000));
+        const ShareRecipient bravo{QStringLiteral("ANDROID-1"), QStringLiteral("Bravo")};
+        QVERIFY(
+            !shares
+                 .send(QStringLiteral("tak"), QStringLiteral("Out"), {QStringLiteral("spot-1")}, {})
+                 .isEmpty());
+        QVERIFY(!shares
+                     .send(QStringLiteral("tak"),
+                           QStringLiteral("  "),
+                           {QStringLiteral("spot-1")},
+                           {bravo})
+                     .isEmpty());
+        QVERIFY(!shares.send(QStringLiteral("tak"), QStringLiteral("Out"), {}, {bravo}).isEmpty());
+        QVERIFY(!shares
+                     .send(QStringLiteral("tak"),
+                           QStringLiteral("Out"),
+                           {QStringLiteral("missing")},
+                           {bravo})
+                     .isEmpty());
+        QVERIFY(!shares
+                     .send(QStringLiteral("udp"),
+                           QStringLiteral("Out"),
+                           {QStringLiteral("spot-1")},
+                           {bravo})
+                     .isEmpty());
+        QSignalSpy sent(&shares, &FileShares::sent);
+        QVERIFY(shares
+                    .send(QStringLiteral("tak"),
+                          QStringLiteral("Out/1"),
+                          {QStringLiteral("spot-1")},
+                          {bravo})
+                    .isEmpty());
+        QVERIFY(!shares
+                     .send(QStringLiteral("tak"),
+                           QStringLiteral("Out"),
+                           {QStringLiteral("spot-1")},
+                           {bravo})
+                     .isEmpty());
+        QVERIFY(sent.wait(10000));
+        QVERIFY2(sent.last().at(0).toString().isEmpty(), qPrintable(sent.last().at(0).toString()));
+        const auto upload = api.requests.last();
+        QVERIFY(upload.startsWith("POST /Marti/sync/missionupload?hash="));
+        QVERIFY(upload.contains("filename=Out_1.zip"));
+        QVERIFY(upload.contains("multipart/form-data; boundary="));
+        QVERIFY(upload.contains("name=\"assetfile\""));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return receiver.hasPendingDatagrams();
+            },
+            5000));
+        QByteArray datagram(static_cast<qsizetype>(receiver.pendingDatagramSize()),
+                            Qt::Uninitialized);
+        receiver.readDatagram(datagram.data(), datagram.size());
+        const auto announced = decodeCot(datagram).event;
+        QVERIFY(announced);
+        QCOMPARE(announced->type, QStringLiteral("b-f-t-r"));
+        const auto share = fileShare(*announced);
+        QVERIFY(
+            share->senderUrl.contains(QStringLiteral("/Marti/sync/content?hash=") + share->sha256));
+        QVERIFY(upload.contains(share->sha256.toLatin1()));
+        QCOMPARE(destinations(*announced).first().callsign, QStringLiteral("Bravo"));
+        status = 500;
+        QVERIFY(shares
+                    .send(QStringLiteral("tak"),
+                          QStringLiteral("Out"),
+                          {QStringLiteral("spot-1")},
+                          {bravo})
+                    .isEmpty());
+        QVERIFY(sent.wait(10000));
+        QVERIFY(!sent.last().at(0).toString().isEmpty());
+        // The offer list stays bounded.
+        for (int i = 0; i < FileShares::MaxOffers + 2; ++i) {
+            const auto hash =
+                QCryptographicHash::hash(QByteArray::number(i), QCryptographicHash::Sha256).toHex();
+            QVERIFY(store.accept(offerFor(hash, QStringLiteral("n.zip"), 1, QStringLiteral("tak")))
+                        .isEmpty());
+        }
+        QCOMPARE(shares.offers().size(), FileShares::MaxOffers);
+        // Without a REST API, nothing starts.
+        FileShares offline(store, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+        QSignalSpy offlineSearch(&offline, &FileShares::searched);
+        offline.search(QStringLiteral("tak"));
+        QCOMPARE(offlineSearch.size(), 1);
+        QVERIFY(!offline.send(QStringLiteral("tak"), QStringLiteral("x"), {}, {}).isEmpty());
+        QVERIFY(
+            !offline.download(QStringLiteral("tak"), QString::fromLatin1(packageHash)).isEmpty());
     }
     void takServerApi()
     {

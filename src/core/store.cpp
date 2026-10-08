@@ -92,7 +92,8 @@ QString Store::accept(const Event &event, const QDateTime &now)
     if (deleteRequest(event)) {
         return {};
     }
-    if (event.type == QLatin1String("b-t-f") || event.type.startsWith(QLatin1String("b-t-f-"))) {
+    if (event.type == QLatin1String("b-t-f") || event.type.startsWith(QLatin1String("b-t-f-")) ||
+        event.type == QLatin1String("b-f-t-r")) {
         emit messageReceived(event);
         return {};
     }

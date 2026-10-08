@@ -8,8 +8,10 @@
 #include "core/contacts.h"
 #include "core/cot.h"
 #include "core/cot_picker.h"
+#include "core/data.h"
 #include "core/delete_confirmation.h"
 #include "core/emergency.h"
+#include "core/file_shares.h"
 #include "core/gdal_support.h"
 #include "core/graphics.h"
 #include "core/grid_types.h"
@@ -28,6 +30,7 @@
 #include "core/modal.h"
 #include "core/object_editor.h"
 #include "core/object_sharing.h"
+#include "core/package_import.h"
 #include "core/polygon.h"
 #include "core/projection.h"
 #include "core/routing.h"
@@ -1569,6 +1572,165 @@ private slots:
         QVERIFY(sharing->automatic());
         sharing->setAutomatic(false);
         QVERIFY(!automatic->isChecked());
+    }
+    void filesPane()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("files.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *dock = window.findChild<QDockWidget *>(QStringLiteral("org.swak.files.pane"));
+        auto *offers = window.findChild<QTableWidget *>(QStringLiteral("fileOffers"));
+        auto *serverFiles = window.findChild<QTableWidget *>(QStringLiteral("serverFiles"));
+        auto *serverChoice = window.findChild<QComboBox *>(QStringLiteral("fileServer"));
+        auto *tabs = window.findChild<QTabWidget *>(QStringLiteral("filesTabs"));
+        auto *status = window.findChild<QLabel *>(QStringLiteral("filesStatus"));
+        auto *files = window.findChild<swak::FileShares *>(QStringLiteral("fileShares"));
+        auto *objects = window.findChild<swak::UserObjects *>();
+        auto *data = window.findChild<swak::DataSources *>(QStringLiteral("dataSources"));
+        auto *maps = window.findChild<swak::MapSources *>();
+        auto *servers = window.findChild<swak::Servers *>();
+        QVERIFY(dock && offers && serverFiles && serverChoice && tabs && status && files &&
+                objects && data && maps && servers);
+        dock->show();
+        files->setDirectory(directory.filePath(QStringLiteral("packages")));
+        // A package import adds objects, data feeds, and maps through the window services.
+        swak::Event marker;
+        marker.uid = QStringLiteral("spot-1");
+        marker.type = QStringLiteral("b-m-p-s-m");
+        marker.how = QStringLiteral("h-e");
+        marker.callsign = QStringLiteral("Rally");
+        marker.latitude = 59.5;
+        marker.longitude = 18.25;
+        marker.time = marker.start = QDateTime::currentDateTimeUtc();
+        marker.stale = marker.time.addSecs(600);
+        swak::DataPackage package;
+        package.name = QStringLiteral("Patrol");
+        package.entries = {
+            {QStringLiteral("m.cot"), swak::encodeCot(marker)},
+            {QStringLiteral("roads.kml"), "<kml xmlns=\"http://www.opengis.net/kml/2.2\"/>"},
+            {QStringLiteral("map.tif"), "placeholder"}};
+        const auto result = swak::importDataPackage(package,
+                                                    QStringLiteral("feedfacefeedface"),
+                                                    directory.filePath(QStringLiteral("imported")),
+                                                    objects,
+                                                    data,
+                                                    maps);
+        QVERIFY2(result.errors.isEmpty(), qPrintable(result.errors.join(QLatin1Char(' '))));
+        QCOMPARE(result.objects, 1);
+        QCOMPARE(result.feeds.size(), 1);
+        QCOMPARE(result.maps.size(), 1);
+        QVERIFY(data->sources().contains(result.feeds.first()));
+        QVERIFY(maps->sources().contains(result.maps.first()));
+        QCOMPARE(data->sources()
+                     .value(result.feeds.first())
+                     .toObject()
+                     .value(QStringLiteral("name"))
+                     .toString(),
+                 QStringLiteral("Patrol: roads.kml"));
+        // A server entry with a REST API lists offers and files.
+        auto entry = swak::serverDefaults();
+        entry.insert(QStringLiteral("name"), QStringLiteral("Test TAK"));
+        entry.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
+        entry.insert(QStringLiteral("port"), 9);
+        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        entry.insert(QStringLiteral("enabled"), false);
+        entry.insert(QStringLiteral("apiPort"), 9);
+        QVERIFY(servers->put(QStringLiteral("tak"), entry).isEmpty());
+        QCOMPARE(serverChoice->count(), 1);
+        QCOMPARE(serverChoice->currentText(), QStringLiteral("Test TAK"));
+        swak::Event sender;
+        sender.uid = QStringLiteral("ANDROID-1");
+        sender.callsign = QStringLiteral("Bravo");
+        auto offer = swak::fileOfferEvent(sender,
+                                          {},
+                                          QStringLiteral("Patrol"),
+                                          QStringLiteral("patrol.zip"),
+                                          QString(64, QLatin1Char('a')),
+                                          2048,
+                                          {},
+                                          QDateTime::currentDateTimeUtc());
+        offer.origin = QStringLiteral("tak");
+        QVERIFY(window.store().accept(offer).isEmpty());
+        QCOMPARE(offers->rowCount(), 1);
+        QCOMPARE(offers->item(0, 0)->text(), QStringLiteral("Patrol"));
+        QCOMPARE(offers->item(0, 1)->text(), QStringLiteral("Bravo"));
+        QVERIFY(offers->item(0, 3)->text().contains(QStringLiteral("Test TAK")));
+        // Download asks first. Cancel keeps the offer, and Download starts it.
+        auto *download = window.findChild<QPushButton *>(QStringLiteral("downloadOffer"));
+        download->click();
+        QVERIFY(!status->isHidden());
+        offers->selectRow(0);
+        const auto answer = [&](bool accept) {
+            QTimer::singleShot(0, &window, [&window, accept] {
+                auto *box = window.findChild<QMessageBox *>(QStringLiteral("actionConfirmation"));
+                if (!box) {
+                    return;
+                }
+                if (accept) {
+                    for (auto *button : box->buttons()) {
+                        if (button->text() == QStringLiteral("Download")) {
+                            button->click();
+                        }
+                    }
+                } else {
+                    box->reject();
+                }
+            });
+        };
+        answer(false);
+        download->click();
+        QCOMPARE(files->offers().first().state, swak::FileOffer::State::Offered);
+        answer(true);
+        download->click();
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return files->offers().first().state == swak::FileOffer::State::Failed;
+            },
+            15000));
+        QVERIFY(!offers->item(0, 3)->text().contains(QStringLiteral("Offered")));
+        offers->selectRow(0);
+        window.findChild<QPushButton *>(QStringLiteral("dismissOffer"))->click();
+        QCOMPARE(offers->rowCount(), 0);
+        // The server tab reports errors and needs a selection.
+        tabs->setCurrentIndex(1);
+        window.findChild<QPushButton *>(QStringLiteral("searchServerFiles"))->click();
+        QVERIFY(status->text().contains(QStringLiteral("Reading")));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return !status->text().contains(QStringLiteral("Reading"));
+            },
+            15000));
+        QCOMPARE(serverFiles->rowCount(), 0);
+        window.findChild<QPushButton *>(QStringLiteral("downloadServerFile"))->click();
+        QCOMPARE(status->text(), QStringLiteral("Select a file."));
+        window.findChild<QPushButton *>(QStringLiteral("deleteServerFile"))->click();
+        QCOMPARE(status->text(), QStringLiteral("Select a file."));
+        // Send Package lists local objects and needs recipients.
+        bool listed = false;
+        QTimer::singleShot(0, &window, [&] {
+            auto *dialog = window.findChild<QDialog *>(QStringLiteral("sendPackageDialog"));
+            auto *list = dialog ? dialog->findChild<QListWidget *>(QStringLiteral("packageObjects"))
+                                : nullptr;
+            if (!list) {
+                return;
+            }
+            listed = list->count() == 1;
+            list->item(0)->setCheckState(Qt::Checked);
+            dialog->accept();
+        });
+        window.findChild<QPushButton *>(QStringLiteral("sendPackage"))->click();
+        QVERIFY(listed);
+        QVERIFY(status->text().contains(QStringLiteral("recipients")));
+        auto *pane = dynamic_cast<swak::PreferenceParticipant *>(
+            window.findChild<QWidget *>(QStringLiteral("filesPane")));
+        QVERIFY(pane);
+        QCOMPARE(pane->savePreferences().value(QStringLiteral("tab")).toInt(), 1);
+        pane->restorePreferences({{QStringLiteral("tab"), 0}});
+        QCOMPARE(tabs->currentIndex(), 0);
+        dock->raise();
+        QVERIFY(window.grab().save(QStringLiteral("files-pane.png")));
     }
     void chatPane()
     {
@@ -6215,7 +6377,7 @@ private slots:
             QVERIFY(!action->isChecked());
             dock->setFloating(false);
         }
-        QCOMPARE(activated, 11);
+        QCOMPARE(activated, 12);
         QVERIFY(window.grab().save(QStringLiteral("plugin-labels-smoke.png")));
     }
     void clearEventsMenu()
@@ -6903,7 +7065,7 @@ private slots:
                 auto *tabs = dialog->findChild<QTabWidget *>();
                 auto *panes =
                     dialog->findChild<QListWidget *>(QStringLiteral("paneSettingsSections"));
-                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 16) {
+                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 17) {
                     dialog->reject();
                     QFAIL("The pane tab is incomplete.");
                     return;
@@ -8316,7 +8478,7 @@ private slots:
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         const auto docks = window.findChildren<QDockWidget *>();
-        QCOMPARE(docks.size(), 16);
+        QCOMPARE(docks.size(), 17);
         QVERIFY(!window.findChild<QWidget *>(QStringLiteral("toolsDock")));
         auto *viewMenu = window.findChild<QMenu *>(QStringLiteral("viewMenu"));
         auto *fileMenu = window.findChild<QMenu *>(QStringLiteral("fileMenu"));

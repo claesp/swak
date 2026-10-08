@@ -40,6 +40,8 @@ public:
     // The REST URL of a path below /Marti/api for a server entry, or an empty URL when the
     // entry is not a TLS entry with an API port.
     static QUrl apiUrl(const QJsonObject &source, const QString &path);
+    // The URL of a path below /Marti, such as /sync/content for files, with the same checks.
+    static QUrl martiUrl(const QJsonObject &source, const QString &path);
     // Sends a request to the REST API of a server entry. The path starts with a slash.
     quint64 request(const QString &serverId,
                     const QByteArray &method,
@@ -48,6 +50,17 @@ public:
                     QObject *context,
                     NetworkClient::Callback done,
                     qsizetype maxBytes = 1024 * 1024);
+    // Sends a request below /Marti, for example a file transfer. An empty content type
+    // sends no Content-Type header.
+    quint64 martiRequest(const QString &serverId,
+                         const QByteArray &method,
+                         const QString &path,
+                         const QByteArray &body,
+                         const QByteArray &contentType,
+                         QObject *context,
+                         NetworkClient::Callback done,
+                         qsizetype maxBytes,
+                         int timeoutMs);
     void cancel(quint64 id);
     TakServerInfo info(const QString &serverId) const;
     NetworkClient &network() const

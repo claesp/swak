@@ -6,13 +6,18 @@
 #include "core/measure.h"
 #include "core/polygon.h"
 #include "core/projection.h"
+#include "core/tak_drawings.h"
 
+#include <QCryptographicHash>
+#include <QJsonArray>
 #include <QRectF>
+#include <QRegularExpression>
 #include <QUuid>
 
 #include <algorithm>
 #include <cmath>
 #include <iterator>
+#include <numbers>
 
 namespace swak {
 namespace {
@@ -223,5 +228,76 @@ Event sharedDeleteEvent(const QString &uid,
     appendRecipients(detail, recipients);
     event.detail = detailText(detail);
     return event;
+}
+std::optional<UserObject> localObjectFromCot(const Event &event)
+{
+    UserObject item;
+    // Local identifiers allow fewer characters than CoT UIDs. Other UIDs get a stable hash.
+    static const QRegularExpression identifier(QStringLiteral("\\A[a-zA-Z0-9._-]{1,64}\\z"));
+    item.id = identifier.match(event.uid).hasMatch()
+                  ? event.uid
+                  : QStringLiteral("cot-") +
+                        QString::fromLatin1(
+                            QCryptographicHash::hash(event.uid.toUtf8(), QCryptographicHash::Sha256)
+                                .toHex()
+                                .left(32));
+    item.title = (event.callsign.isEmpty() ? event.uid : event.callsign).left(128).trimmed();
+    item.description = remarks(event).left(2048);
+    const auto vertices = [](const QPolygonF &points) {
+        QJsonArray array;
+        for (const auto point : points) {
+            array.append(QJsonArray{point.x(), point.y()});
+        }
+        return QJsonObject{{QStringLiteral("vertices"), array}};
+    };
+    const auto rgb = [](const QColor &color, const QString &fallback) {
+        return color.isValid() ? color.name(QColor::HexRgb) : fallback;
+    };
+    if (const auto drawing = readTakDrawing(event)) {
+        item.color = rgb(drawing->stroke, item.color);
+        switch (drawing->kind) {
+        case TakDrawing::Kind::Circle: {
+            // A local circle is a center and one edge point. Use the major radius to the east.
+            const auto shape = detailElement(event, u"shape");
+            const auto *ellipse = shape ? shape->child(u"ellipse") : nullptr;
+            const double radius = ellipse ? ellipse->attribute(u"major").toDouble() : 0;
+            const double east =
+                111320 * std::max(std::cos(event.latitude * std::numbers::pi / 180), 0.01);
+            item.type = QStringLiteral("range-circle");
+            item.geometry = vertices({project(event.latitude, event.longitude),
+                                      project(event.latitude, event.longitude + radius / east)});
+            break;
+        }
+        case TakDrawing::Kind::Area:
+            item.type = QStringLiteral("polygon");
+            item.geometry = vertices(drawing->points);
+            break;
+        case TakDrawing::Kind::Line:
+            item.type =
+                drawing->points.size() == 2 ? QStringLiteral("line") : QStringLiteral("route");
+            item.geometry = vertices(drawing->points);
+            break;
+        case TakDrawing::Kind::Route:
+            item.type = QStringLiteral("route");
+            item.geometry = vertices(drawing->points);
+            break;
+        }
+    } else if (event.type == u"b-m-p-s-m" || !markerSymbolForCot(event.type).isEmpty() ||
+               event.type.startsWith(u"b-m-p-")) {
+        const auto world = project(event.latitude, event.longitude);
+        item.type = QStringLiteral("circle");
+        item.geometry = {{QStringLiteral("x"), world.x()}, {QStringLiteral("y"), world.y()}};
+        if (!markerSymbolForCot(event.type).isEmpty()) {
+            item.symbol = event.type;
+            item.collection = MilitaryMarkerCollection;
+        }
+        item.color = rgb(detailColor(event, u"color").value_or(QColor()), item.color);
+    } else {
+        return {};
+    }
+    if (item.title.isEmpty() || !UserObjects::validate(item).isEmpty()) {
+        return {};
+    }
+    return item;
 }
 } // namespace swak

@@ -34,4 +34,8 @@ Event sharedDeleteEvent(const QString &uid,
                         const QString &type,
                         const QList<ShareRecipient> &recipients,
                         const QDateTime &now);
+// Converts a TAK CoT object to a local object, for example from a data package. It reads
+// points with a supported or spot marker type, circles, lines, areas, rectangles, and routes.
+// Returns no value for other types and for geometry beyond the local object limits.
+std::optional<UserObject> localObjectFromCot(const Event &event);
 } // namespace swak

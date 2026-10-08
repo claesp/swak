@@ -93,6 +93,18 @@ Your own messages show their state. Waiting for a connection means that no outpu
 
 TAK Server can store messages for offline users and send them after the connection starts. SWAK removes duplicates by message ID and keeps each room in time order. Chat events do not go to the map or to CoT Messages. Limits: 4096 characters for each message, 128 rooms, 500 messages for each room, and 4096 remembered message IDs. SWAK shows text as plain text and removes control and direction characters. History stays in memory and ends when SWAK closes.
 
+# Data packages and server files
+
+Tools > Plugins > Files shows the Files pane. Received lists the files that TAK users offer with `b-f-t-r` events. Select a file and Download .... SWAK shows the name, size, and sender and asks first. It downloads only from the TAK REST API of the server entry that delivered the offer, with that entry's client certificate, at `/Marti/sync/content?hash=`. The sender URL in the offer is not used. Offers through multicast, UDP, or LAN peers show that they need a TAK Server. SWAK rejects files above 64 MiB and files that do not match their SHA-256 hash.
+
+A data package is a zip archive with an optional `MANIFEST/manifest.xml`. SWAK reads at most 256 entries and 128 MiB of expanded content. It rejects links, special files, encrypted entries, absolute paths, `..` segments, and repeated paths. A manifest selects the files and can mark some as ignored. A shared single file imports as a package with one file.
+
+The import makes CoT files (`.cot`, or `.xml` with an event) into local objects: spot and military markers, circles, lines, areas, and routes. Other CoT types are skipped. KML, KMZ, GeoJSON, GPX, GML, GeoPackage, FlatGeobuf, CSV, and shapefiles become data feeds. GeoTIFF files become map providers. SWAK saves these files in an owner-only folder under the application data folder. Images and other files are skipped. The status shows what SWAK imported. A new import of the same package replaces its objects and feeds.
+
+Send Package ... builds a package from the chosen local objects, uploads it to `/Marti/sync/missionupload` of the chosen server, and offers it to the chosen contacts with a `b-f-t-r` event and `marti` destinations. Packages for sending are at most 32 MiB.
+
+Server shows the TAK Server file list from `/Marti/sync/search`. Search reads at most 1000 files. Download ... imports a file in the same way as an offer, and Received shows the result. Delete ... asks first and sends `/Marti/sync/delete`. TAK Server answers with an error when your user cannot delete the file.
+
 # Emergency alerts
 
 TAK clients send emergency alerts as CoT. SWAK recognizes 911 Alert (`b-a-o-tbl`), Ring The Bell (`b-a-o-pan`), Troops In Contact (`b-a-o-opn`), Geo-fence Breached (`b-a-g`), and the ATAK custom alert (`b-a-o-c`). An active alert has a red double ring and a label with its type and the callsign of the person in distress. The emergency button at the right end of the toolbar turns red while any alert is active. Its tooltip lists the alerts. Its menu centers the map on an alert and selects it. Each new alert adds one Warning to Events. TAK Server repeats active alerts, and SWAK ignores these repeats.

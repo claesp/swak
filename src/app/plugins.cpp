@@ -13,6 +13,7 @@ Q_IMPORT_PLUGIN(ContactsPlugin)
 Q_IMPORT_PLUGIN(SharingPlugin)
 Q_IMPORT_PLUGIN(TakDrawingsPlugin)
 Q_IMPORT_PLUGIN(ChatPlugin)
+Q_IMPORT_PLUGIN(FilesPlugin)
 Q_IMPORT_PLUGIN(ActivityPlugin)
 
 Q_IMPORT_PLUGIN(GdalVectorProvider)

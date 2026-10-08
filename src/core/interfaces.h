@@ -27,6 +27,7 @@ class NetworkClient;
 class TakServerApi;
 class Chat;
 class Contacts;
+class FileShares;
 class ObjectSharing;
 // Per-window services for plugin factories and callbacks.
 //
@@ -91,6 +92,8 @@ struct PluginServices
     ObjectSharing *sharing = nullptr;
     // Window child. Lives until step 4. It reads servers and identity through guarded pointers.
     Chat *chat = nullptr;
+    // Window child. Lives until step 4. It reads the other services through guarded pointers.
+    FileShares *files = nullptr;
 };
 class Plugin
 {

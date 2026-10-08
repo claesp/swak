@@ -146,6 +146,10 @@ Read detail through `core/cot_detail.h`. `detailElements` and `detailElement` re
 
 `PluginServices::chat` is the per-window `Chat` service in `core/chat.h`. `rooms`, `room`, `openDirect`, `send`, and `markRead` give the rooms and send messages. `roomsChanged`, `messagesChanged`, and `roomRequested` report changes. `Store::messageReceived` delivers `b-t-f` events. The Store does not keep them. `readChatMessage`, `readChatReceipt`, `chatMessageEvent`, and `chatReceiptEvent` read and build the ATAK format. The chat plugin implements `PanePlugin`, and its MANIFEST declares `pane`. Its pane saves the splitter state under `org.swak.chat`. The contacts pane adds Chat with when the chat service exists.
 
+# Files and data packages
+
+`PluginServices::files` is the per-window `FileShares` service in `core/file_shares.h`. It lists offers, downloads and imports them, reads and deletes server files, and sends packages. `core/data_package.h` reads and writes zip packages with their limits. `core/package_import.h` imports a package into `UserObjects`, `DataSources`, and `MapSources`. `localObjectFromCot` in `core/tak_shapes.h` converts CoT to local objects. `TakServerApi::martiUrl` and `martiRequest` reach paths below `/Marti`, such as `/sync/content`, with the same entry checks as `apiUrl`. `Store::messageReceived` also delivers `b-f-t-r` offers. The files plugin implements `PanePlugin`, and its MANIFEST declares `pane`.
+
 # Emergency alerts
 
 `core/emergency.h` provides `emergencyKinds`, `emergencyEvent`, `emergencyCancelEvent`, `activeEmergency`, and `emergencyLabel`. The emergencies plugin implements `MapLayer` and `ToolbarPlugin`. Its manifest declares `map-layer` and `toolbar`. It reads the Store and does not change it. It centers the map through `MapTools::centerRequested`. Its toolbar button is a trailing action with `swakToolbarTrailingOrder` -1, so it stays left of the navigation lock. Trailing actions sort by this property, and the default is 0.
