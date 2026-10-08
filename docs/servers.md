@@ -76,6 +76,12 @@ A shared object stays shared. SWAK sends each change, and it sends a `t-x-d-d` d
 
 Tools > Plugins > Sharing > Share New Objects Automatically, or the same setting in File > Settings > Sharing, shares each new local object with your channels. It is off by default. Objects that SWAK restores at start are not new. MIL-STD-2525 markers are sent as spot markers with their color.
 
+# Received drawings and routes
+
+SWAK draws the circles (`u-d-c-c`), ellipses (`u-d-c-e`), lines and areas (`u-d-f` and `u-d-f-m`), rectangles (`u-d-r`), and routes (`b-m-r`) that TAK clients share. It uses the stroke and fill colors, the stroke weight from 1 to 10, and the route color from `link_attr`. Closed `u-d-f` shapes and rectangles are areas. A route shows its check points when the route is large enough on screen. The label shows the callsign. These drawings are read-only. A click on the outline, or inside a circle or area, selects the drawing and shows its information. Drawings with more than 1000 points, invalid points, or truncated detail do not show.
+
+Tools > Plugins > TAK Drawings > Show TAK Drawings turns the drawings on and off. File > Settings > TAK Drawings also sets their opacity. The CoT layer draws no point symbol for these types.
+
 # Emergency alerts
 
 TAK clients send emergency alerts as CoT. SWAK recognizes 911 Alert (`b-a-o-tbl`), Ring The Bell (`b-a-o-pan`), Troops In Contact (`b-a-o-opn`), Geo-fence Breached (`b-a-g`), and the ATAK custom alert (`b-a-o-c`). An active alert has a red double ring and a label with its type and the callsign of the person in distress. The emergency button at the right end of the toolbar turns red while any alert is active. Its tooltip lists the alerts. Its menu centers the map on an alert and selects it. Each new alert adds one Warning to Events. TAK Server repeats active alerts, and SWAK ignores these repeats.

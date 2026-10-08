@@ -7,6 +7,7 @@
 #include "core/preferences.h"
 #include "core/projection.h"
 #include "core/store.h"
+#include "core/tak_drawings.h"
 #include "core/ui_icons.h"
 
 #include <QHeaderView>
@@ -329,7 +330,8 @@ public:
         int labels = 0;
         for (const auto &visual : store.motion().snapshot()) {
             const auto &event = visual.event;
-            if (event.start > now) {
+            // The TAK Drawings layer draws shapes and routes with their labels.
+            if (event.start > now || takDrawingType(event.type)) {
                 continue;
             }
             const QPointF point = screenPoint(view, visual.world);

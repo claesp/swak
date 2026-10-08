@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "org.swak.takdrawings",
+  "name": "TAK Drawings",
+  "description": "Show circles, lines, areas, rectangles, and routes that TAK clients share.",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entryPoint": "TakDrawingsPlugin",
+  "linkage": "static",
+  "platforms": [
+    "linux"
+  ],
+  "qtMajor": 6,
+  "qtMinimum": "6.4.0",
+  "interfaces": [
+    "map-layer",
+    "menu"
+  ],
+  "requires": [],
+  "permissions": [],
+  "settingsSchemaVersion": 1
+}

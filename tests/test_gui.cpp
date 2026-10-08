@@ -1329,6 +1329,117 @@ private slots:
         QVERIFY(restoredMap);
         QCOMPARE(restoredMap->savePreferences().value(QStringLiteral("zoom")).toDouble(), 5.0);
     }
+    void takDrawingsLayer()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("drawings.json")),
+                            QPluginLoader::staticInstances());
+        swak::MapLayer *layer = nullptr;
+        swak::MapLayer *points = nullptr;
+        for (auto *plugin : QPluginLoader::staticInstances()) {
+            const QByteArray name(plugin->metaObject()->className());
+            if (name.endsWith("TakDrawingsPlugin")) {
+                layer = qobject_cast<swak::MapLayer *>(plugin);
+            } else if (name.endsWith("TracksPlugin")) {
+                points = qobject_cast<swak::MapLayer *>(plugin);
+            }
+        }
+        auto *tools = window.findChild<swak::MapTools *>();
+        auto *show = window.findChild<QAction *>(QStringLiteral("showTakDrawings"));
+        swak::SettingsParticipant *settings = nullptr;
+        for (auto *object : window.findChildren<QObject *>()) {
+            auto *participant = dynamic_cast<swak::SettingsParticipant *>(object);
+            if (participant &&
+                participant->preferenceId() == QStringLiteral("org.swak.takdrawings")) {
+                settings = participant;
+            }
+        }
+        QVERIFY(layer && points && tools && show && settings);
+        QVERIFY(show->isChecked());
+        auto &store = window.store();
+        const auto drawing = [](const QString &uid, const QString &type, const QString &detail) {
+            swak::Event event;
+            event.uid = uid;
+            event.type = type;
+            event.how = QStringLiteral("h-e");
+            event.callsign = uid;
+            event.latitude = 59;
+            event.longitude = 18;
+            event.origin = QStringLiteral("tak");
+            event.time = event.start = QDateTime::currentDateTimeUtc();
+            event.stale = event.time.addSecs(600);
+            event.detail = detail;
+            return event;
+        };
+        auto area =
+            drawing(QStringLiteral("area"),
+                    QStringLiteral("u-d-f"),
+                    QStringLiteral("<link point=\"58.99,17.99\"/><link point=\"58.99,18.01\"/>"
+                                   "<link point=\"59.01,18.01\"/><link point=\"59.01,17.99\"/>"
+                                   "<link point=\"58.99,17.99\"/>"
+                                   "<strokeColor value=\"-16777216\"/>"
+                                   "<fillColor value=\"-65536\"/>"));
+        QVERIFY(store.accept(area).isEmpty());
+        QVERIFY(store
+                    .accept(drawing(QStringLiteral("route"),
+                                    QStringLiteral("b-m-r"),
+                                    QStringLiteral("<link point=\"59.02,18.02\" relation=\"c\"/>"
+                                                   "<link point=\"59.02,18.05\" relation=\"c\"/>")))
+                    .isEmpty());
+        QVERIFY(store
+                    .accept(drawing(QStringLiteral("broken"),
+                                    QStringLiteral("u-d-f"),
+                                    QStringLiteral("<link point=\"59,18\"/>")))
+                    .isEmpty());
+        const swak::Viewport view{QSizeF(400, 400), swak::project(59, 18), 14};
+        const auto render = [&](const swak::MapLayer &target) {
+            QImage image(400, 400, QImage::Format_ARGB32_Premultiplied);
+            image.fill(Qt::transparent);
+            QPainter painter(&image);
+            target.paint(painter, view, store);
+            return image;
+        };
+        auto image = render(*layer);
+        QVERIFY(image.save(QStringLiteral("tak-drawings.png")));
+        auto center = image.pixelColor(200, 200);
+        QVERIFY(center.alpha() == 255 && center.red() > 200 && center.green() < 60);
+        // The CoT layer draws no point symbol for drawings.
+        QCOMPARE(render(*points).pixelColor(200, 200).alpha(), 0);
+        // A click inside the area or on the route selects the drawing.
+        const auto ids = [&](QPointF position) {
+            QStringList result;
+            for (const auto &item : tools->itemsAt(view, position)) {
+                if (item.owner == QStringLiteral("org.swak.events")) {
+                    result.append(item.id);
+                }
+            }
+            return result;
+        };
+        QVERIFY(ids({200, 200}).contains(QStringLiteral("area")));
+        const auto routeStart = view.screen(59.02, 18.02);
+        const auto routeEnd = view.screen(59.02, 18.05);
+        QVERIFY(ids((routeStart + routeEnd) / 2 + QPointF(0, 3)).contains(QStringLiteral("route")));
+        QVERIFY(ids({5, 395}).isEmpty());
+        store.select(QStringLiteral("area"));
+        QVERIFY(render(*layer).pixelColor(200, 200).red() > 200);
+        // Opacity and visibility come from the settings.
+        settings->restorePreferences(
+            {{QStringLiteral("visible"), true}, {QStringLiteral("opacity"), 0.5}});
+        center = render(*layer).pixelColor(200, 200);
+        QVERIFY(center.alpha() > 100 && center.alpha() < 160);
+        show->setChecked(false);
+        QCOMPARE(render(*layer).pixelColor(200, 200).alpha(), 0);
+        QVERIFY(ids({200, 200}).isEmpty());
+        QVERIFY(!settings->savePreferences().value(QStringLiteral("visible")).toBool());
+        settings->restorePreferences({});
+        QVERIFY(show->isChecked());
+        // An update moves the drawing.
+        area.time = area.time.addSecs(1);
+        area.detail.replace(QStringLiteral("58.99"), QStringLiteral("59.03"));
+        area.detail.replace(QStringLiteral("59.01"), QStringLiteral("59.04"));
+        QVERIFY(store.accept(area).isEmpty());
+        QCOMPARE(render(*layer).pixelColor(200, 200).alpha(), 0);
+    }
     void shareObjects()
     {
         QTemporaryDir directory;

@@ -97,6 +97,8 @@ add_library(
     src/core/emergency.h
     src/core/tak_shapes.cpp
     src/core/tak_shapes.h
+    src/core/tak_drawings.cpp
+    src/core/tak_drawings.h
     src/core/tak_channels.cpp
     src/core/tak_channels.h
     src/core/contacts.cpp
@@ -222,6 +224,7 @@ swak_plugin(swak_azure_maps src/plugins/azure_maps.cpp)
 swak_plugin(swak_emergencies src/plugins/emergencies.cpp)
 swak_plugin(swak_contacts src/plugins/contacts.cpp)
 swak_plugin(swak_sharing src/plugins/sharing.cpp)
+swak_plugin(swak_takdrawings src/plugins/takdrawings.cpp)
 swak_plugin(swak_milstd2525 src/plugins/milstd2525.cpp)
 swak_plugin(swak_polygons src/plugins/polygons.cpp)
 swak_plugin(swak_markers src/plugins/markers.cpp)
@@ -282,6 +285,7 @@ target_link_libraries(
             swak_emergencies
             swak_contacts
             swak_sharing
+            swak_takdrawings
 )
 install(TARGETS swak RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES packaging/org.swak.Swak.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
@@ -357,6 +361,7 @@ if(BUILD_TESTING)
                 swak_emergencies
                 swak_contacts
                 swak_sharing
+                swak_takdrawings
                 Qt6::Test
     )
     add_test(NAME maps COMMAND swak_map_tests)
@@ -389,6 +394,7 @@ if(BUILD_TESTING)
                 swak_emergencies
                 swak_contacts
                 swak_sharing
+                swak_takdrawings
                 Qt6::Test
                 Qt6::Network
     )
@@ -447,6 +453,7 @@ if(BUILD_TESTING)
                 swak_emergencies
                 swak_contacts
                 swak_sharing
+                swak_takdrawings
                 Qt6::Test
                 Qt6::Network
     )
@@ -498,6 +505,7 @@ if(BUILD_TESTING)
                 swak_emergencies
                 swak_contacts
                 swak_sharing
+                swak_takdrawings
                 Qt6::Test
                 Qt6::Network
                 Qt6::OpenGLWidgets

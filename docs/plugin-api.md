@@ -138,6 +138,10 @@ Read detail through `core/cot_detail.h`. `detailElements` and `detailElement` re
 
 `PluginServices::sharing` is the per-window `ObjectSharing` service in `core/object_sharing.h`. `share(id, recipients)` shares a local object, `stopSharing(id)` sends a delete, and `isShared` and `recipients` read the state. The service is also the Sharing settings participant. `core/tak_shapes.h` converts a `UserObject` to TAK CoT with `sharedObjectEvent` and builds deletes with `sharedDeleteEvent`. `UserObjects::added` reports objects that a put creates. Preference restores and Undo do not emit it, and a restore emits one `changed` after all objects. The sharing plugin implements `MenuPlugin`. Its MANIFEST declares `menu`. It registers a map tool that adds Share, Share with ..., and Stop sharing to the menus of local objects.
 
+# Received drawings
+
+`core/tak_drawings.h` reads TAK drawing events into a `TakDrawing` with normalized Mercator points, colors, a stroke width, and a label anchor. `takDrawingType` names the types that the drawing layer owns, and the CoT layer skips their point symbols. The TAK Drawings plugin implements `MapLayer` and `MenuPlugin`, and its MANIFEST declares `map-layer` and `menu`. Each window gets a drawing tool that is also the `org.swak.takdrawings` settings participant. The tool parses an event only when its time or detail size changes, so frames do not parse detail XML. Its `itemsAt` returns `org.swak.events` items, so the map selects the event.
+
 # Emergency alerts
 
 `core/emergency.h` provides `emergencyKinds`, `emergencyEvent`, `emergencyCancelEvent`, `activeEmergency`, and `emergencyLabel`. The emergencies plugin implements `MapLayer` and `ToolbarPlugin`. Its manifest declares `map-layer` and `toolbar`. It reads the Store and does not change it. It centers the map through `MapTools::centerRequested`. Its toolbar button is a trailing action with `swakToolbarTrailingOrder` -1, so it stays left of the navigation lock. Trailing actions sort by this property, and the default is 0.

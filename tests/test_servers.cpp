@@ -6,6 +6,7 @@
 #include "core/identity.h"
 #include "core/lan_protocol.h"
 #include "core/map_selection.h"
+#include "core/measure.h"
 #include "core/network_client.h"
 #include "core/object_sharing.h"
 #include "core/polygon.h"
@@ -15,6 +16,7 @@
 #include "core/servers.h"
 #include "core/store.h"
 #include "core/tak_channels.h"
+#include "core/tak_drawings.h"
 #include "core/tak_enrollment.h"
 #include "core/tak_protocol.h"
 #include "core/tak_server_api.h"
@@ -1592,6 +1594,132 @@ private slots:
         incoming.origin = QStringLiteral("peer");
         QVERIFY(store.accept(incoming).isEmpty());
         QVERIFY(store.events().isEmpty());
+    }
+    void takDrawings()
+    {
+        auto sender = sampleEvent(QStringLiteral("SWAK-1"));
+        sender.type = QStringLiteral("a-f-G-U-C");
+        const auto now = QDateTime::currentDateTimeUtc();
+        QVERIFY(takDrawingType(QStringLiteral("u-d-r")));
+        QVERIFY(takDrawingType(QStringLiteral("b-m-r")));
+        QVERIFY(!takDrawingType(QStringLiteral("b-m-p-s-m")));
+        QVERIFY(!readTakDrawing(sampleEvent()));
+        // Shapes that SWAK shares read back with their geometry and colors.
+        auto circle = *sharedObjectEvent(localObject(QStringLiteral("c1"),
+                                                     QStringLiteral("range-circle"),
+                                                     vertices({{59, 18}, {59.01, 18}})),
+                                         sender,
+                                         {},
+                                         now);
+        auto drawing = readTakDrawing(circle);
+        QVERIFY(drawing);
+        QCOMPARE(drawing->kind, TakDrawing::Kind::Circle);
+        QCOMPARE(drawing->points.size(), 72);
+        const auto center = project(59, 18);
+        QVERIFY(std::abs(groundDistance(center, drawing->points.at(18)) - 1112) < 15);
+        QVERIFY(std::abs(groundDistance(center, drawing->points.at(0)) - 1112) < 15);
+        QCOMPARE(drawing->anchor, center);
+        QCOMPARE(drawing->stroke.rgb(), QColor(255, 0, 0).rgb());
+        QCOMPARE(drawing->fill.alpha(), 0x60);
+        QCOMPARE(drawing->strokeWidth, 3.0);
+        const auto area =
+            *sharedObjectEvent(localObject(QStringLiteral("a1"),
+                                           QStringLiteral("polygon"),
+                                           vertices({{59, 18}, {59.1, 18}, {59.1, 18.1}})),
+                               sender,
+                               {},
+                               now);
+        drawing = readTakDrawing(area);
+        QVERIFY(drawing);
+        QCOMPARE(drawing->kind, TakDrawing::Kind::Area);
+        QCOMPARE(drawing->points.size(), 3);
+        QVERIFY(drawing->fill.isValid());
+        const auto line = *sharedObjectEvent(localObject(QStringLiteral("l1"),
+                                                         QStringLiteral("line"),
+                                                         vertices({{59, 18}, {59.1, 18.1}})),
+                                             sender,
+                                             {},
+                                             now);
+        drawing = readTakDrawing(line);
+        QVERIFY(drawing);
+        QCOMPARE(drawing->kind, TakDrawing::Kind::Line);
+        QCOMPARE(drawing->points.size(), 2);
+        QVERIFY(!drawing->fill.isValid());
+        auto route = *sharedObjectEvent(localObject(QStringLiteral("r1"),
+                                                    QStringLiteral("route"),
+                                                    vertices({{59, 18}, {59.1, 18}, {59.2, 18.1}})),
+                                        sender,
+                                        {},
+                                        now);
+        drawing = readTakDrawing(route);
+        QVERIFY(drawing);
+        QCOMPARE(drawing->kind, TakDrawing::Kind::Route);
+        QCOMPARE(drawing->points.size(), 3);
+        QCOMPARE(drawing->anchor, drawing->points.first());
+        QCOMPARE(drawing->stroke.rgb(), QColor(255, 0, 0).rgb());
+        // An ATAK rectangle, a rotated ellipse, and stroke limits.
+        auto rectangle = sampleEvent(QStringLiteral("rect"));
+        rectangle.type = QStringLiteral("u-d-r");
+        rectangle.detail = QStringLiteral(
+            "<link point=\"59.0,18.0\"/><link point=\"59.0,18.1,10\"/><link point=\"59.1,18.1\"/>"
+            "<link point=\"59.1,18.0\"/><strokeWeight value=\"40\"/>"
+            "<fillColor value=\"-1761607681\"/>");
+        drawing = readTakDrawing(rectangle);
+        QVERIFY(drawing);
+        QCOMPARE(drawing->kind, TakDrawing::Kind::Area);
+        QCOMPARE(drawing->points.size(), 4);
+        QCOMPARE(drawing->strokeWidth, 10.0);
+        QCOMPARE(drawing->stroke, QColor(Qt::white));
+        QCOMPARE(drawing->fill.alpha(), 0x96);
+        auto ellipse = sampleEvent(QStringLiteral("ellipse"));
+        ellipse.type = QStringLiteral("u-d-c-e");
+        ellipse.latitude = 59;
+        ellipse.longitude = 18;
+        ellipse.detail =
+            QStringLiteral("<shape><ellipse major=\"2000\" minor=\"500\" angle=\"90\"/></shape>"
+                           "<strokeWeight value=\"bad\"/>");
+        drawing = readTakDrawing(ellipse);
+        QVERIFY(drawing);
+        QCOMPARE(drawing->strokeWidth, 3.0);
+        QVERIFY(!drawing->fill.isValid());
+        // The major radius points east after a 90 degree rotation.
+        QVERIFY(std::abs(groundDistance(center, drawing->points.at(18)) - 2000) < 30);
+        QVERIFY(std::abs(groundDistance(center, drawing->points.at(0)) - 500) < 10);
+        QVERIFY(drawing->points.at(18).x() > center.x());
+        auto colored = route;
+        colored.detail.replace(QStringLiteral("<link_attr color=\"-65536\""),
+                               QStringLiteral("<link_attr color=\"-16711936\""));
+        QCOMPARE(readTakDrawing(colored)->stroke.rgb(), QColor(0, 255, 0).rgb());
+        // Invalid content gives no drawing.
+        const auto rejected = [](const QString &type, const QString &detail) {
+            auto event = sampleEvent(QStringLiteral("bad"));
+            event.type = type;
+            event.detail = detail;
+            return !readTakDrawing(event);
+        };
+        QVERIFY(rejected(QStringLiteral("u-d-f"), QStringLiteral("<link point=\"59,18\"/>")));
+        QVERIFY(rejected(QStringLiteral("u-d-f"),
+                         QStringLiteral("<link point=\"59,18\"/><link point=\"x,18\"/>")));
+        QVERIFY(rejected(QStringLiteral("u-d-f"),
+                         QStringLiteral("<link point=\"89,18\"/><link point=\"59,18\"/>")));
+        QVERIFY(rejected(QStringLiteral("u-d-f"),
+                         QStringLiteral("<link point=\"59\"/><link point=\"59,18\"/>")));
+        QVERIFY(rejected(QStringLiteral("u-d-c-c"), QStringLiteral("<shape/>")));
+        QVERIFY(rejected(QStringLiteral("u-d-c-c"),
+                         QStringLiteral("<shape><ellipse major=\"-1\" minor=\"5\"/></shape>")));
+        QVERIFY(rejected(QStringLiteral("u-d-c-c"),
+                         QStringLiteral("<shape><ellipse major=\"5\" minor=\"5e9\"/></shape>")));
+        QString many;
+        for (int i = 0; i <= MaxDrawingPoints; ++i) {
+            many += QStringLiteral("<link point=\"59.%1,18\"/>").arg(i, 4, 10, QLatin1Char('0'));
+        }
+        QVERIFY(rejected(QStringLiteral("u-d-f"), many));
+        auto truncated = line;
+        truncated.detailTruncated = true;
+        QVERIFY(!readTakDrawing(truncated));
+        // A circle without a valid angle uses no rotation.
+        ellipse.detail = QStringLiteral("<shape><ellipse major=\"100\" minor=\"100\"/></shape>");
+        QVERIFY(readTakDrawing(ellipse));
     }
     void objectSharing()
     {
