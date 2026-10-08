@@ -7457,11 +7457,15 @@ private slots:
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         auto *servers = window.findChild<swak::Servers *>();
         QVERIFY(servers && servers->findChild<swak::TakServerApi *>());
-        auto *enroll = window.findChild<QPushButton *>(QStringLiteral("enrollServer"));
+        auto *enroll = window.findChild<QAction *>(QStringLiteral("enrollServer"));
         auto *status = window.findChild<QLabel *>(QStringLiteral("enrollStatus"));
         QVERIFY(enroll && status);
-        enroll->click();
+        enroll->trigger();
         QCOMPARE(status->text(), QStringLiteral("Select a TLS server entry first."));
+        auto *channels = window.findChild<QAction *>(QStringLiteral("serverChannels"));
+        QVERIFY(channels && window.findChild<QPushButton *>(QStringLiteral("takServerActions")));
+        channels->trigger();
+        QVERIFY(status->text().startsWith(QStringLiteral("Select a TLS or QUIC entry")));
         auto entry = swak::serverDefaults();
         entry.insert(QStringLiteral("name"), QStringLiteral("TAK"));
         entry.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
@@ -7492,16 +7496,16 @@ private slots:
             checked = true;
             dialog->reject();
         });
-        enroll->click();
+        const auto before = status->text();
+        enroll->trigger();
         QVERIFY(checked);
-        QVERIFY(status->text().isEmpty() ||
-                status->text() == QStringLiteral("Select a TLS server entry first."));
+        QCOMPARE(status->text(), before);
         QTimer::singleShot(0, &window, [&] {
             auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
             QVERIFY(dialog);
             dialog->accept();
         });
-        enroll->click();
+        enroll->trigger();
         QCOMPARE(status->text(), QStringLiteral("Enter the password of the TAK account."));
         QVERIFY(enroll->isEnabled());
     }

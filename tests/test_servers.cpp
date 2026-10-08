@@ -11,6 +11,7 @@
 #include "core/server_browser.h"
 #include "core/servers.h"
 #include "core/store.h"
+#include "core/tak_channels.h"
 #include "core/tak_enrollment.h"
 #include "core/tak_protocol.h"
 #include "core/tak_server_api.h"
@@ -19,6 +20,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkInterface>
@@ -1240,6 +1242,82 @@ private slots:
         QVERIFY(!enrollment.start(options).isEmpty());
         options.serverId = QStringLiteral("missing");
         QVERIFY(!enrollment.start(options).isEmpty());
+    }
+    void takChannels()
+    {
+        const QByteArray list =
+            "{\"version\":\"3\",\"type\":\"com.bbn.marti.remote.groups.Group\",\"data\":["
+            "{\"name\":\"Cyan\",\"direction\":\"IN\",\"bitpos\":2,\"active\":true,\"type\":"
+            "\"SYSTEM\"},"
+            "{\"name\":\"Cyan\",\"direction\":\"OUT\",\"bitpos\":2,\"active\":true,\"type\":"
+            "\"SYSTEM\"},"
+            "{\"name\":\"Ops\",\"direction\":\"IN\",\"bitpos\":3,\"active\":false,"
+            "\"description\":\"Operations\"}]}";
+        QList<TakGroup> groups;
+        QVERIFY(readTakGroups(list, &groups));
+        QCOMPARE(groups.size(), 3);
+        QCOMPARE(channelNames(groups),
+                 (QStringList{QStringLiteral("Cyan"), QStringLiteral("Ops")}));
+        QCOMPARE(activeChannels(groups), (QSet<QString>{QStringLiteral("Cyan")}));
+        QCOMPARE(groups.at(2).description, QStringLiteral("Operations"));
+        const auto body =
+            QJsonDocument::fromJson(activeGroupsBody(groups, {QStringLiteral("Ops")})).array();
+        QCOMPARE(body.size(), 3);
+        QVERIFY(!body.at(0).toObject().value(QStringLiteral("active")).toBool());
+        QVERIFY(body.at(2).toObject().value(QStringLiteral("active")).toBool());
+        QCOMPARE(body.at(2).toObject().value(QStringLiteral("bitpos")).toInt(), 3);
+        QCOMPARE(body.at(1).toObject().value(QStringLiteral("direction")).toString(),
+                 QStringLiteral("OUT"));
+        QList<TakGroup> rejected;
+        QVERIFY(!readTakGroups("{\"data\":{}}", &rejected));
+        QVERIFY(!readTakGroups("{\"data\":[{\"name\":\"\"}]}", &rejected));
+        QVERIFY(!readTakGroups("{\"data\":[{\"name\":\"a\\u0007\"}]}", &rejected));
+        QVERIFY(!readTakGroups("not json", &rejected));
+        // Load and apply through the REST API of a TLS entry.
+        HttpsHarness api;
+        QVERIFY(api.load());
+        int status = 200;
+        api.respond = [&list, &status](const QByteArray &request) {
+            if (request.startsWith("GET /Marti/api/groups/all?useCache=true ")) {
+                return QByteArray("HTTP/1.1 200 OK\r\nContent-Type: "
+                                  "application/json\r\nContent-Length: ") +
+                       QByteArray::number(list.size()) + "\r\n\r\n" + list;
+            }
+            return QByteArray("HTTP/1.1 ") + QByteArray::number(status) +
+                   " X\r\nContent-Length: 0\r\n\r\n";
+        };
+        Store store;
+        Servers servers(store);
+        NetworkClient network;
+        TakServerApi tak(servers, network);
+        TakChannels channels(tak);
+        auto entry = source(9);
+        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        entry.insert(QStringLiteral("enabled"), false);
+        entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+        entry.insert(QStringLiteral("apiPort"), api.serverPort());
+        QVERIFY(servers.put(QStringLiteral("tak"), entry).isEmpty());
+        QSignalSpy loaded(&channels, &TakChannels::loaded);
+        QSignalSpy applied(&channels, &TakChannels::applied);
+        channels.load(QStringLiteral("tak"));
+        QVERIFY(loaded.wait(10000));
+        QVERIFY(loaded.last().at(2).toString().isEmpty());
+        const auto received = loaded.last().at(1).value<QList<TakGroup>>();
+        QCOMPARE(received.size(), 3);
+        channels.apply(
+            QStringLiteral("tak"), received, {QStringLiteral("Ops")}, QStringLiteral("SWAK-1"));
+        QVERIFY(applied.wait(10000));
+        QVERIFY(applied.last().at(1).toString().isEmpty());
+        const auto put = api.requests.last();
+        QVERIFY(put.startsWith("PUT /Marti/api/groups/active?clientUid=SWAK-1 "));
+        QVERIFY(put.contains("Content-Type: application/json"));
+        const auto sent = QJsonDocument::fromJson(put.mid(put.indexOf("\r\n\r\n") + 4)).array();
+        QCOMPARE(sent.size(), 3);
+        QVERIFY(sent.at(2).toObject().value(QStringLiteral("active")).toBool());
+        status = 403;
+        channels.apply(QStringLiteral("tak"), received, {}, QStringLiteral("SWAK-1"));
+        QVERIFY(applied.wait(10000));
+        QVERIFY(applied.last().at(1).toString().contains(QStringLiteral("does not allow")));
     }
     void takServerApi()
     {

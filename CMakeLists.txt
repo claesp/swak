@@ -95,6 +95,8 @@ add_library(
     src/core/tak_protocol.h
     src/core/emergency.cpp
     src/core/emergency.h
+    src/core/tak_channels.cpp
+    src/core/tak_channels.h
     src/core/cot_stream.cpp
     src/core/identity.cpp
     src/core/servers.cpp

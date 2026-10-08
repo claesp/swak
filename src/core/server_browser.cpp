@@ -6,6 +6,7 @@
 #include "core/servers.h"
 #include "core/settings_dialog.h"
 #include "core/single_line_label.h"
+#include "core/tak_channels.h"
 #include "core/tak_enrollment.h"
 #include "core/tak_server_api.h"
 
@@ -17,6 +18,8 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
+#include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSignalBlocker>
@@ -173,10 +176,22 @@ ServerBrowser::ServerBrowser(Servers &servers, QWidget *parent) : QWidget(parent
             &QPushButton::clicked,
             &servers_,
             &Servers::reconnect);
-    enroll_ = button(tr("Enroll ..."), QStringLiteral("enrollServer"));
+    // TAK Server commands share one button, so the pane keeps its earlier minimum width.
+    auto *tak = button(tr("TAK Server"), QStringLiteral("takServerActions"));
+    auto *takMenu = new QMenu(tak);
+    takMenu->setObjectName(QStringLiteral("takServerMenu"));
+    takMenu->setToolTipsVisible(true);
+    tak->setMenu(takMenu);
+    enroll_ = takMenu->addAction(tr("Enroll ..."));
+    enroll_->setObjectName(QStringLiteral("enrollServer"));
     enroll_->setToolTip(tr("Request a client certificate from TAK Server for the selected TLS "
                            "entry."));
-    connect(enroll_, &QPushButton::clicked, this, &ServerBrowser::enroll);
+    connect(enroll_, &QAction::triggered, this, &ServerBrowser::enroll);
+    auto *channels = takMenu->addAction(tr("Channels ..."));
+    channels->setObjectName(QStringLiteral("serverChannels"));
+    channels->setToolTip(tr("Choose the TAK Server groups that send and receive data for this "
+                            "entry."));
+    connect(channels, &QAction::triggered, this, &ServerBrowser::loadChannels);
     layout->addLayout(row);
     enrollStatus_ = new SingleLineLabel(QString{}, this);
     enrollStatus_->setObjectName(QStringLiteral("enrollStatus"));
@@ -258,6 +273,80 @@ void ServerBrowser::refresh()
         table_->setCurrentCell(0, 1);
     }
     status();
+}
+void ServerBrowser::loadChannels()
+{
+    const auto id = table_->selectedId();
+    auto *api = servers_.findChild<TakServerApi *>();
+    if (!api || TakServerApi::apiUrl(servers_.sources().value(id).toObject(), QStringLiteral("/"))
+                    .isEmpty()) {
+        showEnrollStatus(tr("Select a TLS or QUIC entry with a TAK REST API port first."));
+        return;
+    }
+    if (!channels_) {
+        channels_ = new TakChannels(*api, this);
+        connect(channels_, &TakChannels::loaded, this, &ServerBrowser::chooseChannels);
+        connect(
+            channels_, &TakChannels::applied, this, [this](const QString &, const QString &error) {
+                showEnrollStatus(error.isEmpty() ? tr("The active channels are updated.") : error);
+            });
+    }
+    showEnrollStatus(tr("Reading the channels of the server…"));
+    channels_->load(id);
+}
+void ServerBrowser::chooseChannels(const QString &id,
+                                   const QList<TakGroup> &groups,
+                                   const QString &error)
+{
+    if (!error.isEmpty()) {
+        showEnrollStatus(error);
+        return;
+    }
+    const auto names = channelNames(groups);
+    if (names.isEmpty()) {
+        showEnrollStatus(tr("The server has no channels for this user."));
+        return;
+    }
+    showEnrollStatus({});
+    Modal<QDialog> dialog(this);
+    dialog->setObjectName(QStringLiteral("channelDialog"));
+    dialog->setWindowTitle(tr("Channels"));
+    auto *layout = new QVBoxLayout(dialog.get());
+    auto *notice = new QLabel(tr("Checked channels send and receive data for this user. TAK Server "
+                                 "applies the choice to every client of the user."),
+                              dialog.get());
+    notice->setWordWrap(true);
+    layout->addWidget(notice);
+    auto *list = new QListWidget(dialog.get());
+    list->setObjectName(QStringLiteral("channelList"));
+    const auto active = activeChannels(groups);
+    for (const auto &name : names) {
+        auto *item = new QListWidgetItem(name, list);
+        item->setFlags(Qt::ItemIsUserCheckable | Qt::ItemIsEnabled);
+        item->setCheckState(active.contains(name) ? Qt::Checked : Qt::Unchecked);
+        for (const auto &group : groups) {
+            if (group.name == name && !group.description.isEmpty()) {
+                item->setToolTip(group.description);
+            }
+        }
+    }
+    layout->addWidget(list);
+    auto *buttons =
+        new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dialog.get());
+    connect(buttons, &QDialogButtonBox::accepted, dialog.get(), &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, dialog.get(), &QDialog::reject);
+    layout->addWidget(buttons);
+    if (dialog->exec() != QDialog::Accepted || !dialog) {
+        return;
+    }
+    QSet<QString> chosen;
+    for (int row = 0; row < list->count(); ++row) {
+        if (list->item(row)->checkState() == Qt::Checked) {
+            chosen.insert(list->item(row)->text());
+        }
+    }
+    showEnrollStatus(tr("Updating the active channels…"));
+    channels_->apply(id, groups, chosen, servers_.senderUid());
 }
 void ServerBrowser::showEnrollStatus(const QString &text)
 {

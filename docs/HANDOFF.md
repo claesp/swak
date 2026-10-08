@@ -1594,3 +1594,7 @@ Messages may now hold 64 KiB and 2048 elements, and each event keeps up to 32768
 
 `core/emergency.*` builds ATAK-style alerts and cancels and recognizes active alerts. The Store removes an alert when a `b-a-o-can` from the same origin arrives and keeps no cancel. The new `emergencies` plugin draws red rings and labels, shows a trailing toolbar button that turns red with active alerts, lists them in its menu, and logs each new alert once. The event editor gains an alert type, Send emergency ... with confirmation, and Cancel emergency. A new Emergency icon joins the hand-drawn icons. Tests: `emergencies` in the server tests and `emergencyAlerts` in the GUI tests, with a screenshot of the ring.
 
+# 2026-10-08: Phase 2 channels
+
+`core/tak_channels.*` reads `/groups/all?useCache=true`, merges IN and OUT entries by name, and sends `/groups/active?clientUid=` with the server's group objects and changed active flags. The server browser gains Channels ... with a checklist dialog. `takChannels` covers parsing, rejection, the body, load and apply against the HTTPS fixture, and a 403 answer. A live TAK Server with LDAP or file groups remains untested.
+Enroll ... and Channels ... now share a TAK Server menu button, so the server pane keeps its earlier minimum width.

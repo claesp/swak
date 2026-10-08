@@ -10,7 +10,7 @@ Set the CA certificate path for a private server authority.
 
 # Certificate enrollment
 
-TAK Server can issue a client certificate to a user with a TAK account. Select a TLS entry and then Enroll .... Enter the username and password of the account. The enrollment port is normally 8446. Choose Create a new key, or Use an existing PEM key file. Then select Enroll.
+TAK Server can issue a client certificate to a user with a TAK account. Select a TLS entry and then TAK Server > Enroll .... Enter the username and password of the account. The enrollment port is normally 8446. Choose Create a new key, or Use an existing PEM key file. Then select Enroll.
 
 SWAK reads the required certificate subject from `/Marti/api/tls/config`. It builds a certificate request with CN set to the username and exactly the required entries, such as O and OU. It signs the request with SHA-256 and sends it to `/Marti/api/tls/signClient/v2`, with the sender UID and the SWAK version. Both requests use HTTP Basic authentication over HTTPS. They trust only the CA of the entry, or the system CAs when the entry has none. Set the CA first when the server uses a private authority.
 
@@ -51,6 +51,10 @@ TAK Server 5.7 adds a QUIC input, normally on port 8090. Select QUIC CoT stream 
 ATAK and WinTAK share positions without a server through multicast. Add a server with the protocol Multicast mesh (ATAK). Select an IPv4 interface. For situational awareness, use group 239.2.3.1 and port 6969. For GeoChat, add a second entry with group 224.10.10.1 and port 17012.
 
 The entry joins the group on the selected interface. It receives CoT XML datagrams and sends generated CoT when sending is enabled. Datagrams use a time-to-live of one, so they stay on the local network segment. SWAK does not receive its own datagrams. Multicast mesh uses plaintext without authentication. Use it only on a trusted network. ATAK can also send TAK Protocol version 1 datagrams, which start with 0xbf, the version 1, and 0xbf. SWAK decodes them and counts them in the status. SWAK sends XML on the mesh, which ATAK also accepts.
+
+# Channels
+
+TAK Server groups decide which users exchange data. TAK clients call them channels. Select a TLS or QUIC entry with a TAK REST API port, then TAK Server > Channels .... SWAK reads the groups of your user from `/Marti/api/groups/all?useCache=true`. Each channel appears once, even when the server lists it for both directions. Check the channels that should send and receive data, and select OK. SWAK sends the whole list with the new active flags to `/Marti/api/groups/active`, with your sender UID. TAK Server applies the choice to every client of the same user. A server that does not allow the change answers with an error, which SWAK shows below the buttons.
 
 # Emergency alerts
 
