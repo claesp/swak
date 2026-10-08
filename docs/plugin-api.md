@@ -118,7 +118,7 @@ The status bar shows CoT and retained internal-event counts with separators. Inc
 
 # CoT detail
 
-`Event::detail` holds all detail children of a CoT event as canonical XML, without the detail element. It holds at most `MaxDetailCharacters`, 8192 characters. `Event::detailTruncated` marks an event whose detail was larger. The typed fields, such as callsign, team, role, course, and speed, stay valid in that case.
+`Event::detail` holds all detail children of a CoT event as canonical XML, without the detail element. It holds at most `MaxDetailCharacters`, 32768 characters. The Store also keeps at most `Store::DetailBudget` characters for all events together. `Event::origin` names the server entry that received the event and is empty for local events. `Event::detailTruncated` marks an event whose detail was larger. The typed fields, such as callsign, team, role, course, and speed, stay valid in that case.
 
 Read detail through `core/cot_detail.h`. `detailElements` and `detailElement` return small element trees. Typed readers cover `remarks`, the contact endpoint, `link`, `marti` destinations, `emergency`, `fileshare`, `__chat`, `__video`, `usericon`, color elements with signed ARGB values, and the `status` battery. Readers return empty values for missing or out-of-range data.
 

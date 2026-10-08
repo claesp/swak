@@ -370,7 +370,7 @@ public:
                        s->quic->bytesToWrite() + payload.size() <= 256 * 1024) {
                 writeTo(*s, payload);
             } else if ((s->output || s->mesh) && s->udp && s->ready) {
-                // One event per datagram. The 16 KiB message limit stays below the UDP limit.
+                // One event per datagram. The 64 KiB message limit stays below the UDP limit.
                 const QHostAddress target(s->source.value(QStringLiteral("host")).toString());
                 const auto port =
                     static_cast<quint16>(s->source.value(QStringLiteral("port")).toInt());
@@ -917,7 +917,9 @@ private:
             ++s.rejected;
             return;
         }
-        mailbox_->events.insert(result.event->uid, *result.event);
+        auto event = *result.event;
+        event.origin = s.peer ? s.lanId : s.id;
+        mailbox_->events.insert(event.uid, event);
         ++s.accepted;
     }
     void receive(Session &s)

@@ -23,7 +23,7 @@ The map uses `QOpenGLWidget` and the Qt OpenGL paint engine. Each layer receives
 
 The GUI thread owns models and widgets. One worker thread owns all CoT sockets and stream parsers. Its active timer runs every five milliseconds. Each pass starts no further receive operation after four milliseconds. Round-robin scheduling shares work across connections.
 
-The worker parses messages of at most 16 KiB. A locked mailbox holds at most 2048 distinct UIDs and replaces queued older updates. The GUI drains at most 512 events every 33 milliseconds. Labels stop after 100 visible events, except for the selected event. TrackMotion maintains display positions separately from authoritative event coordinates.
+The worker parses messages of at most 64 KiB. A locked mailbox holds at most 2048 distinct UIDs and replaces queued older updates. The GUI drains at most 512 events every 33 milliseconds. Labels stop after 100 visible events, except for the selected event. TrackMotion maintains display positions separately from authoritative event coordinates.
 
 # Add a plugin
 

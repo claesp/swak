@@ -1,5 +1,7 @@
 #include "core/store.h"
 
+#include "core/cot_detail.h"
+
 #include <QLocale>
 
 #include <algorithm>
@@ -87,13 +89,23 @@ QString Store::accept(const Event &event, const QDateTime &now)
     if (event.stale > now.addDays(7)) {
         return tr("The event lifetime exceeds seven days.");
     }
+    if (deleteRequest(event)) {
+        return {};
+    }
     const auto found = rows_.constFind(event.uid);
+    const qsizetype previous = found != rows_.cend() ? events_.at(found.value()).detail.size() : 0;
+    Event stored = event;
+    if (detailCharacters_ - previous + stored.detail.size() > DetailBudget) {
+        stored.detail.clear();
+        stored.detailTruncated = true;
+    }
     if (found != rows_.cend()) {
         const int row = found.value();
         if (event.time < events_.at(row).time) {
             return tr("A newer event already exists for this identity.");
         }
-        events_[row] = event;
+        detailCharacters_ += stored.detail.size() - previous;
+        events_[row] = stored;
         if (batching_) {
             firstChanged_ = std::min(firstChanged_, row);
             lastChanged_ = std::max(lastChanged_, row);
@@ -107,12 +119,13 @@ QString Store::accept(const Event &event, const QDateTime &now)
         }
         const int row = rowCount();
         beginInsertRows({}, row, row);
-        events_.append(event);
+        events_.append(stored);
         rows_.insert(event.uid, row);
+        detailCharacters_ += stored.detail.size();
         endInsertRows();
     }
-    motion_->update(event);
-    emit eventAccepted(event);
+    motion_->update(stored);
+    emit eventAccepted(stored);
     if (!batching_) {
         emit changed();
     }
@@ -150,6 +163,7 @@ void Store::expire(const QDateTime &now)
         }
         motion_->expire(events_.at(row).uid);
         beginRemoveRows({}, row, row);
+        detailCharacters_ -= events_.at(row).detail.size();
         rows_.remove(events_.at(row).uid);
         events_.removeAt(row);
         endRemoveRows();
@@ -167,12 +181,58 @@ void Store::expire(const QDateTime &now)
     }
     emit changed();
 }
+// TAK deletes an object with a t-x-d-d event. Its link elements name the objects. SWAK
+// removes only objects from the same origin, so one server cannot delete another's objects.
+bool Store::deleteRequest(const Event &event)
+{
+    if (event.type != QLatin1String("t-x-d-d")) {
+        return false;
+    }
+    QStringList targets;
+    for (const auto &link : links(event)) {
+        const auto row = rows_.constFind(link.uid);
+        if (row != rows_.cend() && events_.at(row.value()).origin == event.origin) {
+            targets.append(link.uid);
+        }
+    }
+    removeEvents(targets);
+    return true;
+}
+void Store::removeEvents(const QStringList &uids)
+{
+    if (uids.isEmpty()) {
+        return;
+    }
+    if (uids.contains(selected_)) {
+        select({});
+    }
+    removing_ = true;
+    for (int row = rowCount() - 1; row >= 0; --row) {
+        if (!uids.contains(events_.at(row).uid)) {
+            continue;
+        }
+        motion_->remove(events_.at(row).uid);
+        beginRemoveRows({}, row, row);
+        detailCharacters_ -= events_.at(row).detail.size();
+        rows_.remove(events_.at(row).uid);
+        events_.removeAt(row);
+        endRemoveRows();
+    }
+    removing_ = false;
+    for (int row = 0; row < rowCount(); ++row) {
+        rows_[events_.at(row).uid] = row;
+    }
+    if (!batching_) {
+        emit changed();
+    }
+}
 void Store::clear()
 {
     motion_->clear();
     beginResetModel();
     events_.clear();
     rows_.clear();
+    detailCharacters_ = 0;
     endResetModel();
     select({});
     emit changed();

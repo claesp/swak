@@ -7,7 +7,8 @@
 #include <optional>
 
 namespace swak {
-inline constexpr qsizetype MaxMessageBytes = 16 * 1024;
+// ATAK routes and shapes carry many link points, so one message can hold 64 KiB.
+inline constexpr qsizetype MaxMessageBytes = 64 * 1024;
 inline constexpr int MaxEvents = 4096;
 
 struct Event
@@ -33,6 +34,9 @@ struct Event
     QString detail;
     // True when the received detail exceeded the retained size. Typed fields remain valid.
     bool detailTruncated = false;
+    // The server entry that received the event. Empty for local events. A TAK delete event
+    // removes only events with the same origin.
+    QString origin;
 };
 
 struct DecodeResult

@@ -908,7 +908,8 @@ private slots:
         for (const QByteArray &bad : {QByteArray("<event"),
                                       QByteArray("\xbf\x00", 2),
                                       QByteArray("\xbf\xff\xff\xff\xff\xff", 6),
-                                      QByteArray("\xbf\x81\x81\x01", 4)}) {
+                                      // A length of 70000 exceeds the 64 KiB message limit.
+                                      QByteArray("\xbf\xf0\xa2\x04", 4)}) {
             TakStream broken;
             broken.feed(bad);
             QVERIFY2(broken.failed(), bad.toHex().constData());
@@ -939,6 +940,7 @@ private slots:
             },
             5000));
         QCOMPARE(store.events().first().uid, QStringLiteral("after-switch"));
+        QCOMPARE(store.events().first().origin, QStringLiteral("tak"));
         QVERIFY(server.received.contains("type=\"t-x-takp-q\""));
         QVERIFY(server.received.contains("<TakRequest version=\"1\"/>"));
         QVERIFY(QTest::qWaitFor(
@@ -1330,6 +1332,62 @@ private slots:
             },
             5000));
         QVERIFY(!tak.info(QStringLiteral("tak")).checking);
+    }
+    void storeDeletesAndBudget()
+    {
+        Store store;
+        auto first = sampleEvent();
+        first.uid = QStringLiteral("from-one");
+        first.origin = QStringLiteral("server-1");
+        auto second = sampleEvent();
+        second.uid = QStringLiteral("from-two");
+        second.origin = QStringLiteral("server-2");
+        QVERIFY(store.accept(first).isEmpty());
+        QVERIFY(store.accept(second).isEmpty());
+        store.select(first.uid);
+        // A TAK delete removes only objects from its own origin, and is not stored itself.
+        auto remove = sampleEvent();
+        remove.uid = QStringLiteral("delete-1");
+        remove.type = QStringLiteral("t-x-d-d");
+        remove.origin = QStringLiteral("server-1");
+        remove.detail = QStringLiteral("<link uid=\"from-one\" relation=\"none\" type=\"a-f-G\"/>"
+                                       "<link uid=\"from-two\" relation=\"none\" type=\"a-f-G\"/>"
+                                       "<__forcedelete/>");
+        QSignalSpy changed(&store, &Store::changed);
+        QVERIFY(store.accept(remove).isEmpty());
+        QCOMPARE(store.rowCount(), 1);
+        QCOMPARE(store.events().first().uid, QStringLiteral("from-two"));
+        QVERIFY(store.selected().isEmpty());
+        QVERIFY(changed.count() >= 1);
+        QVERIFY(store.motion().snapshot().size() <= 1);
+        remove.time = remove.time.addSecs(1);
+        QVERIFY(store.accept(remove).isEmpty());
+        QCOMPARE(store.rowCount(), 1);
+        // Retained detail has a total budget. Later events keep only their typed fields.
+        store.clear();
+        QCOMPARE(store.detailCharacters(), 0);
+        const auto large =
+            QStringLiteral("<remarks>") + QString(30000, u'r') + QStringLiteral("</remarks>");
+        bool truncated = false;
+        for (int i = 0; i < 300; ++i) {
+            auto event = sampleEvent();
+            event.uid = QStringLiteral("large-%1").arg(i);
+            event.detail = large;
+            QVERIFY(store.accept(event).isEmpty());
+            truncated = truncated || store.events().last().detailTruncated;
+        }
+        QVERIFY(truncated);
+        QVERIFY(store.detailCharacters() <= Store::DetailBudget);
+        QVERIFY(store.detailCharacters() > Store::DetailBudget - large.size());
+        // An update without detail frees budget for the same identity.
+        auto lighter = store.events().first();
+        lighter.detail.clear();
+        lighter.time = lighter.time.addSecs(1);
+        const auto before = store.detailCharacters();
+        QVERIFY(store.accept(lighter).isEmpty());
+        QCOMPARE(store.detailCharacters(), before - large.size());
+        store.expire(QDateTime::currentDateTimeUtc().addDays(30));
+        QCOMPARE(store.detailCharacters(), 0);
     }
     void cotDetailModel()
     {

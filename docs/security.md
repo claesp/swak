@@ -4,8 +4,8 @@ Incoming XML and file contents are untrusted data. Native plugin code is trusted
 
 The application applies these input limits:
 
-- Messages contain at most 16384 bytes.
-- XML contains at most 12 nested levels and 256 elements.
+- Messages contain at most 65536 bytes. ATAK routes and shapes need this size.
+- XML contains at most 12 nested levels and 2048 elements.
 - Each element contains at most 32 attributes.
 - Identities, types, and callsigns contain at most 128 UTF-16 code units.
 - The store contains at most 4096 event identities.
@@ -15,19 +15,21 @@ The parser rejects document type declarations, entity references, processing ins
 
 Text fields exclude control, format, and surrogate characters. This restriction excludes supplementary Unicode characters, including many emoji. The interface presents external text as plain text. The attribution link escapes all source text before it creates HTML. User actions can open HTTP or HTTPS license links through the default browser. Links with credentials or other schemes cannot open.
 
-SWAK keeps every detail child of a received event as canonical, escaped XML in `Event::detail`. It keeps at most 8192 characters. A larger detail keeps only the typed fields and marks the event. Namespaced detail elements are left out. Readers parse this text again with the same element and depth limits. Detail values are data. Links, URLs, file shares, and video addresses never start a download, a request, or a program by themselves.
+SWAK keeps every detail child of a received event as canonical, escaped XML in `Event::detail`. It keeps at most 32768 characters. A larger detail keeps only the typed fields and marks the event. All stored events together keep at most 8 million detail characters. Above that budget, new events keep only their typed fields. Namespaced detail elements are left out. Readers parse this text again with the same element and depth limits. Detail values are data. Links, URLs, file shares, and video addresses never start a download, a request, or a program by themselves.
 
 A TAK login sends a username and password inside the TLS stream before the first CoT event. The profile stores only the username and the name of a `SWAK_COT_` environment variable. SWAK refuses a login on a plaintext entry. The XML writer escapes the values. SWAK clears its copies of the password after the write, within the limits of Qt containers.
 
 Certificate enrollment sends the account password with HTTP Basic authentication over HTTPS only, with certificate checks. SWAK keeps the password in memory for the two requests and then clears its copies, within the limits of Qt containers. The enrollment XML and JSON replies have a 256 KiB limit. SWAK rejects document type declarations and a CN entry in the required subject. It accepts at most 16 subject entries and eight CA certificates, and checks that the signed certificate matches the private key. Key files and certificates go to an owner-only folder. A new key is encrypted when the entry names a password variable.
 
-TAK Protocol version 1 frames have a limit of 16 KiB per message, the same as XML. The frame reader rejects a wrong magic byte, a zero or oversized length, and a varint longer than five bytes. A waiting frame never holds more than one maximum frame. SWAK converts each binary message to CoT XML with an escaping writer and validates it with the XML decoder. The XML detail inside a message therefore cannot leave the detail element or add a second event.
+TAK Protocol version 1 frames have a limit of 64 KiB per message, the same as XML. The frame reader rejects a wrong magic byte, a zero or oversized length, and a varint longer than five bytes. A waiting frame never holds more than one maximum frame. SWAK converts each binary message to CoT XML with an escaping writer and validates it with the XML decoder. The XML detail inside a message therefore cannot leave the detail element or add a second event.
 
 QUIC entries use the OpenSSL QUIC client with certificate and host checks and the `takstream` ALPN name. They read client credentials through the same reader as TLS entries. Received stream data passes the same CoT frame reader and limits as TLS. Host names resolve without blocking the connection worker.
 
-Multicast mesh entries join one IPv4 group on one selected interface. They use a time-to-live of one and turn off multicast loopback. Their datagrams are plaintext and unauthenticated, like Local LAN. Received datagrams pass the same 16 KiB limit and CoT decoder as other inputs.
+Multicast mesh entries join one IPv4 group on one selected interface. They use a time-to-live of one and turn off multicast loopback. Their datagrams are plaintext and unauthenticated, like Local LAN. Received datagrams pass the same 64 KiB limit and CoT decoder as other inputs.
 
 The HTTPS client uses libcurl on one worker thread. Each request uses HTTPS only, certificate and host checks, TLS 1.2 or later, no redirects, no cookies, a reply size limit, and a time limit. It accepts only GET, HEAD, POST, PUT, and DELETE, and rejects header names or values with line breaks. Before it connects, it checks that the URL scheme, host, and port match the configured server. Certificates and keys reach libcurl from memory. Passwords come from `SWAK_COT_` environment variables. libcurl honors the proxy environment variables. Error texts name the failure class and contain no URL or credential.
+
+A TAK delete event, `t-x-d-d`, removes the objects that its link elements name. SWAK records the server entry that delivered each event. A delete removes only objects from the same entry, so one server cannot delete objects from another server or local objects. SWAK does not keep the delete event itself.
 
 Coordinates must be finite decimal numbers within geographic ranges. Altitude must lie between minus 100 million and plus 100 million meters. Horizontal and vertical uncertainty must lie between zero and 100 million meters.
 

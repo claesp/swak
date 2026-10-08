@@ -23,7 +23,7 @@ DecodeResult decodeCot(const QByteArray &data)
         return DecodeResult{std::nullopt, error};
     };
     if (data.isEmpty() || data.size() > MaxMessageBytes) {
-        return fail(tr("The XML message must contain 1 to 16384 bytes."));
+        return fail(tr("The XML message must contain 1 to 65536 bytes."));
     }
     if (data.contains('\0')) {
         return fail(tr("The XML must use UTF-8 without null bytes."));
@@ -63,7 +63,7 @@ DecodeResult decodeCot(const QByteArray &data)
             return fail(tr("The XML contains a prohibited declaration or reference."));
         }
         if (token == QXmlStreamReader::StartElement) {
-            if (++depth > 12 || ++elements > 256 ||
+            if (++depth > 12 || ++elements > 2048 ||
                 xml.attributes().size() + xml.namespaceDeclarations().size() > 32) {
                 return fail(tr("The XML structure exceeds the supported limits."));
             }

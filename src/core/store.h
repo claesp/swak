@@ -22,6 +22,15 @@ public:
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
     QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
     QString accept(const Event &event, const QDateTime &now = QDateTime::currentDateTimeUtc());
+    // Retained detail of all events together. Above this budget, new events keep only their
+    // typed fields, so a flood of large events cannot exhaust memory.
+    static constexpr qsizetype DetailBudget = 8 * 1024 * 1024;
+    // Tests check the budget. Diagnostics can show it later.
+    // cppcheck-suppress unusedFunction
+    qsizetype detailCharacters() const
+    {
+        return detailCharacters_;
+    }
     void acceptBatch(const QList<Event> &events);
     void expire(const QDateTime &now = QDateTime::currentDateTimeUtc());
     void clear();
@@ -56,6 +65,9 @@ private:
     QString selected_;
     QTimer expiry_;
     bool removing_ = false;
+    qsizetype detailCharacters_ = 0;
+    void removeEvents(const QStringList &uids);
+    bool deleteRequest(const Event &event);
     bool batching_ = false;
     int firstChanged_ = MaxEvents;
     int lastChanged_ = -1;

@@ -1586,3 +1586,7 @@ The `mcast` server protocol joins an IPv4 multicast group on a selected interfac
 
 The build generates C++ from `src/core/proto/tak_protocol.proto` into the `swak_tak_proto` library with the Protobuf lite runtime. `core/tak_protocol.*` encodes events, decodes messages by rebuilding CoT XML for `decodeCot`, and handles stream frames and mesh datagrams. `mergedDetail` in cot.cpp now serves both encoders. Stream entries negotiate version 1 by default and switch after a positive response. `CotStream::feed` can stop after the response, so binary bytes in the same read reach the binary reader. Mesh entries decode binary datagrams. Server entries gain `takProtocol` with `binary` or `xml`. Tests cover typed and XML detail, a hand-encoded control message, injection, NaN, framing failures, mesh headers, negotiation with a binary frame in the response read, binary sending, an invalid frame, XML only, and mesh decoding. Phase 1 is complete. A live TAK Server with protobuf remains untested.
 
+# 2026-10-08: Phase 2 limits and TAK deletes
+
+Messages may now hold 64 KiB and 2048 elements, and each event keeps up to 32768 detail characters, so ATAK routes fit. The Store keeps at most 8 million detail characters for all events. Above that, new events keep only typed fields. Events record their `origin` server entry. A `t-x-d-d` event removes the linked objects from the same origin and is not stored. `storeDeletesAndBudget` covers deletes, origins, selection, the budget, updates, and expiry.
+

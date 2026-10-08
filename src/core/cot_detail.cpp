@@ -11,7 +11,7 @@
 namespace swak {
 namespace {
 constexpr int MaxDetailDepth = 10;
-constexpr int MaxDetailElements = 256;
+constexpr int MaxDetailElements = 2048;
 constexpr int MaxReadElements = 64;
 
 bool validName(const QString &name)

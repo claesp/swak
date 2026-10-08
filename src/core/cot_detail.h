@@ -13,7 +13,7 @@ class QXmlStreamWriter;
 
 namespace swak {
 // Retained detail text per event. Larger detail keeps only the typed fields.
-inline constexpr qsizetype MaxDetailCharacters = 8192;
+inline constexpr qsizetype MaxDetailCharacters = 32 * 1024;
 
 // One detail element. Readers build these trees on demand from Event::detail.
 struct CotElement

@@ -1619,7 +1619,7 @@ private slots:
                                       .replace("</detail>",
                                                QByteArray("</a>").repeated(20) + "</detail>");
         QTest::newRow("elements") << QByteArray(valid).replace(
-            "<detail>", "<detail>" + QByteArray("<a/>").repeated(260));
+            "<detail>", "<detail>" + QByteArray("<a/>").repeated(2050));
         QTest::newRow("uid-limit") << QByteArray(valid).replace("test-1", QByteArray(129, 'x'));
         QTest::newRow("control") << QByteArray(valid).replace("test-1", "test&#10;1");
         QTest::newRow("text") << QByteArray(valid).replace("</event>", "text</event>");
