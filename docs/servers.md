@@ -60,6 +60,22 @@ TAK Server groups decide which users exchange data. TAK clients call them channe
 
 Tools > Plugins > Contacts shows a pane with the TAK users that SWAK can address. A position report from a server entry with a `contact` endpoint adds or updates a user. Local events and objects without a contact endpoint are not users. Refresh reads `/Marti/api/contacts/all` from each enabled entry with a TAK REST API port. These users stay in the list in gray, without a current position, until they report one. An error names the entry and keeps its last list. Double-click a user, or select Show on map in the context menu, to center the map on the user and select it. The list holds at most 2048 users and updates at most once a second.
 
+# Share objects
+
+SWAK sends a local object to TAK users only when you share it. Right-click a marker, circle, line, area, or route on the map, or open its Information menu. Select Share to send it to the channels of your user. Select Share with ... to send it only to chosen users from Contacts. TAK Server reads the `marti` element with one `dest` callsign for each user. Multicast groups, UDP outputs, and LAN peers ignore this element and send to all receivers.
+
+| SWAK object | TAK CoT |
+| --- | --- |
+| Marker | `b-m-p-s-m` spot marker with `color` and `usericon` |
+| Circle | `u-d-c-c` with `shape/ellipse` and the radius in meters |
+| Line | `u-d-f` with one `link` point for each end |
+| Area | `u-d-f` with the first point again at the end and a `fillColor` |
+| Route | `b-m-r` with `b-m-p-w` check point links and `link_attr` |
+
+A shared object stays shared. SWAK sends each change, and it sends a `t-x-d-d` delete with `__forcedelete` when you delete the object. Undo shares the object again. Stop sharing sends the delete and keeps the object local. Users that you remove from Share with ... get a delete. Shared objects are stale after 24 hours, so SWAK sends all of them again every 15 minutes and after each start. When no output is connected or the outgoing queue is full, SWAK tries again every 5 seconds and logs the reason once. SWAK never sends received events.
+
+Tools > Plugins > Sharing > Share New Objects Automatically, or the same setting in File > Settings > Sharing, shares each new local object with your channels. It is off by default. Objects that SWAK restores at start are not new. MIL-STD-2525 markers are sent as spot markers with their color.
+
 # Emergency alerts
 
 TAK clients send emergency alerts as CoT. SWAK recognizes 911 Alert (`b-a-o-tbl`), Ring The Bell (`b-a-o-pan`), Troops In Contact (`b-a-o-opn`), Geo-fence Breached (`b-a-g`), and the ATAK custom alert (`b-a-o-c`). An active alert has a red double ring and a label with its type and the callsign of the person in distress. The emergency button at the right end of the toolbar turns red while any alert is active. Its tooltip lists the alerts. Its menu centers the map on an alert and selects it. Each new alert adds one Warning to Events. TAK Server repeats active alerts, and SWAK ignores these repeats.

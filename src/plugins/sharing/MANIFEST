@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "org.swak.sharing",
+  "name": "Sharing",
+  "description": "Share local markers, circles, lines, areas, and routes with TAK users.",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entryPoint": "SharingPlugin",
+  "linkage": "static",
+  "platforms": [
+    "linux"
+  ],
+  "qtMajor": 6,
+  "qtMinimum": "6.4.0",
+  "interfaces": [
+    "menu"
+  ],
+  "requires": [],
+  "permissions": [],
+  "settingsSchemaVersion": 1
+}

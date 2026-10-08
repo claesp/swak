@@ -51,6 +51,8 @@ public:
 signals:
     void changed();
     void restored(const QString &id);
+    // A put created a new object. Restoring preferences and Undo do not emit it.
+    void added(const QString &id);
 
 private:
     friend class DeleteObject;
@@ -59,5 +61,6 @@ private:
     int reservedCount_ = 0;
     QSet<QString> deletedIds_;
     QUndoStack undo_;
+    bool restoring_ = false;
 };
 } // namespace swak

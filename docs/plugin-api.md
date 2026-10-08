@@ -134,6 +134,10 @@ Read detail through `core/cot_detail.h`. `detailElements` and `detailElement` re
 
 `PluginServices::contacts` is the per-window `Contacts` table model in `core/contacts.h`. The window owns it, and it outlives the panes. Each row is a `Contact` with the UID in `Qt::UserRole`. `refreshServers()` reads the REST contact lists and emits `refreshed(error)` once, with an empty error on success. `readTakContacts` parses one contact list reply. The contacts plugin implements `PanePlugin`, and its MANIFEST declares `pane`. Its pane saves the header state under `org.swak.contacts`.
 
+# Sharing
+
+`PluginServices::sharing` is the per-window `ObjectSharing` service in `core/object_sharing.h`. `share(id, recipients)` shares a local object, `stopSharing(id)` sends a delete, and `isShared` and `recipients` read the state. The service is also the Sharing settings participant. `core/tak_shapes.h` converts a `UserObject` to TAK CoT with `sharedObjectEvent` and builds deletes with `sharedDeleteEvent`. `UserObjects::added` reports objects that a put creates. Preference restores and Undo do not emit it, and a restore emits one `changed` after all objects. The sharing plugin implements `MenuPlugin`. Its MANIFEST declares `menu`. It registers a map tool that adds Share, Share with ..., and Stop sharing to the menus of local objects.
+
 # Emergency alerts
 
 `core/emergency.h` provides `emergencyKinds`, `emergencyEvent`, `emergencyCancelEvent`, `activeEmergency`, and `emergencyLabel`. The emergencies plugin implements `MapLayer` and `ToolbarPlugin`. Its manifest declares `map-layer` and `toolbar`. It reads the Store and does not change it. It centers the map through `MapTools::centerRequested`. Its toolbar button is a trailing action with `swakToolbarTrailingOrder` -1, so it stays left of the navigation lock. Trailing actions sort by this property, and the default is 0.

@@ -7,6 +7,8 @@
 #include "core/lan_protocol.h"
 #include "core/map_selection.h"
 #include "core/network_client.h"
+#include "core/object_sharing.h"
+#include "core/polygon.h"
 #include "core/projection.h"
 #include "core/quic_stream.h"
 #include "core/server_browser.h"
@@ -16,6 +18,8 @@
 #include "core/tak_enrollment.h"
 #include "core/tak_protocol.h"
 #include "core/tak_server_api.h"
+#include "core/tak_shapes.h"
+#include "core/user_objects.h"
 
 #include <QAbstractItemModelTester>
 #include <QElapsedTimer>
@@ -60,6 +64,39 @@ static Event sampleEvent(const QString &id = QStringLiteral("test"))
     e.time = e.start = QDateTime::currentDateTimeUtc();
     e.stale = e.time.addSecs(120);
     return e;
+}
+static QJsonObject vertices(std::initializer_list<std::pair<double, double>> positions)
+{
+    QJsonArray array;
+    for (const auto &[latitude, longitude] : positions) {
+        const auto point = project(latitude, longitude);
+        array.append(QJsonArray{point.x(), point.y()});
+    }
+    return {{QStringLiteral("vertices"), array}};
+}
+static UserObject localObject(const QString &id, const QString &type, const QJsonObject &geometry)
+{
+    UserObject item;
+    item.id = id;
+    item.type = type;
+    item.title = QStringLiteral("Object ") + id;
+    item.geometry = geometry;
+    item.color = QStringLiteral("#ff0000");
+    return item;
+}
+static QJsonObject markerGeometry(double latitude, double longitude)
+{
+    const auto point = project(latitude, longitude);
+    return {{QStringLiteral("x"), point.x()}, {QStringLiteral("y"), point.y()}};
+}
+// Links without the sender link.
+static QList<CotLink> shapeLinks(const Event &event)
+{
+    auto result = links(event);
+    result.removeIf([](const CotLink &link) {
+        return link.relation == QStringLiteral("p-p");
+    });
+    return result;
 }
 static QJsonObject source(quint16 port)
 {
@@ -1420,6 +1457,291 @@ private slots:
         QSignalSpy unavailable(&offline, &Contacts::refreshed);
         offline.refreshServers();
         QVERIFY(!unavailable.last().at(0).toString().isEmpty());
+    }
+    void takShapes()
+    {
+        auto sender = sampleEvent(QStringLiteral("SWAK-1"));
+        sender.callsign = QStringLiteral("Swak");
+        sender.type = QStringLiteral("a-f-G-U-C");
+        const auto now = QDateTime::currentDateTimeUtc();
+        QCOMPARE(takArgb(QColor(255, 0, 0)), QStringLiteral("-65536"));
+        QCOMPARE(takArgb(QColor(0, 0, 255, 0x60)), QString::number(0x600000ff));
+        auto marker = localObject(
+            QStringLiteral("m1"), QStringLiteral("circle"), markerGeometry(59.5, 18.25));
+        marker.description = QStringLiteral("Meet <here> & now");
+        auto event = sharedObjectEvent(marker, sender, {}, now);
+        QVERIFY(event);
+        QCOMPARE(event->type, QStringLiteral("b-m-p-s-m"));
+        QCOMPARE(event->uid, marker.id);
+        QCOMPARE(event->callsign, marker.title);
+        QVERIFY(std::abs(event->latitude - 59.5) < 1e-6);
+        QVERIFY(std::abs(event->longitude - 18.25) < 1e-6);
+        QCOMPARE(event->stale, now.addSecs(SharedObjectStaleSeconds));
+        QCOMPARE(detailColor(*event, u"color")->rgb(), QColor(255, 0, 0).rgb());
+        QVERIFY(event->detail.contains(QStringLiteral("COT_MAPPING_SPOTMAP/b-m-p-s-m/-65536")));
+        QVERIFY(detailElement(*event, u"archive"));
+        QVERIFY(!detailElement(*event, u"marti"));
+        QCOMPARE(links(*event).first().uid, sender.uid);
+        const auto decoded = decodeCot(encodeCot(*event));
+        QVERIFY(decoded.event);
+        QCOMPARE(remarks(*decoded.event), marker.description);
+        QCOMPARE(decoded.event->callsign, marker.title);
+        // A circle carries its radius in meters.
+        const auto circle = localObject(QStringLiteral("c1"),
+                                        QStringLiteral("range-circle"),
+                                        vertices({{59, 18}, {59.01, 18}}));
+        event = sharedObjectEvent(circle, sender, {}, now);
+        QVERIFY(event);
+        QCOMPARE(event->type, QStringLiteral("u-d-c-c"));
+        const auto shape = detailElement(*event, u"shape");
+        QVERIFY(shape);
+        const auto *ellipse = shape->child(u"ellipse");
+        QVERIFY(ellipse);
+        const auto major = ellipse->attribute(u"major").toDouble();
+        QVERIFY(major > 1100 && major < 1125);
+        QCOMPARE(ellipse->attribute(u"minor"), ellipse->attribute(u"major"));
+        QCOMPARE(detailColor(*event, u"fillColor")->alpha(), 0x60);
+        QVERIFY(std::abs(event->latitude - 59) < 1e-6);
+        // A line is an open u-d-f shape.
+        const auto line = localObject(
+            QStringLiteral("l1"), QStringLiteral("line"), vertices({{59, 18}, {59.1, 18.1}}));
+        event = sharedObjectEvent(line, sender, {}, now);
+        QVERIFY(event);
+        QCOMPARE(event->type, QStringLiteral("u-d-f"));
+        QCOMPARE(shapeLinks(*event).size(), 2);
+        QCOMPARE(shapeLinks(*event).first().point, QStringLiteral("59.0000000,18.0000000"));
+        QVERIFY(!detailElement(*event, u"fillColor"));
+        QVERIFY(detailColor(*event, u"strokeColor"));
+        // An area repeats the first point to close the shape.
+        const auto area = localObject(QStringLiteral("a1"),
+                                      QStringLiteral("polygon"),
+                                      vertices({{59, 18}, {59.1, 18}, {59.1, 18.1}}));
+        event = sharedObjectEvent(area, sender, {}, now);
+        QVERIFY(event);
+        QCOMPARE(event->type, QStringLiteral("u-d-f"));
+        const auto areaLinks = shapeLinks(*event);
+        QCOMPARE(areaLinks.size(), 4);
+        QCOMPARE(areaLinks.last().point, areaLinks.first().point);
+        QCOMPARE(detailColor(*event, u"fillColor")->alpha(), 0x60);
+        // A route has check points and route attributes.
+        const auto route = localObject(QStringLiteral("r1"),
+                                       QStringLiteral("route"),
+                                       vertices({{59, 18}, {59.1, 18}, {59.2, 18.1}}));
+        event = sharedObjectEvent(route, sender, {}, now);
+        QVERIFY(event);
+        QCOMPARE(event->type, QStringLiteral("b-m-r"));
+        const auto checkPoints = shapeLinks(*event);
+        QCOMPARE(checkPoints.size(), 3);
+        QCOMPARE(checkPoints.at(1).uid, QStringLiteral("r1.1"));
+        QCOMPARE(checkPoints.at(1).type, QStringLiteral("b-m-p-w"));
+        QCOMPARE(checkPoints.at(2).relation, QStringLiteral("c"));
+        QVERIFY(detailElement(*event, u"link_attr"));
+        // The longest route fits in one message.
+        QJsonArray many;
+        for (int i = 0; i < MaxRoutePoints; ++i) {
+            const auto point = project(59 + i * 0.001, 18 + (i % 2) * 0.001);
+            many.append(QJsonArray{point.x(), point.y()});
+        }
+        const auto longRoute = localObject(
+            QStringLiteral("r2"), QStringLiteral("route"), {{QStringLiteral("vertices"), many}});
+        event = sharedObjectEvent(longRoute, sender, {}, now);
+        QVERIFY(event);
+        QCOMPARE(shapeLinks(*event).size(), MaxRoutePoints);
+        QVERIFY(encodeCot(*event).size() < MaxMessageBytes);
+        // Recipients direct the delivery.
+        event = sharedObjectEvent(marker,
+                                  sender,
+                                  {{QStringLiteral("ANDROID-1"), QStringLiteral("Bravo")},
+                                   {QStringLiteral("ANDROID-2"), {}}},
+                                  now);
+        QVERIFY(event);
+        const auto targets = destinations(*event);
+        QCOMPARE(targets.size(), 2);
+        QCOMPARE(targets.at(0).callsign, QStringLiteral("Bravo"));
+        QCOMPARE(targets.at(1).uid, QStringLiteral("ANDROID-2"));
+        // Unknown types and invalid objects give no event.
+        QVERIFY(
+            sharedCotType(localObject(QStringLiteral("x"), QStringLiteral("note"), {})).isEmpty());
+        QVERIFY(!sharedObjectEvent(
+            localObject(QStringLiteral("x"), QStringLiteral("note"), {{QStringLiteral("a"), 1}}),
+            sender,
+            {},
+            now));
+        QVERIFY(!sharedObjectEvent(
+            localObject(QStringLiteral("x"), QStringLiteral("line"), vertices({{59, 18}})),
+            sender,
+            {},
+            now));
+        // A delete removes the shared object on a receiver with the same origin.
+        const auto remove =
+            sharedDeleteEvent(QStringLiteral("a1"),
+                              QStringLiteral("u-d-f"),
+                              {{QStringLiteral("ANDROID-1"), QStringLiteral("Bravo")}},
+                              now);
+        QVERIFY(eventError(remove).isEmpty());
+        QCOMPARE(remove.type, QStringLiteral("t-x-d-d"));
+        QCOMPARE(links(remove).first().uid, QStringLiteral("a1"));
+        QCOMPARE(links(remove).first().relation, QStringLiteral("none"));
+        QVERIFY(detailElement(remove, u"__forcedelete"));
+        QCOMPARE(destinations(remove).size(), 1);
+        Store store;
+        auto received = *sharedObjectEvent(area, sender, {}, now);
+        received.origin = QStringLiteral("peer");
+        QVERIFY(store.accept(received).isEmpty());
+        auto incoming = remove;
+        incoming.origin = QStringLiteral("peer");
+        QVERIFY(store.accept(incoming).isEmpty());
+        QVERIFY(store.events().isEmpty());
+    }
+    void objectSharing()
+    {
+        QUdpSocket receiver;
+        QVERIFY(receiver.bind(QHostAddress::LocalHost, 0));
+        const auto next = [&receiver]() -> Event {
+            if (!QTest::qWaitFor(
+                    [&] {
+                        return receiver.hasPendingDatagrams();
+                    },
+                    5000)) {
+                return {};
+            }
+            QByteArray datagram(static_cast<qsizetype>(receiver.pendingDatagramSize()),
+                                Qt::Uninitialized);
+            receiver.readDatagram(datagram.data(), datagram.size());
+            return decodeCot(datagram).event.value_or(Event{});
+        };
+        Store store;
+        Servers servers(store);
+        UserObjects objects;
+        Identity identity;
+        ObjectSharing sharing(objects, &servers, &identity);
+        QSignalSpy added(&objects, &UserObjects::added);
+        auto marker = localObject(
+            QStringLiteral("m1"), QStringLiteral("circle"), markerGeometry(59.5, 18.25));
+        QVERIFY(objects.put(marker).isEmpty());
+        QCOMPARE(added.size(), 1);
+        QVERIFY(!sharing.share(QStringLiteral("missing")).isEmpty());
+        // Without a connection, the object waits and the error is kept.
+        QVERIFY(sharing.share(QStringLiteral("m1")).isEmpty());
+        QVERIFY(sharing.isShared(QStringLiteral("m1")));
+        QVERIFY(!sharing.lastError().isEmpty());
+        auto output = source(receiver.localPort());
+        output.insert(QStringLiteral("protocol"), QStringLiteral("udpout"));
+        QVERIFY(servers.put(QStringLiteral("out"), output).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return servers.status(QStringLiteral("out")).startsWith(QStringLiteral("Sending"));
+            },
+            5000));
+        sharing.flush();
+        QVERIFY(sharing.lastError().isEmpty());
+        auto sent = next();
+        QCOMPARE(sent.uid, QStringLiteral("m1"));
+        QCOMPARE(sent.type, QStringLiteral("b-m-p-s-m"));
+        Event self;
+        identity.apply(self);
+        QCOMPARE(links(sent).first().uid, self.uid);
+        // A change sends an update. An equal put sends nothing.
+        marker.title = QStringLiteral("Rally point");
+        QVERIFY(objects.put(marker).isEmpty());
+        QCOMPARE(next().callsign, QStringLiteral("Rally point"));
+        QCOMPARE(added.size(), 1);
+        QVERIFY(objects.put(marker).isEmpty());
+        QTest::qWait(200);
+        QVERIFY(!receiver.hasPendingDatagrams());
+        // New recipients get the object. Removed recipients get a delete first.
+        const ShareRecipient bravo{QStringLiteral("ANDROID-1"), QStringLiteral("Bravo")};
+        const ShareRecipient charlie{QStringLiteral("ANDROID-2"), QStringLiteral("Charlie")};
+        QVERIFY(sharing.share(QStringLiteral("m1"), {bravo, charlie}).isEmpty());
+        QCOMPARE(destinations(next()).size(), 2);
+        QCOMPARE(sharing.recipients(QStringLiteral("m1")).size(), 2);
+        QVERIFY(sharing.share(QStringLiteral("m1"), {bravo}).isEmpty());
+        sent = next();
+        QCOMPARE(sent.type, QStringLiteral("t-x-d-d"));
+        QCOMPARE(destinations(sent).first().callsign, QStringLiteral("Charlie"));
+        sent = next();
+        QCOMPARE(sent.uid, QStringLiteral("m1"));
+        QCOMPARE(destinations(sent).size(), 1);
+        // A delete removes the object from receivers. Undo shares it again.
+        objects.remove(QStringLiteral("m1"));
+        sent = next();
+        QCOMPARE(sent.type, QStringLiteral("t-x-d-d"));
+        QCOMPARE(links(sent).first().uid, QStringLiteral("m1"));
+        QCOMPARE(links(sent).first().type, QStringLiteral("b-m-p-s-m"));
+        QVERIFY(!sharing.isShared(QStringLiteral("m1")));
+        QVERIFY(!sharing.savePreferences().value(QStringLiteral("shared")).toArray().size());
+        objects.undoStack().undo();
+        QCOMPARE(next().uid, QStringLiteral("m1"));
+        QVERIFY(sharing.isShared(QStringLiteral("m1")));
+        // Automatic sharing sends new objects of supported types.
+        sharing.setAutomatic(true);
+        QVERIFY(objects
+                    .put(localObject(QStringLiteral("l1"),
+                                     QStringLiteral("line"),
+                                     vertices({{59, 18}, {59.1, 18.1}})))
+                    .isEmpty());
+        sent = next();
+        QCOMPARE(sent.uid, QStringLiteral("l1"));
+        QCOMPARE(sent.type, QStringLiteral("u-d-f"));
+        QVERIFY(sharing.isShared(QStringLiteral("l1")));
+        // The preferences keep the shared objects. A restore sends them again.
+        const auto saved = sharing.savePreferences();
+        QVERIFY(saved.value(QStringLiteral("automatic")).toBool());
+        QCOMPARE(saved.value(QStringLiteral("shared")).toArray().size(), 2);
+        QVERIFY(sharing.validateSettings(saved).isEmpty());
+        QVERIFY(!sharing.validateSettings({{QStringLiteral("automatic"), 1}}).isEmpty());
+        QVERIFY(!sharing.validateSettings({{QStringLiteral("shared"), QJsonArray{1}}}).isEmpty());
+        QVERIFY(
+            !sharing
+                 .validateSettings(
+                     {{QStringLiteral("shared"),
+                       QJsonArray{QJsonObject{{QStringLiteral("id"), QStringLiteral("x")},
+                                              {QStringLiteral("type"), QStringLiteral("a-f-G")}}}}})
+                 .isEmpty());
+        const auto objectPreferences = objects.savePreferences();
+        objects.restorePreferences(objectPreferences);
+        QCOMPARE(added.size(), 2);
+        QTest::qWait(200);
+        QVERIFY(!receiver.hasPendingDatagrams());
+        UserObjects restoredObjects;
+        ObjectSharing restored(restoredObjects, &servers, &identity);
+        restored.restorePreferences(saved);
+        restoredObjects.restorePreferences(objectPreferences);
+        QVERIFY(restored.automatic());
+        QVERIFY(restored.isShared(QStringLiteral("l1")));
+        QStringList uids{next().uid, next().uid};
+        uids.sort();
+        QCOMPARE(uids, (QStringList{QStringLiteral("l1"), QStringLiteral("m1")}));
+        // Settings keep the send state of known objects.
+        restored.restorePreferences({{QStringLiteral("automatic"), false}});
+        QVERIFY(!restored.automatic());
+        QVERIFY(restored.isShared(QStringLiteral("m1")));
+        restored.restorePreferences({{QStringLiteral("automatic"), 3}});
+        QVERIFY(!restored.automatic());
+        // Stop sharing sends a delete, and later changes stay local.
+        sharing.stopSharing(QStringLiteral("l1"));
+        sent = next();
+        QCOMPARE(sent.type, QStringLiteral("t-x-d-d"));
+        QCOMPARE(links(sent).first().type, QStringLiteral("u-d-f"));
+        QVERIFY(!sharing.isShared(QStringLiteral("l1")));
+        sharing.stopSharing(QStringLiteral("l1"));
+        auto changedLine = *objects.find(QStringLiteral("l1"));
+        changedLine.title = QStringLiteral("Changed");
+        QVERIFY(objects.put(changedLine).isEmpty());
+        QTest::qWait(200);
+        QVERIFY(!receiver.hasPendingDatagrams());
+        // Types without a TAK equal cannot be shared.
+        QVERIFY(objects
+                    .put(localObject(
+                        QStringLiteral("n1"), QStringLiteral("note"), {{QStringLiteral("a"), 1}}))
+                    .isEmpty());
+        QVERIFY(!sharing.isShared(QStringLiteral("n1")));
+        QVERIFY(!sharing.share(QStringLiteral("n1")).isEmpty());
+        // Without servers, a share waits without error.
+        ObjectSharing offline(objects, nullptr, nullptr);
+        QVERIFY(offline.share(QStringLiteral("m1")).isEmpty());
+        offline.flush();
+        QVERIFY(offline.lastError().isEmpty());
     }
     void takServerApi()
     {

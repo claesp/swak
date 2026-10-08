@@ -6,6 +6,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QRegularExpression>
+#include <QScopedValueRollback>
 #include <QUndoCommand>
 
 #include <algorithm>
@@ -235,8 +236,16 @@ QString UserObjects::put(const UserObject &item)
         return tr("Object storage is full. Restart after deleting unused objects to release undo "
                   "history.");
     }
+    const bool created = !items_.contains(item.id);
     items_.insert(item.id, item);
+    // A restore emits one change after all objects, so listeners see a complete set.
+    if (restoring_) {
+        return {};
+    }
     emit changed();
+    if (created) {
+        emit added(item.id);
+    }
     return {};
 }
 void UserObjects::remove(const QString &id)
@@ -258,6 +267,7 @@ void UserObjects::restorePreferences(const QJsonObject &values)
 {
     undo_.clear();
     items_.clear();
+    const QScopedValueRollback guard(restoring_, true);
     const auto records = values.value(QStringLiteral("items")).toArray();
     for (qsizetype i = 0; i < std::min<qsizetype>(records.size(), MaxObjects); ++i) {
         const auto item = UserObject::fromJson(records.at(i).toObject());
@@ -266,6 +276,7 @@ void UserObjects::restorePreferences(const QJsonObject &values)
         }
         put(item);
     }
+    restoring_ = false;
     emit changed();
 }
 } // namespace swak

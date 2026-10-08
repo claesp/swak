@@ -26,6 +26,7 @@
 #include "core/menu_order.h"
 #include "core/modal.h"
 #include "core/object_editor.h"
+#include "core/object_sharing.h"
 #include "core/polygon.h"
 #include "core/projection.h"
 #include "core/routing.h"
@@ -1327,6 +1328,104 @@ private slots:
             dynamic_cast<swak::SettingsParticipant *>(restored.findChild<QOpenGLWidget *>());
         QVERIFY(restoredMap);
         QCOMPARE(restoredMap->savePreferences().value(QStringLiteral("zoom")).toDouble(), 5.0);
+    }
+    void shareObjects()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("share.json")),
+                            QPluginLoader::staticInstances());
+        auto *objects = window.findChild<swak::UserObjects *>();
+        auto *tools = window.findChild<swak::MapTools *>();
+        auto *sharing = window.findChild<swak::ObjectSharing *>(QStringLiteral("objectSharing"));
+        auto *contacts = window.findChild<swak::Contacts *>(QStringLiteral("contacts"));
+        QVERIFY(objects && tools && sharing && contacts);
+        swak::UserObject marker;
+        marker.id = QStringLiteral("m1");
+        marker.type = QStringLiteral("circle");
+        marker.title = QStringLiteral("Rally");
+        marker.geometry = {{QStringLiteral("x"), 0.5}, {QStringLiteral("y"), 0.3}};
+        QVERIFY(objects->put(marker).isEmpty());
+        swak::MapItem item;
+        item.owner = QStringLiteral("org.swak.markers");
+        item.id = marker.id;
+        const auto action = [&](const QString &name) -> QAction * {
+            auto *menu = new QMenu(&window);
+            tools->populateInformationMenu(item, *menu);
+            return menu->findChild<QAction *>(name);
+        };
+        QVERIFY(!action(QStringLiteral("stopSharingObject")));
+        action(QStringLiteral("shareObject"))->trigger();
+        QVERIFY(sharing->isShared(marker.id));
+        QVERIFY(!action(QStringLiteral("shareObject")));
+        action(QStringLiteral("stopSharingObject"))->trigger();
+        QVERIFY(!sharing->isShared(marker.id));
+        // Without known users, the dialog explains how to find them and cannot share.
+        bool empty = false;
+        QTimer::singleShot(100, &window, [&] {
+            auto *dialog = window.findChild<QDialog *>(QStringLiteral("shareRecipientsDialog"));
+            if (!dialog) {
+                return;
+            }
+            auto *notice = dialog->findChild<QLabel *>(QStringLiteral("shareRecipientsEmpty"));
+            auto *buttons = dialog->findChild<QDialogButtonBox *>();
+            empty = notice && !notice->isHidden() && buttons &&
+                    !buttons->button(QDialogButtonBox::Ok)->isEnabled();
+            dialog->reject();
+        });
+        action(QStringLiteral("shareObjectWith"))->trigger();
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return empty;
+            },
+            5000));
+        QVERIFY(!sharing->isShared(marker.id));
+        // A known user can receive the object.
+        swak::Event user;
+        user.uid = QStringLiteral("ANDROID-3");
+        user.callsign = QStringLiteral("Echo");
+        user.type = QStringLiteral("a-f-G-U-C");
+        user.how = QStringLiteral("m-g");
+        user.origin = QStringLiteral("tak");
+        user.detail = QStringLiteral("<contact endpoint=\"*:-1:stcp\"/>");
+        user.time = user.start = QDateTime::currentDateTimeUtc();
+        user.stale = user.time.addSecs(600);
+        QVERIFY(window.store().accept(user).isEmpty());
+        contacts->rebuild();
+        bool chosen = false;
+        QTimer::singleShot(100, &window, [&] {
+            auto *dialog = window.findChild<QDialog *>(QStringLiteral("shareRecipientsDialog"));
+            auto *list = dialog
+                             ? dialog->findChild<QListWidget *>(QStringLiteral("shareRecipients"))
+                             : nullptr;
+            if (!list || list->count() != 1) {
+                if (dialog) {
+                    dialog->reject();
+                }
+                return;
+            }
+            list->item(0)->setCheckState(Qt::Checked);
+            chosen = true;
+            dialog->accept();
+        });
+        action(QStringLiteral("shareObjectWith"))->trigger();
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return sharing->isShared(marker.id);
+            },
+            5000));
+        QVERIFY(chosen);
+        QCOMPARE(sharing->recipients(marker.id).size(), 1);
+        QCOMPARE(sharing->recipients(marker.id).first().callsign, QStringLiteral("Echo"));
+        // Received events and data features have no share actions.
+        item.owner = QStringLiteral("org.swak.events");
+        QVERIFY(!action(QStringLiteral("shareObjectWith")));
+        // The plugin menu controls automatic sharing.
+        auto *automatic = window.findChild<QAction *>(QStringLiteral("shareAutomatically"));
+        QVERIFY(automatic && automatic->isCheckable() && !automatic->isChecked());
+        automatic->trigger();
+        QVERIFY(sharing->automatic());
+        sharing->setAutomatic(false);
+        QVERIFY(!automatic->isChecked());
     }
     void contactsPane()
     {

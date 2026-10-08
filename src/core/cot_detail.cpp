@@ -13,6 +13,8 @@ namespace {
 constexpr int MaxDetailDepth = 10;
 constexpr int MaxDetailElements = 2048;
 constexpr int MaxReadElements = 64;
+// ATAK routes and shapes carry one link for each point.
+constexpr int MaxReadLinks = 1024;
 
 bool validName(const QString &name)
 {
@@ -170,7 +172,7 @@ QList<CotLink> links(const Event &event)
 {
     QList<CotLink> result;
     for (const auto &element : detailElements(event.detail)) {
-        if (element.name != u"link" || result.size() >= MaxReadElements) {
+        if (element.name != u"link" || result.size() >= MaxReadLinks) {
             continue;
         }
         const auto callsign = element.attribute(u"parent_callsign");

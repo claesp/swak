@@ -17,6 +17,7 @@
 #include "core/menu_order.h"
 #include "core/modal.h"
 #include "core/network_client.h"
+#include "core/object_sharing.h"
 #include "core/provider_toolbar.h"
 #include "core/routing.h"
 #include "core/server_browser.h"
@@ -201,6 +202,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         services.tak->setObjectName(QStringLiteral("takServerApi"));
     }
     services.contacts = new Contacts(store_, servers, services.tak, this);
+    services.sharing = new ObjectSharing(*objects, servers, identity, this);
     auto *mainViews = new QTabWidget(this);
     mainViews->setObjectName(QStringLiteral("mainViews"));
     mainViews->setDocumentMode(true);
