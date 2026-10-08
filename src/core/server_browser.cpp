@@ -1,8 +1,10 @@
 #include "core/server_browser.h"
 
 #include "core/delete_confirmation.h"
+#include "core/maps.h"
 #include "core/modal.h"
 #include "core/provider_table.h"
+#include "core/server_layers.h"
 #include "core/servers.h"
 #include "core/settings_dialog.h"
 #include "core/single_line_label.h"
@@ -192,6 +194,10 @@ ServerBrowser::ServerBrowser(Servers &servers, QWidget *parent) : QWidget(parent
     channels->setToolTip(tr("Choose the TAK Server groups that send and receive data for this "
                             "entry."));
     connect(channels, &QAction::triggered, this, &ServerBrowser::loadChannels);
+    auto *layers = takMenu->addAction(tr("Map Layers ..."));
+    layers->setObjectName(QStringLiteral("serverMapLayers"));
+    layers->setToolTip(tr("Add the map layers of TAK Server as map providers."));
+    connect(layers, &QAction::triggered, this, &ServerBrowser::loadMapLayers);
     layout->addLayout(row);
     enrollStatus_ = new SingleLineLabel(QString{}, this);
     enrollStatus_->setObjectName(QStringLiteral("enrollStatus"));
@@ -273,6 +279,107 @@ void ServerBrowser::refresh()
         table_->setCurrentCell(0, 1);
     }
     status();
+}
+void ServerBrowser::setMapSources(MapSources *maps)
+{
+    maps_ = maps;
+}
+void ServerBrowser::loadMapLayers()
+{
+    const auto id = table_->selectedId();
+    auto *api = servers_.findChild<TakServerApi *>();
+    if (!maps_) {
+        showEnrollStatus(tr("This window has no map catalog."));
+        return;
+    }
+    if (!api || TakServerApi::apiUrl(servers_.sources().value(id).toObject(), QStringLiteral("/"))
+                    .isEmpty()) {
+        showEnrollStatus(tr("Select a TLS or QUIC entry with a TAK REST API port first."));
+        return;
+    }
+    showEnrollStatus(tr("Reading the map layers of the server…"));
+    api->request(
+        id,
+        "GET",
+        QStringLiteral("/maplayers/all"),
+        {},
+        this,
+        [this, id](const NetworkReply &reply) {
+            if (!reply.ok()) {
+                showEnrollStatus(reply.error.isEmpty()
+                                     ? tr("The server answered with HTTP %1.").arg(reply.status)
+                                     : reply.error);
+                return;
+            }
+            chooseMapLayers(id, reply.body);
+        },
+        2 * 1024 * 1024);
+}
+void ServerBrowser::chooseMapLayers(const QString &id, const QByteArray &json)
+{
+    QList<ServerMapLayer> layers;
+    QStringList skipped;
+    const auto serverName =
+        servers_.sources().value(id).toObject().value(QStringLiteral("name")).toString();
+    if (!readServerMapLayers(json, id, serverName, &layers, &skipped)) {
+        showEnrollStatus(tr("The map layer list is invalid."));
+        return;
+    }
+    if (layers.isEmpty()) {
+        showEnrollStatus(skipped.isEmpty() ? tr("The server has no map layers.") : skipped.first());
+        return;
+    }
+    showEnrollStatus({});
+    Modal<QDialog> dialog(this);
+    dialog->setObjectName(QStringLiteral("mapLayerDialog"));
+    dialog->setWindowTitle(tr("Map Layers"));
+    auto *layout = new QVBoxLayout(dialog.get());
+    auto *notice = new QLabel(tr("Checked layers become map providers. Select one in Map "
+                                 "Providers to show it."),
+                              dialog.get());
+    notice->setWordWrap(true);
+    layout->addWidget(notice);
+    auto *list = new QListWidget(dialog.get());
+    list->setObjectName(QStringLiteral("mapLayerList"));
+    for (const auto &layer : std::as_const(layers)) {
+        auto *item = new QListWidgetItem(layer.name, list);
+        item->setFlags(Qt::ItemIsUserCheckable | Qt::ItemIsEnabled);
+        item->setCheckState(maps_ && maps_->sources().contains(layer.id) ? Qt::Checked
+                                                                         : Qt::Unchecked);
+        item->setToolTip(layer.source.value(QStringLiteral("endpoint")).toString());
+    }
+    layout->addWidget(list);
+    if (!skipped.isEmpty()) {
+        auto *other = new QLabel(skipped.join(QLatin1Char('\n')), dialog.get());
+        other->setObjectName(QStringLiteral("skippedMapLayers"));
+        other->setWordWrap(true);
+        layout->addWidget(other);
+    }
+    auto *buttons =
+        new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dialog.get());
+    connect(buttons, &QDialogButtonBox::accepted, dialog.get(), &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, dialog.get(), &QDialog::reject);
+    layout->addWidget(buttons);
+    if (dialog->exec() != QDialog::Accepted || !dialog || !maps_) {
+        return;
+    }
+    int added = 0;
+    QStringList errors;
+    for (int row = 0; row < list->count(); ++row) {
+        if (list->item(row)->checkState() != Qt::Checked) {
+            continue;
+        }
+        const auto &layer = layers.at(row);
+        if (const auto error = maps_->put(layer.id, layer.source); !error.isEmpty()) {
+            errors.append(QStringLiteral("%1: %2").arg(layer.name, error));
+        } else {
+            ++added;
+        }
+    }
+    showEnrollStatus(
+        errors.isEmpty()
+            ? tr("%n map providers added. Choose one in Map Providers.", nullptr, added)
+            : errors.first());
 }
 void ServerBrowser::loadChannels()
 {

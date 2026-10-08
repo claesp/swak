@@ -1,10 +1,12 @@
 #pragma once
 #include <QList>
+#include <QPointer>
 #include <QWidget>
 class QPlainTextEdit;
 class QAction;
 class QTableWidget;
 namespace swak {
+class MapSources;
 class Servers;
 class ProviderTable;
 class SingleLineLabel;
@@ -29,6 +31,8 @@ class ServerBrowser final : public QWidget
     Q_OBJECT
 public:
     explicit ServerBrowser(Servers &servers, QWidget *parent = nullptr);
+    // The map catalog for Map Layers .... Without it, the command explains that it is off.
+    void setMapSources(MapSources *maps);
 
 private:
     void refresh();
@@ -38,11 +42,14 @@ private:
     void showEnrollStatus(const QString &text);
     void loadChannels();
     void chooseChannels(const QString &id, const QList<TakGroup> &groups, const QString &error);
+    void loadMapLayers();
+    void chooseMapLayers(const QString &id, const QByteArray &json);
     Servers &servers_;
     QAction *enroll_ = nullptr;
     SingleLineLabel *enrollStatus_ = nullptr;
     TakEnrollment *enrollment_ = nullptr;
     TakChannels *channels_ = nullptr;
+    QPointer<MapSources> maps_;
     ProviderTable *table_;
     QPlainTextEdit *status_;
 };

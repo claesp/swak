@@ -33,6 +33,7 @@ public:
             servers = new Servers(services.store);
         }
         auto *browser = new ServerBrowser(*servers, parent);
+        browser->setMapSources(&services.maps);
         if (!services.servers) {
             servers->setParent(browser);
         }

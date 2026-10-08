@@ -9,6 +9,7 @@
 #include "core/identity.h"
 #include "core/lan_protocol.h"
 #include "core/map_selection.h"
+#include "core/maps.h"
 #include "core/marker_collections.h"
 #include "core/measure.h"
 #include "core/missions.h"
@@ -19,6 +20,7 @@
 #include "core/projection.h"
 #include "core/quic_stream.h"
 #include "core/server_browser.h"
+#include "core/server_layers.h"
 #include "core/servers.h"
 #include "core/store.h"
 #include "core/tak_channels.h"
@@ -30,7 +32,9 @@
 #include "core/user_objects.h"
 
 #include <QAbstractItemModelTester>
+#include <QApplication>
 #include <QCryptographicHash>
+#include <QDialog>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
@@ -38,6 +42,8 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLabel>
+#include <QListWidget>
 #include <QNetworkInterface>
 #include <QPlainTextEdit>
 #include <QPointer>
@@ -3203,6 +3209,162 @@ private slots:
         QVERIFY(
             !offline.removeObject(QStringLiteral("tak"), QStringLiteral("Ops"), QStringLiteral("x"))
                  .isEmpty());
+    }
+    void serverMapLayers()
+    {
+        const QByteArray json =
+            "{\"data\":["
+            "{\"uid\":\"osm 1\",\"name\":\"Streets\",\"type\":\"MOBAC\",\"url\":"
+            "\"https://{$serverpart}.tiles.example/{$z}/{$x}/{$y}.png\",\"serverParts\":\"a b\","
+            "\"minZoom\":2,\"maxZoom\":40,\"invertYCoordinate\":true},"
+            "{\"uid\":\"wms\",\"name\":\"Weather\",\"type\":\"WMS\",\"url\":\"https://wms.example/"
+            "ows\","
+            "\"layers\":\"radar\",\"tileType\":\"image/jpeg\"},"
+            "{\"name\":\"Matrix\",\"type\":\"WMTS\",\"url\":\"https://wmts.example\"},"
+            "{\"name\":\"Plain\",\"url\":\"http://tiles.example/{z}/{x}/{y}.png\"},"
+            "{\"name\":\"Quad\",\"url\":\"https://tiles.example/{$q}.png\"},"
+            "{\"uid\":\"osm 1\",\"name\":\"Streets "
+            "copy\",\"url\":\"https://t.example/{z}/{x}/{y}\"}]}";
+        QList<ServerMapLayer> layers;
+        QStringList skipped;
+        QVERIFY(readServerMapLayers(
+            json, QStringLiteral("tak_1"), QStringLiteral("TAK"), &layers, &skipped));
+        QCOMPARE(layers.size(), 3);
+        QCOMPARE(skipped.size(), 3);
+        QCOMPARE(layers.at(0).id, QStringLiteral("tak.tak-1.osm-1"));
+        QCOMPARE(layers.at(2).id, QStringLiteral("tak.tak-1.osm-1-2"));
+        const auto streets = layers.at(0).source;
+        QCOMPARE(streets.value(QStringLiteral("endpoint")).toString(),
+                 QStringLiteral("https://a.tiles.example/{z}/{x}/{y}.png"));
+        QCOMPARE(streets.value(QStringLiteral("service")).toString(), QStringLiteral("xyz"));
+        QCOMPARE(streets.value(QStringLiteral("minZoom")).toInt(), 2);
+        QCOMPARE(streets.value(QStringLiteral("maxZoom")).toInt(), 19);
+        QVERIFY(streets.value(QStringLiteral("invertY")).toBool());
+        QCOMPARE(streets.value(QStringLiteral("attribution")).toString(),
+                 QStringLiteral("TAK Server TAK"));
+        const auto weather = layers.at(1).source;
+        QCOMPARE(weather.value(QStringLiteral("service")).toString(), QStringLiteral("wms"));
+        QCOMPARE(weather.value(QStringLiteral("layer")).toString(), QStringLiteral("radar"));
+        QCOMPARE(weather.value(QStringLiteral("imageFormat")).toString(),
+                 QStringLiteral("image/jpeg"));
+        QVERIFY(skipped.at(0).contains(QStringLiteral("WMTS")));
+        QVERIFY(readServerMapLayers("[]", QStringLiteral("t"), {}, &layers, nullptr));
+        QVERIFY(layers.isEmpty());
+        QVERIFY(!readServerMapLayers("{\"data\":{}}", QStringLiteral("t"), {}, &layers, nullptr));
+        QVERIFY(!readServerMapLayers("x", QStringLiteral("t"), {}, &layers, nullptr));
+        // The server browser adds the checked layers as map providers.
+        HttpsHarness api;
+        QVERIFY(api.load());
+        QByteArray reply = json;
+        int status = 200;
+        api.respond = [&](const QByteArray &) {
+            return QByteArray("HTTP/1.1 ") + QByteArray::number(status) +
+                   " X\r\nContent-Length: " + QByteArray::number(reply.size()) + "\r\n\r\n" + reply;
+        };
+        // The API is a child of Servers and uses the client, so the client must live longer.
+        NetworkClient network;
+        Store store;
+        Servers servers(store);
+        new TakServerApi(servers, network, &servers);
+        MapSources maps(QList<QObject *>{});
+        ServerBrowser browser(servers);
+        auto *action = browser.findChild<QAction *>(QStringLiteral("serverMapLayers"));
+        auto *message = browser.findChild<QLabel *>(QStringLiteral("enrollStatus"));
+        QVERIFY(action && message);
+        action->trigger();
+        QCOMPARE(message->text(), QStringLiteral("This window has no map catalog."));
+        browser.setMapSources(&maps);
+        action->trigger();
+        QVERIFY(message->text().startsWith(QStringLiteral("Select a TLS or QUIC entry")));
+        auto entry = source(9);
+        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        entry.insert(QStringLiteral("enabled"), false);
+        entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+        entry.insert(QStringLiteral("apiPort"), api.serverPort());
+        QVERIFY(servers.put(QStringLiteral("tak"), entry).isEmpty());
+        auto *list = browser.findChild<QTableWidget *>(QStringLiteral("serverList"));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return list->rowCount() == 1;
+            },
+            2000));
+        list->setCurrentCell(0, 1);
+        bool shown = false;
+        // The dialog opens after the server reply. Poll until it shows, then answer it.
+        QTimer poll;
+        poll.setInterval(20);
+        bool acceptDialog = false;
+        QObject::connect(&poll, &QTimer::timeout, &browser, [&] {
+            auto *dialog = browser.findChild<QDialog *>(QStringLiteral("mapLayerDialog"));
+            auto *rows =
+                dialog ? dialog->findChild<QListWidget *>(QStringLiteral("mapLayerList")) : nullptr;
+            if (!rows || !dialog->isVisible()) {
+                return;
+            }
+            poll.stop();
+            shown = rows->count() == 3 &&
+                    dialog->findChild<QLabel *>(QStringLiteral("skippedMapLayers"));
+            rows->item(0)->setCheckState(Qt::Checked);
+            rows->item(1)->setCheckState(Qt::Checked);
+            acceptDialog ? dialog->accept() : dialog->reject();
+        });
+        const auto choose = [&](bool accept) {
+            acceptDialog = accept;
+            poll.start();
+        };
+        choose(false);
+        action->trigger();
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return shown;
+            },
+            10000));
+        QVERIFY(maps.sources().isEmpty() ||
+                !maps.sources().contains(QStringLiteral("tak.tak.osm-1")));
+        shown = false;
+        choose(true);
+        action->trigger();
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return shown;
+            },
+            10000));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return message->text().contains(QStringLiteral("2 map providers"));
+            },
+            5000));
+        QVERIFY(maps.sources().contains(QStringLiteral("tak.tak.osm-1")));
+        QVERIFY(maps.sources().contains(QStringLiteral("tak.tak.wms")));
+        // Empty lists, invalid replies, and HTTP errors show in the status line.
+        reply = "{\"data\":[]}";
+        action->trigger();
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return message->text() == QStringLiteral("The server has no map layers.");
+            },
+            10000));
+        reply = "{\"data\":[{\"name\":\"Matrix\",\"type\":\"WMTS\",\"url\":\"https://w\"}]}";
+        action->trigger();
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return message->text().contains(QStringLiteral("WMTS"));
+            },
+            10000));
+        reply = "x";
+        action->trigger();
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return message->text() == QStringLiteral("The map layer list is invalid.");
+            },
+            10000));
+        status = 403;
+        action->trigger();
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return message->text().contains(QStringLiteral("403"));
+            },
+            10000));
     }
     void takServerApi()
     {

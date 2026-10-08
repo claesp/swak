@@ -107,6 +107,8 @@ add_library(
     src/core/file_shares.h
     src/core/missions.cpp
     src/core/missions.h
+    src/core/server_layers.cpp
+    src/core/server_layers.h
     src/core/data_package.h
     src/core/package_import.cpp
     src/core/package_import.h

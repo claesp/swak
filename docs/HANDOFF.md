@@ -1627,3 +1627,7 @@ The Store now sends `b-t-f` events through `messageReceived` and does not keep t
 # 2026-10-08: Phase 5 missions
 
 `core/missions.*` reads the mission list, subscriptions, CoT, files, and logs, and follows `t-x-m-c`, `t-x-m-d`, and `t-x-m-i` events. Tokens and passwords stay in memory. Mission objects go to the Store with a mission origin and a one-day lifetime, and `Store::removeOrigin` hides them. Add to Mission uses a `marti` mission destination. Remove, log entries, and export use REST. `Store::removeEvents` now uses a set, so large removals stay linear. The new Missions pane lists missions, subscriptions with visibility, files, and logs. Tests: `missionParsing` and `missionService` in the server tests, and `missionsPane` in the GUI tests. The export save dialog, the hourly refresh, and a live TAK Server remain untested. COP hierarchy, mission layers, feeds, keyword and expiration edits, and mission file upload are not implemented.
+
+# 2026-10-08: Phase 6 server map layers
+
+`core/server_layers.*` converts `/Marti/api/maplayers/all` replies to GDAL raster map provider entries for XYZ and WMS. The server browser gains TAK Server > Map Layers ... with a checklist, and the servers plugin gives it the map catalog. `serverMapLayers` in the server tests covers conversion, skipped layers, the dialog, adding providers, and errors. Mission map layers and WMTS layers are not converted.
