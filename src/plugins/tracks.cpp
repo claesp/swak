@@ -1,3 +1,4 @@
+#include "core/cot_detail.h"
 #include "core/delete_confirmation.h"
 #include "core/interfaces.h"
 #include "core/logging.h"
@@ -315,6 +316,10 @@ public:
     void populateMenu(PluginServices &services, QMenu &menu) override
     {
         menu.addAction(createClearAction(services.store, menu));
+        const auto *key = &services.store;
+        connect(&services.store, &QObject::destroyed, this, [this, key] {
+            spotColors_.remove(key);
+        });
         if (services.mapTools) {
             services.mapTools->add(new HeadingConeTool(services.store.motion(), &menu));
         }
@@ -355,6 +360,11 @@ public:
                 });
             if (found != symbols.cend()) {
                 color = found->color;
+            }
+            if (event.type == u"b-m-p-s-m") {
+                if (const auto spot = spotColor(store, event); spot.isValid()) {
+                    color = spot;
+                }
             }
             const auto gray = qGray(color.rgb());
             color.setRed(qRound(color.red() * (1 - visual.gray) + gray * visual.gray));
@@ -430,6 +440,30 @@ public:
     }
 
 private:
+    struct SpotColor
+    {
+        QDateTime time;
+        qsizetype detailSize = 0;
+        QColor color;
+    };
+    // Returns the color element of a TAK spot marker. It reads the detail only when the event
+    // changes, so frames do not parse detail XML.
+    QColor spotColor(const Store &store, const Event &event) const
+    {
+        auto &cache = spotColors_[&store];
+        auto it = cache.find(event.uid);
+        if (it == cache.end() || it->time != event.time || it->detailSize != event.detail.size()) {
+            if (cache.size() >= MaxEvents) {
+                cache.clear();
+            }
+            auto color = detailColor(event, u"color").value_or(QColor());
+            if (color.isValid()) {
+                color.setAlpha(255);
+            }
+            it = cache.insert(event.uid, {event.time, event.detail.size(), color});
+        }
+        return it->color;
+    }
     QAction *createClearAction(Store &store, QWidget &owner)
     {
         auto *clear = new QAction(uiIcon(UiIcon::Clear), tr("Clear ..."), &owner);
@@ -449,6 +483,8 @@ private:
         });
         return clear;
     }
+    // The cache changes inside const paint calls. Only the interface thread uses it.
+    mutable QHash<const Store *, QHash<QString, SpotColor>> spotColors_;
 };
 } // namespace swak
 #include "tracks.moc"

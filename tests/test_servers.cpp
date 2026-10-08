@@ -6,6 +6,7 @@
 #include "core/identity.h"
 #include "core/lan_protocol.h"
 #include "core/map_selection.h"
+#include "core/marker_collections.h"
 #include "core/measure.h"
 #include "core/network_client.h"
 #include "core/object_sharing.h"
@@ -1488,6 +1489,25 @@ private slots:
         QVERIFY(decoded.event);
         QCOMPARE(remarks(*decoded.event), marker.description);
         QCOMPARE(decoded.event->callsign, marker.title);
+        // A military marker keeps its CoT unit type, so TAK clients show the same symbol.
+        auto unit = marker;
+        unit.symbol = QStringLiteral("a-f-G-U-C-I");
+        unit.collection = MilitaryMarkerCollection;
+        event = sharedObjectEvent(unit, sender, {}, now);
+        QVERIFY(event);
+        QCOMPARE(event->type, QStringLiteral("a-f-G-U-C-I"));
+        QCOMPARE(sharedCotType(unit), QStringLiteral("a-f-G-U-C-I"));
+        QVERIFY(!detailElement(*event, u"usericon"));
+        QVERIFY(!detailElement(*event, u"color"));
+        unit.collection.clear();
+        unit.symbol = QStringLiteral("a-h-G-U");
+        QCOMPARE(sharedCotType(unit), QStringLiteral("a-h-G-U"));
+        // Other collections and unknown symbols stay spot markers.
+        unit.collection = CoreMarkerCollection;
+        QCOMPARE(sharedCotType(unit), QStringLiteral("b-m-p-s-m"));
+        unit.collection = MilitaryMarkerCollection;
+        unit.symbol = QStringLiteral("a-f-G-X");
+        QCOMPARE(sharedCotType(unit), QStringLiteral("b-m-p-s-m"));
         // A circle carries its radius in meters.
         const auto circle = localObject(QStringLiteral("c1"),
                                         QStringLiteral("range-circle"),

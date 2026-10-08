@@ -1,6 +1,8 @@
 #include "core/tak_shapes.h"
 
 #include "core/cot_detail.h"
+#include "core/marker_collections.h"
+#include "core/marker_symbols.h"
 #include "core/measure.h"
 #include "core/polygon.h"
 #include "core/projection.h"
@@ -73,6 +75,13 @@ void setPosition(Event &event, QPointF world)
     event.latitude = position.y();
     event.longitude = position.x();
 }
+// True when a marker uses a symbol of the military collection. Its identifier is a CoT type.
+bool militarySymbol(const UserObject &item)
+{
+    return !item.symbol.isEmpty() &&
+           effectiveMarkerCollection(item.collection, item.symbol) == MilitaryMarkerCollection &&
+           markerSymbolForCot(item.symbol) == item.symbol;
+}
 QPointF center(const QPolygonF &points)
 {
     return points.boundingRect().center();
@@ -87,7 +96,8 @@ QString takArgb(const QColor &color)
 QString sharedCotType(const UserObject &item)
 {
     if (item.type == QStringLiteral("circle")) {
-        return QStringLiteral("b-m-p-s-m");
+        // A military symbol is a CoT unit type, so TAK clients show the same symbol.
+        return militarySymbol(item) ? item.symbol : QStringLiteral("b-m-p-s-m");
     }
     if (item.type == QStringLiteral("range-circle")) {
         return QStringLiteral("u-d-c-c");
@@ -125,12 +135,14 @@ std::optional<Event> sharedObjectEvent(const UserObject &item,
         setPosition(event,
                     {item.geometry.value(QStringLiteral("x")).toDouble(),
                      item.geometry.value(QStringLiteral("y")).toDouble()});
-        detail.push_back(
-            element(QStringLiteral("color"), {{QStringLiteral("argb"), takArgb(stroke)}}));
-        detail.push_back(
-            element(QStringLiteral("usericon"),
-                    {{QStringLiteral("iconsetpath"),
-                      QStringLiteral("COT_MAPPING_SPOTMAP/b-m-p-s-m/") + takArgb(stroke)}}));
+        if (!militarySymbol(item)) {
+            detail.push_back(
+                element(QStringLiteral("color"), {{QStringLiteral("argb"), takArgb(stroke)}}));
+            detail.push_back(
+                element(QStringLiteral("usericon"),
+                        {{QStringLiteral("iconsetpath"),
+                          QStringLiteral("COT_MAPPING_SPOTMAP/b-m-p-s-m/") + takArgb(stroke)}}));
+        }
     } else if (item.type == QStringLiteral("range-circle")) {
         const auto points = polygonVertices(item.geometry);
         setPosition(event, points.at(0));

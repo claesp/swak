@@ -1433,6 +1433,20 @@ private slots:
         QVERIFY(!settings->savePreferences().value(QStringLiteral("visible")).toBool());
         settings->restorePreferences({});
         QVERIFY(show->isChecked());
+        // A TAK spot marker uses its color element.
+        auto spot = drawing(QStringLiteral("spot"),
+                            QStringLiteral("b-m-p-s-m"),
+                            QStringLiteral("<color argb=\"-16711936\"/>"));
+        spot.latitude = 59.005;
+        QVERIFY(store.accept(spot).isEmpty());
+        const auto spotPoint = view.screen(59.005, 18).toPoint();
+        auto spotColor = render(*points).pixelColor(spotPoint);
+        QVERIFY(spotColor.green() > 200 && spotColor.red() < 80);
+        spot.time = spot.time.addSecs(1);
+        spot.detail = QStringLiteral("<color argb=\"-16776961\"/>");
+        QVERIFY(store.accept(spot).isEmpty());
+        spotColor = render(*points).pixelColor(spotPoint);
+        QVERIFY(spotColor.blue() > 200 && spotColor.green() < 80);
         // An update moves the drawing.
         area.time = area.time.addSecs(1);
         area.detail.replace(QStringLiteral("58.99"), QStringLiteral("59.03"));
@@ -1527,6 +1541,23 @@ private slots:
         QVERIFY(chosen);
         QCOMPARE(sharing->recipients(marker.id).size(), 1);
         QCOMPARE(sharing->recipients(marker.id).first().callsign, QStringLiteral("Echo"));
+        // A share that fails shows the reason.
+        auto *pending = action(QStringLiteral("stopSharingObject"));
+        QVERIFY(pending);
+        pending->trigger();
+        auto *share = action(QStringLiteral("shareObject"));
+        objects->remove(marker.id);
+        QString reason;
+        QTimer::singleShot(0, &window, [&] {
+            if (auto *box = window.findChild<QMessageBox *>(QStringLiteral("shareError"))) {
+                reason = box->text();
+                box->accept();
+            }
+        });
+        share->trigger();
+        QVERIFY(!reason.isEmpty());
+        QVERIFY(!sharing->isShared(marker.id));
+        objects->undoStack().undo();
         // Received events and data features have no share actions.
         item.owner = QStringLiteral("org.swak.events");
         QVERIFY(!action(QStringLiteral("shareObjectWith")));

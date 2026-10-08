@@ -67,6 +67,7 @@ SWAK sends a local object to TAK users only when you share it. Right-click a mar
 | SWAK object | TAK CoT |
 | --- | --- |
 | Marker | `b-m-p-s-m` spot marker with `color` and `usericon` |
+| Military marker | Its CoT unit type, such as `a-f-G-U-C-I` |
 | Circle | `u-d-c-c` with `shape/ellipse` and the radius in meters |
 | Line | `u-d-f` with one `link` point for each end |
 | Area | `u-d-f` with the first point again at the end and a `fillColor` |
@@ -74,13 +75,13 @@ SWAK sends a local object to TAK users only when you share it. Right-click a mar
 
 A shared object stays shared. SWAK sends each change, and it sends a `t-x-d-d` delete with `__forcedelete` when you delete the object. Undo shares the object again. Stop sharing sends the delete and keeps the object local. Users that you remove from Share with ... get a delete. Shared objects are stale after 24 hours, so SWAK sends all of them again every 15 minutes and after each start. When no output is connected or the outgoing queue is full, SWAK tries again every 5 seconds and logs the reason once. SWAK never sends received events.
 
-Tools > Plugins > Sharing > Share New Objects Automatically, or the same setting in File > Settings > Sharing, shares each new local object with your channels. It is off by default. Objects that SWAK restores at start are not new. MIL-STD-2525 markers are sent as spot markers with their color.
+Tools > Plugins > Sharing > Share New Objects Automatically, or the same setting in File > Settings > Sharing, shares each new local object with your channels. It is off by default. Objects that SWAK restores at start are not new. A MIL-STD-2525 marker uses its CoT unit type, so TAK clients show the same symbol. They ignore the marker color.
 
 # Received drawings and routes
 
 SWAK draws the circles (`u-d-c-c`), ellipses (`u-d-c-e`), lines and areas (`u-d-f` and `u-d-f-m`), rectangles (`u-d-r`), and routes (`b-m-r`) that TAK clients share. It uses the stroke and fill colors, the stroke weight from 1 to 10, and the route color from `link_attr`. Closed `u-d-f` shapes and rectangles are areas. A route shows its check points when the route is large enough on screen. The label shows the callsign. These drawings are read-only. A click on the outline, or inside a circle or area, selects the drawing and shows its information. Drawings with more than 1000 points, invalid points, or truncated detail do not show.
 
-Tools > Plugins > TAK Drawings > Show TAK Drawings turns the drawings on and off. File > Settings > TAK Drawings also sets their opacity. The CoT layer draws no point symbol for these types.
+Tools > Plugins > TAK Drawings > Show TAK Drawings turns the drawings on and off. File > Settings > TAK Drawings also sets their opacity. The CoT layer draws no point symbol for these types. It draws a received spot marker (`b-m-p-s-m`) in the color of its `color` element.
 
 # Emergency alerts
 
