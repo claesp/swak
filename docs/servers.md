@@ -60,6 +60,14 @@ TAK Server groups decide which users exchange data. TAK clients call them channe
 
 Select a TLS or QUIC entry with a TAK REST API port, then TAK Server > Map Layers .... SWAK reads `/Marti/api/maplayers/all` and lists the XYZ and WMS layers. Check the layers to add and select OK. Each checked layer becomes a map provider for the GDAL raster provider, with the attribution of the server. SWAK does not select it. Choose it in Map Providers to show it. ATAK templates such as `{$z}` and `{$serverpart}` become `{z}` and the first server part. SWAK keeps zoom levels from 0 through 19. It lists WMTS layers, layers without HTTPS, and other types as skipped, with the reason. Add a WMTS layer in Map Providers, because it needs a matrix set.
 
+# Track history
+
+Right-click a received object from a TAK Server entry with a REST API port and select Load History. Choose the last hour, 6 hours, 24 hours, or 7 days. SWAK reads `/Marti/api/cot/xml/{uid}/all` for that window and draws the past positions as a dashed yellow line with the start time. Trace then continues the track with its newest positions. Clear History in the object menu removes one track, and Tools > Plugins > Track History > Clear History removes all. SWAK keeps 16 tracks with at most 5000 positions each and reads at most 32 MiB.
+
+# Server icons
+
+A received object with a `usericon` iconset path, such as `<iconset UID>/<group>/<name>.png`, shows that icon instead of its symbol. SWAK asks the TAK Server of the object for the icon once at `/Marti/api/iconimage`, with at most 4 requests at a time. It accepts PNG and JPEG images up to 256 KiB and 512 by 512 pixels, checks the size before decoding, and keeps at most 512 icons of at most 64 pixels. A missing or refused icon keeps the standard symbol and is not requested again. Built-in ATAK paths, such as `COT_MAPPING_SPOTMAP`, keep the SWAK symbols. Iconsets do not become marker collections, because SWAK marker collections are vector symbols.
+
 # Contacts
 
 Tools > Plugins > Contacts shows a pane with the TAK users that SWAK can address. A position report from a server entry with a `contact` endpoint adds or updates a user. Local events and objects without a contact endpoint are not users. Refresh reads `/Marti/api/contacts/all` from each enabled entry with a TAK REST API port. These users stay in the list in gray, without a current position, until they report one. An error names the entry and keeps its last list. Double-click a user, or select Show on map in the context menu, to center the map on the user and select it. The list holds at most 2048 users and updates at most once a second.

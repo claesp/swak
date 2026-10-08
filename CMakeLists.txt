@@ -109,6 +109,10 @@ add_library(
     src/core/missions.h
     src/core/server_layers.cpp
     src/core/server_layers.h
+    src/core/track_history.cpp
+    src/core/track_history.h
+    src/core/icon_cache.cpp
+    src/core/icon_cache.h
     src/core/data_package.h
     src/core/package_import.cpp
     src/core/package_import.h
@@ -240,6 +244,7 @@ swak_plugin(swak_takdrawings src/plugins/takdrawings.cpp)
 swak_plugin(swak_chat src/plugins/chat.cpp)
 swak_plugin(swak_files src/plugins/files.cpp)
 swak_plugin(swak_missions src/plugins/missions.cpp)
+swak_plugin(swak_history src/plugins/history.cpp)
 swak_plugin(swak_milstd2525 src/plugins/milstd2525.cpp)
 swak_plugin(swak_polygons src/plugins/polygons.cpp)
 swak_plugin(swak_markers src/plugins/markers.cpp)
@@ -304,6 +309,7 @@ target_link_libraries(
             swak_chat
             swak_files
             swak_missions
+            swak_history
 )
 install(TARGETS swak RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES packaging/org.swak.Swak.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
@@ -383,6 +389,7 @@ if(BUILD_TESTING)
                 swak_chat
                 swak_files
                 swak_missions
+                swak_history
                 Qt6::Test
     )
     add_test(NAME maps COMMAND swak_map_tests)
@@ -419,6 +426,7 @@ if(BUILD_TESTING)
                 swak_chat
                 swak_files
                 swak_missions
+                swak_history
                 Qt6::Test
                 Qt6::Network
     )
@@ -481,6 +489,7 @@ if(BUILD_TESTING)
                 swak_chat
                 swak_files
                 swak_missions
+                swak_history
                 Qt6::Test
                 Qt6::Network
     )
@@ -536,6 +545,7 @@ if(BUILD_TESTING)
                 swak_chat
                 swak_files
                 swak_missions
+                swak_history
                 Qt6::Test
                 Qt6::Network
                 Qt6::OpenGLWidgets

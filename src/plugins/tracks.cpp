@@ -1,5 +1,6 @@
 #include "core/cot_detail.h"
 #include "core/delete_confirmation.h"
+#include "core/icon_cache.h"
 #include "core/interfaces.h"
 #include "core/logging.h"
 #include "core/map_label.h"
@@ -318,10 +319,17 @@ public:
         menu.addAction(createClearAction(services.store, menu));
         const auto *key = &services.store;
         connect(&services.store, &QObject::destroyed, this, [this, key] {
-            spotColors_.remove(key);
+            detailStyles_.remove(key);
+            iconCaches_.remove(key);
         });
         if (services.mapTools) {
-            services.mapTools->add(new HeadingConeTool(services.store.motion(), &menu));
+            auto *cone = new HeadingConeTool(services.store.motion(), &menu);
+            services.mapTools->add(cone);
+            if (services.icons) {
+                iconCaches_.insert(key, services.icons);
+                // A loaded icon needs a new frame. Tool changes repaint the map.
+                connect(services.icons, &IconCache::iconLoaded, cone, &MapTool::changed);
+            }
         }
     }
     int order() const override
@@ -361,9 +369,14 @@ public:
             if (found != symbols.cend()) {
                 color = found->color;
             }
-            if (event.type == u"b-m-p-s-m") {
-                if (const auto spot = spotColor(store, event); spot.isValid()) {
-                    color = spot;
+            const auto &style = detailStyle(store, event);
+            if (event.type == u"b-m-p-s-m" && style.color.isValid()) {
+                color = style.color;
+            }
+            QImage icon;
+            if (!style.iconPath.isEmpty()) {
+                if (const auto cache = iconCaches_.value(&store)) {
+                    icon = cache->icon(event.origin, style.iconPath);
                 }
             }
             const auto gray = qGray(color.rgb());
@@ -390,8 +403,26 @@ public:
                 }
                 painter.setOpacity(visual.opacity);
             }
-            paintMarkerSymbol(
-                painter, symbol, point, view.markerSize(6) + (selected ? 2 : 0), color, selected);
+            if (icon.isNull()) {
+                paintMarkerSymbol(painter,
+                                  symbol,
+                                  point,
+                                  view.markerSize(6) + (selected ? 2 : 0),
+                                  color,
+                                  selected);
+            } else {
+                // A server icon replaces the symbol. A missing icon keeps the symbol.
+                const double side = view.markerSize(12) + (selected ? 4 : 0);
+                QSizeF size(icon.size());
+                size.scale(side, side, Qt::KeepAspectRatio);
+                painter.drawImage(
+                    QRectF(point - QPointF(size.width() / 2, size.height() / 2), size), icon);
+                if (selected) {
+                    painter.setPen(QPen(Qt::white, 2));
+                    painter.setBrush(Qt::NoBrush);
+                    painter.drawEllipse(point, side * 0.7, side * 0.7);
+                }
+            }
             if (selected || labels++ < 100) {
                 paintMapLabel(painter,
                               point + view.markerOffset(QPointF(16, -8), 6),
@@ -440,17 +471,20 @@ public:
     }
 
 private:
-    struct SpotColor
+    struct DetailStyle
     {
         QDateTime time;
         qsizetype detailSize = 0;
+        // The color element, which TAK spot markers use.
         QColor color;
+        // The usericon iconset path of a server icon, or empty.
+        QString iconPath;
     };
-    // Returns the color element of a TAK spot marker. It reads the detail only when the event
+    // Returns the style elements of an event. It reads the detail only when the event
     // changes, so frames do not parse detail XML.
-    QColor spotColor(const Store &store, const Event &event) const
+    const DetailStyle &detailStyle(const Store &store, const Event &event) const
     {
-        auto &cache = spotColors_[&store];
+        auto &cache = detailStyles_[&store];
         auto it = cache.find(event.uid);
         if (it == cache.end() || it->time != event.time || it->detailSize != event.detail.size()) {
             if (cache.size() >= MaxEvents) {
@@ -460,9 +494,13 @@ private:
             if (color.isValid()) {
                 color.setAlpha(255);
             }
-            it = cache.insert(event.uid, {event.time, event.detail.size(), color});
+            auto path = iconsetPath(event);
+            if (!serverIconPath(path) || event.origin.isEmpty()) {
+                path.clear();
+            }
+            it = cache.insert(event.uid, {event.time, event.detail.size(), color, path});
         }
-        return it->color;
+        return *it;
     }
     QAction *createClearAction(Store &store, QWidget &owner)
     {
@@ -484,7 +522,8 @@ private:
         return clear;
     }
     // The cache changes inside const paint calls. Only the interface thread uses it.
-    mutable QHash<const Store *, QHash<QString, SpotColor>> spotColors_;
+    mutable QHash<const Store *, QHash<QString, DetailStyle>> detailStyles_;
+    QHash<const Store *, QPointer<IconCache>> iconCaches_;
 };
 } // namespace swak
 #include "tracks.moc"

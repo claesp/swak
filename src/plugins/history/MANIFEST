@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "org.swak.history",
+  "name": "Track History",
+  "description": "Load past positions from TAK Server and show them as tracks.",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entryPoint": "HistoryPlugin",
+  "linkage": "static",
+  "platforms": ["linux"],
+  "qtMajor": 6,
+  "qtMinimum": "6.4.0",
+  "interfaces": ["map-layer", "menu"],
+  "requires": [],
+  "permissions": [],
+  "settingsSchemaVersion": 1
+}

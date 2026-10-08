@@ -11,6 +11,7 @@
 #include "core/credits.h"
 #include "core/delete_confirmation.h"
 #include "core/file_shares.h"
+#include "core/icon_cache.h"
 #include "core/identity.h"
 #include "core/interfaces.h"
 #include "core/logging.h"
@@ -28,6 +29,7 @@
 #include "core/settings_dialog.h"
 #include "core/tak_server_api.h"
 #include "core/toolbar.h"
+#include "core/track_history.h"
 #include "core/ui_behavior.h"
 #include "core/user_objects.h"
 #include "swak/version.h"
@@ -210,6 +212,8 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     services.files = new FileShares(
         store_, servers, services.tak, identity, objects, dataSources, mapSources, this);
     services.missions = new Missions(store_, servers, services.tak, identity, this);
+    services.history = new TrackHistory(servers, services.tak, this);
+    services.icons = new IconCache(servers, services.tak, this);
     auto *mainViews = new QTabWidget(this);
     mainViews->setObjectName(QStringLiteral("mainViews"));
     mainViews->setDocumentMode(true);

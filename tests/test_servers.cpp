@@ -6,6 +6,7 @@
 #include "core/data_package.h"
 #include "core/emergency.h"
 #include "core/file_shares.h"
+#include "core/icon_cache.h"
 #include "core/identity.h"
 #include "core/lan_protocol.h"
 #include "core/map_selection.h"
@@ -29,16 +30,19 @@
 #include "core/tak_protocol.h"
 #include "core/tak_server_api.h"
 #include "core/tak_shapes.h"
+#include "core/track_history.h"
 #include "core/user_objects.h"
 
 #include <QAbstractItemModelTester>
 #include <QApplication>
+#include <QBuffer>
 #include <QCryptographicHash>
 #include <QDialog>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -3365,6 +3369,217 @@ private slots:
                 return message->text().contains(QStringLiteral("403"));
             },
             10000));
+    }
+    void trackHistory()
+    {
+        const auto position = [](const QString &uid, double latitude, int minutesAgo) {
+            auto event = sampleEvent(uid);
+            event.latitude = latitude;
+            event.longitude = 18;
+            event.time = event.start = QDateTime::currentDateTimeUtc().addSecs(-60 * minutesAgo);
+            event.stale = event.time.addSecs(60);
+            return encodeCot(event);
+        };
+        QByteArray xml = "<events>" + position(QStringLiteral("A"), 59.2, 1) +
+                         position(QStringLiteral("B"), 50, 2) +
+                         position(QStringLiteral("A"), 59.0, 3) +
+                         position(QStringLiteral("A"), 59.1, 2) +
+                         position(QStringLiteral("A"), 89, 4) + "<event broken></event></events>";
+        const auto points = readHistoryPoints(xml, QStringLiteral("A"));
+        QCOMPARE(points.size(), 3);
+        QCOMPARE(points.first().world, project(59.0, 18));
+        QCOMPARE(points.last().world, project(59.2, 18));
+        QVERIFY(readHistoryPoints("<event never", QStringLiteral("A")).isEmpty());
+        // The service loads from the REST API of the event server.
+        HttpsHarness api;
+        QVERIFY(api.load());
+        int status = 200;
+        api.respond = [&](const QByteArray &) {
+            return QByteArray("HTTP/1.1 ") + QByteArray::number(status) +
+                   " X\r\nContent-Length: " + QByteArray::number(xml.size()) + "\r\n\r\n" + xml;
+        };
+        NetworkClient network;
+        Store store;
+        Servers servers(store);
+        TakServerApi tak(servers, network);
+        TrackHistory history(&servers, &tak);
+        QSignalSpy loaded(&history, &TrackHistory::loaded);
+        auto entry = source(9);
+        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        entry.insert(QStringLiteral("enabled"), false);
+        entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+        entry.insert(QStringLiteral("apiPort"), api.serverPort());
+        QVERIFY(servers.put(QStringLiteral("tak"), entry).isEmpty());
+        QVERIFY(servers.put(QStringLiteral("udp"), source(9)).isEmpty());
+        QVERIFY(history.available(QStringLiteral("tak")));
+        QVERIFY(!history.available(QStringLiteral("udp")));
+        const auto end = QDateTime::currentDateTimeUtc();
+        QVERIFY(!history.load(QStringLiteral("udp"), QStringLiteral("A"), {}, end.addSecs(-60), end)
+                     .isEmpty());
+        QVERIFY(!history.load(QStringLiteral("tak"), QStringLiteral("A"), {}, end, end).isEmpty());
+        QVERIFY(!history.load(QStringLiteral("tak"), QStringLiteral("A"), {}, end.addDays(-8), end)
+                     .isEmpty());
+        QVERIFY(!history.load(QStringLiteral("tak"), {}, {}, end.addSecs(-60), end).isEmpty());
+        QVERIFY(history
+                    .load(QStringLiteral("tak"),
+                          QStringLiteral("A"),
+                          QStringLiteral("Alpha"),
+                          end.addSecs(-3600),
+                          end)
+                    .isEmpty());
+        QVERIFY(loaded.wait(10000));
+        QVERIFY(loaded.last().at(1).toString().isEmpty());
+        QVERIFY(api.requests.last().startsWith("GET /Marti/api/cot/xml/A/all?start="));
+        QCOMPARE(history.track(QStringLiteral("A"))->points.size(), 3);
+        QCOMPARE(history.track(QStringLiteral("A"))->label, QStringLiteral("Alpha"));
+        // No positions and HTTP errors report errors and keep the tracks.
+        QVERIFY(
+            history.load(QStringLiteral("tak"), QStringLiteral("C"), {}, end.addSecs(-3600), end)
+                .isEmpty());
+        QVERIFY(loaded.wait(10000));
+        QVERIFY(!loaded.last().at(1).toString().isEmpty());
+        status = 500;
+        QVERIFY(
+            history.load(QStringLiteral("tak"), QStringLiteral("A"), {}, end.addSecs(-3600), end)
+                .isEmpty());
+        QVERIFY(loaded.wait(10000));
+        QVERIFY(loaded.last().at(1).toString().contains(QStringLiteral("500")));
+        QCOMPARE(history.tracks().size(), 1);
+        // The list keeps MaxTracks tracks and MaxPoints positions.
+        for (int i = 0; i < TrackHistory::MaxTracks; ++i) {
+            history.add({QStringLiteral("T%1").arg(i),
+                         {},
+                         QStringLiteral("tak"),
+                         end,
+                         end,
+                         {{end, QPointF(0.5, 0.5)}}});
+        }
+        QCOMPARE(history.tracks().size(), TrackHistory::MaxTracks);
+        QVERIFY(!history.track(QStringLiteral("A")));
+        HistoryTrack large{QStringLiteral("L"), {}, {}, end, end, {}};
+        for (int i = 0; i <= TrackHistory::MaxPoints; ++i) {
+            large.points.append({end.addSecs(i), QPointF(0.5, 0.5)});
+        }
+        history.add(large);
+        QCOMPARE(history.track(QStringLiteral("L"))->points.size(), TrackHistory::MaxPoints);
+        history.add({QStringLiteral("E"), {}, {}, end, end, {}});
+        QVERIFY(!history.track(QStringLiteral("E")));
+        history.remove(QStringLiteral("L"));
+        QVERIFY(!history.track(QStringLiteral("L")));
+        history.remove(QStringLiteral("L"));
+        history.clear();
+        QVERIFY(history.tracks().isEmpty());
+        history.clear();
+    }
+    void serverIcons()
+    {
+        QVERIFY(serverIconPath(
+            QStringLiteral("6d781afb-89a6-4c07-b2b9-a89748b6a38f/Google/hiker.png")));
+        for (const auto &bad : {QStringLiteral("COT_MAPPING_SPOTMAP/b-m-p-s-m/-1"),
+                                QStringLiteral("a/b/c.gif"),
+                                QStringLiteral("a/../c.png"),
+                                QStringLiteral("a/b/c/d.png"),
+                                QStringLiteral("/a/b.png")}) {
+            QVERIFY2(!serverIconPath(bad), qPrintable(bad));
+        }
+        const auto png = [](int width, int height) {
+            QImage image(width, height, QImage::Format_ARGB32);
+            image.fill(Qt::red);
+            QByteArray bytes;
+            QBuffer buffer(&bytes);
+            buffer.open(QIODevice::WriteOnly);
+            image.save(&buffer, "PNG");
+            return bytes;
+        };
+        auto icon = decodeIcon(png(100, 50));
+        QCOMPARE(icon.size(), QSize(64, 32));
+        QCOMPARE(decodeIcon(png(32, 32)).size(), QSize(32, 32));
+        QVERIFY(decodeIcon(png(600, 10)).isNull());
+        QVERIFY(decodeIcon("not an image").isNull());
+        QVERIFY(decodeIcon({}).isNull());
+        QVERIFY(decodeIcon(QByteArray(IconCache::MaxIconBytes + 1, 'x')).isNull());
+        QByteArray gif;
+        {
+            QBuffer buffer(&gif);
+            buffer.open(QIODevice::WriteOnly);
+            QImage(4, 4, QImage::Format_ARGB32).save(&buffer, "BMP");
+        }
+        QVERIFY(decodeIcon(gif).isNull());
+        // The cache asks the server once per icon and remembers failures.
+        HttpsHarness api;
+        QVERIFY(api.load());
+        api.respond = [&](const QByteArray &request) {
+            const auto body = request.contains("missing") ? QByteArray{} : png(16, 16);
+            const QByteArray status = body.isEmpty() ? "404" : "200";
+            return "HTTP/1.1 " + status +
+                   " X\r\nContent-Length: " + QByteArray::number(body.size()) + "\r\n\r\n" + body;
+        };
+        NetworkClient network;
+        Store store;
+        Servers servers(store);
+        TakServerApi tak(servers, network);
+        IconCache cache(&servers, &tak);
+        QSignalSpy iconLoaded(&cache, &IconCache::iconLoaded);
+        auto entry = source(9);
+        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        entry.insert(QStringLiteral("enabled"), false);
+        entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+        entry.insert(QStringLiteral("apiPort"), api.serverPort());
+        QVERIFY(servers.put(QStringLiteral("tak"), entry).isEmpty());
+        const auto path = [](int i) {
+            return QStringLiteral("set/group/icon%1.png").arg(i);
+        };
+        QVERIFY(cache.icon(QStringLiteral("tak"), path(0)).isNull());
+        QVERIFY(cache.icon(QStringLiteral("tak"), path(0)).isNull());
+        // More icons than request slots wait for a free slot.
+        for (int i = 1; i < 7; ++i) {
+            QVERIFY(cache.icon(QStringLiteral("tak"), path(i)).isNull());
+        }
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return iconLoaded.size() == 7;
+            },
+            15000));
+        QCOMPARE(cache.icon(QStringLiteral("tak"), path(6)).size(), QSize(16, 16));
+        QCOMPARE(api.requests.size(), 7);
+        QVERIFY(api.requests.first().startsWith(
+            "GET /Marti/api/iconimage?iconsetpath=set%2Fgroup%2Ficon0.png "));
+        QVERIFY(
+            cache.icon(QStringLiteral("tak"), QStringLiteral("set/group/missing.png")).isNull());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return api.requests.size() == 8;
+            },
+            10000));
+        QTest::qWait(200);
+        QVERIFY(
+            cache.icon(QStringLiteral("tak"), QStringLiteral("set/group/missing.png")).isNull());
+        QTest::qWait(200);
+        QCOMPARE(api.requests.size(), 8);
+        // Other paths and servers without an API make no request.
+        QVERIFY(cache.icon(QStringLiteral("tak"), QStringLiteral("COT_MAPPING_SPOTMAP/x/y.png"))
+                    .isNull());
+        QVERIFY(cache.icon(QStringLiteral("other"), path(9)).isNull());
+        QTest::qWait(200);
+        QCOMPARE(api.requests.size(), 8);
+        // Imported icons replace a failure and are scaled down.
+        cache.insert(QStringLiteral("tak"),
+                     QStringLiteral("set/group/missing.png"),
+                     QImage(200, 100, QImage::Format_ARGB32));
+        QCOMPARE(cache.icon(QStringLiteral("tak"), QStringLiteral("set/group/missing.png")).size(),
+                 QSize(64, 32));
+        cache.insert(
+            QStringLiteral("tak"), QStringLiteral("bad"), QImage(4, 4, QImage::Format_ARGB32));
+        cache.insert(QStringLiteral("tak"), path(20), QImage());
+        QVERIFY(cache.icon(QStringLiteral("tak"), path(20)).isNull());
+        for (int i = 0; i <= IconCache::MaxIcons; ++i) {
+            cache.insert(
+                QStringLiteral("local"), path(100 + i), QImage(4, 4, QImage::Format_ARGB32));
+        }
+        QVERIFY(cache.icon(QStringLiteral("local"), path(100)).isNull());
+        QVERIFY(!cache.icon(QStringLiteral("local"), path(101)).isNull());
+        IconCache offline(nullptr, nullptr);
+        QVERIFY(offline.icon(QStringLiteral("tak"), path(0)).isNull());
     }
     void takServerApi()
     {

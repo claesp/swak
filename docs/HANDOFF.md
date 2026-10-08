@@ -1631,3 +1631,7 @@ The Store now sends `b-t-f` events through `messageReceived` and does not keep t
 # 2026-10-08: Phase 6 server map layers
 
 `core/server_layers.*` converts `/Marti/api/maplayers/all` replies to GDAL raster map provider entries for XYZ and WMS. The server browser gains TAK Server > Map Layers ... with a checklist, and the servers plugin gives it the map catalog. `serverMapLayers` in the server tests covers conversion, skipped layers, the dialog, adding providers, and errors. Mission map layers and WMTS layers are not converted.
+
+# 2026-10-08: Phase 6 track history and server icons
+
+`core/track_history.*` loads past positions from `/Marti/api/cot/xml/{uid}/all`. The new history plugin adds Load History with four time windows, draws the tracks, and clears them. Trace starts from the newest loaded positions. `core/icon_cache.*` loads `usericon` images from `/Marti/api/iconimage` with request, size, and count limits. The CoT layer draws them in place of the symbol and caches the icon path and spot color for each event change. Tests: `trackHistory` and `serverIcons` in the server tests, and `historyAndIcons` in the GUI tests. The area query `/api/cot/sa`, iconset import as marker collections, and a live TAK Server remain open. Video waits for the Qt Multimedia development package (`qt6-multimedia-dev`), which is not installed.

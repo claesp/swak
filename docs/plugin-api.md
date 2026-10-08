@@ -154,6 +154,10 @@ Read detail through `core/cot_detail.h`. `detailElements` and `detailElement` re
 
 `PluginServices::missions` is the per-window `Missions` service in `core/missions.h`. It lists, subscribes, loads, edits, and exports missions and implements `PreferenceParticipant` under `org.swak.missions`. `Store::removeOrigin` removes the objects of one origin, and `Store::messageReceived` also delivers `t-x-m` mission events. `TakServerApi::martiRequest` takes extra headers, such as the mission bearer token. The missions plugin implements `PanePlugin`, and its MANIFEST declares `pane`. Its pane saves the splitter state under `org.swak.missions.view` and registers a map tool for Add to Mission and Remove from a mission.
 
+# Track history and server icons
+
+`PluginServices::history` is the per-window `TrackHistory` service in `core/track_history.h`. `load` reads past positions for a time window, `add` adds a track, and `loaded` reports each result. The Trace plugin continues a loaded track. The history plugin implements `MapLayer` and `MenuPlugin`, and its MANIFEST declares `map-layer` and `menu`. `PluginServices::icons` is the per-window `IconCache` in `core/icon_cache.h`. `icon` returns a loaded icon or starts a bounded request, and `insert` adds an icon. The CoT layer reads the `usericon` path once for each event change and draws the icon when it is available.
+
 # Emergency alerts
 
 `core/emergency.h` provides `emergencyKinds`, `emergencyEvent`, `emergencyCancelEvent`, `activeEmergency`, and `emergencyLabel`. The emergencies plugin implements `MapLayer` and `ToolbarPlugin`. Its manifest declares `map-layer` and `toolbar`. It reads the Store and does not change it. It centers the map through `MapTools::centerRequested`. Its toolbar button is a trailing action with `swakToolbarTrailingOrder` -1, so it stays left of the navigation lock. Trailing actions sort by this property, and the default is 0.

@@ -3,6 +3,7 @@
 #include "core/map_tools.h"
 #include "core/maps.h"
 #include "core/store.h"
+#include "core/track_history.h"
 #include "core/ui_icons.h"
 #include "core/user_objects.h"
 
@@ -48,6 +49,17 @@ public:
             connect(objects_, &UserObjects::changed, this, [this] {
                 refresh();
             });
+        }
+        if (auto *history = services.history) {
+            connect(history,
+                    &TrackHistory::loaded,
+                    this,
+                    [this, history = QPointer<TrackHistory>(history)](const QString &uid,
+                                                                      const QString &error) {
+                        if (history && error.isEmpty()) {
+                            continueHistory(*history, uid);
+                        }
+                    });
         }
     }
     QString preferenceId() const override
@@ -250,6 +262,29 @@ public:
     }
 
 private:
+    // Traces a loaded history track and starts with its newest positions.
+    void continueHistory(const TrackHistory &history, const QString &uid)
+    {
+        const auto *track = history.track(uid);
+        const auto name = key(QStringLiteral("org.swak.events"), uid);
+        if (!track || (!records_.contains(name) && records_.size() >= MaxTraces)) {
+            return;
+        }
+        auto &record = records_[name];
+        record.owner = QStringLiteral("org.swak.events");
+        record.id = uid;
+        record.points.clear();
+        const auto first = std::max<qsizetype>(0, track->points.size() - limit_);
+        for (auto i = first; i < track->points.size(); ++i) {
+            record.points.append(track->points.at(i).world);
+        }
+        if (!record.color.isValid()) {
+            record.color = QColor(QStringLiteral("#54c8ff"));
+        }
+        refresh();
+        emit changed();
+        emit actionsChanged();
+    }
     struct Record
     {
         QString owner, id;

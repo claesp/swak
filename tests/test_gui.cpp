@@ -15,6 +15,7 @@
 #include "core/gdal_support.h"
 #include "core/graphics.h"
 #include "core/grid_types.h"
+#include "core/icon_cache.h"
 #include "core/identity.h"
 #include "core/interfaces.h"
 #include "core/logging.h"
@@ -40,6 +41,7 @@
 #include "core/tak_server_api.h"
 #include "core/tiles.h"
 #include "core/toolbar.h"
+#include "core/track_history.h"
 #include "core/ui_icons.h"
 #include "core/user_objects.h"
 #include "swak/version.h"
@@ -1573,6 +1575,117 @@ private slots:
         QVERIFY(sharing->automatic());
         sharing->setAutomatic(false);
         QVERIFY(!automatic->isChecked());
+    }
+    void historyAndIcons()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("history.json")),
+                            QPluginLoader::staticInstances());
+        swak::MapLayer *historyLayer = nullptr;
+        swak::MapLayer *points = nullptr;
+        for (auto *plugin : QPluginLoader::staticInstances()) {
+            const QByteArray name(plugin->metaObject()->className());
+            if (name.endsWith("HistoryPlugin")) {
+                historyLayer = qobject_cast<swak::MapLayer *>(plugin);
+            } else if (name.endsWith("TracksPlugin")) {
+                points = qobject_cast<swak::MapLayer *>(plugin);
+            }
+        }
+        auto *history = window.findChild<swak::TrackHistory *>(QStringLiteral("trackHistory"));
+        auto *icons = window.findChild<swak::IconCache *>(QStringLiteral("iconCache"));
+        auto *tools = window.findChild<swak::MapTools *>();
+        auto *servers = window.findChild<swak::Servers *>();
+        auto *trace = dynamic_cast<swak::PreferenceParticipant *>(
+            window.findChild<QObject *>(QStringLiteral("traceTool")));
+        QVERIFY(historyLayer && points && history && icons && tools && servers && trace);
+        auto entry = swak::serverDefaults();
+        entry.insert(QStringLiteral("name"), QStringLiteral("Test TAK"));
+        entry.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
+        entry.insert(QStringLiteral("port"), 9);
+        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        entry.insert(QStringLiteral("enabled"), false);
+        entry.insert(QStringLiteral("apiPort"), 9);
+        QVERIFY(servers->put(QStringLiteral("tak"), entry).isEmpty());
+        swak::Event user;
+        user.uid = QStringLiteral("ANDROID-9");
+        user.callsign = QStringLiteral("Hotel");
+        user.type = QStringLiteral("a-f-G-U-C");
+        user.how = QStringLiteral("m-g");
+        user.latitude = 59;
+        user.longitude = 18;
+        user.origin = QStringLiteral("tak");
+        user.detail = QStringLiteral("<usericon iconsetpath=\"set/group/hiker.png\"/>");
+        user.time = user.start = QDateTime::currentDateTimeUtc();
+        user.stale = user.time.addSecs(600);
+        QVERIFY(window.store().accept(user).isEmpty());
+        // Load History asks the server of the object.
+        swak::MapItem item;
+        item.owner = QStringLiteral("org.swak.events");
+        item.id = user.uid;
+        QMenu menu;
+        tools->populateContextMenu(item, menu);
+        auto *load = menu.findChild<QMenu *>(QStringLiteral("loadHistory"));
+        QVERIFY(load && load->actions().size() == 4);
+        QVERIFY(!menu.findChild<QAction *>(QStringLiteral("clearHistory")));
+        QSignalSpy loaded(history, &swak::TrackHistory::loaded);
+        load->actions().first()->trigger();
+        QVERIFY(loaded.wait(15000));
+        QVERIFY(!loaded.last().at(1).toString().isEmpty());
+        // A track shows on the map and Trace continues it.
+        const auto now = QDateTime::currentDateTimeUtc();
+        history->add({user.uid,
+                      QStringLiteral("Hotel"),
+                      QStringLiteral("tak"),
+                      now.addSecs(-600),
+                      now,
+                      {{now.addSecs(-600), swak::project(59, 17.99)},
+                       {now.addSecs(-300), swak::project(59, 17.995)},
+                       {now.addSecs(-60), swak::project(59, 17.999)}}});
+        const swak::Viewport view{QSizeF(400, 400), swak::project(59, 17.995), 14};
+        const auto render = [&](const swak::MapLayer &layer) {
+            QImage image(400, 400, QImage::Format_ARGB32_Premultiplied);
+            image.fill(Qt::transparent);
+            QPainter painter(&image);
+            layer.paint(painter, view, window.store());
+            return image;
+        };
+        const auto image = render(*historyLayer);
+        int painted = 0;
+        for (int x = 0; x < 400; ++x) {
+            painted += image.pixelColor(x, 200).alpha() > 0 ? 1 : 0;
+        }
+        QVERIFY(painted > 50);
+        const auto targets = trace->savePreferences().value(QStringLiteral("targets")).toArray();
+        QVERIFY(std::any_of(targets.cbegin(), targets.cend(), [&user](const QJsonValue &value) {
+            return value.toObject().value(QStringLiteral("id")).toString() == user.uid;
+        }));
+        QMenu second;
+        tools->populateContextMenu(item, second);
+        auto *clear = second.findChild<QAction *>(QStringLiteral("clearHistory"));
+        QVERIFY(clear);
+        clear->trigger();
+        QVERIFY(history->tracks().isEmpty());
+        QCOMPARE(render(*historyLayer).pixelColor(200, 200).alpha(), 0);
+        history->add({user.uid, {}, {}, now, now, {{now, swak::project(59, 17.995)}}});
+        window.findChild<QAction *>(QStringLiteral("clearAllHistory"))->trigger();
+        QVERIFY(history->tracks().isEmpty());
+        // A server icon replaces the symbol once it is available.
+        const swak::Viewport iconView{QSizeF(400, 400), swak::project(59, 18), 14};
+        const auto renderPoints = [&] {
+            QImage result(400, 400, QImage::Format_ARGB32_Premultiplied);
+            result.fill(Qt::transparent);
+            QPainter painter(&result);
+            points->paint(painter, iconView, window.store());
+            return result;
+        };
+        QVERIFY(renderPoints().pixelColor(200, 200).alpha() > 0);
+        QImage blue(16, 16, QImage::Format_ARGB32);
+        blue.fill(Qt::blue);
+        icons->insert(QStringLiteral("tak"), QStringLiteral("set/group/hiker.png"), blue);
+        const auto withIcon = renderPoints().pixelColor(200, 200);
+        QVERIFY(withIcon.blue() > 200 && withIcon.red() < 60);
+        window.store().select(user.uid);
+        QVERIFY(renderPoints().pixelColor(200, 200).blue() > 200);
     }
     void missionsPane()
     {

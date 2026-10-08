@@ -29,6 +29,8 @@ class Chat;
 class Contacts;
 class FileShares;
 class Missions;
+class IconCache;
+class TrackHistory;
 class ObjectSharing;
 // Per-window services for plugin factories and callbacks.
 //
@@ -97,6 +99,10 @@ struct PluginServices
     FileShares *files = nullptr;
     // Window child. Lives until step 4. It reads the other services through guarded pointers.
     Missions *missions = nullptr;
+    // Window child. Lives until step 4. It reads servers and tak through guarded pointers.
+    TrackHistory *history = nullptr;
+    // Window child. Lives until step 4. It reads servers and tak through guarded pointers.
+    IconCache *icons = nullptr;
 };
 class Plugin
 {
