@@ -1598,3 +1598,8 @@ Messages may now hold 64 KiB and 2048 elements, and each event keeps up to 32768
 
 `core/tak_channels.*` reads `/groups/all?useCache=true`, merges IN and OUT entries by name, and sends `/groups/active?clientUid=` with the server's group objects and changed active flags. The server browser gains Channels ... with a checklist dialog. `takChannels` covers parsing, rejection, the body, load and apply against the HTTPS fixture, and a 403 answer. A live TAK Server with LDAP or file groups remains untested.
 Enroll ... and Channels ... now share a TAK Server menu button, so the server pane keeps its earlier minimum width.
+
+# 2026-10-08: Phase 2 contacts
+
+`core/contacts.*` is a table model of TAK users. It merges `/Marti/api/contacts/all` lists with position reports that have an origin and a contact endpoint. It rebuilds at most once a second and keeps the model when no contact changed. `PluginServices::contacts` publishes it. The new contacts plugin shows a sortable pane with Refresh, Show on map, and a status line. `takContacts` covers parsing, rejection, the limit, the merge, online state, the debounce, a 403 answer, a deleted entry, and a missing API. `contactsPane` covers the pane, Refresh, double-click, and the context menu. The message for a contact without a position remains untested. A live TAK Server contact list remains untested.
+Static analysis, the sanitizer suites, and 109 sanitizer GUI cases passed. In the plain debug build under Xvfb, `pluginPaneActivation` fails on its second pane, because the plugin menu popup does not become exposed in time. The failure moves to the next pane when one pane is skipped, so it does not come from the contacts pane. The sanitizer GUI run, which `docs/quality.md` uses, passes.

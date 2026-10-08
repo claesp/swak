@@ -1,3 +1,4 @@
+#include "core/contacts.h"
 #include "core/cot.h"
 #include "core/cot_detail.h"
 #include "core/cot_stream.h"
@@ -1318,6 +1319,107 @@ private slots:
         channels.apply(QStringLiteral("tak"), received, {}, QStringLiteral("SWAK-1"));
         QVERIFY(applied.wait(10000));
         QVERIFY(applied.last().at(1).toString().contains(QStringLiteral("does not allow")));
+    }
+    void takContacts()
+    {
+        const QByteArray list =
+            "[{\"uid\":\"ANDROID-1\",\"callsign\":\"Bravo\",\"team\":\"Cyan\",\"role\":"
+            "\"Medic\",\"takv\":\"ATAK 5.4\",\"notes\":\"\",\"filterGroups\":null},"
+            "{\"uid\":\"ANDROID-2\",\"callsign\":\"Alpha\\u0007\",\"team\":\"Red\"},"
+            "{\"callsign\":\"No UID\"}]";
+        QList<Contact> parsed;
+        QVERIFY(readTakContacts(list, QStringLiteral("tak"), &parsed));
+        QCOMPARE(parsed.size(), 2);
+        QCOMPARE(parsed.at(0).device, QStringLiteral("ATAK 5.4"));
+        QCOMPARE(parsed.at(1).callsign, QStringLiteral("Alpha"));
+        QCOMPARE(parsed.at(1).origin, QStringLiteral("tak"));
+        QList<Contact> rejected;
+        QVERIFY(!readTakContacts("{\"data\":[]}", {}, &rejected));
+        QVERIFY(!readTakContacts("not json", {}, &rejected));
+        QByteArray tooMany = "[";
+        for (int i = 0; i <= Contacts::MaxContacts; ++i) {
+            tooMany += i ? ",{}" : "{}";
+        }
+        QVERIFY(!readTakContacts(tooMany + "]", {}, &rejected));
+        HttpsHarness api;
+        QVERIFY(api.load());
+        int status = 200;
+        api.respond = [&list, &status](const QByteArray &request) {
+            if (status == 200 && request.startsWith("GET /Marti/api/contacts/all ")) {
+                return QByteArray("HTTP/1.1 200 OK\r\nContent-Type: "
+                                  "application/json\r\nContent-Length: ") +
+                       QByteArray::number(list.size()) + "\r\n\r\n" + list;
+            }
+            return QByteArray("HTTP/1.1 ") + QByteArray::number(status) +
+                   " X\r\nContent-Length: 0\r\n\r\n";
+        };
+        Store store;
+        Servers servers(store);
+        NetworkClient network;
+        TakServerApi tak(servers, network);
+        Contacts contacts(store, &servers, &tak);
+        QAbstractItemModelTester tester(&contacts);
+        QSignalSpy refreshed(&contacts, &Contacts::refreshed);
+        // Without an API entry, the refresh ends at once without error.
+        contacts.refreshServers();
+        QCOMPARE(refreshed.size(), 1);
+        QVERIFY(refreshed.last().at(0).toString().isEmpty());
+        auto entry = source(9);
+        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+        entry.insert(QStringLiteral("apiPort"), api.serverPort());
+        QVERIFY(servers.put(QStringLiteral("tak"), entry).isEmpty());
+        contacts.refreshServers();
+        QVERIFY(refreshed.wait(10000));
+        QVERIFY(refreshed.last().at(0).toString().isEmpty());
+        QCOMPARE(contacts.rowCount(), 2);
+        QCOMPARE(contacts.index(0, Contacts::CallsignColumn).data().toString(),
+                 QStringLiteral("Alpha"));
+        QCOMPARE(contacts.index(0, Contacts::ServerColumn).data().toString(),
+                 QStringLiteral("Test"));
+        QCOMPARE(contacts.index(1, Contacts::ReportColumn).data().toString(),
+                 QStringLiteral("No current position"));
+        QVERIFY(!contacts.contacts().at(1).online);
+        // A position report with a contact endpoint marks the user online.
+        auto report = sampleEvent(QStringLiteral("ANDROID-1"));
+        report.callsign = QStringLiteral("Bravo");
+        report.origin = QStringLiteral("tak");
+        report.detail = QStringLiteral("<contact endpoint=\"*:-1:stcp\"/>"
+                                       "<takv platform=\"ATAK-CIV\" version=\"5.4\"/>");
+        auto local = sampleEvent(QStringLiteral("local"));
+        local.detail = report.detail;
+        auto marker = sampleEvent(QStringLiteral("marker"));
+        marker.origin = QStringLiteral("tak");
+        QVERIFY(store.accept(report).isEmpty());
+        QVERIFY(store.accept(local).isEmpty());
+        QVERIFY(store.accept(marker).isEmpty());
+        contacts.rebuild();
+        QCOMPARE(contacts.rowCount(), 2);
+        const auto &bravo = contacts.contacts().at(1);
+        QCOMPARE(bravo.uid, QStringLiteral("ANDROID-1"));
+        QVERIFY(bravo.online);
+        QCOMPARE(bravo.endpoint, QStringLiteral("*:-1:stcp"));
+        QCOMPARE(bravo.device, QStringLiteral("ATAK-CIV 5.4"));
+        QCOMPARE(contacts.index(1, 0).data(Qt::UserRole).toString(), bravo.uid);
+        // The store change rebuilds the list later, but an equal list keeps the model.
+        QSignalSpy reset(&contacts, &QAbstractItemModel::modelReset);
+        QVERIFY(store.accept(sampleEvent(QStringLiteral("other"))).isEmpty());
+        QTest::qWait(1200);
+        QCOMPARE(reset.size(), 0);
+        // A server error names the entry and keeps the last list.
+        status = 403;
+        contacts.refreshServers();
+        QVERIFY(refreshed.wait(10000));
+        QVERIFY(refreshed.last().at(0).toString().startsWith(QStringLiteral("Test: ")));
+        QCOMPARE(contacts.rowCount(), 2);
+        // A deleted entry removes its server list.
+        servers.remove(QStringLiteral("tak"));
+        contacts.rebuild();
+        QCOMPARE(contacts.rowCount(), 1);
+        Contacts offline(store, nullptr, nullptr);
+        QSignalSpy unavailable(&offline, &Contacts::refreshed);
+        offline.refreshServers();
+        QVERIFY(!unavailable.last().at(0).toString().isEmpty());
     }
     void takServerApi()
     {

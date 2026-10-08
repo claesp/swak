@@ -130,6 +130,10 @@ Read detail through `core/cot_detail.h`. `detailElements` and `detailElement` re
 
 `PluginServices::tak` is the `TakServerApi`. It is null when no server service exists. `request(serverId, method, path, body, context, callback)` sends a request to `https://host:apiPort/Marti/api` of a TLS server entry with that entry's credentials. `info(serverId)` returns the server version from the last check, and `infoChanged` reports changes. `apiUrl` builds the URL and rejects paths without a leading slash or with `..`.
 
+# Contacts
+
+`PluginServices::contacts` is the per-window `Contacts` table model in `core/contacts.h`. The window owns it, and it outlives the panes. Each row is a `Contact` with the UID in `Qt::UserRole`. `refreshServers()` reads the REST contact lists and emits `refreshed(error)` once, with an empty error on success. `readTakContacts` parses one contact list reply. The contacts plugin implements `PanePlugin`, and its MANIFEST declares `pane`. Its pane saves the header state under `org.swak.contacts`.
+
 # Emergency alerts
 
 `core/emergency.h` provides `emergencyKinds`, `emergencyEvent`, `emergencyCancelEvent`, `activeEmergency`, and `emergencyLabel`. The emergencies plugin implements `MapLayer` and `ToolbarPlugin`. Its manifest declares `map-layer` and `toolbar`. It reads the Store and does not change it. It centers the map through `MapTools::centerRequested`. Its toolbar button is a trailing action with `swakToolbarTrailingOrder` -1, so it stays left of the navigation lock. Trailing actions sort by this property, and the default is 0.

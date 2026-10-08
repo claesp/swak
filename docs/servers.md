@@ -56,6 +56,10 @@ The entry joins the group on the selected interface. It receives CoT XML datagra
 
 TAK Server groups decide which users exchange data. TAK clients call them channels. Select a TLS or QUIC entry with a TAK REST API port, then TAK Server > Channels .... SWAK reads the groups of your user from `/Marti/api/groups/all?useCache=true`. Each channel appears once, even when the server lists it for both directions. Check the channels that should send and receive data, and select OK. SWAK sends the whole list with the new active flags to `/Marti/api/groups/active`, with your sender UID. TAK Server applies the choice to every client of the same user. A server that does not allow the change answers with an error, which SWAK shows below the buttons.
 
+# Contacts
+
+Tools > Plugins > Contacts shows a pane with the TAK users that SWAK can address. A position report from a server entry with a `contact` endpoint adds or updates a user. Local events and objects without a contact endpoint are not users. Refresh reads `/Marti/api/contacts/all` from each enabled entry with a TAK REST API port. These users stay in the list in gray, without a current position, until they report one. An error names the entry and keeps its last list. Double-click a user, or select Show on map in the context menu, to center the map on the user and select it. The list holds at most 2048 users and updates at most once a second.
+
 # Emergency alerts
 
 TAK clients send emergency alerts as CoT. SWAK recognizes 911 Alert (`b-a-o-tbl`), Ring The Bell (`b-a-o-pan`), Troops In Contact (`b-a-o-opn`), Geo-fence Breached (`b-a-g`), and the ATAK custom alert (`b-a-o-c`). An active alert has a red double ring and a label with its type and the callsign of the person in distress. The emergency button at the right end of the toolbar turns red while any alert is active. Its tooltip lists the alerts. Its menu centers the map on an alert and selects it. Each new alert adds one Warning to Events. TAK Server repeats active alerts, and SWAK ignores these repeats.

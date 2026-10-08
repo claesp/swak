@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "org.swak.contacts",
+  "name": "Contacts",
+  "description": "List TAK users from connected streams and TAK Server contact lists.",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entryPoint": "ContactsPlugin",
+  "linkage": "static",
+  "platforms": ["linux"],
+  "qtMajor": 6,
+  "qtMinimum": "6.4.0",
+  "interfaces": ["pane"],
+  "requires": [],
+  "permissions": [],
+  "settingsSchemaVersion": 1
+}

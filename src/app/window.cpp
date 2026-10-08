@@ -6,6 +6,7 @@
 #include "app/marker_manager.h"
 #include "app/plugin_panel.h"
 #include "core/activity.h"
+#include "core/contacts.h"
 #include "core/credits.h"
 #include "core/delete_confirmation.h"
 #include "core/identity.h"
@@ -199,6 +200,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         services.tak = new TakServerApi(*servers, *services.network, servers);
         services.tak->setObjectName(QStringLiteral("takServerApi"));
     }
+    services.contacts = new Contacts(store_, servers, services.tak, this);
     auto *mainViews = new QTabWidget(this);
     mainViews->setObjectName(QStringLiteral("mainViews"));
     mainViews->setDocumentMode(true);

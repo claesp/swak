@@ -25,6 +25,7 @@ class Servers;
 class RouteSources;
 class NetworkClient;
 class TakServerApi;
+class Contacts;
 // Per-window services for plugin factories and callbacks.
 //
 // The struct itself is a local value in the Window constructor. It exists only during the
@@ -81,6 +82,8 @@ struct PluginServices
     NetworkClient *network = nullptr;
     // Child of servers, so it dies with servers in step 2. Null when servers is null.
     TakServerApi *tak = nullptr;
+    // Window child. Lives until step 4. It reads servers and tak through guarded pointers.
+    Contacts *contacts = nullptr;
 };
 class Plugin
 {

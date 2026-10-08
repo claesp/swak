@@ -4,6 +4,7 @@
 #include "app/plugin_panel.h"
 #include "app/window.h"
 #include "core/activity.h"
+#include "core/contacts.h"
 #include "core/cot.h"
 #include "core/cot_picker.h"
 #include "core/delete_confirmation.h"
@@ -1326,6 +1327,70 @@ private slots:
             dynamic_cast<swak::SettingsParticipant *>(restored.findChild<QOpenGLWidget *>());
         QVERIFY(restoredMap);
         QCOMPARE(restoredMap->savePreferences().value(QStringLiteral("zoom")).toDouble(), 5.0);
+    }
+    void contactsPane()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("contacts.json")),
+                            QPluginLoader::staticInstances());
+        auto *dock = window.findChild<QDockWidget *>(QStringLiteral("org.swak.contacts.pane"));
+        auto *table = window.findChild<QTableView *>(QStringLiteral("contactsTable"));
+        auto *refresh = window.findChild<QPushButton *>(QStringLiteral("refreshContacts"));
+        auto *status = window.findChild<QLabel *>(QStringLiteral("contactsStatus"));
+        auto *contacts = window.findChild<swak::Contacts *>(QStringLiteral("contacts"));
+        QVERIFY(dock && table && refresh && status && contacts);
+        dock->show();
+        swak::Event event;
+        event.uid = QStringLiteral("ANDROID-7");
+        event.callsign = QStringLiteral("Delta");
+        event.type = QStringLiteral("a-f-G-U-C");
+        event.how = QStringLiteral("m-g");
+        event.latitude = 59.3;
+        event.longitude = 18.1;
+        event.origin = QStringLiteral("tak");
+        event.detail = QStringLiteral("<contact endpoint=\"*:-1:stcp\"/>");
+        event.time = event.start = QDateTime::currentDateTimeUtc();
+        event.stale = event.time.addSecs(600);
+        QVERIFY(window.store().accept(event).isEmpty());
+        // A local object without an origin is not a contact.
+        event.uid = QStringLiteral("local");
+        event.origin.clear();
+        QVERIFY(window.store().accept(event).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [table] {
+                return table->model()->rowCount() == 1;
+            },
+            5000));
+        QCOMPARE(table->model()->index(0, 0).data().toString(), QStringLiteral("Delta"));
+        // Without TAK REST entries, Refresh ends at once and counts the contacts.
+        refresh->click();
+        QVERIFY(status->text().contains(QStringLiteral("1")));
+        const auto rect = table->visualRect(table->model()->index(0, 0));
+        emit table->doubleClicked(table->model()->index(0, 0));
+        QCOMPARE(window.store().selected(), QStringLiteral("ANDROID-7"));
+        window.store().select({});
+        bool shown = false;
+        QTimer::singleShot(0, &window, [&] {
+            auto *menu = window.findChild<QMenu *>(QStringLiteral("contactMenu"));
+            auto *action =
+                menu ? menu->findChild<QAction *>(QStringLiteral("showContact")) : nullptr;
+            shown = action && action->isEnabled();
+            if (action) {
+                action->trigger();
+            }
+            if (menu) {
+                menu->close();
+            }
+        });
+        table->setCurrentIndex(table->model()->index(0, 0));
+        emit table->customContextMenuRequested(rect.center());
+        QVERIFY(shown);
+        QCOMPARE(window.store().selected(), QStringLiteral("ANDROID-7"));
+        // An expired position removes the contact. An empty row opens no menu.
+        window.store().expire(event.stale.addSecs(1));
+        contacts->rebuild();
+        QCOMPARE(table->model()->rowCount(), 0);
+        emit table->customContextMenuRequested(rect.center());
     }
     void selectionExpiryAndNumericSort()
     {
@@ -5788,7 +5853,7 @@ private slots:
             QVERIFY(!action->isChecked());
             dock->setFloating(false);
         }
-        QCOMPARE(activated, 9);
+        QCOMPARE(activated, 10);
         QVERIFY(window.grab().save(QStringLiteral("plugin-labels-smoke.png")));
     }
     void clearEventsMenu()
@@ -6476,7 +6541,7 @@ private slots:
                 auto *tabs = dialog->findChild<QTabWidget *>();
                 auto *panes =
                     dialog->findChild<QListWidget *>(QStringLiteral("paneSettingsSections"));
-                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 14) {
+                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 15) {
                     dialog->reject();
                     QFAIL("The pane tab is incomplete.");
                     return;
@@ -7889,7 +7954,7 @@ private slots:
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         const auto docks = window.findChildren<QDockWidget *>();
-        QCOMPARE(docks.size(), 14);
+        QCOMPARE(docks.size(), 15);
         QVERIFY(!window.findChild<QWidget *>(QStringLiteral("toolsDock")));
         auto *viewMenu = window.findChild<QMenu *>(QStringLiteral("viewMenu"));
         auto *fileMenu = window.findChild<QMenu *>(QStringLiteral("fileMenu"));

@@ -9,6 +9,7 @@ Q_IMPORT_PLUGIN(GdalRasterProvider)
 Q_IMPORT_PLUGIN(GoogleMapsProvider)
 Q_IMPORT_PLUGIN(AzureMapsProvider)
 Q_IMPORT_PLUGIN(EmergencyPlugin)
+Q_IMPORT_PLUGIN(ContactsPlugin)
 Q_IMPORT_PLUGIN(ActivityPlugin)
 
 Q_IMPORT_PLUGIN(GdalVectorProvider)
