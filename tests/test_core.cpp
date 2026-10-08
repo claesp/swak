@@ -1514,7 +1514,7 @@ private slots:
 
     void pluginManifests()
     {
-        QCOMPARE(builtInPlugins().size(), 22);
+        QCOMPARE(builtInPlugins().size(), 23);
         for (const auto &entry : QPluginLoader::staticPlugins()) {
             if (entry.metaData().value(QStringLiteral("IID")).toString() !=
                 QStringLiteral("org.swak.Plugin/2.0")) {
@@ -1575,7 +1575,7 @@ private slots:
         }
         QVERIFY(codec_);
         QVERIFY(source_);
-        QCOMPARE(layers, 2);
+        QCOMPARE(layers, 3);
     }
     void roundTrip()
     {

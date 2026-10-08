@@ -1,3 +1,5 @@
+#include "core/delete_confirmation.h"
+#include "core/emergency.h"
 #include "core/files.h"
 #include "core/identity.h"
 #include "core/interfaces.h"
@@ -5,8 +7,10 @@
 #include "core/preferences.h"
 #include "core/servers.h"
 #include "core/store.h"
+#include "core/ui_icons.h"
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDir>
 #include <QDoubleSpinBox>
 #include <QFile>
@@ -81,6 +85,31 @@ public:
         send_->setObjectName(QStringLiteral("sendGenerated"));
         send_->setEnabled(servers_ != nullptr);
         layout->addWidget(send_);
+        // An emergency comes from the sender identity at the position above.
+        auto *alerts = new QHBoxLayout;
+        emergencyKind_ = new QComboBox(this);
+        emergencyKind_->setObjectName(QStringLiteral("emergencyKind"));
+        emergencyKind_->setAccessibleName(tr("Emergency type"));
+        for (const auto &kind : emergencyKinds()) {
+            emergencyKind_->addItem(kind.label);
+        }
+        auto *sendAlert =
+            new QPushButton(uiIcon(UiIcon::Emergency), tr("Send emergency ..."), this);
+        sendAlert->setObjectName(QStringLiteral("sendEmergency"));
+        sendAlert->setEnabled(identity_ != nullptr);
+        cancelAlert_ = new QPushButton(tr("Cancel emergency"), this);
+        cancelAlert_->setObjectName(QStringLiteral("cancelEmergency"));
+        cancelAlert_->setEnabled(false);
+        alerts->addWidget(emergencyKind_);
+        alerts->addWidget(sendAlert);
+        alerts->addWidget(cancelAlert_);
+        layout->addLayout(alerts);
+        connect(sendAlert, &QPushButton::clicked, this, [this] {
+            sendEmergency();
+        });
+        connect(cancelAlert_, &QPushButton::clicked, this, [this] {
+            cancelEmergency();
+        });
         auto *useIdentity = new QPushButton(tr("Use sender identity"), this);
         useIdentity->setObjectName(QStringLiteral("useSenderIdentity"));
         useIdentity->setEnabled(identity_ != nullptr);
@@ -288,6 +317,63 @@ private:
             showStatus(tr("The event is on the map. Export the XML to save it."));
         }
     }
+    Event sender() const
+    {
+        Event event;
+        identity_->apply(event);
+        event.latitude = latitude_->value();
+        event.longitude = longitude_->value();
+        event.altitude = altitude_->value();
+        return event;
+    }
+    void sendEmergency()
+    {
+        if (!identity_) {
+            return;
+        }
+        const auto label = emergencyKind_->currentText();
+        const QPointer<Editor> self(this);
+        const bool confirmed =
+            confirmAction(this,
+                          tr("Send emergency"),
+                          tr("Send a %1 at %2, %3 to all connected servers and peers?")
+                              .arg(label,
+                                   QLocale().toString(latitude_->value(), 'f', 5),
+                                   QLocale().toString(longitude_->value(), 'f', 5)),
+                          tr("Send"));
+        // The confirmation runs a nested loop that can delete this pane.
+        // cppcheck-suppress knownConditionTrueFalse
+        if (!self || !confirmed) {
+            return;
+        }
+        const auto event = emergencyEvent(sender(), label);
+        const auto error = store_.accept(event);
+        if (!error.isEmpty()) {
+            showStatus(error, Severity::Error);
+            return;
+        }
+        cancelAlert_->setEnabled(true);
+        const auto sendError = servers_ ? servers_->send(event) : tr("No server service exists.");
+        showStatus(sendError.isEmpty()
+                       ? tr("The %1 is on the map and sent.").arg(label)
+                       : tr("The %1 is on the map but was not sent: %2").arg(label, sendError),
+                   sendError.isEmpty() ? Severity::Warning : Severity::Error);
+    }
+    void cancelEmergency()
+    {
+        if (!identity_) {
+            return;
+        }
+        const auto event = emergencyCancelEvent(sender());
+        store_.accept(event);
+        cancelAlert_->setEnabled(false);
+        const auto sendError = servers_ ? servers_->send(event) : tr("No server service exists.");
+        showStatus(sendError.isEmpty()
+                       ? tr("The emergency is cancelled.")
+                       : tr("The emergency is cancelled here but the cancel was not sent: %1")
+                             .arg(sendError),
+                   sendError.isEmpty() ? Severity::Info : Severity::Error);
+    }
     void importFile()
     {
         // The file dialog runs a nested loop. It can delete this editor.
@@ -323,8 +409,7 @@ private:
         }
         showPreview(*decoded.event);
         store_.select(decoded.event->uid);
-        showStatus(
-            tr("The event was imported. Unknown detail fields are not included in exports."));
+        showStatus(tr("The event was imported. Exports keep its detail fields."));
     }
     void exportFile()
     {
@@ -358,6 +443,8 @@ private:
     QPointer<Identity> identity_;
     QPointer<Servers> servers_;
     QCheckBox *send_ = nullptr;
+    QComboBox *emergencyKind_ = nullptr;
+    QPushButton *cancelAlert_ = nullptr;
     QLineEdit *uid_ = nullptr;
     QLineEdit *callsign_ = nullptr;
     QLineEdit *type_ = nullptr;

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "org.swak.emergencies",
+  "name": "Emergencies",
+  "description": "Show active TAK emergency alerts on the map and in the toolbar.",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entryPoint": "EmergencyPlugin",
+  "linkage": "static",
+  "platforms": ["linux"],
+  "qtMajor": 6,
+  "qtMinimum": "6.4.0",
+  "interfaces": ["map-layer", "toolbar"],
+  "requires": [],
+  "permissions": [],
+  "settingsSchemaVersion": 1
+}

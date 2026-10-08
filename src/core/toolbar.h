@@ -46,6 +46,11 @@ inline void arrangeToolbarSections(QToolBar &toolbar)
         toolbar.addAction(action);
         section = next;
     }
+    // A lower swakToolbarTrailingOrder places a trailing action further left. The default is 0.
+    std::stable_sort(trailing.begin(), trailing.end(), [](const QAction *a, const QAction *b) {
+        return a->property("swakToolbarTrailingOrder").toInt() <
+               b->property("swakToolbarTrailingOrder").toInt();
+    });
     if (!trailing.isEmpty()) {
         auto *space = new QWidget(&toolbar);
         space->setObjectName(QStringLiteral("toolbarTrailingSpace"));

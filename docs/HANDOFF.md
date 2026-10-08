@@ -1590,3 +1590,7 @@ The build generates C++ from `src/core/proto/tak_protocol.proto` into the `swak_
 
 Messages may now hold 64 KiB and 2048 elements, and each event keeps up to 32768 detail characters, so ATAK routes fit. The Store keeps at most 8 million detail characters for all events. Above that, new events keep only typed fields. Events record their `origin` server entry. A `t-x-d-d` event removes the linked objects from the same origin and is not stored. `storeDeletesAndBudget` covers deletes, origins, selection, the budget, updates, and expiry.
 
+# 2026-10-08: Phase 2 emergency alerts
+
+`core/emergency.*` builds ATAK-style alerts and cancels and recognizes active alerts. The Store removes an alert when a `b-a-o-can` from the same origin arrives and keeps no cancel. The new `emergencies` plugin draws red rings and labels, shows a trailing toolbar button that turns red with active alerts, lists them in its menu, and logs each new alert once. The event editor gains an alert type, Send emergency ... with confirmation, and Cancel emergency. A new Emergency icon joins the hand-drawn icons. Tests: `emergencies` in the server tests and `emergencyAlerts` in the GUI tests, with a screenshot of the ring.
+

@@ -7,6 +7,7 @@
 #include "core/cot.h"
 #include "core/cot_picker.h"
 #include "core/delete_confirmation.h"
+#include "core/emergency.h"
 #include "core/gdal_support.h"
 #include "core/graphics.h"
 #include "core/grid_types.h"
@@ -7380,6 +7381,72 @@ private slots:
         process.terminate();
         QVERIFY(process.waitForFinished(3000));
         QCOMPARE(process.exitCode(), 0);
+    }
+    void emergencyAlerts()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("emergency.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *button = window.findChild<QToolButton *>(QStringLiteral("emergencyButton"));
+        auto *kind = window.findChild<QComboBox *>(QStringLiteral("emergencyKind"));
+        auto *send = window.findChild<QPushButton *>(QStringLiteral("sendEmergency"));
+        auto *cancel = window.findChild<QPushButton *>(QStringLiteral("cancelEmergency"));
+        QVERIFY(button && kind && send && cancel);
+        QCOMPARE(button->toolTip(), QStringLiteral("No active emergencies"));
+        QVERIFY(!cancel->isEnabled());
+        QCOMPARE(kind->count(), 4);
+        auto &store = window.store();
+        // Escape keeps the alert unsent.
+        answerAction(Qt::Key_Escape);
+        send->click();
+        QCOMPARE(store.rowCount(), 0);
+        kind->setCurrentText(QStringLiteral("Ring The Bell"));
+        answerAction();
+        send->click();
+        QCOMPARE(store.rowCount(), 1);
+        QVERIFY(swak::activeEmergency(store.events().first()));
+        QCOMPARE(store.events().first().type, QStringLiteral("b-a-o-pan"));
+        QVERIFY(cancel->isEnabled());
+        QVERIFY(button->toolTip().contains(QStringLiteral("Ring The Bell")));
+        QCOMPARE(button->property("activeEmergencies").toInt(), 1);
+        QVERIFY(!button->styleSheet().isEmpty());
+        // The Events log has one entry, even when TAK Server repeats the alert.
+        auto repeat = store.events().first();
+        repeat.time = repeat.time.addSecs(1);
+        QVERIFY(store.accept(repeat).isEmpty());
+        auto *activity = window.findChild<swak::ActivityModel *>();
+        const auto alertEntries = [activity] {
+            int entries = 0;
+            for (int row = 0; row < activity->rowCount(); ++row) {
+                entries += activity->index(row, swak::ActivityModel::MessageColumn)
+                               .data()
+                               .toString()
+                               .startsWith(QStringLiteral("Emergency: Ring The Bell"));
+            }
+            return entries;
+        };
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return alertEntries() > 0;
+            },
+            2000));
+        QTest::qWait(300);
+        QCOMPARE(alertEntries(), 1);
+        // The menu lists the alert and centers the map on it.
+        auto *menu = button->menu();
+        QMetaObject::invokeMethod(menu, "aboutToShow");
+        QCOMPARE(menu->actions().size(), 1);
+        menu->actions().first()->trigger();
+        QCOMPARE(store.selected(), store.events().first().uid);
+        auto *map = window.findChild<QOpenGLWidget *>();
+        QVERIFY(map->grabFramebuffer().save(QStringLiteral("emergency-map.png")));
+        cancel->click();
+        QCOMPARE(store.rowCount(), 0);
+        QVERIFY(!cancel->isEnabled());
+        QCOMPARE(button->toolTip(), QStringLiteral("No active emergencies"));
+        QVERIFY(button->styleSheet().isEmpty());
     }
     void serverEnrollmentDialog()
     {

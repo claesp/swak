@@ -52,6 +52,14 @@ ATAK and WinTAK share positions without a server through multicast. Add a server
 
 The entry joins the group on the selected interface. It receives CoT XML datagrams and sends generated CoT when sending is enabled. Datagrams use a time-to-live of one, so they stay on the local network segment. SWAK does not receive its own datagrams. Multicast mesh uses plaintext without authentication. Use it only on a trusted network. ATAK can also send TAK Protocol version 1 datagrams, which start with 0xbf, the version 1, and 0xbf. SWAK decodes them and counts them in the status. SWAK sends XML on the mesh, which ATAK also accepts.
 
+# Emergency alerts
+
+TAK clients send emergency alerts as CoT. SWAK recognizes 911 Alert (`b-a-o-tbl`), Ring The Bell (`b-a-o-pan`), Troops In Contact (`b-a-o-opn`), Geo-fence Breached (`b-a-g`), and the ATAK custom alert (`b-a-o-c`). An active alert has a red double ring and a label with its type and the callsign of the person in distress. The emergency button at the right end of the toolbar turns red while any alert is active. Its tooltip lists the alerts. Its menu centers the map on an alert and selects it. Each new alert adds one Warning to Events. TAK Server repeats active alerts, and SWAK ignores these repeats.
+
+A cancel (`b-a-o-can`) with the same UID removes the alert, when it comes from the same server entry. SWAK keeps no marker for the cancel.
+
+To send an alert, open the event editor. Set the latitude and longitude of your position. Select the alert type and then Send emergency .... SWAK asks for confirmation. Like ATAK, it uses your identity UID with `-9-1-1`, a link to your identity, the callsign with `-Alert`, and the `emergency` element that the TAK Server repeater checks. The alert stays active for 24 hours unless you cancel it. Cancel emergency sends the cancel for the same UID. SWAK sends both to all connected servers, UDP outputs, mesh groups, and LAN peers.
+
 # Local LAN servers
 
 Local LAN provides serverless discovery and direct CoT exchange. To add a Local LAN entry, do these steps:

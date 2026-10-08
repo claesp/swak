@@ -1,6 +1,7 @@
 #include "core/cot.h"
 #include "core/cot_detail.h"
 #include "core/cot_stream.h"
+#include "core/emergency.h"
 #include "core/identity.h"
 #include "core/lan_protocol.h"
 #include "core/map_selection.h"
@@ -1388,6 +1389,52 @@ private slots:
         QCOMPARE(store.detailCharacters(), before - large.size());
         store.expire(QDateTime::currentDateTimeUtc().addDays(30));
         QCOMPARE(store.detailCharacters(), 0);
+    }
+    void emergencies()
+    {
+        auto sender = sampleEvent();
+        sender.uid = QStringLiteral("ANDROID-7");
+        sender.callsign = QStringLiteral("VIPER");
+        sender.type = QStringLiteral("a-f-G-U-C");
+        const auto alert = emergencyEvent(sender, QStringLiteral("Troops In Contact"));
+        QVERIFY2(eventError(alert).isEmpty(), qPrintable(eventError(alert)));
+        QCOMPARE(alert.uid, QStringLiteral("ANDROID-7-9-1-1"));
+        QCOMPARE(alert.type, QStringLiteral("b-a-o-opn"));
+        QCOMPARE(alert.callsign, QStringLiteral("VIPER-Alert"));
+        QCOMPARE(alert.latitude, sender.latitude);
+        QVERIFY(activeEmergency(alert));
+        QCOMPARE(emergencyLabel(alert), QStringLiteral("Troops In Contact"));
+        QCOMPARE(emergency(alert)->text, QStringLiteral("VIPER"));
+        QCOMPARE(links(alert).first().uid, QStringLiteral("ANDROID-7"));
+        QCOMPARE(links(alert).first().relation, QStringLiteral("p-p"));
+        // The XML matches the TAK repeater tests on the emergency type text.
+        QVERIFY(
+            encodeCot(alert).contains("<emergency type=\"Troops In Contact\">VIPER</emergency>"));
+        const auto cancel = emergencyCancelEvent(sender);
+        QCOMPARE(cancel.uid, alert.uid);
+        QCOMPARE(cancel.type, QStringLiteral("b-a-o-can"));
+        QVERIFY(emergency(cancel)->cancel);
+        QVERIFY(!activeEmergency(cancel));
+        QVERIFY(eventError(emergencyEvent(sender, QStringLiteral("Unknown"))).size() > 0);
+        auto custom = alert;
+        custom.type = QStringLiteral("b-a-o-c");
+        QVERIFY(activeEmergency(custom));
+        auto cancelled = alert;
+        cancelled.detail = QStringLiteral("<emergency cancel=\"true\">VIPER</emergency>");
+        QVERIFY(!activeEmergency(cancelled));
+        // A cancel removes the alert from the same origin only, and leaves no marker.
+        Store store;
+        auto remote = alert;
+        remote.origin = QStringLiteral("server");
+        QVERIFY(store.accept(remote).isEmpty());
+        auto foreign = cancel;
+        foreign.origin = QStringLiteral("other");
+        QVERIFY(store.accept(foreign).isEmpty());
+        QCOMPARE(store.rowCount(), 1);
+        auto matching = cancel;
+        matching.origin = QStringLiteral("server");
+        QVERIFY(store.accept(matching).isEmpty());
+        QCOMPARE(store.rowCount(), 0);
     }
     void cotDetailModel()
     {

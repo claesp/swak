@@ -185,6 +185,15 @@ void Store::expire(const QDateTime &now)
 // removes only objects from the same origin, so one server cannot delete another's objects.
 bool Store::deleteRequest(const Event &event)
 {
+    // An emergency cancel replaces the emergency with the same UID. SWAK removes the alert and
+    // keeps no cancel marker.
+    if (event.type == QLatin1String("b-a-o-can")) {
+        const auto row = rows_.constFind(event.uid);
+        if (row != rows_.cend() && events_.at(row.value()).origin == event.origin) {
+            removeEvents({event.uid});
+        }
+        return true;
+    }
     if (event.type != QLatin1String("t-x-d-d")) {
         return false;
     }

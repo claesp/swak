@@ -130,6 +130,10 @@ Read detail through `core/cot_detail.h`. `detailElements` and `detailElement` re
 
 `PluginServices::tak` is the `TakServerApi`. It is null when no server service exists. `request(serverId, method, path, body, context, callback)` sends a request to `https://host:apiPort/Marti/api` of a TLS server entry with that entry's credentials. `info(serverId)` returns the server version from the last check, and `infoChanged` reports changes. `apiUrl` builds the URL and rejects paths without a leading slash or with `..`.
 
+# Emergency alerts
+
+`core/emergency.h` provides `emergencyKinds`, `emergencyEvent`, `emergencyCancelEvent`, `activeEmergency`, and `emergencyLabel`. The emergencies plugin implements `MapLayer` and `ToolbarPlugin`. Its manifest declares `map-layer` and `toolbar`. It reads the Store and does not change it. It centers the map through `MapTools::centerRequested`. Its toolbar button is a trailing action with `swakToolbarTrailingOrder` -1, so it stays left of the navigation lock. Trailing actions sort by this property, and the default is 0.
+
 # Add a plugin
 
 Create a QObject plugin class and its MANIFEST under `src/plugins`. Implement `Plugin` and the required feature interfaces. Add the metadata file to `Q_PLUGIN_METADATA`. List all interfaces in `Q_INTERFACES`.
