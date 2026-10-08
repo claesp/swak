@@ -1615,3 +1615,7 @@ Static analysis, the sanitizer suites, and 109 sanitizer GUI cases passed. In th
 # 2026-10-08: Phase 2 limit fixes
 
 Shared MIL-STD-2525 markers now use their CoT unit type, without the spot marker color and icon. The CoT layer draws received spot markers in their `color` element. A per-window cache reads the color only when the event changes. `takShapes` covers the unit types and the collections that stay spot markers. `takDrawingsLayer` covers the spot color and its update. `shareObjects` now covers the share error message.
+
+# 2026-10-08: Phase 3 chat
+
+The Store now sends `b-t-f` events through `messageReceived` and does not keep them. `core/chat.*` reads and builds ATAK GeoChat messages and receipts. The `Chat` service keeps All Chat Rooms, the team room, and direct rooms. It removes duplicates by message ID, sends delivered and read receipts for direct messages, and keeps a bounded send queue with retries. The new chat plugin shows rooms, messages, New Chat, Copy, and the message state. Contacts gains Chat with. Tests: `chatProtocol` and `chatService` in the server tests cover parsing, sanitizing, building, receipts, states, routing, duplicates, order, limits, and the queue. `chatPane` in the GUI tests covers sending, errors, unread rooms, Copy, New Chat, and Chat with. History is not saved. ATAK receipt interoperability and live TAK Server store-and-forward remain untested. SWAK sends `how` as `h-e`, because the event validator accepts only short location methods.

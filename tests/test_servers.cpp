@@ -1,3 +1,4 @@
+#include "core/chat.h"
 #include "core/contacts.h"
 #include "core/cot.h"
 #include "core/cot_detail.h"
@@ -100,6 +101,27 @@ static QList<CotLink> shapeLinks(const Event &event)
         return link.relation == QStringLiteral("p-p");
     });
     return result;
+}
+// A GeoChat message in the format that ATAK sends.
+static Event geoChat(const QString &messageId,
+                     const QString &senderUid,
+                     const QString &roomId,
+                     const QString &text,
+                     const QString &parent = QStringLiteral("RootContactGroup"))
+{
+    auto event = sampleEvent(QStringLiteral("GeoChat.") + senderUid + QLatin1Char('.') + messageId);
+    event.type = QStringLiteral("b-t-f");
+    event.how = QStringLiteral("h-e");
+    event.callsign.clear();
+    const auto escaped = text.toHtmlEscaped();
+    event.detail =
+        QStringLiteral(
+            "<__chat parent=\"%1\" groupOwner=\"false\" messageId=\"%2\" chatroom=\"%3\" "
+            "id=\"%3\" senderCallsign=\"Echo\"><chatgrp uid0=\"%4\" uid1=\"%3\" "
+            "id=\"%3\"/></__chat><link uid=\"%4\" type=\"a-f-G-U-C\" relation=\"p-p\"/>"
+            "<remarks source=\"BAO.F.ATAK.%4\" to=\"%3\">%5</remarks>")
+            .arg(parent, messageId, roomId, senderUid, escaped);
+    return event;
 }
 static QJsonObject source(quint16 port)
 {
@@ -1890,6 +1912,323 @@ private slots:
         QVERIFY(offline.share(QStringLiteral("m1")).isEmpty());
         offline.flush();
         QVERIFY(offline.lastError().isEmpty());
+    }
+    void chatProtocol()
+    {
+        // An ATAK message to All Chat Rooms.
+        auto all = geoChat(QStringLiteral("m-1"),
+                           QStringLiteral("ANDROID-5"),
+                           AllChatRooms,
+                           QStringLiteral("Line one\nLine two ") + QChar(0x202E) +
+                               QStringLiteral("evil 😀"));
+        auto incoming = readChatMessage(all);
+        QVERIFY(incoming);
+        QCOMPARE(incoming->kind, ChatRoom::Kind::All);
+        QCOMPARE(incoming->roomId, AllChatRooms);
+        QCOMPARE(incoming->message.messageId, QStringLiteral("m-1"));
+        QCOMPARE(incoming->message.senderUid, QStringLiteral("ANDROID-5"));
+        QCOMPARE(incoming->message.senderCallsign, QStringLiteral("Echo"));
+        QCOMPARE(incoming->message.text, QStringLiteral("Line one\nLine two evil 😀"));
+        QVERIFY(!incoming->message.own());
+        // Long text is cut with a mark.
+        incoming = readChatMessage(geoChat(QStringLiteral("m-2"),
+                                           QStringLiteral("ANDROID-5"),
+                                           AllChatRooms,
+                                           QString(MaxChatText + 10, QLatin1Char('x'))));
+        QVERIFY(incoming);
+        QCOMPARE(incoming->message.text.size(), MaxChatText + 2);
+        QVERIFY(incoming->message.text.endsWith(QStringLiteral(" …")));
+        // Team and direct rooms.
+        incoming = readChatMessage(geoChat(QStringLiteral("m-3"),
+                                           QStringLiteral("ANDROID-5"),
+                                           QStringLiteral("Cyan"),
+                                           QStringLiteral("team"),
+                                           QStringLiteral("TeamGroups")));
+        QVERIFY(incoming);
+        QCOMPARE(incoming->kind, ChatRoom::Kind::Team);
+        incoming = readChatMessage(geoChat(QStringLiteral("m-4"),
+                                           QStringLiteral("ANDROID-5"),
+                                           QStringLiteral("SWAK-1"),
+                                           QStringLiteral("hi")));
+        QVERIFY(incoming);
+        QCOMPARE(incoming->kind, ChatRoom::Kind::Direct);
+        QCOMPARE(incoming->roomId, QStringLiteral("SWAK-1"));
+        // The chat group names the sender when no parent link exists.
+        auto grouped = all;
+        grouped.detail.replace(QStringLiteral("relation=\"p-p\""),
+                               QStringLiteral("relation=\"x\""));
+        QCOMPARE(readChatMessage(grouped)->message.senderUid, QStringLiteral("ANDROID-5"));
+        // Invalid messages give no value.
+        auto bad = all;
+        bad.type = QStringLiteral("b-t-f-d");
+        QVERIFY(!readChatMessage(bad));
+        QVERIFY(
+            !readChatMessage(geoChat({}, QStringLiteral("A"), AllChatRooms, QStringLiteral("x"))));
+        QVERIFY(!readChatMessage(
+            geoChat(QStringLiteral("m"), QStringLiteral("A"), AllChatRooms, QStringLiteral("  "))));
+        QVERIFY(
+            !readChatMessage(geoChat(QStringLiteral("m"), {}, AllChatRooms, QStringLiteral("x"))));
+        bad = all;
+        bad.detail = QStringLiteral("<remarks>x</remarks>");
+        QVERIFY(!readChatMessage(bad));
+        // Built messages read back.
+        auto sender = sampleEvent(QStringLiteral("SWAK-1"));
+        sender.callsign = QStringLiteral("Swak");
+        sender.type = QStringLiteral("a-f-G-U-C");
+        ChatMessage message;
+        message.messageId = QStringLiteral("own-1");
+        message.text = QStringLiteral("<hello> & \"you\"");
+        message.state = ChatMessage::State::Queued;
+        const auto now = QDateTime::currentDateTimeUtc();
+        const ChatRoom allRoom{AllChatRooms, AllChatRooms, ChatRoom::Kind::All, {}, 0};
+        auto event = chatMessageEvent(sender, allRoom, {}, message, now);
+        QVERIFY(eventError(event).isEmpty());
+        QCOMPARE(event.uid, QStringLiteral("GeoChat.SWAK-1.All Chat Rooms.own-1"));
+        const auto decoded = decodeCot(encodeCot(event));
+        QVERIFY(decoded.event);
+        incoming = readChatMessage(*decoded.event);
+        QVERIFY(incoming);
+        QCOMPARE(incoming->message.text, message.text);
+        QCOMPARE(incoming->message.senderUid, sender.uid);
+        QCOMPARE(incoming->message.senderCallsign, QStringLiteral("Swak"));
+        QVERIFY(destinations(event).isEmpty());
+        const ChatRoom direct{
+            QStringLiteral("ANDROID-5"), QStringLiteral("Echo"), ChatRoom::Kind::Direct, {}, 0};
+        event = chatMessageEvent(sender, direct, QStringLiteral("Echo"), message, now);
+        QCOMPARE(destinations(event).first().callsign, QStringLiteral("Echo"));
+        QCOMPARE(chat(event)->id, QStringLiteral("ANDROID-5"));
+        const ChatRoom team{
+            QStringLiteral("Cyan"), QStringLiteral("Cyan"), ChatRoom::Kind::Team, {}, 0};
+        event = chatMessageEvent(sender, team, {}, message, now);
+        QCOMPARE(chat(event)->parent, QStringLiteral("TeamGroups"));
+        const ChatRoom longRoom{
+            QString(120, QLatin1Char('r')), QStringLiteral("Long"), ChatRoom::Kind::Direct, {}, 0};
+        event = chatMessageEvent(sender, longRoom, {}, message, now);
+        QCOMPARE(event.uid, QStringLiteral("GeoChat.own-1"));
+        // Receipts.
+        const auto received = readChatMessage(all)->message;
+        auto receipt = chatReceiptEvent(sender, received, ChatMessage::State::Delivered, now);
+        QVERIFY(eventError(receipt).isEmpty());
+        QCOMPARE(receipt.type, QStringLiteral("b-t-f-d"));
+        QCOMPARE(destinations(receipt).first().callsign, QStringLiteral("Echo"));
+        auto read = readChatReceipt(receipt);
+        QVERIFY(read);
+        QCOMPARE(read->messageId, QStringLiteral("m-1"));
+        QCOMPARE(read->state, ChatMessage::State::Delivered);
+        QCOMPARE(read->senderUid, sender.uid);
+        receipt = chatReceiptEvent(sender, received, ChatMessage::State::Read, now);
+        QCOMPARE(readChatReceipt(receipt)->state, ChatMessage::State::Read);
+        auto pending = sampleEvent(QStringLiteral("own-1"));
+        pending.type = QStringLiteral("b-t-f-p");
+        QCOMPARE(readChatReceipt(pending)->messageId, QStringLiteral("own-1"));
+        QCOMPARE(readChatReceipt(pending)->state, ChatMessage::State::Pending);
+        pending.detail = QStringLiteral("<__chat messageId=\"other\"/>");
+        QCOMPARE(readChatReceipt(pending)->messageId, QStringLiteral("other"));
+        pending.detail = QStringLiteral("<__chat messageId=\"bad&#x9;id\"/>");
+        QVERIFY(!readChatReceipt(pending));
+        QVERIFY(!readChatReceipt(all));
+    }
+    void chatService()
+    {
+        QUdpSocket receiver;
+        QVERIFY(receiver.bind(QHostAddress::LocalHost, 0));
+        const auto next = [&receiver]() -> Event {
+            if (!QTest::qWaitFor(
+                    [&] {
+                        return receiver.hasPendingDatagrams();
+                    },
+                    5000)) {
+                return {};
+            }
+            QByteArray datagram(static_cast<qsizetype>(receiver.pendingDatagramSize()),
+                                Qt::Uninitialized);
+            receiver.readDatagram(datagram.data(), datagram.size());
+            return decodeCot(datagram).event.value_or(Event{});
+        };
+        const auto quiet = [&receiver] {
+            QTest::qWait(150);
+            return !receiver.hasPendingDatagrams();
+        };
+        Store store;
+        Servers servers(store);
+        Identity identity;
+        auto values = identity.savePreferences();
+        values.insert(QStringLiteral("uid"), QStringLiteral("SWAK-1"));
+        identity.restorePreferences(values);
+        Chat chat(store, &servers, &identity);
+        QSignalSpy requested(&chat, &Chat::roomRequested);
+        QCOMPARE(chat.rooms().size(), 2);
+        QCOMPARE(chat.rooms().at(0).key, AllChatRooms);
+        QCOMPARE(chat.rooms().at(1).key, QStringLiteral("Cyan"));
+        // Invalid sends.
+        QVERIFY(!chat.send(QStringLiteral("missing"), QStringLiteral("x")).isEmpty());
+        QVERIFY(!chat.send(AllChatRooms, QStringLiteral("   ")).isEmpty());
+        QVERIFY(!chat.send(AllChatRooms, QString(MaxChatText + 1, QLatin1Char('x'))).isEmpty());
+        QVERIFY(
+            !chat.send(AllChatRooms, QStringLiteral("bad") + QChar(0x202E) + QStringLiteral("text"))
+                 .isEmpty());
+        // Without a connection, a message waits.
+        QVERIFY(chat.send(AllChatRooms, QStringLiteral("hello")).isEmpty());
+        const auto &allRoom = *chat.room(AllChatRooms);
+        QCOMPARE(allRoom.messages.size(), 1);
+        QCOMPARE(allRoom.messages.first().state, ChatMessage::State::Queued);
+        QCOMPARE(allRoom.unread, 0);
+        auto output = source(receiver.localPort());
+        output.insert(QStringLiteral("protocol"), QStringLiteral("udpout"));
+        QVERIFY(servers.put(QStringLiteral("out"), output).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return servers.status(QStringLiteral("out")).startsWith(QStringLiteral("Sending"));
+            },
+            5000));
+        chat.flush();
+        auto sent = next();
+        QCOMPARE(sent.type, QStringLiteral("b-t-f"));
+        QCOMPARE(remarks(sent), QStringLiteral("hello"));
+        const auto ownId = swak::chat(sent)->messageId;
+        QCOMPARE(chat.room(AllChatRooms)->messages.first().state, ChatMessage::State::Sent);
+        // Receipts move the state forward only. The Store keeps no chat events.
+        const auto receiptFor = [&ownId](const QString &type) {
+            auto event = sampleEvent(ownId);
+            event.type = type;
+            return event;
+        };
+        QVERIFY(store.accept(receiptFor(QStringLiteral("b-t-f-p"))).isEmpty());
+        QCOMPARE(chat.room(AllChatRooms)->messages.first().state, ChatMessage::State::Pending);
+        QVERIFY(store.accept(receiptFor(QStringLiteral("b-t-f-r"))).isEmpty());
+        QCOMPARE(chat.room(AllChatRooms)->messages.first().state, ChatMessage::State::Read);
+        QVERIFY(store.accept(receiptFor(QStringLiteral("b-t-f-d"))).isEmpty());
+        QCOMPARE(chat.room(AllChatRooms)->messages.first().state, ChatMessage::State::Read);
+        QVERIFY(store.events().isEmpty());
+        // Received group messages, duplicates, and late messages.
+        auto first = geoChat(QStringLiteral("in-1"),
+                             QStringLiteral("ANDROID-5"),
+                             AllChatRooms,
+                             QStringLiteral("one"));
+        QVERIFY(store.accept(first).isEmpty());
+        QVERIFY(store.accept(first).isEmpty());
+        auto late = geoChat(QStringLiteral("in-0"),
+                            QStringLiteral("ANDROID-5"),
+                            AllChatRooms,
+                            QStringLiteral("zero"));
+        late.time = late.start = first.time.addSecs(-60);
+        QVERIFY(store.accept(late).isEmpty());
+        QCOMPARE(chat.room(AllChatRooms)->messages.size(), 3);
+        QCOMPARE(chat.room(AllChatRooms)->messages.at(0).text, QStringLiteral("zero"));
+        QCOMPARE(chat.room(AllChatRooms)->unread, 2);
+        QVERIFY(quiet());
+        chat.markRead(AllChatRooms);
+        QCOMPARE(chat.room(AllChatRooms)->unread, 0);
+        QVERIFY(quiet());
+        // Own messages that come back, other teams, and direct messages to others stay out.
+        QVERIFY(store
+                    .accept(geoChat(QStringLiteral("echo"),
+                                    QStringLiteral("SWAK-1"),
+                                    AllChatRooms,
+                                    QStringLiteral("me")))
+                    .isEmpty());
+        QVERIFY(store
+                    .accept(geoChat(QStringLiteral("t-1"),
+                                    QStringLiteral("ANDROID-5"),
+                                    QStringLiteral("Red"),
+                                    QStringLiteral("red"),
+                                    QStringLiteral("TeamGroups")))
+                    .isEmpty());
+        QVERIFY(store
+                    .accept(geoChat(QStringLiteral("d-0"),
+                                    QStringLiteral("ANDROID-5"),
+                                    QStringLiteral("ANDROID-9"),
+                                    QStringLiteral("not me")))
+                    .isEmpty());
+        QCOMPARE(chat.rooms().size(), 2);
+        QCOMPARE(chat.room(AllChatRooms)->messages.size(), 3);
+        QVERIFY(store
+                    .accept(geoChat(QStringLiteral("t-2"),
+                                    QStringLiteral("ANDROID-5"),
+                                    QStringLiteral("Cyan"),
+                                    QStringLiteral("cyan"),
+                                    QStringLiteral("TeamGroups")))
+                    .isEmpty());
+        QCOMPARE(chat.room(QStringLiteral("Cyan"))->messages.size(), 1);
+        QVERIFY(quiet());
+        // A direct message opens a room and sends a delivered receipt. Reading sends a read
+        // receipt once.
+        QVERIFY(store
+                    .accept(geoChat(QStringLiteral("d-1"),
+                                    QStringLiteral("ANDROID-5"),
+                                    QStringLiteral("SWAK-1"),
+                                    QStringLiteral("direct")))
+                    .isEmpty());
+        QCOMPARE(chat.rooms().size(), 3);
+        const auto *direct = chat.room(QStringLiteral("ANDROID-5"));
+        QVERIFY(direct);
+        QCOMPARE(direct->title, QStringLiteral("Echo"));
+        QCOMPARE(direct->kind, ChatRoom::Kind::Direct);
+        QCOMPARE(direct->unread, 1);
+        sent = next();
+        QCOMPARE(sent.type, QStringLiteral("b-t-f-d"));
+        QCOMPARE(readChatReceipt(sent)->messageId, QStringLiteral("d-1"));
+        chat.markRead(QStringLiteral("ANDROID-5"));
+        sent = next();
+        QCOMPARE(sent.type, QStringLiteral("b-t-f-r"));
+        chat.markRead(QStringLiteral("ANDROID-5"));
+        QVERIFY(quiet());
+        // A reply goes to the user with a marti destination.
+        QVERIFY(chat.send(QStringLiteral("ANDROID-5"), QStringLiteral("reply")).isEmpty());
+        sent = next();
+        QCOMPARE(destinations(sent).first().callsign, QStringLiteral("Echo"));
+        // Direct rooms open on request and stay within the limit.
+        QVERIFY(chat.openDirect({}, {}).isEmpty());
+        QVERIFY(chat.openDirect(QStringLiteral("SWAK-1"), {}).isEmpty());
+        QVERIFY(chat.openDirect(QStringLiteral("Cyan"), {}).isEmpty());
+        QCOMPARE(chat.openDirect(QStringLiteral("ANDROID-5"), QStringLiteral("Echo 2")),
+                 QStringLiteral("ANDROID-5"));
+        QCOMPARE(chat.room(QStringLiteral("ANDROID-5"))->title, QStringLiteral("Echo 2"));
+        QCOMPARE(requested.last().at(0).toString(), QStringLiteral("ANDROID-5"));
+        for (auto i = static_cast<int>(chat.rooms().size()); i < MaxChatRooms; ++i) {
+            QVERIFY(!chat.openDirect(QStringLiteral("U-%1").arg(i), {}).isEmpty());
+        }
+        QVERIFY(chat.openDirect(QStringLiteral("U-full"), {}).isEmpty());
+        QVERIFY(store
+                    .accept(geoChat(QStringLiteral("d-2"),
+                                    QStringLiteral("NEW"),
+                                    QStringLiteral("SWAK-1"),
+                                    QStringLiteral("lost")))
+                    .isEmpty());
+        QVERIFY(!chat.room(QStringLiteral("NEW")));
+        // History, queue, and duplicate limits.
+        Store quietStore;
+        Chat offline(quietStore, nullptr, &identity);
+        for (int i = 0; i <= MaxRoomMessages; ++i) {
+            offline.receive(geoChat(QStringLiteral("h-%1").arg(i),
+                                    QStringLiteral("A"),
+                                    AllChatRooms,
+                                    QStringLiteral("x")));
+        }
+        QCOMPARE(offline.room(AllChatRooms)->messages.size(), MaxRoomMessages);
+        QCOMPARE(offline.room(AllChatRooms)->messages.first().messageId, QStringLiteral("h-1"));
+        for (int i = MaxRoomMessages + 1; i <= Chat::MaxKnownMessages; ++i) {
+            offline.receive(geoChat(QStringLiteral("h-%1").arg(i),
+                                    QStringLiteral("A"),
+                                    AllChatRooms,
+                                    QStringLiteral("x")));
+        }
+        // The oldest message ID is forgotten after MaxKnownMessages newer IDs.
+        offline.receive(geoChat(
+            QStringLiteral("h-0"), QStringLiteral("A"), AllChatRooms, QStringLiteral("again")));
+        QCOMPARE(offline.room(AllChatRooms)->messages.last().text, QStringLiteral("again"));
+        offline.receive(geoChat(
+            QStringLiteral("h-0"), QStringLiteral("A"), AllChatRooms, QStringLiteral("third")));
+        QCOMPARE(offline.room(AllChatRooms)->messages.last().text, QStringLiteral("again"));
+        for (int i = 0; i < Chat::MaxQueued; ++i) {
+            QVERIFY(offline.send(AllChatRooms, QStringLiteral("wait")).isEmpty());
+        }
+        QVERIFY(!offline.send(AllChatRooms, QStringLiteral("full")).isEmpty());
+        offline.flush();
+        // Without an identity UID, nothing is sent.
+        Chat anonymous(quietStore, nullptr, nullptr);
+        QCOMPARE(anonymous.rooms().size(), 1);
+        QVERIFY(!anonymous.send(AllChatRooms, QStringLiteral("x")).isEmpty());
     }
     void takServerApi()
     {

@@ -1514,7 +1514,7 @@ private slots:
 
     void pluginManifests()
     {
-        QCOMPARE(builtInPlugins().size(), 26);
+        QCOMPARE(builtInPlugins().size(), 27);
         for (const auto &entry : QPluginLoader::staticPlugins()) {
             if (entry.metaData().value(QStringLiteral("IID")).toString() !=
                 QStringLiteral("org.swak.Plugin/2.0")) {

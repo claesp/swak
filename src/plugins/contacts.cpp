@@ -1,5 +1,6 @@
 #include "core/contacts.h"
 
+#include "core/chat.h"
 #include "core/interfaces.h"
 #include "core/map_tools.h"
 #include "core/modal.h"
@@ -26,7 +27,7 @@ class ContactsPane final : public QWidget, public PreferenceParticipant
 public:
     ContactsPane(PluginServices &services, QWidget *parent)
         : QWidget(parent), contacts_(services.contacts), store_(services.store),
-          tools_(services.mapTools)
+          tools_(services.mapTools), chat_(services.chat)
     {
         setObjectName(QStringLiteral("contactsPane"));
         auto *layout = new QVBoxLayout(this);
@@ -91,6 +92,17 @@ public:
             connect(show, &QAction::triggered, this, [this, uid] {
                 this->show(uid);
             });
+            if (chat_) {
+                auto *talk = menu->addAction(tr("Chat with"));
+                talk->setObjectName(QStringLiteral("chatWithContact"));
+                const auto callsign =
+                    index.siblingAtColumn(Contacts::CallsignColumn).data().toString();
+                connect(talk, &QAction::triggered, this, [this, uid, callsign] {
+                    if (chat_ && chat_->openDirect(uid, callsign).isEmpty()) {
+                        status_->setText(tr("A chat with this contact cannot be opened."));
+                    }
+                });
+            }
             menu->exec(table_->viewport()->mapToGlobal(position));
         });
     }
@@ -141,6 +153,7 @@ private:
     QPointer<Contacts> contacts_;
     Store &store_;
     QPointer<MapTools> tools_;
+    QPointer<Chat> chat_;
     QTableView *table_ = nullptr;
     SingleLineLabel *status_ = nullptr;
 };

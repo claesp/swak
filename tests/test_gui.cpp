@@ -4,6 +4,7 @@
 #include "app/plugin_panel.h"
 #include "app/window.h"
 #include "core/activity.h"
+#include "core/chat.h"
 #include "core/contacts.h"
 #include "core/cot.h"
 #include "core/cot_picker.h"
@@ -1568,6 +1569,126 @@ private slots:
         QVERIFY(sharing->automatic());
         sharing->setAutomatic(false);
         QVERIFY(!automatic->isChecked());
+    }
+    void chatPane()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("chat.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *dock = window.findChild<QDockWidget *>(QStringLiteral("org.swak.chat.pane"));
+        auto *rooms = window.findChild<QListWidget *>(QStringLiteral("chatRooms"));
+        auto *messages = window.findChild<QListWidget *>(QStringLiteral("chatMessages"));
+        auto *input = window.findChild<QLineEdit *>(QStringLiteral("chatInput"));
+        auto *send = window.findChild<QPushButton *>(QStringLiteral("sendChat"));
+        auto *status = window.findChild<QLabel *>(QStringLiteral("chatStatus"));
+        auto *newChat = window.findChild<QPushButton *>(QStringLiteral("newChat"));
+        auto *chat = window.findChild<swak::Chat *>(QStringLiteral("chat"));
+        auto *contacts = window.findChild<swak::Contacts *>(QStringLiteral("contacts"));
+        QVERIFY(dock && rooms && messages && input && send && status && newChat && chat &&
+                contacts);
+        dock->show();
+        QCOMPARE(rooms->count(), 2);
+        QCOMPARE(rooms->currentItem()->text(), swak::AllChatRooms);
+        // An empty message shows the reason. A message waits without a connection.
+        send->click();
+        QVERIFY(!status->isHidden());
+        input->setText(QStringLiteral("Hello all"));
+        QTest::keyClick(input, Qt::Key_Return);
+        QVERIFY(status->isHidden());
+        QVERIFY(input->text().isEmpty());
+        QCOMPARE(messages->count(), 1);
+        QVERIFY(messages->item(0)->text().contains(QStringLiteral("Waiting for a connection")));
+        QVERIFY(messages->item(0)->text().endsWith(QStringLiteral("Hello all")));
+        // A received message in the shown room is read at once.
+        const auto message = [](const QString &id, const QString &room, const QString &text) {
+            swak::Event event;
+            event.uid = QStringLiteral("GeoChat.ANDROID-7.") + id;
+            event.type = QStringLiteral("b-t-f");
+            event.how = QStringLiteral("h-e");
+            event.time = event.start = QDateTime::currentDateTimeUtc();
+            event.stale = event.time.addSecs(600);
+            event.detail =
+                QStringLiteral(
+                    "<__chat parent=\"RootContactGroup\" messageId=\"%1\" chatroom=\"%2\" "
+                    "id=\"%2\" senderCallsign=\"Foxtrot\"/><link uid=\"ANDROID-7\" "
+                    "type=\"a-f-G-U-C\" relation=\"p-p\"/><remarks>%3</remarks>")
+                    .arg(id, room, text);
+            return event;
+        };
+        QVERIFY(
+            window.store()
+                .accept(message(QStringLiteral("a-1"), swak::AllChatRooms, QStringLiteral("Hi")))
+                .isEmpty());
+        QCOMPARE(messages->count(), 2);
+        QCOMPARE(chat->room(swak::AllChatRooms)->unread, 0);
+        // A direct message adds a bold room with an unread count until the user opens it.
+        swak::Event self;
+        window.findChild<swak::Identity *>()->apply(self);
+        QVERIFY(window.store()
+                    .accept(message(QStringLiteral("d-1"), self.uid, QStringLiteral("Private")))
+                    .isEmpty());
+        QCOMPARE(rooms->count(), 3);
+        QCOMPARE(rooms->item(2)->text(), QStringLiteral("Foxtrot (1)"));
+        QVERIFY(rooms->item(2)->font().bold());
+        rooms->setCurrentRow(2);
+        QCOMPARE(chat->room(QStringLiteral("ANDROID-7"))->unread, 0);
+        QCOMPARE(rooms->item(2)->text(), QStringLiteral("Foxtrot"));
+        QCOMPARE(messages->count(), 1);
+        // Copy puts the message text on the clipboard.
+        QTimer::singleShot(0, &window, [&] {
+            if (auto *menu = window.findChild<QMenu *>(QStringLiteral("chatMessageMenu"))) {
+                if (auto *copy = menu->findChild<QAction *>(QStringLiteral("copyChatMessage"))) {
+                    copy->trigger();
+                }
+                menu->close();
+            }
+        });
+        messages->setCurrentRow(0);
+        emit messages->customContextMenuRequested(QPoint(-5, -5));
+        QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("Private"));
+        // New Chat lists known users.
+        auto *people = newChat->menu();
+        emit people->aboutToShow();
+        auto *none = people->findChild<QAction *>(QStringLiteral("noChatContacts"));
+        QVERIFY(none && !none->isEnabled());
+        swak::Event user;
+        user.uid = QStringLiteral("ANDROID-8");
+        user.callsign = QStringLiteral("Golf");
+        user.type = QStringLiteral("a-f-G-U-C");
+        user.how = QStringLiteral("m-g");
+        user.origin = QStringLiteral("tak");
+        user.detail = QStringLiteral("<contact endpoint=\"*:-1:stcp\"/>");
+        user.time = user.start = QDateTime::currentDateTimeUtc();
+        user.stale = user.time.addSecs(600);
+        QVERIFY(window.store().accept(user).isEmpty());
+        contacts->rebuild();
+        emit people->aboutToShow();
+        QCOMPARE(people->actions().size(), 1);
+        people->actions().first()->trigger();
+        QCOMPARE(rooms->currentItem()->text(), QStringLiteral("Golf"));
+        // Chat with in Contacts opens the room and shows the pane.
+        rooms->setCurrentRow(0);
+        dock->hide();
+        auto *table = window.findChild<QTableView *>(QStringLiteral("contactsTable"));
+        QVERIFY(table && table->model()->rowCount() == 1);
+        table->setCurrentIndex(table->model()->index(0, 0));
+        bool chatted = false;
+        QTimer::singleShot(0, &window, [&] {
+            if (auto *menu = window.findChild<QMenu *>(QStringLiteral("contactMenu"))) {
+                if (auto *talk = menu->findChild<QAction *>(QStringLiteral("chatWithContact"))) {
+                    talk->trigger();
+                    chatted = true;
+                }
+                menu->close();
+            }
+        });
+        emit table->customContextMenuRequested(QPoint(-5, -5));
+        QVERIFY(chatted);
+        QVERIFY(!dock->isHidden());
+        QCOMPARE(rooms->currentItem()->text(), QStringLiteral("Golf"));
+        QVERIFY(window.grab().save(QStringLiteral("chat-pane.png")));
     }
     void contactsPane()
     {
@@ -6094,7 +6215,7 @@ private slots:
             QVERIFY(!action->isChecked());
             dock->setFloating(false);
         }
-        QCOMPARE(activated, 10);
+        QCOMPARE(activated, 11);
         QVERIFY(window.grab().save(QStringLiteral("plugin-labels-smoke.png")));
     }
     void clearEventsMenu()
@@ -6782,7 +6903,7 @@ private slots:
                 auto *tabs = dialog->findChild<QTabWidget *>();
                 auto *panes =
                     dialog->findChild<QListWidget *>(QStringLiteral("paneSettingsSections"));
-                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 15) {
+                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 16) {
                     dialog->reject();
                     QFAIL("The pane tab is incomplete.");
                     return;
@@ -8195,7 +8316,7 @@ private slots:
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         const auto docks = window.findChildren<QDockWidget *>();
-        QCOMPARE(docks.size(), 15);
+        QCOMPARE(docks.size(), 16);
         QVERIFY(!window.findChild<QWidget *>(QStringLiteral("toolsDock")));
         auto *viewMenu = window.findChild<QMenu *>(QStringLiteral("viewMenu"));
         auto *fileMenu = window.findChild<QMenu *>(QStringLiteral("fileMenu"));

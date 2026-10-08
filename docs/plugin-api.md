@@ -142,6 +142,10 @@ Read detail through `core/cot_detail.h`. `detailElements` and `detailElement` re
 
 `core/tak_drawings.h` reads TAK drawing events into a `TakDrawing` with normalized Mercator points, colors, a stroke width, and a label anchor. `takDrawingType` names the types that the drawing layer owns, and the CoT layer skips their point symbols. The TAK Drawings plugin implements `MapLayer` and `MenuPlugin`, and its MANIFEST declares `map-layer` and `menu`. Each window gets a drawing tool that is also the `org.swak.takdrawings` settings participant. The tool parses an event only when its time or detail size changes, so frames do not parse detail XML. Its `itemsAt` returns `org.swak.events` items, so the map selects the event.
 
+# Chat
+
+`PluginServices::chat` is the per-window `Chat` service in `core/chat.h`. `rooms`, `room`, `openDirect`, `send`, and `markRead` give the rooms and send messages. `roomsChanged`, `messagesChanged`, and `roomRequested` report changes. `Store::messageReceived` delivers `b-t-f` events. The Store does not keep them. `readChatMessage`, `readChatReceipt`, `chatMessageEvent`, and `chatReceiptEvent` read and build the ATAK format. The chat plugin implements `PanePlugin`, and its MANIFEST declares `pane`. Its pane saves the splitter state under `org.swak.chat`. The contacts pane adds Chat with when the chat service exists.
+
 # Emergency alerts
 
 `core/emergency.h` provides `emergencyKinds`, `emergencyEvent`, `emergencyCancelEvent`, `activeEmergency`, and `emergencyLabel`. The emergencies plugin implements `MapLayer` and `ToolbarPlugin`. Its manifest declares `map-layer` and `toolbar`. It reads the Store and does not change it. It centers the map through `MapTools::centerRequested`. Its toolbar button is a trailing action with `swakToolbarTrailingOrder` -1, so it stays left of the navigation lock. Trailing actions sort by this property, and the default is 0.

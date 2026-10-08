@@ -25,6 +25,7 @@ class Servers;
 class RouteSources;
 class NetworkClient;
 class TakServerApi;
+class Chat;
 class Contacts;
 class ObjectSharing;
 // Per-window services for plugin factories and callbacks.
@@ -88,6 +89,8 @@ struct PluginServices
     // Window child. Lives until step 4. It reads objects by reference and the other services
     // through guarded pointers. Its destructor does not read them.
     ObjectSharing *sharing = nullptr;
+    // Window child. Lives until step 4. It reads servers and identity through guarded pointers.
+    Chat *chat = nullptr;
 };
 class Plugin
 {

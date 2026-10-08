@@ -55,6 +55,9 @@ public:
     }
 signals:
     void eventAccepted(const swak::Event &event);
+    // A valid chat message or chat receipt (b-t-f types). The Store does not keep these
+    // events, so chat history cannot fill the map and the event table.
+    void messageReceived(const swak::Event &event);
     void changed();
     void selectionChanged();
 

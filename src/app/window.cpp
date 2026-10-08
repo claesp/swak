@@ -6,6 +6,7 @@
 #include "app/marker_manager.h"
 #include "app/plugin_panel.h"
 #include "core/activity.h"
+#include "core/chat.h"
 #include "core/contacts.h"
 #include "core/credits.h"
 #include "core/delete_confirmation.h"
@@ -203,6 +204,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     }
     services.contacts = new Contacts(store_, servers, services.tak, this);
     services.sharing = new ObjectSharing(*objects, servers, identity, this);
+    services.chat = new Chat(store_, servers, identity, this);
     auto *mainViews = new QTabWidget(this);
     mainViews->setObjectName(QStringLiteral("mainViews"));
     mainViews->setDocumentMode(true);

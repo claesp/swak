@@ -83,6 +83,16 @@ SWAK draws the circles (`u-d-c-c`), ellipses (`u-d-c-e`), lines and areas (`u-d-
 
 Tools > Plugins > TAK Drawings > Show TAK Drawings turns the drawings on and off. File > Settings > TAK Drawings also sets their opacity. The CoT layer draws no point symbol for these types. It draws a received spot marker (`b-m-p-s-m`) in the color of its `color` element.
 
+# Chat
+
+Tools > Plugins > Chat shows the GeoChat pane. It has All Chat Rooms, a room for your team from File > Identity, and one room for each direct chat. A room with unread messages shows in bold with the count. Type a message and press Enter or select Send. New Chat starts a direct chat with a user from Contacts. Chat with in the Contacts menu does the same and shows the pane. Right-click a message and select Copy to copy its text.
+
+SWAK sends GeoChat in the ATAK format: a `b-t-f` event with `__chat`, `chatgrp`, a link to the sender, and the text in `remarks`. A direct message also has a `marti` destination, so TAK Server sends it only to that user. Team messages use the parent `TeamGroups`. SWAK shows only messages for All Chat Rooms, your team, and direct messages to your UID. Multicast peers also receive the chats of other teams and other users, and SWAK ignores them.
+
+Your own messages show their state. Waiting for a connection means that no output is connected. SWAK keeps at most 64 waiting messages and tries again every 5 seconds. Sent means that an output took the message. Stored by the server (`b-t-f-p`), Delivered (`b-t-f-d`), and Read (`b-t-f-r`) come from receipts. A state never moves back. SWAK sends a delivered receipt when a direct message arrives and a read receipt when you open the room.
+
+TAK Server can store messages for offline users and send them after the connection starts. SWAK removes duplicates by message ID and keeps each room in time order. Chat events do not go to the map or to CoT Messages. Limits: 4096 characters for each message, 128 rooms, 500 messages for each room, and 4096 remembered message IDs. SWAK shows text as plain text and removes control and direction characters. History stays in memory and ends when SWAK closes.
+
 # Emergency alerts
 
 TAK clients send emergency alerts as CoT. SWAK recognizes 911 Alert (`b-a-o-tbl`), Ring The Bell (`b-a-o-pan`), Troops In Contact (`b-a-o-opn`), Geo-fence Breached (`b-a-g`), and the ATAK custom alert (`b-a-o-c`). An active alert has a red double ring and a label with its type and the callsign of the person in distress. The emergency button at the right end of the toolbar turns red while any alert is active. Its tooltip lists the alerts. Its menu centers the map on an alert and selects it. Each new alert adds one Warning to Events. TAK Server repeats active alerts, and SWAK ignores these repeats.

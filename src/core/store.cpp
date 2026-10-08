@@ -92,6 +92,10 @@ QString Store::accept(const Event &event, const QDateTime &now)
     if (deleteRequest(event)) {
         return {};
     }
+    if (event.type == QLatin1String("b-t-f") || event.type.startsWith(QLatin1String("b-t-f-"))) {
+        emit messageReceived(event);
+        return {};
+    }
     const auto found = rows_.constFind(event.uid);
     const qsizetype previous = found != rows_.cend() ? events_.at(found.value()).detail.size() : 0;
     Event stored = event;
