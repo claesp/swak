@@ -257,8 +257,6 @@ std::optional<CotChat> chat(const Event &event)
                    element->attribute(u"parent"),
                    element->attribute(u"groupOwner").compare(u"true", Qt::CaseInsensitive) == 0};
 }
-// Later TAK phases use this reader. The server tests cover it now.
-// cppcheck-suppress unusedFunction
 QString videoUrl(const Event &event)
 {
     const auto element = detailElement(event, u"__video");
@@ -282,8 +280,6 @@ QString videoUrl(const Event &event)
     }
     return url.left(2048);
 }
-// Later TAK phases use this reader. The server tests cover it now.
-// cppcheck-suppress unusedFunction
 QString iconsetPath(const Event &event)
 {
     return attributeOf(detailElement(event, u"usericon"), u"iconsetpath").left(512);

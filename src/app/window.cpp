@@ -32,6 +32,7 @@
 #include "core/track_history.h"
 #include "core/ui_behavior.h"
 #include "core/user_objects.h"
+#include "core/video_sources.h"
 #include "swak/version.h"
 
 #include <QAction>
@@ -214,6 +215,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     services.missions = new Missions(store_, servers, services.tak, identity, this);
     services.history = new TrackHistory(servers, services.tak, this);
     services.icons = new IconCache(servers, services.tak, this);
+    services.video = new VideoSources(store_, servers, services.tak, this);
     auto *mainViews = new QTabWidget(this);
     mainViews->setObjectName(QStringLiteral("mainViews"));
     mainViews->setDocumentMode(true);

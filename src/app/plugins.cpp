@@ -16,6 +16,7 @@ Q_IMPORT_PLUGIN(ChatPlugin)
 Q_IMPORT_PLUGIN(FilesPlugin)
 Q_IMPORT_PLUGIN(MissionsPlugin)
 Q_IMPORT_PLUGIN(HistoryPlugin)
+Q_IMPORT_PLUGIN(VideoPlugin)
 Q_IMPORT_PLUGIN(ActivityPlugin)
 
 Q_IMPORT_PLUGIN(GdalVectorProvider)

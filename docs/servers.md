@@ -68,6 +68,14 @@ Right-click a received object from a TAK Server entry with a REST API port and s
 
 A received object with a `usericon` iconset path, such as `<iconset UID>/<group>/<name>.png`, shows that icon instead of its symbol. SWAK asks the TAK Server of the object for the icon once at `/Marti/api/iconimage`, with at most 4 requests at a time. It accepts PNG and JPEG images up to 256 KiB and 512 by 512 pixels, checks the size before decoding, and keeps at most 512 icons of at most 64 pixels. A missing or refused icon keeps the standard symbol and is not requested again. Built-in ATAK paths, such as `COT_MAPPING_SPOTMAP`, keep the SWAK symbols. Iconsets do not become marker collections, because SWAK marker collections are vector symbols.
 
+# Video
+
+Tools > Plugins > Video shows the Video pane. Video events (`b-i-v`, or any event with a `__video` element) add their stream. Refresh reads `/Marti/api/video` from each enabled TAK Server entry with a REST API port. Add URL ... adds a stream by hand. Select a source and Play, or double-click it. SWAK plays the stream inside the pane with Qt Multimedia and its FFmpeg backend. It has no audio output. Stop ends the stream, and hiding the pane also stops it. The pane loads the media backend at the first Play, so a session without video does not load FFmpeg.
+
+SWAK accepts RTSP (`rtsp`, `rtsps`), RTMP (`rtmp`, `rtmps`), SRT, HLS over HTTP or HTTPS, and MPEG-TS over UDP (`udp://host:port` or `udp://@:port`). It refuses other schemes, such as `file`. The list hides credentials in URLs. A stream that does not show a first frame in 15 seconds, or that the player refuses, shows as unavailable with the reason. The list keeps at most 64 sources.
+
+The tests play MPEG-TS over UDP, SRT, and live HLS from local ffmpeg streams. An unreachable RTSP stream shows as unavailable. RTSP and RTMP playback against a real server remain untested, because ffmpeg cannot serve RTSP, and its RTMP listener accepts one client only.
+
 # Contacts
 
 Tools > Plugins > Contacts shows a pane with the TAK users that SWAK can address. A position report from a server entry with a `contact` endpoint adds or updates a user. Local events and objects without a contact endpoint are not users. Refresh reads `/Marti/api/contacts/all` from each enabled entry with a TAK REST API port. These users stay in the list in gray, without a current position, until they report one. An error names the entry and keeps its last list. Double-click a user, or select Show on map in the context menu, to center the map on the user and select it. The list holds at most 2048 users and updates at most once a second.

@@ -9,6 +9,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Widgets Network OpenGLWidgets Concurrent)
+# The video plugin plays TAK streams inside SWAK. docs/build.md gives the reason.
+find_package(Qt6 6.4 REQUIRED COMPONENTS Multimedia MultimediaWidgets)
 find_package(LibArchive REQUIRED)
 find_package(GDAL CONFIG REQUIRED)
 if(GDAL_VERSION VERSION_LESS 3.6)
@@ -113,6 +115,8 @@ add_library(
     src/core/track_history.h
     src/core/icon_cache.cpp
     src/core/icon_cache.h
+    src/core/video_sources.cpp
+    src/core/video_sources.h
     src/core/data_package.h
     src/core/package_import.cpp
     src/core/package_import.h
@@ -245,6 +249,7 @@ swak_plugin(swak_chat src/plugins/chat.cpp)
 swak_plugin(swak_files src/plugins/files.cpp)
 swak_plugin(swak_missions src/plugins/missions.cpp)
 swak_plugin(swak_history src/plugins/history.cpp)
+swak_plugin(swak_video src/plugins/video.cpp Qt6::Multimedia Qt6::MultimediaWidgets)
 swak_plugin(swak_milstd2525 src/plugins/milstd2525.cpp)
 swak_plugin(swak_polygons src/plugins/polygons.cpp)
 swak_plugin(swak_markers src/plugins/markers.cpp)
@@ -310,6 +315,7 @@ target_link_libraries(
             swak_files
             swak_missions
             swak_history
+            swak_video
 )
 install(TARGETS swak RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES packaging/org.swak.Swak.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
@@ -390,6 +396,7 @@ if(BUILD_TESTING)
                 swak_files
                 swak_missions
                 swak_history
+                swak_video
                 Qt6::Test
     )
     add_test(NAME maps COMMAND swak_map_tests)
@@ -427,6 +434,7 @@ if(BUILD_TESTING)
                 swak_files
                 swak_missions
                 swak_history
+                swak_video
                 Qt6::Test
                 Qt6::Network
     )
@@ -490,6 +498,7 @@ if(BUILD_TESTING)
                 swak_files
                 swak_missions
                 swak_history
+                swak_video
                 Qt6::Test
                 Qt6::Network
     )
@@ -546,6 +555,7 @@ if(BUILD_TESTING)
                 swak_files
                 swak_missions
                 swak_history
+                swak_video
                 Qt6::Test
                 Qt6::Network
                 Qt6::OpenGLWidgets

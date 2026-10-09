@@ -32,6 +32,7 @@
 #include "core/tak_shapes.h"
 #include "core/track_history.h"
 #include "core/user_objects.h"
+#include "core/video_sources.h"
 
 #include <QAbstractItemModelTester>
 #include <QApplication>
@@ -3580,6 +3581,134 @@ private slots:
         QVERIFY(!cache.icon(QStringLiteral("local"), path(101)).isNull());
         IconCache offline(nullptr, nullptr);
         QVERIFY(offline.icon(QStringLiteral("tak"), path(0)).isNull());
+    }
+    void videoSources()
+    {
+        const auto protocol = [](const QString &text) {
+            return videoProtocol(QUrl(text, QUrl::StrictMode));
+        };
+        QCOMPARE(protocol(QStringLiteral("rtsp://cam.example:554/live")), VideoProtocol::Rtsp);
+        QCOMPARE(protocol(QStringLiteral("rtsps://cam.example/live")), VideoProtocol::Rtsp);
+        QCOMPARE(protocol(QStringLiteral("rtmp://cam.example/app/stream")), VideoProtocol::Rtmp);
+        QCOMPARE(protocol(QStringLiteral("srt://cam.example:9000")), VideoProtocol::Srt);
+        QCOMPARE(protocol(QStringLiteral("https://cam.example/live.m3u8")), VideoProtocol::Hls);
+        QCOMPARE(protocol(QStringLiteral("http://10.0.0.5/live.m3u8")), VideoProtocol::Hls);
+        QCOMPARE(protocol(QStringLiteral("udp://239.1.1.1:1234")), VideoProtocol::Udp);
+        QCOMPARE(protocol(QStringLiteral("udp://@:1234")), VideoProtocol::Udp);
+        QString error;
+        QCOMPARE(videoProtocol(QUrl(QStringLiteral("file:///etc/passwd")), &error),
+                 VideoProtocol::Unsupported);
+        QVERIFY(error.contains(QStringLiteral("RTSP")));
+        for (const auto &bad : {QStringLiteral("udp://239.1.1.1"),
+                                QStringLiteral("ftp://cam.example/x"),
+                                QStringLiteral("rtsp:///live"),
+                                QStringLiteral("rtsp://cam.example:0/live"),
+                                QStringLiteral("rtsp://cam.example/live#x"),
+                                QStringLiteral("not a url")}) {
+            QCOMPARE(protocol(bad), VideoProtocol::Unsupported);
+        }
+        QCOMPARE(videoProtocolName(VideoProtocol::Srt), QStringLiteral("SRT"));
+        QCOMPARE(videoProtocolName(VideoProtocol::Hls), QStringLiteral("HLS"));
+        QCOMPARE(videoProtocolName(VideoProtocol::Udp), QStringLiteral("UDP"));
+        QCOMPARE(videoProtocolName(VideoProtocol::Rtmp), QStringLiteral("RTMP"));
+        QCOMPARE(videoProtocolName(VideoProtocol::Rtsp), QStringLiteral("RTSP"));
+        QVERIFY(!videoProtocolName(VideoProtocol::Unsupported).isEmpty());
+        // TAK Server video lists.
+        const QByteArray xml =
+            "<videoConnections>"
+            "<feed><uid>1</uid><alias>Gate</alias><url>rtsp://user:secret@cam.example/live</url></"
+            "feed>"
+            "<feed><alias>Drone</alias><protocol>srt</protocol><address>10.0.0.7</"
+            "address><port>9000</port>"
+            "<path>stream</path></feed>"
+            "<feed><alias>Disk</alias><url>file:///tmp/x.ts</url></feed>"
+            "<feed><protocol>udp</protocol><address>239.2.3.4</address><port>-1</port></feed>"
+            "</videoConnections>";
+        QList<VideoSource> list;
+        QVERIFY(readVideoConnections(xml, QStringLiteral("tak"), &list));
+        QCOMPARE(list.size(), 2);
+        QCOMPARE(list.at(0).name, QStringLiteral("Gate"));
+        QCOMPARE(list.at(0).key, QStringLiteral("rtsp://cam.example/live"));
+        QCOMPARE(list.at(0).url.password(), QStringLiteral("secret"));
+        QCOMPARE(list.at(1).url.toString(), QStringLiteral("srt://10.0.0.7:9000/stream"));
+        QCOMPARE(list.at(1).origin, QStringLiteral("tak"));
+        QVERIFY(!readVideoConnections("<!DOCTYPE x><x/>", {}, &list));
+        QVERIFY(!readVideoConnections("<a><feed>", {}, &list));
+        QByteArray many = "<v>";
+        for (int i = 0; i <= 256; ++i) {
+            many += "<feed/>";
+        }
+        QVERIFY(!readVideoConnections(many + "</v>", {}, &list));
+        // Video events add and update sources.
+        HttpsHarness api;
+        QVERIFY(api.load());
+        int status = 200;
+        api.respond = [&](const QByteArray &) {
+            return QByteArray("HTTP/1.1 ") + QByteArray::number(status) +
+                   " X\r\nContent-Length: " + QByteArray::number(xml.size()) + "\r\n\r\n" + xml;
+        };
+        NetworkClient network;
+        Store store;
+        Servers servers(store);
+        TakServerApi tak(servers, network);
+        VideoSources sources(store, &servers, &tak);
+        QSignalSpy refreshed(&sources, &VideoSources::refreshed);
+        sources.refresh();
+        QVERIFY(!refreshed.last().at(0).toString().isEmpty());
+        auto camera = sampleEvent(QStringLiteral("camera-1"));
+        camera.type = QStringLiteral("b-i-v");
+        camera.callsign = QStringLiteral("North gate");
+        camera.detail = QStringLiteral("<__video url=\"rtsp://10.0.0.9:554/live\"/>");
+        QVERIFY(store.accept(camera).isEmpty());
+        QCOMPARE(sources.sources().size(), 1);
+        QCOMPARE(sources.sources().first().name, QStringLiteral("North gate"));
+        camera.callsign = QStringLiteral("Gate 2");
+        camera.time = camera.start = camera.time.addSecs(1);
+        QVERIFY(store.accept(camera).isEmpty());
+        QCOMPARE(sources.sources().size(), 1);
+        QCOMPARE(sources.sources().first().name, QStringLiteral("Gate 2"));
+        auto entry = camera;
+        entry.uid = QStringLiteral("camera-2");
+        entry.detail = QStringLiteral(
+            "<__video><ConnectionEntry protocol=\"rtmp\" address=\"10.0.0.8\" port=\"1935\" "
+            "path=\"live/cam\" alias=\"x\"/></__video>");
+        QVERIFY(store.accept(entry).isEmpty());
+        QCOMPARE(sources.sources().size(), 2);
+        QCOMPARE(sources.sources().at(1).protocol, VideoProtocol::Rtmp);
+        auto unsafe = camera;
+        unsafe.uid = QStringLiteral("camera-3");
+        unsafe.detail = QStringLiteral("<__video url=\"file:///etc/passwd\"/>");
+        QVERIFY(store.accept(unsafe).isEmpty());
+        QCOMPARE(sources.sources().size(), 2);
+        QVERIFY(!sources.add(QStringLiteral("x"), QUrl(QStringLiteral("gopher://x"))).isEmpty());
+        QVERIFY(sources.add({}, QUrl(QStringLiteral("udp://@:5000"))).isEmpty());
+        QCOMPARE(sources.sources().last().name, QStringLiteral("udp://:5000"));
+        // Refresh reads the lists of enabled TAK Server entries.
+        auto server = source(9);
+        server.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        server.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+        server.insert(QStringLiteral("apiPort"), api.serverPort());
+        QVERIFY(servers.put(QStringLiteral("tak"), server).isEmpty());
+        sources.refresh();
+        QVERIFY(refreshed.wait(10000));
+        QVERIFY(refreshed.last().at(0).toString().isEmpty());
+        QCOMPARE(sources.sources().size(), 5);
+        QVERIFY(api.requests.last().startsWith("GET /Marti/api/video "));
+        status = 500;
+        sources.refresh();
+        QVERIFY(refreshed.wait(10000));
+        QVERIFY(refreshed.last().at(0).toString().contains(QStringLiteral("unavailable")));
+        sources.remove(QStringLiteral("rtsp://cam.example/live"));
+        QCOMPARE(sources.sources().size(), 4);
+        sources.remove(QStringLiteral("missing"));
+        for (int i = 0; sources.sources().size() < MaxVideoSources; ++i) {
+            QVERIFY(sources.add({}, QUrl(QStringLiteral("udp://@:%1").arg(6000 + i))).isEmpty());
+        }
+        QVERIFY(!sources.add({}, QUrl(QStringLiteral("udp://@:7999"))).isEmpty());
+        VideoSources offline(store, nullptr, nullptr);
+        QSignalSpy offlineRefreshed(&offline, &VideoSources::refreshed);
+        offline.refresh();
+        QCOMPARE(offlineRefreshed.size(), 1);
     }
     void takServerApi()
     {

@@ -31,6 +31,7 @@ class FileShares;
 class Missions;
 class IconCache;
 class TrackHistory;
+class VideoSources;
 class ObjectSharing;
 // Per-window services for plugin factories and callbacks.
 //
@@ -103,6 +104,8 @@ struct PluginServices
     TrackHistory *history = nullptr;
     // Window child. Lives until step 4. It reads servers and tak through guarded pointers.
     IconCache *icons = nullptr;
+    // Window child. Lives until step 4. It reads servers and tak through guarded pointers.
+    VideoSources *video = nullptr;
 };
 class Plugin
 {

@@ -30,7 +30,11 @@ SWAK links OpenSSL `libcrypto` and `libssl` 3.2 or later directly. Enrollment us
 
 SWAK uses the Protobuf lite runtime for TAK Protocol version 1. The user decided on October 7, 2026 to use the Protobuf library. The schema is SWAK's own file, `src/core/proto/tak_protocol.proto`, which matches the TAK wire format and copies no TAK file. The build runs `protoc` and compiles the generated code in a separate library without the SWAK warning flags. Install `libprotobuf-dev` and `protobuf-compiler` to build SWAK. The runtime package is `libprotobuf-lite32t64` on Debian 13. Protobuf uses a BSD 3-clause license.
 
-Qt, libarchive, GeographicLib, GDAL, libcurl, OpenSSL, and Protobuf are system dependencies. Read the build manual for their required components.
+# Qt Multimedia
+
+The video plugin plays TAK streams inside SWAK with Qt Multimedia and Qt Multimedia Widgets. The user decided on October 7, 2026 to play video inside SWAK and not to start an external player. Only the video plugin links these modules. Qt Multimedia uses its FFmpeg backend on Debian 13, which loads the system FFmpeg 7.1 libraries. FFmpeg decodes untrusted stream data in the SWAK process. SWAK limits this risk: it plays only RTSP, RTMP, SRT, HLS over HTTP or HTTPS, and MPEG-TS over UDP, never local files; it plays only after the user selects Play; it has no audio output; and it stops a stream when the pane hides. Install `qt6-multimedia-dev` to build SWAK. Qt Multimedia uses the LGPL 3. FFmpeg uses the LGPL 2.1 or later in the Debian build.
+
+Qt, Qt Multimedia, libarchive, GeographicLib, GDAL, libcurl, OpenSSL, and Protobuf are system dependencies. Read the build manual for their required components.
 
 Marker collections also use the existing system libarchive dependency. The shared collection service reads ZIP, TAR, and gzip-compressed TAR, and writes ZIP or compressed TAR. It enables no external decompression programs and extracts no files. The additional archive use avoids a separate ZIP implementation or dependency. Read [Marker collections](marker-collections.md) for the one-file format and resource limits.
 

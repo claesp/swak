@@ -158,6 +158,10 @@ Read detail through `core/cot_detail.h`. `detailElements` and `detailElement` re
 
 `PluginServices::history` is the per-window `TrackHistory` service in `core/track_history.h`. `load` reads past positions for a time window, `add` adds a track, and `loaded` reports each result. The Trace plugin continues a loaded track. The history plugin implements `MapLayer` and `MenuPlugin`, and its MANIFEST declares `map-layer` and `menu`. `PluginServices::icons` is the per-window `IconCache` in `core/icon_cache.h`. `icon` returns a loaded icon or starts a bounded request, and `insert` adds an icon. The CoT layer reads the `usericon` path once for each event change and draws the icon when it is available.
 
+# Video
+
+`PluginServices::video` is the per-window `VideoSources` list in `core/video_sources.h`. It reads `__video` events and `/Marti/api/video` lists and checks stream URLs with `videoProtocol`. It does not link Qt Multimedia. The video plugin implements `PanePlugin`, and its MANIFEST declares `pane`. It is the only part that links Qt Multimedia. Its pane saves the splitter state under `org.swak.video`.
+
 # Emergency alerts
 
 `core/emergency.h` provides `emergencyKinds`, `emergencyEvent`, `emergencyCancelEvent`, `activeEmergency`, and `emergencyLabel`. The emergencies plugin implements `MapLayer` and `ToolbarPlugin`. Its manifest declares `map-layer` and `toolbar`. It reads the Store and does not change it. It centers the map through `MapTools::centerRequested`. Its toolbar button is a trailing action with `swakToolbarTrailingOrder` -1, so it stays left of the navigation lock. Trailing actions sort by this property, and the default is 0.

@@ -44,6 +44,7 @@
 #include "core/track_history.h"
 #include "core/ui_icons.h"
 #include "core/user_objects.h"
+#include "core/video_sources.h"
 #include "swak/version.h"
 #include "tile_server.h"
 #include "vector_fixture.h"
@@ -66,6 +67,7 @@
 #include <QFrame>
 #include <QHeaderView>
 #include <QImage>
+#include <QInputDialog>
 #include <QJsonDocument>
 #include <QKeySequenceEdit>
 #include <QLabel>
@@ -1575,6 +1577,220 @@ private slots:
         QVERIFY(sharing->automatic());
         sharing->setAutomatic(false);
         QVERIFY(!automatic->isChecked());
+    }
+    void videoPane()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("video.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *dock = window.findChild<QDockWidget *>(QStringLiteral("org.swak.video.pane"));
+        auto *list = window.findChild<QListWidget *>(QStringLiteral("videoSources"));
+        auto *status = window.findChild<QLabel *>(QStringLiteral("videoStatus"));
+        auto *sources = window.findChild<swak::VideoSources *>(QStringLiteral("videoSources"));
+        QVERIFY(dock && list && status && sources);
+        dock->show();
+        dock->raise();
+        const auto click = [&window](const QString &name) {
+            window.findChild<QPushButton *>(name)->click();
+        };
+        // The pane loads the media backend only at the first Play.
+        QVERIFY(!window.findChild<QObject *>(QStringLiteral("videoPlayer")));
+        QVERIFY(window.findChild<QLabel *>(QStringLiteral("videoPlaceholder")));
+        click(QStringLiteral("playVideo"));
+        QCOMPARE(status->text(), QStringLiteral("Select a source."));
+        click(QStringLiteral("refreshVideo"));
+        QVERIFY(status->text().contains(QStringLiteral("REST API")));
+        // A video event adds a source.
+        swak::Event camera;
+        camera.uid = QStringLiteral("camera-1");
+        camera.callsign = QStringLiteral("Gate");
+        camera.type = QStringLiteral("b-i-v");
+        camera.how = QStringLiteral("h-e");
+        camera.detail = QStringLiteral("<__video url=\"rtsp://127.0.0.1:9/none\"/>");
+        camera.time = camera.start = QDateTime::currentDateTimeUtc();
+        camera.stale = camera.time.addSecs(600);
+        QVERIFY(window.store().accept(camera).isEmpty());
+        QCOMPARE(list->count(), 1);
+        QCOMPARE(list->item(0)->text(), QStringLiteral("Gate · RTSP"));
+        // A stream that does not answer shows as unavailable.
+        list->setCurrentRow(0);
+        click(QStringLiteral("playVideo"));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return status->text().startsWith(QStringLiteral("Unavailable"));
+            },
+            20000));
+        // Add URL rejects other schemes and adds stream URLs.
+        const auto addUrl = [&](const QString &text) {
+            QTimer::singleShot(0, &window, [&window, text] {
+                if (auto *dialog =
+                        window.findChild<QInputDialog *>(QStringLiteral("videoUrlDialog"))) {
+                    dialog->setTextValue(text);
+                    dialog->accept();
+                }
+            });
+            click(QStringLiteral("addVideo"));
+        };
+        addUrl(QStringLiteral("file:///etc/passwd"));
+        QVERIFY(status->text().contains(QStringLiteral("RTSP")));
+        // A local MPEG-TS stream over UDP plays inside SWAK.
+        const auto ffmpeg = QStandardPaths::findExecutable(QStringLiteral("ffmpeg"));
+        if (ffmpeg.isEmpty()) {
+            QSKIP("ffmpeg is not installed, so the UDP playback check cannot run.");
+        }
+        QUdpSocket probe;
+        QVERIFY(probe.bind(QHostAddress::LocalHost, 0));
+        const auto port = probe.localPort();
+        probe.close();
+        addUrl(QStringLiteral("udp://127.0.0.1:%1").arg(port));
+        QCOMPARE(list->count(), 2);
+        list->setCurrentRow(1);
+        click(QStringLiteral("playVideo"));
+        QProcess stream;
+        stream.start(ffmpeg,
+                     {QStringLiteral("-hide_banner"),
+                      QStringLiteral("-loglevel"),
+                      QStringLiteral("error"),
+                      QStringLiteral("-re"),
+                      QStringLiteral("-f"),
+                      QStringLiteral("lavfi"),
+                      QStringLiteral("-i"),
+                      QStringLiteral("testsrc=size=160x120:rate=15"),
+                      QStringLiteral("-t"),
+                      QStringLiteral("40"),
+                      QStringLiteral("-f"),
+                      QStringLiteral("mpegts"),
+                      QStringLiteral("udp://127.0.0.1:%1?pkt_size=1316").arg(port)});
+        QVERIFY(stream.waitForStarted(5000));
+        const auto stopStream = qScopeGuard([&stream] {
+            stream.kill();
+            stream.waitForFinished(5000);
+        });
+        const bool played = QTest::qWaitFor(
+            [&] {
+                return status->text().startsWith(QStringLiteral("Playing"));
+            },
+            30000);
+        const auto text = status->text();
+        QVERIFY(window.grab().save(QStringLiteral("video-pane.png")));
+        click(QStringLiteral("stopVideo"));
+        QCOMPARE(status->text(), QStringLiteral("Stopped."));
+        // Hiding the pane stops a stream.
+        click(QStringLiteral("playVideo"));
+        dock->hide();
+        QVERIFY2(played, qPrintable(text));
+        QVERIFY2(status->text().contains(QStringLiteral("hidden")), qPrintable(status->text()));
+        auto *pane = dynamic_cast<swak::PreferenceParticipant *>(
+            window.findChild<QWidget *>(QStringLiteral("videoPane")));
+        QVERIFY(pane);
+        pane->restorePreferences(pane->savePreferences());
+        // SRT plays from ffmpeg in listener mode, and HLS from a local HTTP server. The ffmpeg
+        // RTMP listener accepts one client only, so it cannot check RTMP playback.
+        dock->show();
+        const QStringList source{QStringLiteral("-hide_banner"),
+                                 QStringLiteral("-loglevel"),
+                                 QStringLiteral("error"),
+                                 QStringLiteral("-re"),
+                                 QStringLiteral("-f"),
+                                 QStringLiteral("lavfi"),
+                                 QStringLiteral("-i"),
+                                 QStringLiteral("testsrc=size=160x120:rate=15"),
+                                 QStringLiteral("-t"),
+                                 QStringLiteral("30"),
+                                 QStringLiteral("-pix_fmt"),
+                                 QStringLiteral("yuv420p")};
+        const auto play = [&](const QString &url, const QStringList &output) -> QString {
+            const auto before = list->count();
+            addUrl(url);
+            if (list->count() != before + 1) {
+                return QStringLiteral("not added: ") + status->text();
+            }
+            QProcess server;
+            if (!output.isEmpty()) {
+                server.start(ffmpeg, source + output);
+                if (!server.waitForStarted(5000)) {
+                    return QStringLiteral("ffmpeg did not start");
+                }
+                QTest::qWait(1500);
+            }
+            list->setCurrentRow(before);
+            click(QStringLiteral("playVideo"));
+            const bool ok = QTest::qWaitFor(
+                [&] {
+                    return status->text().startsWith(QStringLiteral("Playing")) ||
+                           status->text().startsWith(QStringLiteral("Unavailable"));
+                },
+                20000);
+            const auto result = ok ? status->text() : QStringLiteral("timeout: ") + status->text();
+            click(QStringLiteral("stopVideo"));
+            server.kill();
+            server.waitForFinished(5000);
+            return result;
+        };
+        QUdpSocket srtProbe;
+        QVERIFY(srtProbe.bind(QHostAddress::LocalHost, 0));
+        const auto srtPort = srtProbe.localPort();
+        srtProbe.close();
+        const auto srt = play(QStringLiteral("srt://127.0.0.1:%1").arg(srtPort),
+                              {QStringLiteral("-f"),
+                               QStringLiteral("mpegts"),
+                               QStringLiteral("srt://127.0.0.1:%1?mode=listener").arg(srtPort)});
+        // HLS: write a short live playlist, as TAK feeds use, then serve the folder over HTTP.
+        QTemporaryDir hls;
+        QProcess segmenter;
+        segmenter.start(ffmpeg,
+                        {QStringLiteral("-hide_banner"),
+                         QStringLiteral("-loglevel"),
+                         QStringLiteral("error"),
+                         QStringLiteral("-f"),
+                         QStringLiteral("lavfi"),
+                         QStringLiteral("-i"),
+                         QStringLiteral("testsrc=size=160x120:rate=15"),
+                         QStringLiteral("-t"),
+                         QStringLiteral("6"),
+                         QStringLiteral("-pix_fmt"),
+                         QStringLiteral("yuv420p"),
+                         QStringLiteral("-c:v"),
+                         QStringLiteral("libx264"),
+                         QStringLiteral("-preset"),
+                         QStringLiteral("ultrafast"),
+                         QStringLiteral("-f"),
+                         QStringLiteral("hls"),
+                         QStringLiteral("-hls_time"),
+                         QStringLiteral("2"),
+                         QStringLiteral("-hls_list_size"),
+                         QStringLiteral("0"),
+                         QStringLiteral("-hls_flags"),
+                         QStringLiteral("omit_endlist"),
+                         hls.filePath(QStringLiteral("live.m3u8"))});
+        QVERIFY(segmenter.waitForFinished(30000));
+        QTcpServer http;
+        QVERIFY(http.listen(QHostAddress::LocalHost, 0));
+        QObject::connect(&http, &QTcpServer::newConnection, &http, [&http, &hls] {
+            while (auto *socket = http.nextPendingConnection()) {
+                QObject::connect(socket, &QTcpSocket::readyRead, socket, [socket, &hls] {
+                    const auto request = socket->readAll();
+                    const auto path = QString::fromLatin1(request.split(' ').value(1));
+                    QFile file(hls.filePath(QFileInfo(path).fileName()));
+                    const auto body =
+                        file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray{};
+                    socket->write((body.isEmpty() ? QByteArray("HTTP/1.1 404 X\r\n")
+                                                  : QByteArray("HTTP/1.1 200 OK\r\n")) +
+                                  "Content-Length: " + QByteArray::number(body.size()) +
+                                  "\r\nConnection: close\r\n\r\n" + body);
+                    socket->disconnectFromHost();
+                });
+                QObject::connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+            }
+        });
+        const auto hlsResult =
+            play(QStringLiteral("http://127.0.0.1:%1/live.m3u8").arg(http.serverPort()), {});
+        QVERIFY2(srt.startsWith(QStringLiteral("Playing")),
+                 qPrintable(QStringLiteral("SRT: ") + srt));
+        QVERIFY2(hlsResult.startsWith(QStringLiteral("Playing")),
+                 qPrintable(QStringLiteral("HLS: ") + hlsResult));
     }
     void historyAndIcons()
     {
@@ -6614,7 +6830,7 @@ private slots:
             QVERIFY(!action->isChecked());
             dock->setFloating(false);
         }
-        QCOMPARE(activated, 13);
+        QCOMPARE(activated, 14);
         QVERIFY(window.grab().save(QStringLiteral("plugin-labels-smoke.png")));
     }
     void clearEventsMenu()
@@ -7302,7 +7518,7 @@ private slots:
                 auto *tabs = dialog->findChild<QTabWidget *>();
                 auto *panes =
                     dialog->findChild<QListWidget *>(QStringLiteral("paneSettingsSections"));
-                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 18) {
+                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 19) {
                     dialog->reject();
                     QFAIL("The pane tab is incomplete.");
                     return;
@@ -8715,7 +8931,7 @@ private slots:
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         const auto docks = window.findChildren<QDockWidget *>();
-        QCOMPARE(docks.size(), 18);
+        QCOMPARE(docks.size(), 19);
         QVERIFY(!window.findChild<QWidget *>(QStringLiteral("toolsDock")));
         auto *viewMenu = window.findChild<QMenu *>(QStringLiteral("viewMenu"));
         auto *fileMenu = window.findChild<QMenu *>(QStringLiteral("fileMenu"));
@@ -8875,6 +9091,11 @@ private slots:
 int main(int argc, char **argv)
 {
     swak::configureGraphics();
+    // The Qt FFmpeg backend probes video hardware through libdrm, which leaks 79 bytes once
+    // per process. The test display has no video hardware, so turn off the decode and encode
+    // probes and keep the leak check focused on SWAK. The application keeps the Qt default.
+    qputenv("QT_FFMPEG_DECODING_HW_DEVICE_TYPES", "");
+    qputenv("QT_FFMPEG_ENCODING_HW_DEVICE_TYPES", "");
     QApplication app(argc, argv);
     // Close cached GDAL resources after the tests and before the leak check.
     swak::GdalShutdownGuard gdal;
