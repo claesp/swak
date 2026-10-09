@@ -7,9 +7,11 @@
 #include "app/plugin_panel.h"
 #include "core/activity.h"
 #include "core/chat.h"
+#include "core/citrap.h"
 #include "core/contacts.h"
 #include "core/credits.h"
 #include "core/delete_confirmation.h"
+#include "core/excheck.h"
 #include "core/file_shares.h"
 #include "core/icon_cache.h"
 #include "core/identity.h"
@@ -216,6 +218,8 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     services.history = new TrackHistory(servers, services.tak, this);
     services.icons = new IconCache(servers, services.tak, this);
     services.video = new VideoSources(store_, servers, services.tak, this);
+    services.excheck = new ExCheck(services.tak, identity, this);
+    services.citrap = new Citrap(services.tak, identity, this);
     auto *mainViews = new QTabWidget(this);
     mainViews->setObjectName(QStringLiteral("mainViews"));
     mainViews->setDocumentMode(true);

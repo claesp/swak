@@ -1,10 +1,13 @@
 #include "core/chat.h"
+#include "core/citrap.h"
 #include "core/contacts.h"
 #include "core/cot.h"
 #include "core/cot_detail.h"
 #include "core/cot_stream.h"
+#include "core/data_feeds.h"
 #include "core/data_package.h"
 #include "core/emergency.h"
+#include "core/excheck.h"
 #include "core/file_shares.h"
 #include "core/icon_cache.h"
 #include "core/identity.h"
@@ -3709,6 +3712,569 @@ private slots:
         QSignalSpy offlineRefreshed(&offline, &VideoSources::refreshed);
         offline.refresh();
         QCOMPARE(offlineRefreshed.size(), 1);
+    }
+    void serverDataFeeds()
+    {
+        const QByteArray json = "{\"version\":\"3\",\"type\":\"DataFeed\",\"data\":["
+                                "{\"uuid\":\"u1\",\"name\":\"Weather\",\"type\":\"Streaming\","
+                                "\"protocol\":\"tls\",\"port\":8089,"
+                                "\"active\":true,\"filterGroups\":[\"Cyan\"],\"tags\":[\"wx\"]},"
+                                "{\"uuid\":\"u2\",\"name\":\"Ops\",\"type\":\"API\",\"active\":"
+                                "true,\"feedGroup\":\"Ops\"},"
+                                "{\"uuid\":\"u3\",\"type\":\"Plugin\",\"active\":true},"
+                                "{\"name\":\"Old\",\"active\":false,\"port\":99999},"
+                                "{\"type\":\"none\"}]}";
+        QList<ServerFeed> feeds;
+        QVERIFY(readServerFeeds(json, &feeds));
+        QCOMPARE(feeds.size(), 4);
+        QCOMPARE(feeds.at(0).groups, QStringList{QStringLiteral("Cyan")});
+        QCOMPARE(feeds.at(0).tags, QStringList{QStringLiteral("wx")});
+        QCOMPARE(feeds.at(0).port, 8089);
+        QCOMPARE(feeds.at(1).groups, QStringList{QStringLiteral("Ops")});
+        QCOMPARE(feeds.at(2).name, QStringLiteral("u3"));
+        QCOMPARE(feeds.at(3).port, 65535);
+        const QSet<QString> channels{QStringLiteral("Cyan")};
+        QVERIFY(feedReceived(feeds.at(0), channels));
+        QVERIFY(!feedReceived(feeds.at(1), channels));
+        QVERIFY(feedReceived(feeds.at(2), channels));
+        QVERIFY(!feedReceived(feeds.at(3), channels));
+        QVERIFY(!readServerFeeds("[]", &feeds));
+        QVERIFY(!readServerFeeds("{\"data\":{}}", &feeds));
+        // The server browser lists the feeds and what this user receives.
+        HttpsHarness api;
+        QVERIFY(api.load());
+        int status = 200;
+        QByteArray groups = "{\"data\":[{\"name\":\"Cyan\",\"direction\":\"IN\",\"active\":true}]}";
+        api.respond = [&](const QByteArray &request) {
+            const auto body = request.startsWith("GET /Marti/api/datafeeds ") ? json : groups;
+            return QByteArray("HTTP/1.1 ") + QByteArray::number(status) +
+                   " X\r\nContent-Length: " + QByteArray::number(body.size()) + "\r\n\r\n" + body;
+        };
+        NetworkClient network;
+        Store store;
+        Servers servers(store);
+        new TakServerApi(servers, network, &servers);
+        ServerBrowser browser(servers);
+        auto *action = browser.findChild<QAction *>(QStringLiteral("serverDataFeeds"));
+        auto *message = browser.findChild<QLabel *>(QStringLiteral("enrollStatus"));
+        QVERIFY(action && message);
+        action->trigger();
+        QVERIFY(message->text().startsWith(QStringLiteral("Select a TLS or QUIC entry")));
+        auto entry = source(9);
+        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        entry.insert(QStringLiteral("enabled"), false);
+        entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+        entry.insert(QStringLiteral("apiPort"), api.serverPort());
+        QVERIFY(servers.put(QStringLiteral("tak"), entry).isEmpty());
+        auto *list = browser.findChild<QTableWidget *>(QStringLiteral("serverList"));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return list->rowCount() == 1;
+            },
+            2000));
+        list->setCurrentCell(0, 1);
+        QStringList received;
+        QTimer poll;
+        poll.setInterval(20);
+        QObject::connect(&poll, &QTimer::timeout, &browser, [&] {
+            auto *dialog = browser.findChild<QDialog *>(QStringLiteral("dataFeedDialog"));
+            auto *table = dialog
+                              ? dialog->findChild<QTableWidget *>(QStringLiteral("dataFeedTable"))
+                              : nullptr;
+            if (!table || !dialog->isVisible()) {
+                return;
+            }
+            poll.stop();
+            received.clear();
+            for (int row = 0; row < table->rowCount(); ++row) {
+                received.append(table->item(row, 4)->text());
+            }
+            dialog->reject();
+        });
+        poll.start();
+        action->trigger();
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return !received.isEmpty();
+            },
+            10000));
+        QCOMPARE(received,
+                 (QStringList{QStringLiteral("Yes"),
+                              QStringLiteral("No"),
+                              QStringLiteral("Yes"),
+                              QStringLiteral("No, inactive")}));
+        // Without the group list, the column says Unknown.
+        groups = "not json";
+        received.clear();
+        poll.start();
+        action->trigger();
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return !received.isEmpty();
+            },
+            10000));
+        QCOMPARE(received.first(), QStringLiteral("Unknown"));
+        // Errors and empty lists show in the status line.
+        status = 500;
+        action->trigger();
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return message->text().contains(QStringLiteral("500"));
+            },
+            10000));
+        status = 200;
+        api.respond = [](const QByteArray &request) {
+            const QByteArray body =
+                request.startsWith("GET /Marti/api/datafeeds ") ? "{\"data\":[]}" : "x";
+            return QByteArray("HTTP/1.1 200 OK\r\nContent-Length: ") +
+                   QByteArray::number(body.size()) + "\r\n\r\n" + body;
+        };
+        action->trigger();
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return message->text() == QStringLiteral("The server has no data feeds.");
+            },
+            10000));
+        api.respond = [](const QByteArray &) {
+            return QByteArray("HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nx");
+        };
+        action->trigger();
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return message->text() == QStringLiteral("The data feed list is invalid.");
+            },
+            10000));
+    }
+    void pluginData()
+    {
+        QVERIFY(TakServerApi::validPluginName(QStringLiteral("sensor-plugin.v2")));
+        for (const auto &bad : {QString{},
+                                QStringLiteral(".."),
+                                QStringLiteral("a/b"),
+                                QStringLiteral("a b"),
+                                QString(65, QLatin1Char('a'))}) {
+            QVERIFY(!TakServerApi::validPluginName(bad));
+        }
+        HttpsHarness api;
+        QVERIFY(api.load());
+        api.respond = [](const QByteArray &) {
+            return QByteArray("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok");
+        };
+        NetworkClient network;
+        Store store;
+        Servers servers(store);
+        TakServerApi tak(servers, network);
+        auto entry = source(9);
+        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        entry.insert(QStringLiteral("enabled"), false);
+        entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+        entry.insert(QStringLiteral("apiPort"), api.serverPort());
+        QVERIFY(servers.put(QStringLiteral("tak"), entry).isEmpty());
+        QList<NetworkReply> replies;
+        const auto collect = [&replies](const NetworkReply &reply) {
+            replies.append(reply);
+        };
+        tak.submitPluginData(QStringLiteral("tak"),
+                             QStringLiteral("sensor"),
+                             "{\"a\":1}",
+                             "application/json",
+                             &api,
+                             collect);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return replies.size() == 1;
+            },
+            10000));
+        QVERIFY(replies.last().ok());
+        QCOMPARE(replies.last().body, QByteArray("ok"));
+        QVERIFY(api.requests.last().startsWith("POST /Marti/api/plugins/sensor/submit "));
+        QVERIFY(api.requests.last().contains("Content-Type: application/json"));
+        QVERIFY(api.requests.last().endsWith("{\"a\":1}"));
+        tak.submitPluginData(
+            QStringLiteral("tak"), QStringLiteral("sensor"), "raw", {}, &api, collect);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return replies.size() == 2;
+            },
+            10000));
+        QVERIFY(api.requests.last().contains("Content-Type: application/octet-stream"));
+        tak.requestPluginData(QStringLiteral("tak"), QStringLiteral("sensor"), &api, collect);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return replies.size() == 3;
+            },
+            10000));
+        QVERIFY(api.requests.last().startsWith("GET /Marti/api/plugins/sensor/submit "));
+        // Invalid names and large bodies fail through the callback without a request.
+        const auto requests = api.requests.size();
+        tak.submitPluginData(
+            QStringLiteral("tak"), QStringLiteral("../admin"), "x", {}, &api, collect);
+        tak.submitPluginData(QStringLiteral("tak"),
+                             QStringLiteral("sensor"),
+                             QByteArray(TakServerApi::MaxPluginDataBytes + 1, 'x'),
+                             {},
+                             &api,
+                             collect);
+        tak.requestPluginData(QStringLiteral("tak"), QStringLiteral("a b"), &api, collect);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return replies.size() == 6;
+            },
+            10000));
+        QVERIFY(!replies.at(3).ok() && !replies.at(4).ok() && !replies.at(5).ok());
+        QCOMPARE(api.requests.size(), requests);
+    }
+    void excheckChecklists()
+    {
+        const QByteArray checklist =
+            "<?xml version=\"1.0\"?><checklist><checklistDetails><name>Patrol</name><uid>c-1</uid>"
+            "<description>Night patrol</description><startTime>2026-10-09T08:00:00.000Z</startTime>"
+            "<templateName>Base</templateName></checklistDetails>"
+            "<checklistColumns><checklistColumn><columnName>Step</columnName></checklistColumn>"
+            "<checklistColumn><columnName>Owner</columnName></checklistColumn></checklistColumns>"
+            "<checklistTasks>"
+            "<checklistTask><uid>t-1</uid><value>Radio check</value><value>Alpha</value>"
+            "<status>PENDING</status><notes keep=\"yes\">x &amp; y</notes></checklistTask>"
+            "<checklistTask><uid>t-2</uid><value>Return</value><status>COMPLETE</status>"
+            "<completeDTG>2026-10-09T09:00:00.000Z</completeDTG></checklistTask>"
+            "<checklistTask><uid>bad uid</uid></checklistTask>"
+            "</checklistTasks></checklist>";
+        QList<Checklist> list;
+        QVERIFY(readChecklists(checklist, &list));
+        QCOMPARE(list.size(), 1);
+        const auto patrol = list.first();
+        QCOMPARE(patrol.uid, QStringLiteral("c-1"));
+        QCOMPARE(patrol.name, QStringLiteral("Patrol"));
+        QCOMPARE(patrol.templateName, QStringLiteral("Base"));
+        QVERIFY(patrol.started.isValid());
+        QCOMPARE(patrol.columns, (QStringList{QStringLiteral("Step"), QStringLiteral("Owner")}));
+        QCOMPARE(patrol.tasks.size(), 2);
+        QCOMPARE(patrol.tasks.at(0).values,
+                 (QStringList{QStringLiteral("Radio check"), QStringLiteral("Alpha")}));
+        QVERIFY(!patrol.tasks.at(0).complete());
+        QVERIFY(patrol.tasks.at(1).complete());
+        QVERIFY(patrol.tasks.at(0).xml.startsWith("<checklistTask>"));
+        QVERIFY(patrol.tasks.at(0).xml.endsWith("</checklistTask>"));
+        // A list of active checklists.
+        QVERIFY(readChecklists(
+            "<checklists><checklist><checklistDetails><uid>a</uid></checklistDetails></checklist>"
+            "<checklist><checklistDetails><uid>b/c</uid></checklistDetails></checklist></"
+            "checklists>",
+            &list));
+        QCOMPARE(list.size(), 1);
+        QCOMPARE(list.first().name, QStringLiteral("a"));
+        QVERIFY(!readChecklists("<!DOCTYPE x><x/>", &list));
+        QVERIFY(!readChecklists("<checklists><checklist>", &list));
+        // A status update keeps other fields and sets the completion time.
+        const auto now = QDateTime::currentDateTimeUtc();
+        auto updated = taskWithStatus(patrol.tasks.at(0).xml, QStringLiteral("COMPLETE"), now);
+        QVERIFY(updated.contains("<status>COMPLETE</status>"));
+        QVERIFY(updated.contains("<completeDTG>"));
+        QVERIFY(updated.contains("<notes keep=\"yes\">x &amp; y</notes>"));
+        QVERIFY(updated.contains("<value>Alpha</value>"));
+        QCOMPARE(updated.count("<status>"), 1);
+        updated = taskWithStatus(patrol.tasks.at(1).xml, QStringLiteral("PENDING"), now);
+        QVERIFY(updated.contains("<status>PENDING</status>"));
+        QVERIFY(!updated.contains("completeDTG"));
+        updated = taskWithStatus(
+            "<checklistTask><uid>x</uid></checklistTask>", QStringLiteral("COMPLETE_LATE"), now);
+        QVERIFY(updated.contains("<status>COMPLETE_LATE</status>"));
+        QVERIFY(taskWithStatus("<other/>", QStringLiteral("PENDING"), now).isEmpty());
+        QVERIFY(
+            taskWithStatus(patrol.tasks.at(0).xml, QStringLiteral("bad status"), now).isEmpty());
+        QVERIFY(taskWithStatus("<checklistTask>", QStringLiteral("PENDING"), now).isEmpty());
+        QVERIFY(taskWithStatus("<!DOCTYPE x><checklistTask/>", QStringLiteral("PENDING"), now)
+                    .isEmpty());
+        QVERIFY(
+            taskWithStatus(QByteArray(70 * 1024, ' '), QStringLiteral("PENDING"), now).isEmpty());
+        const auto templates =
+            readChecklistTemplates("{\"data\":[{\"contents\":[{\"data\":{\"uid\":\"tpl-1\","
+                                   "\"name\":\"Base\"}},{\"data\":{\"uid\":\"a b\"}},"
+                                   "{\"data\":{\"uid\":\"tpl-2\"}}]}]}");
+        QCOMPARE(templates.size(), 2);
+        QCOMPARE(templates.at(1).name, QStringLiteral("tpl-2"));
+        QVERIFY(validChecklistId(QStringLiteral("c-1")));
+        QVERIFY(!validChecklistId(QStringLiteral("..")));
+        // The service reads, starts, and updates checklists through the REST API.
+        HttpsHarness api;
+        QVERIFY(api.load());
+        int status = 200;
+        bool templatesMissing = false;
+        api.respond = [&](const QByteArray &request) {
+            QByteArray body;
+            int code = status;
+            if (request.startsWith("GET /Marti/api/excheck/checklist/active ")) {
+                body = "<checklists>" + checklist.mid(checklist.indexOf("<checklist>")) +
+                       "</checklists>";
+            } else if (request.startsWith("GET /Marti/api/missions/exchecktemplates ")) {
+                body = "{\"data\":[{\"contents\":[{\"data\":{\"uid\":\"tpl-1\",\"name\":\"Base\"}}]"
+                       "}]}";
+                code = templatesMissing ? 404 : 200;
+            } else if (request.startsWith("GET /Marti/api/excheck/checklist/c-1 ")) {
+                body = checklist;
+            } else if (request.startsWith("GET /Marti/api/excheck/checklist/empty ")) {
+                body = "<checklists/>";
+            }
+            return QByteArray("HTTP/1.1 ") + QByteArray::number(code) +
+                   " X\r\nContent-Length: " + QByteArray::number(body.size()) + "\r\n\r\n" + body;
+        };
+        NetworkClient network;
+        Store store;
+        Servers servers(store);
+        TakServerApi tak(servers, network);
+        Identity identity;
+        auto values = identity.savePreferences();
+        values.insert(QStringLiteral("uid"), QStringLiteral("SWAK-1"));
+        identity.restorePreferences(values);
+        ExCheck excheck(&tak, &identity);
+        auto entry = source(9);
+        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        entry.insert(QStringLiteral("enabled"), false);
+        entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+        entry.insert(QStringLiteral("apiPort"), api.serverPort());
+        QVERIFY(servers.put(QStringLiteral("tak"), entry).isEmpty());
+        QSignalSpy listed(&excheck, &ExCheck::listed);
+        QSignalSpy loaded(&excheck, &ExCheck::loaded);
+        QSignalSpy started(&excheck, &ExCheck::started);
+        QSignalSpy changed(&excheck, &ExCheck::updated);
+        excheck.list(QStringLiteral("tak"));
+        QVERIFY(listed.wait(10000));
+        QVERIFY(listed.last().at(3).toString().isEmpty());
+        QCOMPARE(listed.last().at(1).value<QList<Checklist>>().size(), 1);
+        QCOMPARE(listed.last().at(2).value<QList<ChecklistTemplate>>().size(), 1);
+        templatesMissing = true;
+        excheck.list(QStringLiteral("tak"));
+        QVERIFY(listed.wait(10000));
+        QVERIFY(listed.last().at(3).toString().isEmpty());
+        QVERIFY(listed.last().at(2).value<QList<ChecklistTemplate>>().isEmpty());
+        excheck.load(QStringLiteral("tak"), QStringLiteral("c-1"));
+        QVERIFY(loaded.wait(10000));
+        QCOMPARE(loaded.last().at(1).value<Checklist>().tasks.size(), 2);
+        excheck.load(QStringLiteral("tak"), QStringLiteral("empty"));
+        QVERIFY(loaded.wait(10000));
+        QVERIFY(!loaded.last().at(2).toString().isEmpty());
+        excheck.load(QStringLiteral("tak"), QStringLiteral("a/b"));
+        QVERIFY(!loaded.last().at(2).toString().isEmpty());
+        QVERIFY(
+            !excheck.start(QStringLiteral("tak"), QStringLiteral("tpl-1"), QStringLiteral("  "), {})
+                 .isEmpty());
+        QVERIFY(excheck
+                    .start(QStringLiteral("tak"),
+                           QStringLiteral("tpl-1"),
+                           QStringLiteral("Night 1"),
+                           QStringLiteral("Go"))
+                    .isEmpty());
+        QVERIFY(started.wait(10000));
+        QVERIFY(started.last().at(1).toString().isEmpty());
+        QVERIFY(api.requests.last().startsWith(
+            "POST /Marti/api/excheck/tpl-1/start?name=Night%201&description=Go&callsign="));
+        QVERIFY(api.requests.last().contains("clientUid=SWAK-1"));
+        QVERIFY(excheck
+                    .setStatus(QStringLiteral("tak"),
+                               QStringLiteral("c-1"),
+                               patrol.tasks.at(0),
+                               QStringLiteral("COMPLETE"))
+                    .isEmpty());
+        QVERIFY(changed.wait(10000));
+        QVERIFY(changed.last().at(2).toString().isEmpty());
+        const auto put = api.requests.last();
+        QVERIFY(put.startsWith("PUT /Marti/api/excheck/checklist/c-1/task/t-1?clientUid=SWAK-1 "));
+        QVERIFY(put.contains("Content-Type: application/xml"));
+        QVERIFY(put.contains("<status>COMPLETE</status>"));
+        QVERIFY(!excheck
+                     .setStatus(QStringLiteral("tak"),
+                                QStringLiteral("c-1"),
+                                ChecklistTask{},
+                                QStringLiteral("COMPLETE"))
+                     .isEmpty());
+        auto broken = patrol.tasks.at(0);
+        broken.xml = "<other/>";
+        QVERIFY(!excheck
+                     .setStatus(QStringLiteral("tak"),
+                                QStringLiteral("c-1"),
+                                broken,
+                                QStringLiteral("COMPLETE"))
+                     .isEmpty());
+        status = 403;
+        excheck.list(QStringLiteral("tak"));
+        QVERIFY(listed.wait(10000));
+        QVERIFY(listed.last().at(3).toString().contains(QStringLiteral("does not allow")));
+        QVERIFY(excheck
+                    .setStatus(QStringLiteral("tak"),
+                               QStringLiteral("c-1"),
+                               patrol.tasks.at(0),
+                               QStringLiteral("PENDING"))
+                    .isEmpty());
+        QVERIFY(changed.wait(10000));
+        QVERIFY(!changed.last().at(2).toString().isEmpty());
+        QVERIFY(
+            excheck.start(QStringLiteral("tak"), QStringLiteral("tpl-1"), QStringLiteral("x"), {})
+                .isEmpty());
+        QVERIFY(started.wait(10000));
+        QVERIFY(!started.last().at(1).toString().isEmpty());
+        excheck.load(QStringLiteral("tak"), QStringLiteral("c-1"));
+        QVERIFY(loaded.wait(10000));
+        QVERIFY(!loaded.last().at(2).toString().isEmpty());
+        status = 200;
+        api.respond = [](const QByteArray &) {
+            return QByteArray("HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nx");
+        };
+        excheck.list(QStringLiteral("tak"));
+        QVERIFY(listed.wait(10000));
+        QVERIFY(listed.last().at(3).toString().contains(QStringLiteral("invalid")));
+        ExCheck offline(nullptr, nullptr);
+        QSignalSpy offlineListed(&offline, &ExCheck::listed);
+        offline.list(QStringLiteral("tak"));
+        QCOMPARE(offlineListed.size(), 1);
+        QVERIFY(!offline.start(QStringLiteral("tak"), QStringLiteral("t"), QStringLiteral("n"), {})
+                     .isEmpty());
+        QVERIFY(!offline
+                     .setStatus(QStringLiteral("tak"),
+                                QStringLiteral("c"),
+                                patrol.tasks.at(0),
+                                QStringLiteral("PENDING"))
+                     .isEmpty());
+    }
+    void citrapReports()
+    {
+        const QByteArray list =
+            "<reports>"
+            "<report id=\"r-1\" title=\"Bridge out\" type=\"Hazard\" status=\"Open\" "
+            "importance=\"High\" "
+            "userCallsign=\"Echo\" dateTime=\"2026-10-09T08:00:00.000Z\" location=\"59.5,18.25\">"
+            "<userDescription>Water over road</userDescription></report>"
+            "<report><id>r-2</id><title>Child elements</title><location>99,0</location></report>"
+            "<report id=\"bad id\"/>"
+            "</reports>";
+        QList<CitrapReport> reports;
+        QVERIFY(readCitrapReports(list, &reports));
+        QCOMPARE(reports.size(), 2);
+        QCOMPARE(reports.at(0).title, QStringLiteral("Bridge out"));
+        QCOMPARE(reports.at(0).description, QStringLiteral("Water over road"));
+        QCOMPARE(reports.at(0).latitude, 59.5);
+        QVERIFY(reports.at(0).time.isValid());
+        QCOMPARE(reports.at(1).id, QStringLiteral("r-2"));
+        QCOMPARE(reports.at(1).latitude, 0.0);
+        QVERIFY(!readCitrapReports("<!DOCTYPE x><x/>", &reports));
+        QVERIFY(!readCitrapReports("<reports><report>", &reports));
+        // A written report reads back.
+        auto written = reports.first();
+        written.status = QStringLiteral("Closed");
+        QList<CitrapReport> again;
+        QVERIFY(readCitrapReports(citrapReportXml(written), &again));
+        QCOMPARE(again.size(), 1);
+        QCOMPARE(again.first().status, QStringLiteral("Closed"));
+        QCOMPARE(again.first().description, written.description);
+        QVERIFY(std::abs(again.first().longitude - 18.25) < 1e-6);
+        QVERIFY(validCitrapId(QStringLiteral("r-1")));
+        QVERIFY(!validCitrapId(QStringLiteral("..")));
+        // The service lists, creates with attachments, and updates reports.
+        HttpsHarness api;
+        QVERIFY(api.load());
+        int status = 200;
+        QByteArray createReply = "<report id=\"server-7\"/>";
+        api.respond = [&](const QByteArray &request) {
+            QByteArray body;
+            int code = status;
+            if (request.startsWith("GET /Marti/api/citrap?")) {
+                body = list;
+            } else if (request.startsWith("POST /Marti/api/citrap?")) {
+                body = createReply;
+            } else if (request.contains("/attachment?") && request.contains("filename=_bad.bin")) {
+                code = 500;
+            }
+            return QByteArray("HTTP/1.1 ") + QByteArray::number(code) +
+                   " X\r\nContent-Length: " + QByteArray::number(body.size()) + "\r\n\r\n" + body;
+        };
+        NetworkClient network;
+        Store store;
+        Servers servers(store);
+        TakServerApi tak(servers, network);
+        Identity identity;
+        auto values = identity.savePreferences();
+        values.insert(QStringLiteral("uid"), QStringLiteral("SWAK-1"));
+        identity.restorePreferences(values);
+        Citrap citrap(&tak, &identity);
+        auto entry = source(9);
+        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        entry.insert(QStringLiteral("enabled"), false);
+        entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+        entry.insert(QStringLiteral("apiPort"), api.serverPort());
+        QVERIFY(servers.put(QStringLiteral("tak"), entry).isEmpty());
+        QSignalSpy listed(&citrap, &Citrap::listed);
+        QSignalSpy created(&citrap, &Citrap::created);
+        QSignalSpy changed(&citrap, &Citrap::updated);
+        citrap.list(QStringLiteral("tak"));
+        QVERIFY(listed.wait(10000));
+        QCOMPARE(listed.last().at(1).value<QList<CitrapReport>>().size(), 2);
+        CitrapReport report;
+        QVERIFY(!citrap.create(QStringLiteral("tak"), report, {}).isEmpty());
+        report.title = QStringLiteral("New hazard");
+        QVERIFY(!citrap.create(QStringLiteral("tak"), report, {{QStringLiteral("empty"), {}}})
+                     .isEmpty());
+        QList<CitrapAttachment> many;
+        for (int i = 0; i <= MaxCitrapAttachments; ++i) {
+            many.append({QStringLiteral("f"), "x"});
+        }
+        QVERIFY(!citrap.create(QStringLiteral("tak"), report, many).isEmpty());
+        QVERIFY(citrap
+                    .create(QStringLiteral("tak"),
+                            report,
+                            {{QStringLiteral("photo 1.jpg"), "jpeg"},
+                             {QStringLiteral("../bad.bin"), "bin"}})
+                    .isEmpty());
+        QVERIFY(created.wait(10000));
+        QCOMPARE(created.last().at(1).toString(), QStringLiteral("server-7"));
+        QVERIFY(created.last().at(2).toString().contains(QStringLiteral("bad.bin")));
+        const auto uploads = std::count_if(
+            api.requests.cbegin(), api.requests.cend(), [](const QByteArray &request) {
+                return request.startsWith(
+                    "POST /Marti/api/citrap/server-7/attachment?clientUid=SWAK-1&filename=");
+            });
+        QCOMPARE(uploads, 2);
+        QVERIFY(
+            std::any_of(api.requests.cbegin(), api.requests.cend(), [](const QByteArray &request) {
+                return request.contains("filename=photo_1.jpg") &&
+                       request.contains("name=\"assetfile\"");
+            }));
+        // A plain identifier reply also names the new report.
+        createReply = "plain-9";
+        QVERIFY(citrap.create(QStringLiteral("tak"), report, {}).isEmpty());
+        QVERIFY(created.wait(10000));
+        QCOMPARE(created.last().at(1).toString(), QStringLiteral("plain-9"));
+        QVERIFY(created.last().at(2).toString().isEmpty());
+        written.id = QStringLiteral("r-1");
+        QVERIFY(citrap.update(QStringLiteral("tak"), written).isEmpty());
+        QVERIFY(changed.wait(10000));
+        QVERIFY(changed.last().at(2).toString().isEmpty());
+        QVERIFY(api.requests.last().startsWith("PUT /Marti/api/citrap/r-1?clientUid=SWAK-1 "));
+        QVERIFY(api.requests.last().contains("status=\"Closed\""));
+        written.id = QStringLiteral("bad id");
+        QVERIFY(!citrap.update(QStringLiteral("tak"), written).isEmpty());
+        status = 403;
+        citrap.list(QStringLiteral("tak"));
+        QVERIFY(listed.wait(10000));
+        QVERIFY(listed.last().at(2).toString().contains(QStringLiteral("does not allow")));
+        QVERIFY(citrap.create(QStringLiteral("tak"), report, {}).isEmpty());
+        QVERIFY(created.wait(10000));
+        QVERIFY(!created.last().at(2).toString().isEmpty());
+        written.id = QStringLiteral("r-1");
+        QVERIFY(citrap.update(QStringLiteral("tak"), written).isEmpty());
+        QVERIFY(changed.wait(10000));
+        QVERIFY(!changed.last().at(2).toString().isEmpty());
+        status = 200;
+        api.respond = [](const QByteArray &) {
+            return QByteArray("HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\n<a>x");
+        };
+        citrap.list(QStringLiteral("tak"));
+        QVERIFY(listed.wait(10000));
+        QVERIFY(listed.last().at(2).toString().contains(QStringLiteral("invalid")));
+        Citrap offline(nullptr, nullptr);
+        QSignalSpy offlineListed(&offline, &Citrap::listed);
+        offline.list(QStringLiteral("tak"));
+        QCOMPARE(offlineListed.size(), 1);
+        QVERIFY(!offline.create(QStringLiteral("tak"), report, {}).isEmpty());
+        QVERIFY(!offline.update(QStringLiteral("tak"), written).isEmpty());
     }
     void takServerApi()
     {

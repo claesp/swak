@@ -62,6 +62,22 @@ public:
                          qsizetype maxBytes,
                          int timeoutMs,
                          const QList<std::pair<QByteArray, QByteArray>> &headers = {});
+    // Sends data to a TAK Server plugin at /Marti/api/plugins/{name}/submit. The body and the
+    // reply are at most MaxPluginDataBytes. An invalid name or a large body fails through the
+    // callback.
+    quint64 submitPluginData(const QString &serverId,
+                             const QString &plugin,
+                             const QByteArray &body,
+                             const QByteArray &contentType,
+                             QObject *context,
+                             NetworkClient::Callback done);
+    // Reads data from a TAK Server plugin at the same path.
+    quint64 requestPluginData(const QString &serverId,
+                              const QString &plugin,
+                              QObject *context,
+                              NetworkClient::Callback done);
+    static bool validPluginName(const QString &name);
+    static constexpr qsizetype MaxPluginDataBytes = 1024 * 1024;
     void cancel(quint64 id);
     TakServerInfo info(const QString &serverId) const;
     NetworkClient &network() const

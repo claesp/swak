@@ -32,6 +32,8 @@ class Missions;
 class IconCache;
 class TrackHistory;
 class VideoSources;
+class ExCheck;
+class Citrap;
 class ObjectSharing;
 // Per-window services for plugin factories and callbacks.
 //
@@ -106,6 +108,10 @@ struct PluginServices
     IconCache *icons = nullptr;
     // Window child. Lives until step 4. It reads servers and tak through guarded pointers.
     VideoSources *video = nullptr;
+    // Window child. Lives until step 4. It reads tak and identity through guarded pointers.
+    ExCheck *excheck = nullptr;
+    // Window child. Lives until step 4. It reads tak and identity through guarded pointers.
+    Citrap *citrap = nullptr;
 };
 class Plugin
 {

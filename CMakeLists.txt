@@ -116,6 +116,12 @@ add_library(
     src/core/icon_cache.cpp
     src/core/icon_cache.h
     src/core/video_sources.cpp
+    src/core/data_feeds.cpp
+    src/core/data_feeds.h
+    src/core/excheck.cpp
+    src/core/excheck.h
+    src/core/citrap.cpp
+    src/core/citrap.h
     src/core/video_sources.h
     src/core/data_package.h
     src/core/package_import.cpp
@@ -250,6 +256,8 @@ swak_plugin(swak_files src/plugins/files.cpp)
 swak_plugin(swak_missions src/plugins/missions.cpp)
 swak_plugin(swak_history src/plugins/history.cpp)
 swak_plugin(swak_video src/plugins/video.cpp Qt6::Multimedia Qt6::MultimediaWidgets)
+swak_plugin(swak_checklists src/plugins/checklists.cpp)
+swak_plugin(swak_reports src/plugins/reports.cpp)
 swak_plugin(swak_milstd2525 src/plugins/milstd2525.cpp)
 swak_plugin(swak_polygons src/plugins/polygons.cpp)
 swak_plugin(swak_markers src/plugins/markers.cpp)
@@ -316,6 +324,8 @@ target_link_libraries(
             swak_missions
             swak_history
             swak_video
+            swak_checklists
+            swak_reports
 )
 install(TARGETS swak RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES packaging/org.swak.Swak.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
@@ -397,6 +407,8 @@ if(BUILD_TESTING)
                 swak_missions
                 swak_history
                 swak_video
+                swak_checklists
+                swak_reports
                 Qt6::Test
     )
     add_test(NAME maps COMMAND swak_map_tests)
@@ -435,6 +447,8 @@ if(BUILD_TESTING)
                 swak_missions
                 swak_history
                 swak_video
+                swak_checklists
+                swak_reports
                 Qt6::Test
                 Qt6::Network
     )
@@ -499,6 +513,8 @@ if(BUILD_TESTING)
                 swak_missions
                 swak_history
                 swak_video
+                swak_checklists
+                swak_reports
                 Qt6::Test
                 Qt6::Network
     )
@@ -556,6 +572,8 @@ if(BUILD_TESTING)
                 swak_missions
                 swak_history
                 swak_video
+                swak_checklists
+                swak_reports
                 Qt6::Test
                 Qt6::Network
                 Qt6::OpenGLWidgets

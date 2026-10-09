@@ -162,6 +162,10 @@ Read detail through `core/cot_detail.h`. `detailElements` and `detailElement` re
 
 `PluginServices::video` is the per-window `VideoSources` list in `core/video_sources.h`. It reads `__video` events and `/Marti/api/video` lists and checks stream URLs with `videoProtocol`. It does not link Qt Multimedia. The video plugin implements `PanePlugin`, and its MANIFEST declares `pane`. It is the only part that links Qt Multimedia. Its pane saves the splitter state under `org.swak.video`.
 
+# Feeds, checklists, reports, and plugin data
+
+`core/data_feeds.h` reads the server data feed catalog, and `feedReceived` compares feed groups with the active channels. `PluginServices::excheck` is the per-window `ExCheck` service in `core/excheck.h`. It lists, reads, starts, and updates checklists, and `taskWithStatus` rewrites one task. `PluginServices::citrap` is the per-window `Citrap` service in `core/citrap.h`. It lists, creates, and updates reports and uploads attachments. `TakServerApi::submitPluginData` and `requestPluginData` give plugins a bounded call to a TAK Server plugin. The checklists and reports plugins implement `PanePlugin`, and their MANIFEST files declare `pane`.
+
 # Emergency alerts
 
 `core/emergency.h` provides `emergencyKinds`, `emergencyEvent`, `emergencyCancelEvent`, `activeEmergency`, and `emergencyLabel`. The emergencies plugin implements `MapLayer` and `ToolbarPlugin`. Its manifest declares `map-layer` and `toolbar`. It reads the Store and does not change it. It centers the map through `MapTools::centerRequested`. Its toolbar button is a trailing action with `swakToolbarTrailingOrder` -1, so it stays left of the navigation lock. Trailing actions sort by this property, and the default is 0.

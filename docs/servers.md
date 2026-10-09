@@ -76,6 +76,22 @@ SWAK accepts RTSP (`rtsp`, `rtsps`), RTMP (`rtmp`, `rtmps`), SRT, HLS over HTTP 
 
 The tests play MPEG-TS over UDP, SRT, and live HLS from local ffmpeg streams. An unreachable RTSP stream shows as unavailable. RTSP and RTMP playback against a real server remain untested, because ffmpeg cannot serve RTSP, and its RTMP listener accepts one client only.
 
+# Server data feeds
+
+TAK Server > Data Feeds ... lists the data feeds from `/Marti/api/datafeeds`: name, type, input protocol and port, groups, and whether you receive the feed. You receive an active feed without groups, or an active feed with a group that is one of your active channels. SWAK reads your channels from `/Marti/api/groups/all`. When that list is unavailable, the column shows Unknown. Change your channels in TAK Server > Channels .... The bounding box query and feed changes are not implemented.
+
+# Checklists (ExCheck)
+
+Tools > Plugins > Checklists shows the active ExCheck checklists of a TAK Server entry with a REST API port, from `/Marti/api/excheck/checklist/active`. Select a checklist to read its tasks. Select a task and Complete or Pending to send its new status with `PUT /excheck/checklist/{uid}/task/{task}`. SWAK keeps the other fields of the task as received and sets `completeDTG` for complete tasks. Start ... starts a checklist from a template of the `exchecktemplates` mission. Active checklists are missions, so Subscribe as Mission follows the checklist in the Missions pane. Limits: 256 checklists, 500 tasks, and 32 columns.
+
+# Reports (CI-TRAP)
+
+Tools > Plugins > Reports lists the CI-TRAP reports of a TAK Server entry with a REST API port, from `/Marti/api/citrap`. New Report ... sends a report with a title, type, importance, position, and description, and then uploads up to 8 attachments of at most 16 MiB each as multipart files. Close and Reopen send the report again with a new status. SWAK reads report fields as attributes or child elements, because server versions differ. Limits: 500 reports.
+
+# Plugin data
+
+SWAK plugins can send data to a TAK Server plugin with `TakServerApi::submitPluginData` and read it with `requestPluginData`. Both use `/Marti/api/plugins/{name}/submit` with a body and reply of at most 1 MiB. Properties (`/api/properties/{uid}`) and sequences (`/api/sync/sequence/{key}`) are not implemented, because no SWAK feature needs them.
+
 # Contacts
 
 Tools > Plugins > Contacts shows a pane with the TAK users that SWAK can address. A position report from a server entry with a `contact` endpoint adds or updates a user. Local events and objects without a contact endpoint are not users. Refresh reads `/Marti/api/contacts/all` from each enabled entry with a TAK REST API port. These users stay in the list in gray, without a current position, until they report one. An error names the entry and keeps its last list. Double-click a user, or select Show on map in the context menu, to center the map on the user and select it. The list holds at most 2048 users and updates at most once a second.

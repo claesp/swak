@@ -1578,6 +1578,119 @@ private slots:
         sharing->setAutomatic(false);
         QVERIFY(!automatic->isChecked());
     }
+    void reportsPane()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("reports.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *dock = window.findChild<QDockWidget *>(QStringLiteral("org.swak.reports.pane"));
+        auto *status = window.findChild<QLabel *>(QStringLiteral("reportStatus"));
+        auto *servers = window.findChild<swak::Servers *>();
+        QVERIFY(dock && status && servers);
+        dock->show();
+        const auto click = [&window](const QString &name) {
+            window.findChild<QPushButton *>(name)->click();
+        };
+        click(QStringLiteral("listReports"));
+        QVERIFY(status->text().contains(QStringLiteral("REST API")));
+        click(QStringLiteral("newReport"));
+        QVERIFY(status->text().contains(QStringLiteral("REST API")));
+        click(QStringLiteral("closeReport"));
+        QCOMPARE(status->text(), QStringLiteral("Select a report."));
+        click(QStringLiteral("reopenReport"));
+        QCOMPARE(status->text(), QStringLiteral("Select a report."));
+        auto entry = swak::serverDefaults();
+        entry.insert(QStringLiteral("name"), QStringLiteral("Test TAK"));
+        entry.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
+        entry.insert(QStringLiteral("port"), 9);
+        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        entry.insert(QStringLiteral("enabled"), false);
+        entry.insert(QStringLiteral("apiPort"), 9);
+        QVERIFY(servers->put(QStringLiteral("tak"), entry).isEmpty());
+        // New Report needs a title. A sent report waits for the server.
+        const auto fill = [&](const QString &title) {
+            QTimer::singleShot(0, &window, [&window, title] {
+                auto *dialog = window.findChild<QDialog *>(QStringLiteral("newReportDialog"));
+                if (!dialog) {
+                    return;
+                }
+                dialog->findChild<QLineEdit *>(QStringLiteral("reportTitle"))->setText(title);
+                dialog->findChild<QPlainTextEdit *>(QStringLiteral("reportDescription"))
+                    ->setPlainText(QStringLiteral("Water over road"));
+                dialog->accept();
+            });
+            click(QStringLiteral("newReport"));
+        };
+        fill(QStringLiteral("  "));
+        QCOMPARE(status->text(), QStringLiteral("Type a report title."));
+        fill(QStringLiteral("Bridge out"));
+        QVERIFY(status->text().startsWith(QStringLiteral("Sending")) || !status->text().isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return !status->text().startsWith(QStringLiteral("Sending"));
+            },
+            15000));
+        click(QStringLiteral("listReports"));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return !status->text().contains(QStringLiteral("Reading"));
+            },
+            15000));
+        auto *pane = dynamic_cast<swak::PreferenceParticipant *>(
+            window.findChild<QWidget *>(QStringLiteral("reportsPane")));
+        QVERIFY(pane);
+        pane->restorePreferences(pane->savePreferences());
+    }
+    void checklistsPane()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("checklists.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *dock = window.findChild<QDockWidget *>(QStringLiteral("org.swak.checklists.pane"));
+        auto *status = window.findChild<QLabel *>(QStringLiteral("checklistStatus"));
+        auto *serverChoice = window.findChild<QComboBox *>(QStringLiteral("checklistServer"));
+        auto *servers = window.findChild<swak::Servers *>();
+        QVERIFY(dock && status && serverChoice && servers);
+        dock->show();
+        const auto click = [&window](const QString &name) {
+            window.findChild<QPushButton *>(name)->click();
+        };
+        click(QStringLiteral("listChecklists"));
+        QVERIFY(status->text().contains(QStringLiteral("REST API")));
+        click(QStringLiteral("completeTask"));
+        QCOMPARE(status->text(), QStringLiteral("Select a task."));
+        click(QStringLiteral("pendingTask"));
+        QCOMPARE(status->text(), QStringLiteral("Select a task."));
+        click(QStringLiteral("startChecklist"));
+        QVERIFY(status->text().startsWith(QStringLiteral("Refresh first")));
+        click(QStringLiteral("checklistMission"));
+        QCOMPARE(status->text(), QStringLiteral("Select a checklist."));
+        auto entry = swak::serverDefaults();
+        entry.insert(QStringLiteral("name"), QStringLiteral("Test TAK"));
+        entry.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
+        entry.insert(QStringLiteral("port"), 9);
+        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        entry.insert(QStringLiteral("enabled"), false);
+        entry.insert(QStringLiteral("apiPort"), 9);
+        QVERIFY(servers->put(QStringLiteral("tak"), entry).isEmpty());
+        QCOMPARE(serverChoice->count(), 1);
+        click(QStringLiteral("listChecklists"));
+        QVERIFY(status->text().contains(QStringLiteral("Reading")));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return !status->text().contains(QStringLiteral("Reading"));
+            },
+            15000));
+        QVERIFY(!status->text().isEmpty());
+        auto *pane = dynamic_cast<swak::PreferenceParticipant *>(
+            window.findChild<QWidget *>(QStringLiteral("checklistPane")));
+        QVERIFY(pane);
+        pane->restorePreferences(pane->savePreferences());
+    }
     void videoPane()
     {
         QTemporaryDir directory;
@@ -6830,7 +6943,7 @@ private slots:
             QVERIFY(!action->isChecked());
             dock->setFloating(false);
         }
-        QCOMPARE(activated, 14);
+        QCOMPARE(activated, 16);
         QVERIFY(window.grab().save(QStringLiteral("plugin-labels-smoke.png")));
     }
     void clearEventsMenu()
@@ -7518,7 +7631,7 @@ private slots:
                 auto *tabs = dialog->findChild<QTabWidget *>();
                 auto *panes =
                     dialog->findChild<QListWidget *>(QStringLiteral("paneSettingsSections"));
-                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 19) {
+                if (!tabs || tabs->count() != 3 || !panes || panes->count() != 21) {
                     dialog->reject();
                     QFAIL("The pane tab is incomplete.");
                     return;
@@ -8931,7 +9044,7 @@ private slots:
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         const auto docks = window.findChildren<QDockWidget *>();
-        QCOMPARE(docks.size(), 19);
+        QCOMPARE(docks.size(), 21);
         QVERIFY(!window.findChild<QWidget *>(QStringLiteral("toolsDock")));
         auto *viewMenu = window.findChild<QMenu *>(QStringLiteral("viewMenu"));
         auto *fileMenu = window.findChild<QMenu *>(QStringLiteral("fileMenu"));

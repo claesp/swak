@@ -31,6 +31,7 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <memory>
 namespace swak {
 LocalLanStatus::LocalLanStatus(Servers &servers, QWidget *parent)
     : QWidget(parent), servers_(servers)
@@ -198,6 +199,11 @@ ServerBrowser::ServerBrowser(Servers &servers, QWidget *parent) : QWidget(parent
     layers->setObjectName(QStringLiteral("serverMapLayers"));
     layers->setToolTip(tr("Add the map layers of TAK Server as map providers."));
     connect(layers, &QAction::triggered, this, &ServerBrowser::loadMapLayers);
+    auto *feeds = takMenu->addAction(tr("Data Feeds ..."));
+    feeds->setObjectName(QStringLiteral("serverDataFeeds"));
+    feeds->setToolTip(
+        tr("List the data feeds of TAK Server and the feeds that this user receives."));
+    connect(feeds, &QAction::triggered, this, &ServerBrowser::loadDataFeeds);
     layout->addLayout(row);
     enrollStatus_ = new SingleLineLabel(QString{}, this);
     enrollStatus_->setObjectName(QStringLiteral("enrollStatus"));
@@ -380,6 +386,127 @@ void ServerBrowser::chooseMapLayers(const QString &id, const QByteArray &json)
         errors.isEmpty()
             ? tr("%n map providers added. Choose one in Map Providers.", nullptr, added)
             : errors.first());
+}
+void ServerBrowser::loadDataFeeds()
+{
+    const auto id = table_->selectedId();
+    auto *api = servers_.findChild<TakServerApi *>();
+    if (!api || TakServerApi::apiUrl(servers_.sources().value(id).toObject(), QStringLiteral("/"))
+                    .isEmpty()) {
+        showEnrollStatus(tr("Select a TLS or QUIC entry with a TAK REST API port first."));
+        return;
+    }
+    showEnrollStatus(tr("Reading the data feeds of the server…"));
+    struct State
+    {
+        int pending = 2;
+        QByteArray feeds;
+        QByteArray groups;
+        QString error;
+    };
+    auto state = std::make_shared<State>();
+    const auto finish = [this, state] {
+        if (--state->pending > 0) {
+            return;
+        }
+        QList<ServerFeed> list;
+        if (!state->error.isEmpty()) {
+            showEnrollStatus(state->error);
+            return;
+        }
+        if (!readServerFeeds(state->feeds, &list)) {
+            showEnrollStatus(tr("The data feed list is invalid."));
+            return;
+        }
+        QList<TakGroup> groups;
+        // Without the group list, SWAK cannot tell which feeds the user receives.
+        const bool known = readTakGroups(state->groups, &groups);
+        showDataFeeds(list, known ? activeChannels(groups) : QSet<QString>{}, known);
+    };
+    api->request(
+        id,
+        "GET",
+        QStringLiteral("/datafeeds"),
+        {},
+        this,
+        [state, finish](const NetworkReply &reply) {
+            if (reply.ok()) {
+                state->feeds = reply.body;
+            } else {
+                state->error = reply.error.isEmpty()
+                                   ? tr("The server answered with HTTP %1.").arg(reply.status)
+                                   : reply.error;
+            }
+            finish();
+        },
+        2 * 1024 * 1024);
+    api->request(
+        id,
+        "GET",
+        QStringLiteral("/groups/all?useCache=true"),
+        {},
+        this,
+        [state, finish](const NetworkReply &reply) {
+            if (reply.ok()) {
+                state->groups = reply.body;
+            }
+            finish();
+        },
+        1024 * 1024);
+}
+void ServerBrowser::showDataFeeds(const QList<ServerFeed> &feeds,
+                                  const QSet<QString> &channels,
+                                  bool channelsKnown)
+{
+    if (feeds.isEmpty()) {
+        showEnrollStatus(tr("The server has no data feeds."));
+        return;
+    }
+    showEnrollStatus({});
+    Modal<QDialog> dialog(this);
+    dialog->setObjectName(QStringLiteral("dataFeedDialog"));
+    dialog->setWindowTitle(tr("Data Feeds"));
+    auto *layout = new QVBoxLayout(dialog.get());
+    auto *table = new QTableWidget(static_cast<int>(feeds.size()), 5, dialog.get());
+    table->setObjectName(QStringLiteral("dataFeedTable"));
+    table->setHorizontalHeaderLabels(
+        {tr("Name"), tr("Type"), tr("Input"), tr("Groups"), tr("You receive")});
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->verticalHeader()->hide();
+    table->horizontalHeader()->setStretchLastSection(true);
+    for (int row = 0; row < feeds.size(); ++row) {
+        const auto &feed = feeds.at(row);
+        const auto input = feed.port > 0 ? QStringLiteral("%1 %2").arg(feed.protocol).arg(feed.port)
+                                         : feed.protocol;
+        const auto received = !feed.active                   ? tr("No, inactive")
+                              : !channelsKnown               ? tr("Unknown")
+                              : feedReceived(feed, channels) ? tr("Yes")
+                                                             : tr("No");
+        const QStringList cells{feed.name,
+                                feed.type,
+                                input,
+                                feed.groups.isEmpty() ? tr("All users")
+                                                      : feed.groups.join(QStringLiteral(", ")),
+                                received};
+        for (int column = 0; column < cells.size(); ++column) {
+            auto *item = new QTableWidgetItem(cells.at(column));
+            item->setToolTip(column == 0 && !feed.tags.isEmpty()
+                                 ? feed.tags.join(QStringLiteral(", "))
+                                 : cells.at(column));
+            table->setItem(row, column, item);
+        }
+    }
+    layout->addWidget(table);
+    auto *note = new QLabel(tr("Choose channels in TAK Server > Channels ... to change the feeds "
+                               "that you receive."),
+                            dialog.get());
+    note->setWordWrap(true);
+    layout->addWidget(note);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, dialog.get());
+    connect(buttons, &QDialogButtonBox::rejected, dialog.get(), &QDialog::reject);
+    layout->addWidget(buttons);
+    dialog->resize(640, 360);
+    dialog->exec();
 }
 void ServerBrowser::loadChannels()
 {

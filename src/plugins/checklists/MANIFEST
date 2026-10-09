@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "org.swak.checklists",
+  "name": "Checklists",
+  "description": "Show and update TAK ExCheck checklists.",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entryPoint": "ChecklistsPlugin",
+  "linkage": "static",
+  "platforms": ["linux"],
+  "qtMajor": 6,
+  "qtMinimum": "6.4.0",
+  "interfaces": ["pane"],
+  "requires": [],
+  "permissions": [],
+  "settingsSchemaVersion": 1
+}

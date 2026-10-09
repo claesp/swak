@@ -1,4 +1,6 @@
 #pragma once
+#include "core/data_feeds.h"
+
 #include <QList>
 #include <QPointer>
 #include <QWidget>
@@ -43,6 +45,10 @@ private:
     void loadChannels();
     void chooseChannels(const QString &id, const QList<TakGroup> &groups, const QString &error);
     void loadMapLayers();
+    void loadDataFeeds();
+    void showDataFeeds(const QList<ServerFeed> &feeds,
+                       const QSet<QString> &channels,
+                       bool channelsKnown);
     void chooseMapLayers(const QString &id, const QByteArray &json);
     Servers &servers_;
     QAction *enroll_ = nullptr;

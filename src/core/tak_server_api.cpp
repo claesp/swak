@@ -140,6 +140,47 @@ quint64 TakServerApi::martiRequest(const QString &serverId,
     }
     return network_.send(std::move(outgoing), context, std::move(done));
 }
+bool TakServerApi::validPluginName(const QString &name)
+{
+    static const QRegularExpression pattern(QStringLiteral("\\A[A-Za-z0-9._-]{1,64}\\z"));
+    return pattern.match(name).hasMatch() && name != u"." && name != u"..";
+}
+// SWAK plugins call this API. The server tests cover it.
+// cppcheck-suppress unusedFunction
+quint64 TakServerApi::submitPluginData(const QString &serverId,
+                                       const QString &plugin,
+                                       const QByteArray &body,
+                                       const QByteArray &contentType,
+                                       QObject *context,
+                                       NetworkClient::Callback done)
+{
+    // An empty path gives no URL, so the client refuses the request through the callback.
+    const auto path = validPluginName(plugin) && body.size() <= MaxPluginDataBytes
+                          ? QStringLiteral("/api/plugins/%1/submit").arg(plugin)
+                          : QString{};
+    return martiRequest(serverId,
+                        "POST",
+                        path,
+                        body,
+                        contentType.isEmpty() ? QByteArray("application/octet-stream")
+                                              : contentType,
+                        context,
+                        std::move(done),
+                        MaxPluginDataBytes,
+                        60000);
+}
+// SWAK plugins call this API. The server tests cover it.
+// cppcheck-suppress unusedFunction
+quint64 TakServerApi::requestPluginData(const QString &serverId,
+                                        const QString &plugin,
+                                        QObject *context,
+                                        NetworkClient::Callback done)
+{
+    const auto path =
+        validPluginName(plugin) ? QStringLiteral("/api/plugins/%1/submit").arg(plugin) : QString{};
+    return martiRequest(
+        serverId, "GET", path, {}, {}, context, std::move(done), MaxPluginDataBytes, 60000);
+}
 void TakServerApi::cancel(quint64 id)
 {
     network_.cancel(id);
