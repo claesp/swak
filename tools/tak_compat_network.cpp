@@ -5,6 +5,7 @@
 #include "core/tak_enrollment.h"
 #include "core/tak_server_api.h"
 #include "tak_compat_features.h"
+#include "tak_load_meter.h"
 
 #include <QElapsedTimer>
 #include <QFile>
@@ -15,17 +16,13 @@
 #include <QUuid>
 
 #include <algorithm>
-#include <cmath>
 #include <functional>
-#include <vector>
 
 using namespace swak;
 namespace {
 constexpr int Wait = 20000;
 // UDP and federation can lose the first events, so the checks send again at this interval.
 constexpr int ResendMs = 2000;
-// The load test keeps one send time for each position, so it limits their number.
-constexpr qint64 MaxLoadPositions = 2'000'000;
 
 bool connected(const Servers &servers, const QString &id)
 {
@@ -91,18 +88,6 @@ qint64 residentKiB()
     bool ok = false;
     const auto value = found->mid(6).trimmed().split(' ').value(0).toLongLong(&ok);
     return ok ? value : -1;
-}
-double percentile(std::vector<qint64> values, double fraction)
-{
-    if (values.empty()) {
-        return -1;
-    }
-    std::sort(values.begin(), values.end());
-    const auto index = static_cast<size_t>(
-        std::clamp(std::ceil(fraction * static_cast<double>(values.size())) - 1.0,
-                   0.0,
-                   static_cast<double>(values.size() - 1)));
-    return static_cast<double>(values[index]);
 }
 } // namespace
 
@@ -273,7 +258,7 @@ void runNetworkChecks(Servers &left,
     static_cast<void>(right);
 }
 
-QJsonObject runLoad(Servers &left, Servers &right, Store &rightStore, const QJsonObject &load)
+QJsonObject runLoad(Servers &left, const Servers &right, Store &rightStore, const QJsonObject &load)
 {
     const int seconds = std::clamp(load.value(QStringLiteral("seconds")).toInt(60), 5, 86400);
     const int rate = std::clamp(load.value(QStringLiteral("rate")).toInt(5), 1, 200);
@@ -282,36 +267,17 @@ QJsonObject runLoad(Servers &left, Servers &right, Store &rightStore, const QJso
     // lost and repeated positions.
     const auto prefix = QStringLiteral("SWAK-LOAD-") +
                         QUuid::createUuid().toString(QUuid::Id128).left(12) + QLatin1Char('-');
-    std::vector<qint64> latencies;
-    qint64 duplicates = 0;
-    // The send time of each position in milliseconds. NotSent and Received mark the other states.
-    constexpr qint64 NotSent = -2;
-    constexpr qint64 Received = -1;
-    const qint64 total = std::min<qint64>(static_cast<qint64>(seconds) * rate, MaxLoadPositions);
-    std::vector<qint64> sentAt(static_cast<size_t>(total), NotSent);
+    LoadMeter meter(static_cast<qint64>(seconds) * rate);
+    const auto total = meter.positions();
     QElapsedTimer clock;
     clock.start();
     QObject::connect(&rightStore, &Store::eventAccepted, &rightStore, [&](const Event &event) {
-        if (!event.uid.startsWith(prefix)) {
-            return;
+        if (event.uid.startsWith(prefix)) {
+            meter.received(static_cast<qint64>(event.altitude), clock.elapsed());
         }
-        const auto sequence = static_cast<qint64>(event.altitude);
-        if (sequence < 0 || sequence >= total || sentAt[static_cast<size_t>(sequence)] == NotSent) {
-            return;
-        }
-        auto &sentTime = sentAt[static_cast<size_t>(sequence)];
-        if (sentTime == Received) {
-            ++duplicates;
-            return;
-        }
-        latencies.push_back(clock.elapsed() - sentTime);
-        sentTime = Received;
     });
-    int disconnects = 0;
-    bool wasConnected = true;
     const auto startMemory = residentKiB();
     qint64 peakMemory = startMemory;
-    qint64 sent = 0;
     const qint64 interval = 1000 / rate;
     for (qint64 sequence = 0; sequence < total; ++sequence) {
         Event event;
@@ -324,18 +290,14 @@ QJsonObject runLoad(Servers &left, Servers &right, Store &rightStore, const QJso
         event.altitude = static_cast<double>(sequence);
         event.time = event.start = QDateTime::currentDateTimeUtc();
         event.stale = event.time.addSecs(120);
-        sentAt[static_cast<size_t>(sequence)] = clock.elapsed();
+        const auto sentTime = clock.elapsed();
         if (left.send(event).isEmpty()) {
-            ++sent;
+            meter.sent(sequence, sentTime);
         }
         const auto due = (sequence + 1) * interval;
         QTest::qWait(static_cast<int>(std::max<qint64>(1, due - clock.elapsed())));
-        const bool now =
-            connected(left, QStringLiteral("test")) && connected(right, QStringLiteral("test"));
-        if (wasConnected && !now) {
-            ++disconnects;
-        }
-        wasConnected = now;
+        meter.connection(connected(left, QStringLiteral("test")) &&
+                         connected(right, QStringLiteral("test")));
         if (sequence % rate == 0) {
             peakMemory = std::max(peakMemory, residentKiB());
             // Old positions expire, so the store does not grow during long runs.
@@ -345,31 +307,24 @@ QJsonObject runLoad(Servers &left, Servers &right, Store &rightStore, const QJso
     // Wait for the last positions.
     static_cast<void>(QTest::qWaitFor(
         [&] {
-            return static_cast<qint64>(latencies.size()) >= sent;
+            return meter.deliveredCount() >= meter.sentCount();
         },
         10000));
-    const auto delivered = static_cast<qint64>(latencies.size());
-    const double ratio = sent > 0 ? static_cast<double>(delivered) / static_cast<double>(sent) : 0;
     const auto endMemory = residentKiB();
     const auto dropped = left.statistics().value(QStringLiteral("dropped")).toDouble() +
                          right.statistics().value(QStringLiteral("dropped")).toDouble();
-    const double minimum =
-        std::clamp(load.value(QStringLiteral("minimumRatio")).toDouble(0.99), 0.0, 1.0);
-    const bool passed = ratio >= minimum && disconnects == 0 && duplicates == 0;
-    return QJsonObject{{QStringLiteral("passed"), passed},
-                       {QStringLiteral("seconds"), seconds},
-                       {QStringLiteral("rate"), rate},
-                       {QStringLiteral("objects"), objects},
-                       {QStringLiteral("sent"), static_cast<double>(sent)},
-                       {QStringLiteral("delivered"), static_cast<double>(delivered)},
-                       {QStringLiteral("ratio"), ratio},
-                       {QStringLiteral("duplicates"), static_cast<double>(duplicates)},
-                       {QStringLiteral("disconnects"), disconnects},
-                       {QStringLiteral("queueDrops"), dropped},
-                       {QStringLiteral("latencyMsP50"), percentile(latencies, 0.50)},
-                       {QStringLiteral("latencyMsP95"), percentile(latencies, 0.95)},
-                       {QStringLiteral("latencyMsMax"), percentile(latencies, 1.0)},
-                       {QStringLiteral("residentKiBStart"), static_cast<double>(startMemory)},
-                       {QStringLiteral("residentKiBPeak"), static_cast<double>(peakMemory)},
-                       {QStringLiteral("residentKiBEnd"), static_cast<double>(endMemory)}};
+    auto result = meter.result(load.value(QStringLiteral("minimumRatio")).toDouble(0.99));
+    for (const auto &[key, value] :
+         {std::pair{QStringLiteral("seconds"), QJsonValue(seconds)},
+          std::pair{QStringLiteral("rate"), QJsonValue(rate)},
+          std::pair{QStringLiteral("objects"), QJsonValue(objects)},
+          std::pair{QStringLiteral("queueDrops"), QJsonValue(dropped)},
+          std::pair{QStringLiteral("residentKiBStart"),
+                    QJsonValue(static_cast<double>(startMemory))},
+          std::pair{QStringLiteral("residentKiBPeak"), QJsonValue(static_cast<double>(peakMemory))},
+          std::pair{QStringLiteral("residentKiBEnd"),
+                    QJsonValue(static_cast<double>(endMemory))}}) {
+        result.insert(key, value);
+    }
+    return result;
 }

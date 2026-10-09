@@ -32,6 +32,7 @@
 #include <QXmlStreamWriter>
 
 #include <algorithm>
+#include <atomic>
 #include <deque>
 #include <memory>
 #include <netinet/in.h>
@@ -51,7 +52,11 @@ constexpr int MaxPeers = 16;
 // QUIC tries at most this many addresses of a host name, each for a few seconds.
 constexpr int MaxQuicAddresses = 8;
 constexpr qint64 QuicAddressTimeoutMs = 5000;
+// Tests can replace the host name lookup of QUIC entries. Production code leaves it empty.
+std::atomic<QuicHostLookup> quicHostLookup{nullptr};
 constexpr int QueueLimit = 2048;
+// Unsent bytes that one stream may hold before new events are dropped.
+constexpr qint64 MaxWriteBacklog = 256 * 1024;
 constexpr quint16 DiscoveryPort = 17421;
 bool safe(const QString &s, int limit, bool empty = false)
 {
@@ -62,6 +67,12 @@ bool safe(const QString &s, int limit, bool empty = false)
            });
 }
 } // namespace
+// Only the server tests call it. The analysis does not read the tests.
+// cppcheck-suppress unusedFunction
+void setQuicHostLookupForTests(QuicHostLookup lookup)
+{
+    quicHostLookup.store(lookup);
+}
 QJsonObject serverDefaults()
 {
     return {{QStringLiteral("name"), QString{}},
@@ -365,13 +376,22 @@ public:
         if (generation != generation_ || payload.size() > MaxMessageBytes) {
             return;
         }
+        // A slow peer keeps a bounded backlog. Count each event that does not fit, so the
+        // status shows the loss.
+        quint64 dropped = 0;
         for (const auto &s : sessions_) {
-            if (s->tcp && s->ready && (!s->peer || s->greeted) &&
-                s->tcp->bytesToWrite() + payload.size() <= 256 * 1024) {
-                writeTo(*s, payload);
-            } else if (s->quic && s->ready &&
-                       s->quic->bytesToWrite() + payload.size() <= 256 * 1024) {
-                writeTo(*s, payload);
+            if (s->tcp && s->ready && (!s->peer || s->greeted)) {
+                if (s->tcp->bytesToWrite() + payload.size() <= MaxWriteBacklog) {
+                    writeTo(*s, payload);
+                } else {
+                    ++dropped;
+                }
+            } else if (s->quic && s->ready) {
+                if (s->quic->bytesToWrite() + payload.size() <= MaxWriteBacklog) {
+                    writeTo(*s, payload);
+                } else {
+                    ++dropped;
+                }
             } else if ((s->output || s->mesh) && s->udp && s->ready) {
                 // One event per datagram. The 64 KiB message limit stays below the UDP limit.
                 const QHostAddress target(s->source.value(QStringLiteral("host")).toString());
@@ -379,8 +399,14 @@ public:
                     static_cast<quint16>(s->source.value(QStringLiteral("port")).toInt());
                 if (s->udp->writeDatagram(payload, target, port) == payload.size()) {
                     ++s->sent;
+                } else {
+                    ++dropped;
                 }
             }
+        }
+        if (dropped > 0) {
+            const QMutexLocker lock(&mailbox_->mutex);
+            mailbox_->dropped += dropped;
         }
     }
 
@@ -605,6 +631,7 @@ private:
     void startQuic(Session &s)
     {
         s.quic = std::make_unique<QuicStream>();
+        state(s, tr("Connecting"));
         const auto host = s.source.value(QStringLiteral("host")).toString();
         const QHostAddress address(host);
         if (!address.isNull()) {
@@ -612,33 +639,51 @@ private:
             return;
         }
         const auto id = s.id;
+        if (const auto lookup = quicHostLookup.load()) {
+            // Report the test result later, as QHostInfo does.
+            s.lookup = 0;
+            const auto addresses = lookup(host);
+            QMetaObject::invokeMethod(
+                this,
+                [this, id, addresses] {
+                    useQuicAddresses(id, 0, addresses);
+                },
+                Qt::QueuedConnection);
+            return;
+        }
         s.lookup = QHostInfo::lookupHost(host, this, [this, id](const QHostInfo &info) {
-            const auto found =
-                std::find_if(sessions_.begin(), sessions_.end(), [&id](const auto &item) {
-                    return item->id == id && !item->peer;
-                });
-            if (found == sessions_.end() || !(*found)->quic ||
-                (*found)->lookup != info.lookupId()) {
-                return;
-            }
-            auto &session = **found;
-            session.lookup = -1;
-            if (info.error() != QHostInfo::NoError || info.addresses().isEmpty()) {
-                fail(session, tr("The server host name cannot be resolved."));
-                return;
-            }
-            // A name such as localhost can resolve to IPv6 and IPv4. A server can listen on one
-            // of them only, so try each address. IPv4 comes first, as for most TAK servers.
-            auto addresses = info.addresses();
-            std::stable_partition(addresses.begin(), addresses.end(), [](const QHostAddress &item) {
-                return item.protocol() == QAbstractSocket::IPv4Protocol;
-            });
-            if (addresses.size() > MaxQuicAddresses) {
-                addresses.resize(MaxQuicAddresses);
-            }
-            session.quicAddresses = addresses.mid(1);
-            connectQuic(session, addresses.first());
+            useQuicAddresses(id,
+                             info.lookupId(),
+                             info.error() == QHostInfo::NoError ? info.addresses()
+                                                                : QList<QHostAddress>{});
         });
+    }
+    // Continues a QUIC session after its host name lookup.
+    void useQuicAddresses(const QString &id, int lookupId, QList<QHostAddress> addresses)
+    {
+        const auto found =
+            std::find_if(sessions_.begin(), sessions_.end(), [&id](const auto &item) {
+                return item->id == id && !item->peer;
+            });
+        if (found == sessions_.end() || !(*found)->quic || (*found)->lookup != lookupId) {
+            return;
+        }
+        auto &session = **found;
+        session.lookup = -1;
+        if (addresses.isEmpty()) {
+            fail(session, tr("The server host name cannot be resolved."));
+            return;
+        }
+        // A name such as localhost can resolve to IPv6 and IPv4. A server can listen on one
+        // of them only, so try each address. IPv4 comes first, as for most TAK servers.
+        std::stable_partition(addresses.begin(), addresses.end(), [](const QHostAddress &item) {
+            return item.protocol() == QAbstractSocket::IPv4Protocol;
+        });
+        if (addresses.size() > MaxQuicAddresses) {
+            addresses.resize(MaxQuicAddresses);
+        }
+        session.quicAddresses = addresses.mid(1);
+        connectQuic(session, addresses.first());
     }
     // Starts a new QUIC handshake with the next resolved address. Returns false when no
     // address remains.

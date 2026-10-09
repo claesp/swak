@@ -1,8 +1,8 @@
-# A disposable OpenLDAP directory for the TAK Server LDAP tests.
+# A disposable OpenLDAP directory for the TAK Server LDAP tests. It serves LDAPS only.
 FROM docker.io/library/debian:trixie-slim
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     slapd ldap-utils && rm -rf /var/lib/apt/lists/*
 COPY slapd.conf seed.ldif /etc/swak/
 RUN mkdir -p /var/lib/swak-ldap && slapadd -f /etc/swak/slapd.conf -l /etc/swak/seed.ldif
-EXPOSE 389
-CMD ["slapd", "-f", "/etc/swak/slapd.conf", "-h", "ldap:///", "-d", "0"]
+EXPOSE 636
+CMD ["slapd", "-f", "/etc/swak/slapd.conf", "-h", "ldaps:///", "-d", "0"]

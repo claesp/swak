@@ -29,7 +29,6 @@ COMMIT = "5187abd46d827d37cfc5708805eced197a837e49"
 RELEASE = "5.7-RELEASE-14"
 IMAGE = "localhost/swak-tak-build:local"
 DATABASE_IMAGE = "docker.io/postgis/postgis:15-3.3"
-LDAP_IMAGE = "localhost/swak-tak-ldap:local"
 NETWORK = "swak-tak"
 DATABASE = "swak-tak-db"
 DATABASE_B = "swak-tak-db-b"
@@ -37,11 +36,22 @@ SERVER = "swak-tak-server"
 # Server B federates with server A and authenticates its users with LDAP.
 SERVER_B = "swak-tak-server-b"
 LDAP = "swak-tak-ldap"
-CONTAINERS = (SERVER, SERVER_B, DATABASE, DATABASE_B, LDAP)
+# In hub mode, both servers federate through a TAK federation hub instead of directly.
+HUB = "swak-tak-hub"
+HUB_RUN = WORK / "hub"
+CONTAINERS = (SERVER, SERVER_B, DATABASE, DATABASE_B, LDAP, HUB)
 # A fixed subnet lets the server certificates name the container addresses.
 SUBNET = "10.89.77.0/24"
 GATEWAY = "10.89.77.1"
-ADDRESS = {SERVER: "10.89.77.10", SERVER_B: "10.89.77.11", LDAP: "10.89.77.12"}
+ADDRESS = {
+    SERVER: "10.89.77.10",
+    SERVER_B: "10.89.77.11",
+    LDAP: "10.89.77.12",
+    HUB: "10.89.77.13",
+    # Fixed database addresses keep dynamic allocation away from the addresses above.
+    DATABASE: "10.89.77.20",
+    DATABASE_B: "10.89.77.21",
+}
 PASSWORD = "atakatak"
 # Host loopback port for each server port.
 PORTS = {8088: 18088, 8089: 18089, 8443: 18443, 8446: 18446}
@@ -51,9 +61,45 @@ UDP_PORTS = {8090: 18090}
 CLIENTS = ("left", "right", "admin")
 ENROLL_USER = "swak-enroll"
 ENROLL_PASSWORD = "swak-enroll-test"
-# tools/tak-server/ldap/seed.ldif holds this user.
-LDAP_USER = "swak-ldap"
-LDAP_PASSWORD = "swak-ldap-test"
+# Server B uses one of these directories over LDAPS. Each has a test user in the groups
+# SwakTest and the group named here. The ad image is a Samba Active Directory controller.
+DIRECTORIES = {
+    "openldap": {
+        "image": "localhost/swak-tak-ldap:local",
+        "context": "ldap",
+        "user": "swak-ldap",
+        "password": "swak-ldap-test",
+        "group": "SwakLdap",
+        "ldap": (
+            '        <ldap url="ldaps://swak-tak-ldap:636/" style="DS" '
+            'userstring="cn={username},ou=users,dc=swak,dc=test" '
+            'serviceAccountDN="cn=admin,dc=swak,dc=test" '
+            'serviceAccountCredential="swak-ldap-admin" '
+            'groupBaseRDN="ou=groups,dc=swak,dc=test" nestedGroupLookup="true" '
+            'groupObjectClass="groupOfNames" userObjectClass="inetOrgPerson" '
+            'groupNameExtractorRegex="(?i)cn=(.*?)(?:,|$)" @TRUST@/>\n'
+        ),
+    },
+    "ad": {
+        "image": "localhost/swak-tak-ad:local",
+        "context": "ad",
+        "user": "swak-ad",
+        "password": "swak-ad-test",
+        "group": "SwakAd",
+        "ldap": (
+            '        <ldap url="ldaps://swak-tak-ldap:636/dc=swak,dc=test" style="AD" '
+            'userstring="{username}@swak.test" '
+            'serviceAccountDN="Administrator@swak.test" '
+            'serviceAccountCredential="Swak-AD-test1" @TRUST@/>\n'
+        ),
+    },
+}
+# TAK Server checks the directory certificate with the test CA.
+LDAPS_TRUST = (
+    'ldapsTruststore="JKS" ldapsTruststoreFile="/opt/tak/certs/files/truststore-root.jks" '
+    f'ldapsTruststorePass="{PASSWORD}"'
+)
+DEPLOYMENT = WORK / "deployment.json"
 # SWAK sends to the TAK multicast input and receives from a TAK static subscription.
 MULTICAST_INPUT = ("239.2.3.1", 6969)
 MULTICAST_OUTPUT = ("239.2.3.2", 6970)
@@ -129,6 +175,8 @@ def build(_args):
         "-q",
         ":takserver-core:bootWar",
         ":takserver-schemamanager:shadowJar",
+        ":federation-hub-policy:bootJar",
+        ":federation-hub-broker:bootJar",
         "-x",
         "test",
         "-x",
@@ -215,7 +263,7 @@ def certs(_args):
         extension_file.unlink()
         return key, pem
 
-    for name, container in (("takserver", SERVER), ("takserver-b", SERVER_B)):
+    for name, container in (("takserver", SERVER), ("takserver-b", SERVER_B), ("fedhub", HUB)):
         server_key, server_pem = issue(
             name,
             f"/O=SWAK Test/CN={container}",
@@ -255,10 +303,16 @@ def certs(_args):
     )
     for client in CLIENTS:
         issue(client, f"/O=SWAK Test/CN=swak-{client}", "extendedKeyUsage=clientAuth\n")
+    issue(
+        "ldap",
+        f"/O=SWAK Test/CN={LDAP}",
+        f"subjectAltName=DNS:{LDAP},IP:{ADDRESS[LDAP]}\nextendedKeyUsage=serverAuth\n",
+    )
     # The JDK keytool converts the stores into the JKS files of the TAK configuration.
     for stale in (
         "takserver.jks",
         "takserver-b.jks",
+        "fedhub.jks",
         "truststore-root.jks",
         "fed-truststore.jks",
         "intermediate-signing.jks",
@@ -270,6 +324,9 @@ def certs(_args):
         f"-deststorepass {PASSWORD} && "
         f"keytool -importkeystore -noprompt -srckeystore takserver-b.p12 -srcstoretype PKCS12 "
         f"-srcstorepass {PASSWORD} -destkeystore takserver-b.jks -deststoretype JKS "
+        f"-deststorepass {PASSWORD} && "
+        f"keytool -importkeystore -noprompt -srckeystore fedhub.p12 -srcstoretype PKCS12 "
+        f"-srcstorepass {PASSWORD} -destkeystore fedhub.jks -deststoretype JKS "
         f"-deststorepass {PASSWORD} && "
         f"keytool -importkeystore -noprompt -srckeystore signing.p12 -srcstoretype PKCS12 "
         f"-srcstorepass {PASSWORD} -destkeystore intermediate-signing.jks -deststoretype JKS "
@@ -359,8 +416,12 @@ def write_users(run_dir, server):
     )
 
 
-def core_config(server):
-    """Fill the CoreConfig template for server A or server B."""
+def core_config(server, directory="openldap", federation="direct"):
+    """Fill the CoreConfig template for server A, or for server B with one directory.
+
+    In direct federation, server B connects to server A. In hub federation, both servers
+    connect to the hub.
+    """
     fields = {
         "AUTH_DEFAULT": "file",
         "LDAP": "",
@@ -370,7 +431,13 @@ def core_config(server):
         "KEYSTORE": "takserver.jks",
         "FEDERATION_OUTGOING": "",
     }
+    hub_outgoing = (
+        f'        <federation-outgoing displayName="swak-hub" address="{HUB}" '
+        'port="9102" protocolVersion="2" reconnectInterval="5" enabled="true"/>\n'
+    )
     if server == SERVER:
+        if federation == "hub":
+            fields["FEDERATION_OUTGOING"] = hub_outgoing
         group, port = MULTICAST_INPUT
         fields["INPUTS"] = (
             f'        <input _name="mcast" protocol="mcast" group="{group}" port="{port}" '
@@ -386,17 +453,11 @@ def core_config(server):
             AUTH_DEFAULT="ldap",
             DATABASE=DATABASE_B,
             KEYSTORE="takserver-b.jks",
-            LDAP=(
-                f'        <ldap url="ldap://{LDAP}:389/" style="DS" '
-                'userstring="cn={username},ou=users,dc=swak,dc=test" '
-                'serviceAccountDN="cn=admin,dc=swak,dc=test" '
-                'serviceAccountCredential="swak-ldap-admin" '
-                'groupBaseRDN="ou=groups,dc=swak,dc=test" nestedGroupLookup="true" '
-                'groupObjectClass="groupOfNames" userObjectClass="inetOrgPerson" '
-                'groupNameExtractorRegex="(?i)cn=(.*?)(?:,|$)"/>\n'
-            ),
+            LDAP=DIRECTORIES[directory]["ldap"].replace("@TRUST@", LDAPS_TRUST),
             FEDERATION_OUTGOING=(
-                f'        <federation-outgoing displayName="swak-a" address="{SERVER}" '
+                hub_outgoing
+                if federation == "hub"
+                else f'        <federation-outgoing displayName="swak-a" address="{SERVER}" '
                 'port="9001" protocolVersion="2" reconnectInterval="5" enabled="true"/>\n'
             ),
         )
@@ -406,7 +467,7 @@ def core_config(server):
     return text
 
 
-def prepare(run_dir, server):
+def prepare(run_dir, server, directory="openldap", federation="direct"):
     """Copy the build output and the configuration into the deployment folder of one server."""
     war = SOURCE / "src" / "takserver-core" / "build" / "libs" / f"takserver-core-{RELEASE}.war"
     schema = (
@@ -426,12 +487,82 @@ def prepare(run_dir, server):
     shutil.copy2(schema, run_dir / "SchemaManager.jar")
     for name in ("TAKIgniteConfig.xml", "start.sh"):
         shutil.copy2(TEMPLATES / name, run_dir / name)
-    (run_dir / "CoreConfig.xml").write_text(core_config(server))
+    (run_dir / "CoreConfig.xml").write_text(core_config(server, directory, federation))
     (run_dir / "logs").mkdir(exist_ok=True)
     if run_dir != RUN:
         # Each server has its own copy, so the containers do not share a volume.
         shutil.copytree(CERTS, run_dir / "certs" / "files", dirs_exist_ok=True)
     write_users(run_dir, server)
+
+
+def ca_group():
+    """Return the hub CA group of the test CA: its issuer DN and SHA-256 fingerprint."""
+    issuer = run(
+        [
+            "openssl",
+            "x509",
+            "-in",
+            str(CERTS / "ca.pem"),
+            "-noout",
+            "-issuer",
+            "-nameopt",
+            "RFC2253",
+        ],
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    digest = fingerprint(CERTS / "ca.pem").replace(":", "").lower()
+    return issuer.split("=", 1)[1] + "-" + digest
+
+
+def hub_policy():
+    """Return a hub policy with one interconnected group for the test CA."""
+    group = ca_group()
+    cell = {
+        "graphType": "GroupCell",
+        "id": "swak-test-ca",
+        "type": "bpmn.Activity",
+        "roger_federation": {
+            "name": group,
+            "description": "SWAK Test CA",
+            "attributes": [],
+            "interconnected": True,
+            "groupFilters": [],
+            "type": "Group",
+            "stringId": "SWAK Test CA",
+        },
+    }
+    return {
+        "name": "swak",
+        "federate_edges": [],
+        "groups": [{"uid": group, "interconnected": True}],
+        "additionalData": {"uiData": {"name": "swak", "description": "SWAK test", "cells": [cell]}},
+    }
+
+
+def prepare_hub():
+    """Copy the hub jars, configuration, policy, and keystores into the hub folder."""
+    jars = {
+        "federation-hub-policy.jar": SOURCE / "src" / "federation-hub-policy",
+        "federation-hub-broker.jar": SOURCE / "src" / "federation-hub-broker",
+    }
+    (HUB_RUN / "jars").mkdir(parents=True, exist_ok=True)
+    (HUB_RUN / "configs").mkdir(exist_ok=True)
+    for name, project in jars.items():
+        built = project / "build" / "libs" / f"{name[:-4]}-{RELEASE}.jar"
+        if not built.exists():
+            sys.exit("Run build again. The federation hub jars are missing.")
+        shutil.copy2(built, HUB_RUN / "jars" / name)
+    shutil.copy2(TEMPLATES / "hub" / "start.sh", HUB_RUN / "start.sh")
+    shutil.copy2(
+        TEMPLATES / "hub" / "federation-hub-broker.yml",
+        HUB_RUN / "configs" / "federation-hub-broker.yml",
+    )
+    (HUB_RUN / "ui_generated_policy.json").write_text(json.dumps(hub_policy(), indent=2))
+    files = HUB_RUN / "certs" / "files"
+    files.mkdir(parents=True, exist_ok=True)
+    for name in ("fedhub.jks", "fed-truststore.jks", "ca.pem"):
+        shutil.copy2(CERTS / name, files / name)
 
 
 def wait_port(port, seconds, tls=False):
@@ -506,6 +637,8 @@ def start_database(name):
         name,
         "--network",
         NETWORK,
+        "--ip",
+        ADDRESS[name],
         "-e",
         "POSTGRES_USER=martiuser",
         "-e",
@@ -568,15 +701,59 @@ def start_server(name, run_dir, ports, udp_ports):
 
 
 def up(args):
-    """Start the databases, the LDAP directory, and the two federated TAK Servers."""
-    prepare(RUN, SERVER)
-    prepare(RUN_B, SERVER_B)
-    run(["podman", "build", "-q", "-t", LDAP_IMAGE, str(TEMPLATES / "ldap")], capture_output=True)
+    """Start the databases, the directory, and the two federated TAK Servers."""
+    directory = DIRECTORIES[args.directory]
+    prepare(RUN, SERVER, federation=args.federation)
+    prepare(RUN_B, SERVER_B, args.directory, args.federation)
+    if args.federation == "hub":
+        prepare_hub()
+    if not (CERTS / "ldap.pem").exists():
+        sys.exit("Run certs again. The directory needs its certificate.")
+    run(
+        ["podman", "build", "-q", "-t", directory["image"], str(TEMPLATES / directory["context"])],
+        capture_output=True,
+    )
+    # The directory reads its certificate from a private copy. Samba requires key mode 0600.
+    directory_certs = WORK / "directory-certs"
+    directory_certs.mkdir(mode=0o700, exist_ok=True)
+    for name in ("ca.pem", "ldap.pem", "ldap.key"):
+        shutil.copy2(CERTS / name, directory_certs / name)
+        os.chmod(directory_certs / name, 0o600)
     podman("rm", "-f", *CONTAINERS, check=False)
     if network_subnet() != SUBNET:
         podman("network", "rm", NETWORK, check=False)
         podman("network", "create", "--subnet", SUBNET, NETWORK)
-    podman("run", "-d", "--name", LDAP, "--network", NETWORK, "--ip", ADDRESS[LDAP], LDAP_IMAGE)
+    podman(
+        "run",
+        "-d",
+        "--name",
+        LDAP,
+        "--hostname",
+        "swakad",
+        "--network",
+        NETWORK,
+        "--ip",
+        ADDRESS[LDAP],
+        "-v",
+        f"{directory_certs}:/certs:ro,Z",
+        directory["image"],
+    )
+    if args.federation == "hub":
+        podman(
+            "run",
+            "-d",
+            "--name",
+            HUB,
+            "--network",
+            NETWORK,
+            "--ip",
+            ADDRESS[HUB],
+            "-v",
+            f"{HUB_RUN}:/opt/tak/federation-hub:Z",
+            IMAGE,
+            "/opt/tak/federation-hub/start.sh",
+        )
+    DEPLOYMENT.write_text(json.dumps({"directory": args.directory, "federation": args.federation}))
     for name in (DATABASE, DATABASE_B):
         start_database(name)
     for name in (DATABASE, DATABASE_B):
@@ -593,6 +770,7 @@ def up(args):
         sys.exit("The TAK Servers did not start. Read build/tak-server/run*/logs.")
     federate(args.timeout)
     print("The TAK Servers are ready on loopback ports", ", ".join(str(p) for p in PORTS.values()))
+    print("Server B uses the directory", args.directory, "and federation", args.federation)
 
 
 def down(_args):
@@ -610,7 +788,16 @@ def status(_args):
         print(f"port {outside} ({inside}):", "open" if wait_port(outside, 1) else "closed")
 
 
-def profile(bridge, load=None):
+def deployed_directory():
+    """Return the directory of the running deployment."""
+    try:
+        name = json.loads(DEPLOYMENT.read_text()).get("directory", "openldap")
+    except (OSError, ValueError):
+        name = "openldap"
+    return name if name in DIRECTORIES else "openldap"
+
+
+def profile(bridge, load=None, directory="openldap"):
     """Write the probe profile with the test credentials.
 
     A bridge profile uses the container addresses. The probe then runs in the rootless network
@@ -653,10 +840,10 @@ def profile(bridge, load=None):
             "port": port(SERVER_B, 8089),
             "apiPort": port(SERVER_B, 8443),
             "ca": str(CERTS / "ca.pem"),
-            "group": "SwakLdap",
+            "group": DIRECTORIES[directory]["group"],
             "enrollment": {
                 "port": port(SERVER_B, 8446),
-                "username": LDAP_USER,
+                "username": DIRECTORIES[directory]["user"],
                 "passwordEnv": "SWAK_COT_LDAP",
             },
         },
@@ -679,17 +866,25 @@ def run_probe(args, report, load=None):
     probe = ROOT / "build" / args.preset / "swak_tak_compat"
     if not probe.exists():
         sys.exit(f"Build swak_tak_compat with the {args.preset} preset first.")
+    directory = deployed_directory()
     environment = dict(
         os.environ,
         SWAK_COT_ENROLL=ENROLL_PASSWORD,
-        SWAK_COT_LDAP=LDAP_PASSWORD,
+        SWAK_COT_LDAP=DIRECTORIES[directory]["password"],
         QT_QPA_PLATFORM="offscreen",
     )
-    command = [str(probe), str(profile(not args.loopback, load))]
+    command = [str(probe), str(profile(not args.loopback, load, directory))]
     if not args.loopback:
         command = ["podman", "unshare", "--rootless-netns", *command]
-    with report.open("w") as output:
-        result = subprocess.run(command, env=environment, stdout=output, check=False)
+    loss = getattr(args, "loss", 0) or getattr(args, "delay", 0)
+    if loss:
+        impair(args.loss, args.delay)
+    try:
+        with report.open("w") as output:
+            result = subprocess.run(command, env=environment, stdout=output, check=False)
+    finally:
+        if loss:
+            impair(0, 0)
     print(report.read_text())
     sys.exit(result.returncode)
 
@@ -700,13 +895,57 @@ def test(args):
     run_probe(args, WORK / f"report-{args.preset}{suffix}.json")
 
 
+def impair(loss, delay):
+    """Add packet loss and delay between the probe and server A in both directions.
+
+    The bridge sends from the probe to the containers, and server A's interface sends from the
+    server. Zero values remove the rules.
+    """
+    if not 0 <= loss <= 50 or not 0 <= delay <= 2000:
+        sys.exit("Use a loss of 0 to 50 percent and a delay of 0 to 2000 ms.")
+    tc = shutil.which("tc") or "/usr/sbin/tc"
+    pid = podman("inspect", "-f", "{{.State.Pid}}", SERVER, capture=True).stdout.strip()
+    rule = ["root", "netem", "loss", f"{loss}%", "delay", f"{delay}ms"]
+    # The bridge is the interface with the gateway address in the rootless namespace.
+    addresses = podman_unshare("ip", "-o", "-4", "addr", "show", capture=True).stdout
+    bridge = next(
+        (line.split()[1] for line in addresses.splitlines() if f" {GATEWAY}/" in line), None
+    )
+    if not bridge:
+        sys.exit("Cannot find the Podman bridge.")
+    targets = [[], ["nsenter", "-t", pid, "-n"]]
+    for prefix, device in zip(targets, (bridge, "eth0")):
+        command = [*prefix, tc, "qdisc"]
+        if loss or delay:
+            podman_unshare(*command, "replace", "dev", device, *rule)
+        else:
+            podman_unshare(*command, "del", "dev", device, "root", check=False)
+    print(f"Network loss {loss}%, delay {delay} ms")
+
+
+def podman_unshare(*command, capture=False, check=True):
+    """Run a command in the rootless network namespace of Podman."""
+    result = subprocess.run(
+        ["podman", "unshare", "--rootless-netns", *command],
+        check=False,
+        capture_output=capture,
+        text=True,
+    )
+    if check and result.returncode != 0:
+        sys.exit(f"Command failed: {' '.join(command)}")
+    return result
+
+
 def load(args):
     """Send positions for a time and measure delivery, latency, memory, and disconnects."""
-    run_probe(
-        args,
-        WORK / f"load-{args.preset}.json",
-        {"seconds": args.seconds, "rate": args.rate, "objects": args.objects},
-    )
+    if args.loopback and (args.loss or args.delay):
+        sys.exit("Packet loss needs the bridge mode.")
+    data = {"seconds": args.seconds, "rate": args.rate, "objects": args.objects}
+    if args.client == "quic":
+        data["client"] = "quic"
+    if args.minimum is not None:
+        data["minimumRatio"] = args.minimum
+    run_probe(args, WORK / f"load-{args.preset}-{args.client}.json", data)
 
 
 def main():
@@ -717,6 +956,18 @@ def main():
     commands.add_parser("certs", help="create test credentials").set_defaults(run=certs)
     start = commands.add_parser("up", help="start the test deployment")
     start.add_argument("--timeout", type=int, default=420)
+    start.add_argument(
+        "--directory",
+        default="openldap",
+        choices=sorted(DIRECTORIES),
+        help="the LDAPS directory of server B",
+    )
+    start.add_argument(
+        "--federation",
+        default="direct",
+        choices=["direct", "hub"],
+        help="federate directly or through a federation hub",
+    )
     start.set_defaults(run=up)
     commands.add_parser("status", help="show the deployment state").set_defaults(run=status)
     probe = commands.add_parser("test", help="run swak_tak_compat")
@@ -725,6 +976,10 @@ def main():
     stress.add_argument("--seconds", type=int, default=600)
     stress.add_argument("--rate", type=int, default=10, help="positions per second")
     stress.add_argument("--objects", type=int, default=20, help="distinct UIDs")
+    stress.add_argument("--client", default="tls", choices=["tls", "quic"], help="sender stream")
+    stress.add_argument("--loss", type=float, default=0, help="packet loss in percent")
+    stress.add_argument("--delay", type=int, default=0, help="added delay in milliseconds")
+    stress.add_argument("--minimum", type=float, help="minimum delivery ratio, default 0.99")
     stress.set_defaults(run=load)
     for command in (probe, stress):
         command.add_argument("--preset", default="debug", choices=["debug", "sanitize", "release"])

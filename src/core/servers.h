@@ -3,6 +3,8 @@
 #include "core/settings.h"
 
 #include <QHash>
+#include <QHostAddress>
+#include <QList>
 #include <QObject>
 #include <QThread>
 #include <QTimer>
@@ -13,6 +15,10 @@ class Store;
 class ServerWorker;
 struct ServerMailbox;
 QJsonObject serverDefaults();
+// Replaces the host name lookup of QUIC entries, so tests can give one name several
+// addresses. Pass nullptr to restore QHostInfo. Production code does not call it.
+using QuicHostLookup = QList<QHostAddress> (*)(const QString &host);
+void setQuicHostLookupForTests(QuicHostLookup lookup);
 QList<SettingField> serverFields(const QJsonObject &source = {});
 QString validateServer(const QJsonObject &source);
 class Servers final : public QObject, public SettingsParticipant, public SettingsWidgetProvider

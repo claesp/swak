@@ -200,6 +200,12 @@ def main():
             15,
             env,
         )
+        run(
+            [sys.executable, "-B", ROOT / "tests/test_tak_server.py"],
+            report / "tak-server-tests.log",
+            30,
+            env,
+        )
         if args.mode == "style":
             run([sys.executable, "-B", ROOT / "tools/style.py"], report / "style.log", 360, env)
             status["status"] = "passed"

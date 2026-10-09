@@ -6,14 +6,15 @@ The development probe uses SWAK's actual Servers, Store, XML parser, and encoder
 
 `tools/tak_server.py` builds and runs official TAK Server 5.7-RELEASE-14 from source commit 5187abd46d827d37cfc5708805eced197a837e49 in Podman containers. It needs rootless Podman, Git, OpenSSL, network access for the first build, and about 8 GiB of free memory. Everything it writes stays under `build/tak-server`.
 
-The deployment has two TAK Servers, two PostgreSQL databases, and one OpenLDAP directory on the Podman network `swak-tak` with the fixed subnet 10.89.77.0/24:
+The deployment has two TAK Servers, two PostgreSQL databases, and one directory on the Podman network `swak-tak` with the fixed subnet 10.89.77.0/24. In hub mode, it also has a TAK federation hub:
 
 | Container | Address | Use |
 | --- | --- | --- |
 | swak-tak-server (server A) | 10.89.77.10 | File users, multicast input and output, federation server |
-| swak-tak-server-b (server B) | 10.89.77.11 | LDAP users, outgoing federation to server A |
-| swak-tak-ldap | 10.89.77.12 | The test directory from `tools/tak-server/ldap` |
-| swak-tak-db, swak-tak-db-b | dynamic | The databases of server A and server B |
+| swak-tak-server-b (server B) | 10.89.77.11 | Directory users over LDAPS, outgoing federation to server A or the hub |
+| swak-tak-ldap | 10.89.77.12 | OpenLDAP from `tools/tak-server/ldap`, or Samba Active Directory from `tools/tak-server/ad` |
+| swak-tak-hub | 10.89.77.13 | The federation hub policy service and broker, only in hub mode |
+| swak-tak-db, swak-tak-db-b | 10.89.77.20, 10.89.77.21 | The databases of server A and server B |
 
 The host gets only loopback ports. Server A publishes 18088 (plain TCP CoT), 18089 (TLS CoT), 18090/udp (QUIC), 18443 (REST API with client certificates), and 18446 (enrollment with a user name and password). Server B publishes 28089, 28443, and 28446. The databases and the directory stay private.
 
@@ -27,18 +28,19 @@ python3 tools/tak_server.py up
 cmake --build --preset debug --target swak_tak_compat --parallel 4
 python3 tools/tak_server.py test
 python3 tools/tak_server.py load --seconds 600 --rate 10
+python3 tools/tak_server.py load --seconds 120 --loss 5 --delay 50 --client quic
 python3 tools/tak_server.py down
 ```
 
 - `fetch` clones the pinned source and adds the local release tag that the TAK build reads.
 - `build` builds the TAK Server war and the schema manager without the web dashboards. Gradle keeps its cache under `build/tak-server/gradle-home`.
-- `certs` creates a private test CA, the keystores of both servers, and the client certificates `left`, `right`, and `admin`. Each server certificate names its container and address. Its keystore holds the CA after the server certificate, because federation reads the CA from that chain. The credentials expire after seven days.
-- `up` builds the directory image, starts the databases and the directory, applies the TAK schema, and starts the configuration, messaging, and API services of both servers from `tools/tak-server/start.sh`. It fills `tools/tak-server/CoreConfig.xml` for each server. It writes the user files with BCrypt from the TAK build. When both servers list the federate, it shares the group `SwakTest` in both directions through `/api/federategroups`.
+- `certs` creates a private test CA, the keystores of both servers and the hub, the directory certificate, and the client certificates `left`, `right`, and `admin`. Each server certificate names its container and address. Its keystore holds the CA after the server certificate, because federation reads the CA from that chain. The credentials expire after seven days.
+- `up` builds the directory image, starts the databases and the directory, applies the TAK schema, and starts the configuration, messaging, and API services of both servers from `tools/tak-server/start.sh`. It fills `tools/tak-server/CoreConfig.xml` for each server. It writes the user files with BCrypt from the TAK build. When both servers list the federate, it shares the group `SwakTest` in both directions through `/api/federategroups`. `--directory openldap` (the default) or `--directory ad` selects the directory of server B. Both serve LDAPS only, and TAK Server checks them with the test CA. `--federation direct` (the default) connects server B to server A. `--federation hub` starts the hub and connects both servers to it. The hub policy has one interconnected group for the test CA.
 - `test` writes `build/tak-server/profile.json` and runs the probe in the rootless network namespace of Podman (`podman unshare --rootless-netns`). There the probe reaches the container addresses and the bridge, so it can use multicast. Use `--loopback` to run the probe on the host with the published ports and without the multicast checks. Use `--preset sanitize` to run the probe under AddressSanitizer and UndefinedBehaviorSanitizer. The report is `build/tak-server/report-<preset>.json`, or `report-<preset>-loopback.json`.
-- `load` runs the probe with a load profile instead of the feature checks. It takes `--seconds`, `--rate` (positions per second), and `--objects` (distinct UIDs). The report is `build/tak-server/load-<preset>.json`.
+- `load` runs the probe with a load profile instead of the feature checks. It takes `--seconds`, `--rate` (positions per second), `--objects` (distinct UIDs), `--client tls` or `--client quic` for the sender, and `--minimum` for the delivery ratio. `--loss` (percent) and `--delay` (ms) add netem rules on the bridge and on the interface of server A, so both directions lose packets. The run removes the rules at its end. The report is `build/tak-server/load-<preset>-<client>.json`.
 - `status` shows the containers and ports. `down` removes the containers and the network but keeps the build and the credentials.
 
-The test users on server A are `swak-left` and `swak-right` with certificates, `swak-admin` with the admin role, and `swak-enroll` with a password for enrollment. Server B has `swak-admin` in its user file and `swak-ldap` in the directory, in the LDAP groups `SwakTest` and `SwakLdap`. The probe sends synthetic objects with short lifetimes and creates and deletes a test mission, checklist template, and video connection. It also uploads a test iconset.
+The test users on server A are `swak-left` and `swak-right` with certificates, `swak-admin` with the admin role, and `swak-enroll` with a password for enrollment. Server B has `swak-admin` in its user file. OpenLDAP has `swak-ldap` in the groups `SwakTest` and `SwakLdap`. Active Directory has `swak-ad` in the groups `SwakTest` and `SwakAd`. The probe sends synthetic objects with short lifetimes and creates and deletes a test mission, checklist template, and video connection. It also uploads a test iconset.
 
 # Feature checks
 
@@ -62,14 +64,23 @@ The test users on server A are `swak-left` and `swak-right` with certificates, `
 | quicConnect, quicExchange | Servers (QUIC) | A QUIC stream by host name, and CoT to and from a TLS client |
 | enrollment, enrolledConnection | TakEnrollment | A signed certificate, then a TLS stream with it |
 | multicastJoin, multicastSend, multicastReceive | Servers (mcast) | SWAK sends to the TAK input 239.2.3.1:6969 and receives from the TAK static subscription 239.2.3.2:6970 |
-| ldapEnrollment, ldapConnection, ldapGroups | TakEnrollment, TakChannels | The directory user enrolls on server B, connects, and gets the LDAP groups |
-| federationInbound, federationOutbound | Servers | Server A delivers an event from the server B client, and server B delivers an event from the left client |
+| ldapEnrollment, ldapConnection, ldapGroups | TakEnrollment, TakChannels | The directory user enrolls on server B, connects, and gets the directory groups |
+| federationInbound, federationOutbound | Servers | Server A delivers an event from the server B client, and server B delivers an event from the left client, directly or through the hub |
 
 The multicast checks run only in the bridge mode of `test`. The load report records sent and delivered positions, the delivery ratio, repeated positions, disconnects, queue drops, latency percentiles, and the resident memory of the probe. The load passes when at least 99 percent of the positions arrive, without a repeated position or a disconnect.
 
 # Results, October 9, 2026
 
 All transport stages and all 48 feature checks passed against TAK Server 5.7-RELEASE-14. The loopback mode passed its 45 checks. The run under AddressSanitizer and UndefinedBehaviorSanitizer also passed without a report. A 30-minute load at 20 positions per second with 50 UIDs delivered all 36000 positions without a repeat, a disconnect, or a queue drop. The median latency was 21 ms, the 95th percentile 40 ms, and the maximum 71 ms. The probe memory grew from 43.3 MiB to 43.9 MiB.
+
+All 48 checks also passed with OpenLDAP over LDAPS, with Samba Active Directory over LDAPS, and with federation through the hub. Two-minute loads at 10 positions per second with 5 percent loss and 50 ms delay in both directions delivered all 1200 positions without a disconnect:
+
+| Sender | Median latency | 95th percentile | Maximum |
+| --- | --- | --- | --- |
+| TLS | 232 ms | 910 ms | 2551 ms |
+| QUIC | 130 ms | 340 ms | 1140 ms |
+
+With 20 percent loss and 100 ms delay, TCP throughput collapses. In 90 seconds at 5 positions per second, TLS delivered 289 of 450 positions within the 10-second tail (median 11 s), and QUIC delivered 425 (median 1.3 s). Neither client disconnected. These runs do not pass the 99 percent minimum, and they are a characterization only.
 
 The first runs found these SWAK faults, which are now fixed:
 
@@ -86,8 +97,11 @@ TAK Server behavior that the probe works around:
 
 - TAK Server processes an iconset upload in the background and caches a missing icon. A client that asks before the processing ends gets HTTP 404 until the cache entry expires. The probe waits until `/api/iconseturl/<uid>` lists the icon.
 - Rootless Podman cannot route multicast between the host and the containers. The probe joins the groups on the bridge address 10.89.77.1 in the rootless network namespace.
+- TAK Server drops an event that arrives before it registers the receiving subscription. With added delay, this lost the first exchange. The probe now repeats its positions every 3 seconds, as ATAK does.
+- Samba cannot provision in a rootless container with its defaults. The image lowers the ID map start to 20000 and keeps NT ACLs in a TDB file. The Samba controller also refuses simple binds without TLS, as AD does.
+- The hub names a CA group by the issuer DN and the lowercase SHA-256 fingerprint of the CA certificate.
 
-These results establish compatibility with this server version and configuration. Packet loss, federation hubs, LDAP over TLS, and Active Directory remain outside the probe. The GUI tests cover the panes through local fixtures.
+These results establish compatibility with this server version and configuration. A Windows Active Directory server, hub policies with group filters, and federation hub plugins remain outside the probe. The GUI tests cover the panes through local fixtures.
 
 # Manual profile
 

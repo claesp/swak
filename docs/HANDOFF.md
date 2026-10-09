@@ -1662,3 +1662,18 @@ The checks found and fixed three SWAK faults:
 - A QUIC entry with a host name never connected, because the worker polled the stream during the name lookup. The worker now waits for the lookup, tries at most eight addresses with IPv4 first, and moves to the next address after five seconds.
 
 Unit tests cover the ExCheck values and order, the icon path, and QUIC by host name. The QUIC timeout move to the next address has no unit test, because it needs a host name with an address that does not answer. The probe load mode has no automated test for its disconnect and duplicate counters. Packet loss, federation hubs, LDAP over TLS, and Active Directory remain untested.
+
+# 2026-10-09: Tests for the remaining untested paths
+
+The paths that the previous section listed as untested now have tests:
+
+- QUIC address fallback: `setQuicHostLookupForTests` in `core/servers.h` lets the server tests give a host name several addresses. The tests check that SWAK tries IPv4 first, moves on after a refused handshake, waits five seconds on a silent address, stops at eight addresses, and fails on a name without addresses. QUIC entries now show "Connecting" during the attempt.
+- Load counters: `tools/tak_load_meter.*` holds the load counting. The new `tak_load` CTest covers sends, receipts, repeats, disconnects, invalid numbers, and the memory limit.
+- Packet loss: `tak_server.py load --loss --delay` adds netem rules in both directions. `--client quic` sends over QUIC. The probe exchange now repeats positions, because TAK Server drops events before it registers a subscription.
+- LDAP over TLS and Active Directory: both directories serve LDAPS only. `up --directory ad` starts a Samba AD controller from `tools/tak-server/ad`.
+- Federation hub: `up --federation hub` builds and starts the hub policy service and broker, and both servers federate through it.
+- `tests/test_tak_server.py` tests the configuration, profiles, hub policy, and load limits of `tools/tak_server.py`. `tools/quality.py` runs it.
+
+All 48 probe checks pass with OpenLDAP, with Active Directory, and through the hub. `docs/tak-compatibility.md` has the loss results. - Slow peers: a stream with 256 KiB of unsent data dropped new events without a count. The worker now adds these drops, and failed UDP sends, to the queue drop count in the status. The `slowPeer` server test covers it.
+
+A Windows AD server, hub group filters, and hub plugins remain untested.

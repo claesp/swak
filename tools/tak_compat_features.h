@@ -46,6 +46,6 @@ void runNetworkChecks(swak::Servers &left,
 // Sends positions from left to right at a fixed rate and measures delivery, latency, memory,
 // and disconnects.
 QJsonObject runLoad(swak::Servers &left,
-                    swak::Servers &right,
+                    const swak::Servers &right,
                     swak::Store &rightStore,
                     const QJsonObject &load);

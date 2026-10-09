@@ -46,6 +46,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QHostInfo>
 #include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -73,6 +74,7 @@
 #include <archive_entry.h>
 #include <arpa/inet.h>
 #include <functional>
+#include <netinet/in.h>
 #include <openssl/err.h>
 #include <openssl/pem.h>
 #include <openssl/ssl.h>
@@ -303,6 +305,10 @@ public:
     QByteArray received;
     bool requireClient = false;
     bool sawClientCertificate = false;
+    // Listen on ::1 instead of 127.0.0.1. A nonzero port selects the port.
+    bool ipv6 = false;
+    // Refuse every ALPN offer, so the handshake fails at once.
+    bool rejectAlpn = false;
     quint16 port = 0;
     ~QuicHarness() override
     {
@@ -327,7 +333,10 @@ public:
                unsigned char *outLength,
                const unsigned char *in,
                unsigned int inLength,
-               void *) {
+               void *argument) {
+                if (static_cast<const QuicHarness *>(argument)->rejectAlpn) {
+                    return SSL_TLSEXT_ERR_ALERT_FATAL;
+                }
                 static const unsigned char supported[] = {
                     9, 't', 'a', 'k', 's', 't', 'r', 'e', 'a', 'm'};
                 unsigned char *selected = nullptr;
@@ -339,24 +348,38 @@ public:
                 *out = selected;
                 return SSL_TLSEXT_ERR_OK;
             },
-            nullptr);
+            this);
         if (requireClient) {
             SSL_CTX_set_verify(
                 context_, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, nullptr);
             SSL_CTX_load_verify_locations(context_, cert.constData(), nullptr);
         }
-        const int socket = BIO_socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP, 0);
-        sockaddr_in address{};
-        address.sin_family = AF_INET;
-        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        socklen_t length = sizeof(address);
-        if (socket < 0 ||
-            ::bind(socket, reinterpret_cast<sockaddr *>(&address), sizeof(address)) != 0 ||
+        const int socket = BIO_socket(ipv6 ? AF_INET6 : AF_INET, SOCK_DGRAM, IPPROTO_UDP, 0);
+        sockaddr_storage address{};
+        socklen_t length = 0;
+        if (ipv6) {
+            auto *v6 = reinterpret_cast<sockaddr_in6 *>(&address);
+            v6->sin6_family = AF_INET6;
+            v6->sin6_addr = in6addr_loopback;
+            v6->sin6_port = htons(port);
+            length = sizeof(sockaddr_in6);
+        } else {
+            auto *v4 = reinterpret_cast<sockaddr_in *>(&address);
+            v4->sin_family = AF_INET;
+            v4->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+            v4->sin_port = htons(port);
+            length = sizeof(sockaddr_in);
+        }
+        if (socket < 0 || ::bind(socket, reinterpret_cast<sockaddr *>(&address), length) != 0 ||
             ::getsockname(socket, reinterpret_cast<sockaddr *>(&address), &length) != 0 ||
             BIO_socket_nbio(socket, 1) != 1) {
+            if (socket >= 0) {
+                BIO_closesocket(socket);
+            }
             return false;
         }
-        port = ntohs(address.sin_port);
+        port = ntohs(ipv6 ? reinterpret_cast<sockaddr_in6 *>(&address)->sin6_port
+                          : reinterpret_cast<sockaddr_in *>(&address)->sin_port);
         listener_ = SSL_new_listener(context_, 0);
         if (!listener_ || SSL_set_fd(listener_, socket) != 1 ||
             SSL_set_blocking_mode(listener_, 0) != 1 || SSL_listen(listener_) != 1) {
@@ -911,6 +934,88 @@ private slots:
                          },
                          15000),
                      qPrintable(servers.status(QStringLiteral("quic"))));
+        }
+        // When the first address of a host name fails or does not answer, SWAK tries the next
+        // address. The test lookups put ::1 first, but SWAK tries IPv4 first.
+        const auto restore = qScopeGuard([] {
+            setQuicHostLookupForTests(nullptr);
+        });
+        const auto fallback = [](QUdpSocket *silent, QuicHarness *refusing) {
+            QuicHarness server;
+            server.ipv6 = true;
+            server.payload = encodeCot(sampleEvent());
+            server.port = silent ? silent->localPort() : refusing->port;
+            if (!server.start()) {
+                QSKIP("IPv6 loopback is not available.");
+            }
+            Store store;
+            Servers servers(store);
+            auto entry = source(server.port);
+            entry.insert(QStringLiteral("host"), QStringLiteral("localhost"));
+            entry.insert(QStringLiteral("protocol"), QStringLiteral("quic"));
+            entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+            entry.insert(QStringLiteral("apiPort"), 0);
+            entry.insert(QStringLiteral("timeoutSeconds"), 30);
+            QElapsedTimer elapsed;
+            elapsed.start();
+            QVERIFY(servers.put(QStringLiteral("quic"), entry).isEmpty());
+            QVERIFY2(QTest::qWaitFor(
+                         [&] {
+                             return store.rowCount() == 1;
+                         },
+                         20000),
+                     qPrintable(servers.status(QStringLiteral("quic"))));
+            if (silent) {
+                // The silent IPv4 address keeps the stream for five seconds.
+                QVERIFY(elapsed.elapsed() >= 4500);
+                QVERIFY(silent->hasPendingDatagrams());
+            } else {
+                // Seven refused handshakes move on before one address time ends.
+                QVERIFY2(elapsed.elapsed() < 4500, qPrintable(QString::number(elapsed.elapsed())));
+            }
+        };
+        {
+            // Seven IPv4 addresses refuse, then ::1 answers. The ninth address ::2 stays unused.
+            setQuicHostLookupForTests([](const QString &) {
+                QList<QHostAddress> result{QHostAddress(QHostAddress::LocalHostIPv6)};
+                for (int i = 0; i < 7; ++i) {
+                    result.append(QHostAddress(QHostAddress::LocalHost));
+                }
+                result.append(QHostAddress(QStringLiteral("::2")));
+                return result;
+            });
+            QuicHarness refusing;
+            refusing.rejectAlpn = true;
+            QVERIFY(refusing.start());
+            fallback(nullptr, &refusing);
+        }
+        {
+            setQuicHostLookupForTests([](const QString &) {
+                return QList<QHostAddress>{QHostAddress(QHostAddress::LocalHostIPv6),
+                                           QHostAddress(QHostAddress::LocalHost)};
+            });
+            QUdpSocket silent;
+            QVERIFY(silent.bind(QHostAddress::LocalHost, 0));
+            fallback(&silent, nullptr);
+        }
+        // A name without addresses fails.
+        setQuicHostLookupForTests([](const QString &) {
+            return QList<QHostAddress>{};
+        });
+        {
+            Store store;
+            Servers servers(store);
+            auto entry = source(1);
+            entry.insert(QStringLiteral("host"), QStringLiteral("none.swak.test"));
+            entry.insert(QStringLiteral("protocol"), QStringLiteral("quic"));
+            entry.insert(QStringLiteral("apiPort"), 0);
+            QVERIFY(servers.put(QStringLiteral("quic"), entry).isEmpty());
+            QVERIFY(QTest::qWaitFor(
+                [&] {
+                    return servers.status(QStringLiteral("quic"))
+                        .contains(QStringLiteral("cannot be resolved"));
+                },
+                5000));
         }
         // Without the CA, certificate validation fails.
         {
@@ -5107,6 +5212,44 @@ private slots:
                 return servers.status(QStringLiteral("a")).contains(QStringLiteral("timed out"));
             },
             5000));
+    }
+    // A peer that stops reading fills the write backlog. SWAK drops and counts later events.
+    void slowPeer()
+    {
+        QTcpServer listener;
+        QVERIFY(listener.listen(QHostAddress::LocalHost, 0));
+        Store store;
+        Servers servers(store);
+        auto entry = source(listener.serverPort());
+        entry.insert(QStringLiteral("timeoutSeconds"), 120);
+        QVERIFY(servers.put(QStringLiteral("slow"), entry).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return listener.hasPendingConnections() &&
+                       servers.status(QStringLiteral("slow"))
+                           .startsWith(QStringLiteral("Connected"));
+            },
+            5000));
+        auto *peer = listener.nextPendingConnection();
+        // Keep the data in the kernel, so the buffers of both sides fill.
+        peer->setReadBufferSize(1);
+        auto event = sampleEvent();
+        event.detail =
+            QStringLiteral("<remarks>%1</remarks>").arg(QString(40000, QLatin1Char('x')));
+        QVERIFY2(QTest::qWaitFor(
+                     [&] {
+                         for (int i = 0; i < 16; ++i) {
+                             static_cast<void>(servers.send(event));
+                         }
+                         return servers.status(QStringLiteral("slow"))
+                                    .contains(QStringLiteral("Queue drops:")) &&
+                                !servers.status(QStringLiteral("slow"))
+                                     .contains(QStringLiteral("Queue drops: 0."));
+                     },
+                     30000),
+                 qPrintable(servers.status(QStringLiteral("slow"))));
+        // The stream stays open after the drops.
+        QVERIFY(servers.status(QStringLiteral("slow")).startsWith(QStringLiteral("Connected")));
     }
     void flood()
     {

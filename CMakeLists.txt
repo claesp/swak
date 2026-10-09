@@ -361,7 +361,14 @@ if(BUILD_TESTING)
         swak_tak_compat tools/tak_compat.cpp tools/tak_compat_features.cpp
                         tools/tak_compat_features.h tools/tak_compat_network.cpp
     )
-    target_link_libraries(swak_tak_compat PRIVATE swak_core Qt6::Test)
+    target_link_libraries(swak_tak_compat PRIVATE swak_core swak_tak_load Qt6::Test)
+    add_library(swak_tak_load STATIC tools/tak_load_meter.cpp tools/tak_load_meter.h)
+    target_include_directories(swak_tak_load PUBLIC tools)
+    target_link_libraries(swak_tak_load PUBLIC Qt6::Core)
+    add_executable(swak_tak_load_tests tests/test_tak_load.cpp)
+    target_link_libraries(swak_tak_load_tests PRIVATE swak_tak_load Qt6::Test)
+    add_test(NAME tak_load COMMAND swak_tak_load_tests)
+    set_tests_properties(tak_load PROPERTIES TIMEOUT 60)
     add_executable(swak_server_tests tests/test_servers.cpp)
     target_link_libraries(
         swak_server_tests PRIVATE swak_core swak_tak_proto Qt6::Test OpenSSL::SSL OpenSSL::Crypto

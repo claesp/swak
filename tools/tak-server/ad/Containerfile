@@ -1,0 +1,23 @@
+# A disposable Samba Active Directory domain controller for the TAK Server AD tests. It serves
+# LDAPS with the test certificate in /certs. The passwords are test values.
+FROM docker.io/library/debian:trixie-slim
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    samba samba-ad-dc samba-ad-provision ldb-tools ldap-utils && rm -rf /var/lib/apt/lists/*
+# Rootless Podman maps 65536 group IDs. Keep the Samba ID map inside that range.
+RUN sed -i "s/^lowerBound: 3000000/lowerBound: 20000/" /usr/share/samba/setup/idmap_init.ldif
+# Rootless containers cannot write NT ACL attributes, so Samba keeps them in a TDB file.
+RUN rm -f /etc/samba/smb.conf \
+ && samba-tool domain provision --realm=SWAK.TEST --domain=SWAK --host-name=swakad \
+    --server-role=dc --dns-backend=NONE --adminpass='Swak-AD-test1' \
+    --option="vfs objects = dfs_samba4 acl_xattr xattr_tdb" \
+    --option="acl_xattr:ignore system acls = yes" >/dev/null \
+ && sed -i "s/server services = .*/server services = ldap, cldap, kdc/" /etc/samba/smb.conf \
+ && sed -i "/^\[global\]/a tls enabled = yes\ntls keyfile = /certs/ldap.key\ntls certfile = /certs/ldap.pem\ntls cafile = /certs/ca.pem" /etc/samba/smb.conf \
+ && samba-tool domain passwordsettings set --complexity=off --min-pwd-length=4 >/dev/null \
+ && samba-tool user add swak-ad 'swak-ad-test' >/dev/null \
+ && samba-tool group add SwakTest >/dev/null \
+ && samba-tool group add SwakAd >/dev/null \
+ && samba-tool group addmembers SwakTest swak-ad >/dev/null \
+ && samba-tool group addmembers SwakAd swak-ad >/dev/null
+EXPOSE 636
+CMD ["samba", "-i", "--debuglevel=1"]

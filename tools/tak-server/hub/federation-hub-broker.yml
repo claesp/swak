@@ -1,0 +1,35 @@
+# Disposable test configuration of the TAK federation hub broker.
+keystoreType: JKS
+keystoreFile: /opt/tak/federation-hub/certs/files/fedhub.jks
+keystorePassword: atakatak
+truststoreType: JKS
+truststoreFile: /opt/tak/federation-hub/certs/files/fed-truststore.jks
+truststorePassword: atakatak
+keyManagerType: SunX509
+v1Enabled: false
+v1Port: 9101
+useEpoll: true
+context: TLSv1.2
+allow128cipher: true
+allowNonSuiteB: true
+enableOCSP: false
+tlsVersions:
+ - TLSv1.2
+ - TLSv1.3
+v2Enabled: true
+v2Port: 9102
+maxMessageSizeBytes: 268435456
+metricsLogIntervalSeconds: 5
+clientTimeoutTime: 15
+clientRefreshTime: 5
+enableHealthCheck: true
+useCaGroups: true
+dbUsername: martiuser
+dbPassword: swak-test
+dbPort: 27017
+dbHost: localhost
+dbConnectionTimeoutMS: 5000
+missionFederationDBRetentionDays: 7
+missionFederationRecencySeconds: 43200
+missionFederationDisruptionEnabled: false
+missionFederationDisruptionMaxFileSizeBytes: 200

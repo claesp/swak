@@ -73,11 +73,17 @@ int main(int argc, char **argv)
         !profile.value(QStringLiteral("right")).isObject()) {
         return finish(QStringLiteral("Read two client configurations"), false);
     }
-    auto leftConfig = configuration(profile.value(QStringLiteral("left")).toObject());
+    // A load profile can send from the QUIC client instead of the left TLS client.
+    const auto load = profile.value(QStringLiteral("load")).toObject();
+    const auto sender = load.value(QStringLiteral("client")).toString() == u"quic"
+                            ? QStringLiteral("quic")
+                            : QStringLiteral("left");
+    auto leftConfig = configuration(profile.value(sender).toObject());
     const auto rightConfig = configuration(profile.value(QStringLiteral("right")).toObject());
     for (const auto &source : {leftConfig, rightConfig}) {
         const auto protocol = source.value(QStringLiteral("protocol")).toString();
-        if ((protocol != QStringLiteral("tls") && protocol != QStringLiteral("stcp")) ||
+        if ((protocol != QStringLiteral("tls") && protocol != QStringLiteral("stcp") &&
+             (protocol != QStringLiteral("quic") || load.isEmpty())) ||
             !validateServer(source).isEmpty()) {
             return finish(QStringLiteral("Validate stream configuration"), false);
         }
@@ -115,19 +121,30 @@ int main(int argc, char **argv)
     b.callsign = QStringLiteral("SWAK TEST B");
     b.team = QStringLiteral("Blue");
     b.role = QStringLiteral("Medic");
+    // Like ATAK, the clients repeat their positions. TAK Server drops an event that arrives
+    // before it has registered the receiving subscription.
     const auto exchange = [&] {
-        a.time = a.start = b.time = b.start = QDateTime::currentDateTimeUtc();
-        a.stale = b.stale = a.time.addSecs(180);
-        if (!left.send(a).isEmpty() || !right.send(b).isEmpty()) {
-            return false;
+        for (int attempt = 0; attempt < 5; ++attempt) {
+            a.time = a.start = b.time = b.start = QDateTime::currentDateTimeUtc();
+            a.stale = b.stale = a.time.addSecs(180);
+            if (!left.send(a).isEmpty() || !right.send(b).isEmpty()) {
+                return false;
+            }
+            if (QTest::qWaitFor(
+                    [&] {
+                        return contains(leftStore, b) && contains(rightStore, a);
+                    },
+                    3000)) {
+                return true;
+            }
         }
-        return QTest::qWaitFor(
-            [&] {
-                return contains(leftStore, b) && contains(rightStore, a);
-            },
-            15000);
+        return false;
     };
     if (!exchange()) {
+        report.insert(QStringLiteral("leftStatus"), left.status(QStringLiteral("test")));
+        report.insert(QStringLiteral("rightStatus"), right.status(QStringLiteral("test")));
+        report.insert(QStringLiteral("leftReceived"), contains(leftStore, b));
+        report.insert(QStringLiteral("rightReceived"), contains(rightStore, a));
         return finish(QStringLiteral("Exchange identity fields in both directions"), false);
     }
     report.insert(QStringLiteral("bidirectional"), true);
@@ -160,15 +177,14 @@ int main(int argc, char **argv)
         return finish(QStringLiteral("Exchange after reconnect"), false);
     }
     report.insert(QStringLiteral("reconnect"), true);
-    if (!profile.value(QStringLiteral("left")).toObject().contains(QStringLiteral("apiPort"))) {
-        return finish(QStringLiteral("Complete"), true);
-    }
     // A load profile replaces the feature checks.
-    const auto load = profile.value(QStringLiteral("load")).toObject();
     if (!load.isEmpty()) {
         const auto result = runLoad(left, right, rightStore, load);
         report.insert(QStringLiteral("load"), result);
         return finish(QStringLiteral("Complete"), result.value(QStringLiteral("passed")).toBool());
+    }
+    if (!profile.value(QStringLiteral("left")).toObject().contains(QStringLiteral("apiPort"))) {
+        return finish(QStringLiteral("Complete"), true);
     }
     // The feature checks need the positions in the server history, so send them once more.
     exchange();
