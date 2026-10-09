@@ -6,9 +6,11 @@
 #include "core/cot.h"
 #include "core/cot_detail.h"
 #include "core/data_feeds.h"
+#include "core/data_package.h"
 #include "core/emergency.h"
 #include "core/excheck.h"
 #include "core/file_shares.h"
+#include "core/icon_cache.h"
 #include "core/identity.h"
 #include "core/missions.h"
 #include "core/network_client.h"
@@ -26,6 +28,8 @@
 #include "core/user_objects.h"
 #include "core/video_sources.h"
 
+#include <QBuffer>
+#include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QSignalSpy>
@@ -529,54 +533,227 @@ QJsonObject runFeatureChecks(Servers &left,
                : loaded.isEmpty() ? QStringLiteral("no reply")
                                   : loaded.last().at(1).toString());
     }
+    // ExCheck: create a template, start a checklist, and complete one task.
+    {
+        const auto templateUid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        const auto taskUid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        const auto templateXml =
+            QStringLiteral(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?><checklist><checklistDetails>"
+                "<name>SWAK template</name><uid>%1</uid><description>Probe template</description>"
+                "<creatorCallsign>%2</creatorCallsign><creatorUid>%3</creatorUid></"
+                "checklistDetails>"
+                "<checklistColumns><checklistColumn><columnName>Step</columnName>"
+                "<columnType>ShortString</columnType><columnEditable>false</columnEditable>"
+                "<columnWidth>200</columnWidth></checklistColumn></checklistColumns>"
+                "<checklistTasks><checklistTask><uid>%4</uid><value>Radio check</value>"
+                "<number>1</number></checklistTask></checklistTasks></checklist>")
+                .arg(templateUid, a.callsign, a.uid, taskUid)
+                .toUtf8();
+        const auto posted = call(*one.api,
+                                 "POST",
+                                 QStringLiteral("/api/excheck/template?clientUid=%1").arg(a.uid),
+                                 templateXml,
+                                 "application/xml");
+        record(QStringLiteral("excheckTemplate"), posted.ok(), replyText(posted));
+        ExCheck excheck(one.api, &one.identity);
+        QSignalSpy listed(&excheck, &ExCheck::listed);
+        excheck.list(QStringLiteral("test"));
+        const bool hasTemplate =
+            listed.wait(Wait) &&
+            std::any_of(listed.last().at(2).value<QList<ChecklistTemplate>>().cbegin(),
+                        listed.last().at(2).value<QList<ChecklistTemplate>>().cend(),
+                        [&templateUid](const ChecklistTemplate &item) {
+                            return item.uid == templateUid;
+                        });
+        record(QStringLiteral("excheckTemplateList"), hasTemplate, {});
+        QSignalSpy started(&excheck, &ExCheck::started);
+        const auto title = id(QStringLiteral("SWAK checklist "));
+        auto error =
+            excheck.start(QStringLiteral("test"), templateUid, title, QStringLiteral("Probe run"));
+        const bool running =
+            error.isEmpty() && started.wait(Wait) && started.last().at(1).toString().isEmpty();
+        record(QStringLiteral("excheckStart"),
+               running,
+               error.isEmpty() && !started.isEmpty() ? started.last().at(1).toString() : error);
+        Checklist checklist;
+        if (running) {
+            excheck.list(QStringLiteral("test"));
+            if (listed.wait(Wait)) {
+                for (const auto &item : listed.last().at(1).value<QList<Checklist>>()) {
+                    if (item.name == title) {
+                        checklist = item;
+                    }
+                }
+            }
+        }
+        QSignalSpy loaded(&excheck, &ExCheck::loaded);
+        if (!checklist.uid.isEmpty()) {
+            excheck.load(QStringLiteral("test"), checklist.uid);
+            if (loaded.wait(Wait) && loaded.last().at(2).toString().isEmpty()) {
+                checklist = loaded.last().at(1).value<Checklist>();
+            }
+        }
+        record(QStringLiteral("excheckLoad"),
+               !checklist.tasks.isEmpty(),
+               QStringLiteral("%1 tasks").arg(checklist.tasks.size()));
+        bool completed = false;
+        if (!checklist.tasks.isEmpty()) {
+            QSignalSpy updated(&excheck, &ExCheck::updated);
+            error = excheck.setStatus(QStringLiteral("test"),
+                                      checklist.uid,
+                                      checklist.tasks.first(),
+                                      QStringLiteral("Complete"));
+            if (error.isEmpty() && updated.wait(Wait) &&
+                updated.last().at(2).toString().isEmpty()) {
+                excheck.load(QStringLiteral("test"), checklist.uid);
+                completed = loaded.wait(Wait) &&
+                            !loaded.last().at(1).value<Checklist>().tasks.isEmpty() &&
+                            loaded.last().at(1).value<Checklist>().tasks.first().complete();
+                if (!completed && !loaded.isEmpty() &&
+                    !loaded.last().at(1).value<Checklist>().tasks.isEmpty()) {
+                    error = QStringLiteral("read back: ") +
+                            loaded.last().at(1).value<Checklist>().tasks.first().status;
+                }
+            } else if (error.isEmpty() && !updated.isEmpty()) {
+                error = updated.last().at(2).toString();
+            }
+        }
+        record(QStringLiteral("excheckTaskUpdate"), completed, error);
+        if (!checklist.uid.isEmpty()) {
+            call(
+                *one.api,
+                "DELETE",
+                QStringLiteral("/api/excheck/checklist/%1?clientUid=%2").arg(checklist.uid, a.uid));
+        }
+        call(*one.api,
+             "DELETE",
+             QStringLiteral("/api/excheck/template/%1?clientUid=%2").arg(templateUid, a.uid));
+    }
+    // Iconsets: upload one, then show its icon through the icon cache.
+    {
+        const auto uid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        QImage image(16, 16, QImage::Format_ARGB32);
+        image.fill(Qt::blue);
+        QByteArray png;
+        QBuffer buffer(&png);
+        buffer.open(QIODevice::WriteOnly);
+        image.save(&buffer, "PNG");
+        const auto iconsetXml =
+            QStringLiteral(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?><iconset version=\"1\" name=\"SWAK "
+                "test\" uid=\"%1\" skipResize=\"false\" defaultFriendly=\"\" defaultHostile=\"\" "
+                "defaultUnknown=\"\"/>")
+                .arg(uid)
+                .toUtf8();
+        QString error;
+        const auto zip = writeDataPackage(uid,
+                                          QStringLiteral("SWAK test"),
+                                          {{QStringLiteral("iconset.xml"), iconsetXml},
+                                           {QStringLiteral("Probe/marker.png"), png}},
+                                          &error);
+        const auto boundary = QUuid::createUuid().toString(QUuid::Id128).toLatin1();
+        const QByteArray body =
+            "--" + boundary +
+            "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"iconset.zip\"\r\n"
+            "Content-Type: application/zip\r\n\r\n" +
+            zip + "\r\n--" + boundary + "--\r\n";
+        // TAK Server lets only administrators upload iconsets.
+        Store adminStore;
+        Servers admin(adminStore);
+        auto adminEntry = serverDefaults();
+        const auto adminProfile = profile.value(QStringLiteral("admin")).toObject();
+        for (auto it = adminProfile.begin(); it != adminProfile.end(); ++it) {
+            adminEntry.insert(it.key(), it.value());
+        }
+        adminEntry.insert(QStringLiteral("name"), QStringLiteral("Admin"));
+        adminEntry.insert(QStringLiteral("enabled"), false);
+        error += admin.put(QStringLiteral("test"), adminEntry);
+        TakServerApi adminApi(admin, network);
+        const auto posted = call(adminApi,
+                                 "POST",
+                                 QStringLiteral("/api/iconset"),
+                                 body,
+                                 "multipart/form-data; boundary=" + boundary);
+        record(QStringLiteral("iconsetUpload"),
+               posted.ok() && error.isEmpty(),
+               replyText(posted) + error);
+        const auto path = uid + QStringLiteral("/Probe/marker.png");
+        // The server processes uploads in the background and caches a missing icon. Wait until
+        // the iconset lists the icon, then ask once.
+        static_cast<void>(QTest::qWaitFor(
+            [&] {
+                return replyText(call(adminApi, "GET", QStringLiteral("/api/iconseturl/") + uid))
+                    .contains(QStringLiteral("marker.png"));
+            },
+            Wait));
+        QImage icon;
+        IconCache cache(&left, one.api);
+        QSignalSpy arrived(&cache, &IconCache::iconLoaded);
+        if (cache.icon(QStringLiteral("test"), path).isNull() && arrived.wait(Wait)) {
+            icon = cache.icon(QStringLiteral("test"), path);
+        }
+        record(QStringLiteral("iconsetIcon"),
+               !icon.isNull() && icon.pixelColor(8, 8).blue() > 200,
+               icon.isNull() ? QStringLiteral("no icon")
+                             : QStringLiteral("%1x%2").arg(icon.width()).arg(icon.height()));
+    }
+    // QUIC: a third client exchanges CoT with the TLS client on the right.
+    const auto quicProfile = profile.value(QStringLiteral("quic")).toObject();
+    if (!quicProfile.isEmpty()) {
+        Store store;
+        Servers quic(store);
+        auto entry = serverDefaults();
+        for (auto it = quicProfile.begin(); it != quicProfile.end(); ++it) {
+            entry.insert(it.key(), it.value());
+        }
+        entry.insert(QStringLiteral("name"), QStringLiteral("QUIC"));
+        entry.insert(QStringLiteral("enabled"), true);
+        auto error = quic.put(QStringLiteral("test"), entry);
+        const bool connected = error.isEmpty() && QTest::qWaitFor(
+                                                      [&] {
+                                                          return quic.statistics()
+                                                              .value(QStringLiteral("test"))
+                                                              .toObject()
+                                                              .value(QStringLiteral("connected"))
+                                                              .toBool();
+                                                      },
+                                                      Wait);
+        record(QStringLiteral("quicConnect"),
+               connected,
+               error.isEmpty() ? quic.status(QStringLiteral("test")) : error);
+        auto sent = a;
+        sent.uid += QStringLiteral("-QUIC");
+        sent.time = sent.start = QDateTime::currentDateTimeUtc();
+        sent.stale = sent.time.addSecs(180);
+        auto back = b;
+        back.uid += QStringLiteral("-TO-QUIC");
+        back.time = back.start = sent.time;
+        back.stale = sent.stale;
+        const bool exchanged = connected && quic.send(sent).isEmpty() &&
+                               right.send(back).isEmpty() &&
+                               QTest::qWaitFor(
+                                   [&] {
+                                       return has(rightStore, sent.uid) && has(store, back.uid);
+                                   },
+                                   Wait);
+        record(QStringLiteral("quicExchange"), exchanged, quic.status(QStringLiteral("test")));
+    }
     // Enrollment: request a certificate with a user name and password, then connect with it.
     const auto enrollment = profile.value(QStringLiteral("enrollment")).toObject();
     if (!enrollment.isEmpty()) {
         QTemporaryDir folder;
         Store store;
         Servers servers(store);
-        auto entry = serverDefaults();
-        const auto leftProfile = profile.value(QStringLiteral("left")).toObject();
-        entry.insert(QStringLiteral("name"), QStringLiteral("Enrolled"));
-        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
-        entry.insert(QStringLiteral("host"), leftProfile.value(QStringLiteral("host")));
-        entry.insert(QStringLiteral("port"), leftProfile.value(QStringLiteral("port")));
-        entry.insert(QStringLiteral("ca"), leftProfile.value(QStringLiteral("ca")));
-        entry.insert(QStringLiteral("enabled"), false);
-        servers.put(QStringLiteral("enroll"), entry);
-        TakEnrollment enroll(servers, network);
-        enroll.setDirectory(folder.path());
-        TakEnrollment::Options options;
-        options.serverId = QStringLiteral("enroll");
-        options.username = enrollment.value(QStringLiteral("username")).toString();
-        options.password = qgetenv(
-            enrollment.value(QStringLiteral("passwordEnv")).toString().toLatin1().constData());
-        options.port = enrollment.value(QStringLiteral("port")).toInt();
-        options.clientUid = a.uid;
-        QSignalSpy finished(&enroll, &TakEnrollment::finished);
-        auto error = enroll.start(options);
-        const bool signedOk =
-            error.isEmpty() && finished.wait(Wait) && finished.last().at(0).toString().isEmpty();
-        if (error.isEmpty() && !finished.isEmpty()) {
-            error = finished.last().at(0).toString();
-        }
-        record(QStringLiteral("enrollment"), signedOk, error);
-        if (signedOk) {
-            auto enrolled = servers.sources().value(QStringLiteral("enroll")).toObject();
-            enrolled.insert(QStringLiteral("enabled"), true);
-            servers.put(QStringLiteral("enroll"), enrolled);
-            const bool connected = QTest::qWaitFor(
-                [&] {
-                    return servers.statistics()
-                        .value(QStringLiteral("enroll"))
-                        .toObject()
-                        .value(QStringLiteral("connected"))
-                        .toBool();
-                },
-                Wait);
-            record(QStringLiteral("enrolledConnection"),
-                   connected,
-                   servers.status(QStringLiteral("enroll")));
+        const auto enrolled = enrollClient(servers,
+                                           network,
+                                           profile.value(QStringLiteral("left")).toObject(),
+                                           enrollment,
+                                           a.uid,
+                                           folder.path());
+        record(QStringLiteral("enrollment"), enrolled.signedIn, enrolled.error);
+        if (enrolled.signedIn) {
+            record(QStringLiteral("enrolledConnection"), enrolled.connected, enrolled.status);
         }
     }
     return checks;

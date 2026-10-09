@@ -66,7 +66,7 @@ Right-click a received object from a TAK Server entry with a REST API port and s
 
 # Server icons
 
-A received object with a `usericon` iconset path, such as `<iconset UID>/<group>/<name>.png`, shows that icon instead of its symbol. SWAK asks the TAK Server of the object for the icon once at `/Marti/api/iconimage`, with at most 4 requests at a time. It accepts PNG and JPEG images up to 256 KiB and 512 by 512 pixels, checks the size before decoding, and keeps at most 512 icons of at most 64 pixels. A missing or refused icon keeps the standard symbol and is not requested again. Built-in ATAK paths, such as `COT_MAPPING_SPOTMAP`, keep the SWAK symbols. Iconsets do not become marker collections, because SWAK marker collections are vector symbols.
+A received object with a `usericon` iconset path, such as `<iconset UID>/<group>/<name>.png`, shows that icon instead of its symbol. SWAK asks the TAK Server of the object for the icon once at `/Marti/api/icon/<iconset UID>/<group>/<name>`. TAK Server lets every user read this path, but `/Marti/api/iconimage` needs the administrator role. SWAK sends at most 4 requests at a time. It accepts PNG and JPEG images up to 256 KiB and 512 by 512 pixels, checks the size before decoding, and keeps at most 512 icons of at most 64 pixels. A missing or refused icon keeps the standard symbol and is not requested again. Built-in ATAK paths, such as `COT_MAPPING_SPOTMAP`, keep the SWAK symbols. Iconsets do not become marker collections, because SWAK marker collections are vector symbols.
 
 # Video
 

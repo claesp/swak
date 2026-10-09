@@ -891,6 +891,27 @@ private slots:
                 },
                 5000));
         }
+        // A host name needs a lookup first. It can resolve to IPv6 and IPv4. The listener has
+        // IPv4 only, so SWAK must try each address.
+        {
+            QuicHarness server;
+            server.payload = encodeCot(sampleEvent());
+            QVERIFY(server.start());
+            Store store;
+            Servers servers(store);
+            auto entry = source(server.port);
+            entry.insert(QStringLiteral("host"), QStringLiteral("localhost"));
+            entry.insert(QStringLiteral("protocol"), QStringLiteral("quic"));
+            entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+            entry.insert(QStringLiteral("apiPort"), 0);
+            QVERIFY(servers.put(QStringLiteral("quic"), entry).isEmpty());
+            QVERIFY2(QTest::qWaitFor(
+                         [&] {
+                             return store.rowCount() == 1;
+                         },
+                         15000),
+                     qPrintable(servers.status(QStringLiteral("quic"))));
+        }
         // Without the CA, certificate validation fails.
         {
             QuicHarness server;
@@ -3566,8 +3587,7 @@ private slots:
             15000));
         QCOMPARE(cache.icon(QStringLiteral("tak"), path(6)).size(), QSize(16, 16));
         QCOMPARE(api.requests.size(), 7);
-        QVERIFY(api.requests.first().startsWith(
-            "GET /Marti/api/iconimage?iconsetpath=set%2Fgroup%2Ficon0.png "));
+        QVERIFY(api.requests.first().startsWith("GET /Marti/api/icon/set/group/icon0.png "));
         QVERIFY(
             cache.icon(QStringLiteral("tak"), QStringLiteral("set/group/missing.png")).isNull());
         QVERIFY(QTest::qWaitFor(
@@ -3969,8 +3989,8 @@ private slots:
             "<checklistColumn><columnName>Owner</columnName></checklistColumn></checklistColumns>"
             "<checklistTasks>"
             "<checklistTask><uid>t-1</uid><value>Radio check</value><value>Alpha</value>"
-            "<status>PENDING</status><notes keep=\"yes\">x &amp; y</notes></checklistTask>"
-            "<checklistTask><uid>t-2</uid><value>Return</value><status>COMPLETE</status>"
+            "<status>Pending</status><notes keep=\"yes\">x &amp; y</notes></checklistTask>"
+            "<checklistTask><uid>t-2</uid><value>Return</value><status>Complete</status>"
             "<completeDTG>2026-10-09T09:00:00.000Z</completeDTG></checklistTask>"
             "<checklistTask><uid>bad uid</uid></checklistTask>"
             "</checklistTasks></checklist>";
@@ -4002,26 +4022,35 @@ private slots:
         QVERIFY(!readChecklists("<checklists><checklist>", &list));
         // A status update keeps other fields and sets the completion time.
         const auto now = QDateTime::currentDateTimeUtc();
-        auto updated = taskWithStatus(patrol.tasks.at(0).xml, QStringLiteral("COMPLETE"), now);
-        QVERIFY(updated.contains("<status>COMPLETE</status>"));
+        auto updated = taskWithStatus(patrol.tasks.at(0).xml, QStringLiteral("Complete"), now);
+        QVERIFY(updated.contains("<status>Complete</status>"));
         QVERIFY(updated.contains("<completeDTG>"));
         QVERIFY(updated.contains("<notes keep=\"yes\">x &amp; y</notes>"));
         QVERIFY(updated.contains("<value>Alpha</value>"));
         QCOMPARE(updated.count("<status>"), 1);
-        updated = taskWithStatus(patrol.tasks.at(1).xml, QStringLiteral("PENDING"), now);
-        QVERIFY(updated.contains("<status>PENDING</status>"));
+        updated = taskWithStatus(patrol.tasks.at(1).xml, QStringLiteral("Pending"), now);
+        QVERIFY(updated.contains("<status>Pending</status>"));
         QVERIFY(!updated.contains("completeDTG"));
         updated = taskWithStatus(
-            "<checklistTask><uid>x</uid></checklistTask>", QStringLiteral("COMPLETE_LATE"), now);
-        QVERIFY(updated.contains("<status>COMPLETE_LATE</status>"));
-        QVERIFY(taskWithStatus("<other/>", QStringLiteral("PENDING"), now).isEmpty());
+            "<checklistTask><uid>x</uid></checklistTask>", QStringLiteral("Complete (late)"), now);
+        QVERIFY(updated.contains("<status>Complete (late)</status>"));
+        // The status and the completion time keep the schema order.
+        updated = taskWithStatus(
+            "<checklistTask><uid>y</uid><value>v</value><notes>n</notes></checklistTask>",
+            QStringLiteral("Complete"),
+            now);
+        QVERIFY(updated.indexOf("<value>") < updated.indexOf("<status>Complete</status>"));
+        QVERIFY(updated.indexOf("<status>") < updated.indexOf("<completeDTG>"));
+        QVERIFY(updated.indexOf("<completeDTG>") < updated.indexOf("<notes>"));
+        QVERIFY(taskWithStatus(patrol.tasks.at(0).xml, QStringLiteral("COMPLETE"), now).isEmpty());
+        QVERIFY(taskWithStatus("<other/>", QStringLiteral("Pending"), now).isEmpty());
         QVERIFY(
             taskWithStatus(patrol.tasks.at(0).xml, QStringLiteral("bad status"), now).isEmpty());
-        QVERIFY(taskWithStatus("<checklistTask>", QStringLiteral("PENDING"), now).isEmpty());
-        QVERIFY(taskWithStatus("<!DOCTYPE x><checklistTask/>", QStringLiteral("PENDING"), now)
+        QVERIFY(taskWithStatus("<checklistTask>", QStringLiteral("Pending"), now).isEmpty());
+        QVERIFY(taskWithStatus("<!DOCTYPE x><checklistTask/>", QStringLiteral("Pending"), now)
                     .isEmpty());
         QVERIFY(
-            taskWithStatus(QByteArray(70 * 1024, ' '), QStringLiteral("PENDING"), now).isEmpty());
+            taskWithStatus(QByteArray(70 * 1024, ' '), QStringLiteral("Pending"), now).isEmpty());
         const auto templates =
             readChecklistTemplates("{\"data\":[{\"contents\":[{\"data\":{\"uid\":\"tpl-1\","
                                    "\"name\":\"Base\"}},{\"data\":{\"uid\":\"a b\"}},"
@@ -4111,19 +4140,19 @@ private slots:
                     .setStatus(QStringLiteral("tak"),
                                QStringLiteral("c-1"),
                                patrol.tasks.at(0),
-                               QStringLiteral("COMPLETE"))
+                               QStringLiteral("Complete"))
                     .isEmpty());
         QVERIFY(changed.wait(10000));
         QVERIFY(changed.last().at(2).toString().isEmpty());
         const auto put = api.requests.last();
         QVERIFY(put.startsWith("PUT /Marti/api/excheck/checklist/c-1/task/t-1?clientUid=SWAK-1 "));
         QVERIFY(put.contains("Content-Type: application/xml"));
-        QVERIFY(put.contains("<status>COMPLETE</status>"));
+        QVERIFY(put.contains("<status>Complete</status>"));
         QVERIFY(!excheck
                      .setStatus(QStringLiteral("tak"),
                                 QStringLiteral("c-1"),
                                 ChecklistTask{},
-                                QStringLiteral("COMPLETE"))
+                                QStringLiteral("Complete"))
                      .isEmpty());
         auto broken = patrol.tasks.at(0);
         broken.xml = "<other/>";
@@ -4131,7 +4160,7 @@ private slots:
                      .setStatus(QStringLiteral("tak"),
                                 QStringLiteral("c-1"),
                                 broken,
-                                QStringLiteral("COMPLETE"))
+                                QStringLiteral("Complete"))
                      .isEmpty());
         status = 403;
         excheck.list(QStringLiteral("tak"));
@@ -4141,7 +4170,7 @@ private slots:
                     .setStatus(QStringLiteral("tak"),
                                QStringLiteral("c-1"),
                                patrol.tasks.at(0),
-                               QStringLiteral("PENDING"))
+                               QStringLiteral("Pending"))
                     .isEmpty());
         QVERIFY(changed.wait(10000));
         QVERIFY(!changed.last().at(2).toString().isEmpty());
@@ -4170,7 +4199,7 @@ private slots:
                      .setStatus(QStringLiteral("tak"),
                                 QStringLiteral("c"),
                                 patrol.tasks.at(0),
-                                QStringLiteral("PENDING"))
+                                QStringLiteral("Pending"))
                      .isEmpty());
     }
     void citrapReports()

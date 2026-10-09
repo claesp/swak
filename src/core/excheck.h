@@ -15,12 +15,13 @@ struct ChecklistTask
     QString uid;
     // The cell values in column order.
     QStringList values;
+    // The TAK status: Pending, Complete, Complete (late), or Late.
     QString status;
     // The task as received, so an update keeps the fields that SWAK does not show.
     QByteArray xml;
     bool complete() const
     {
-        return status.startsWith(QStringLiteral("COMPLETE"));
+        return status.startsWith(QStringLiteral("Complete"));
     }
 };
 // A TAK ExCheck checklist. Active checklists are missions on TAK Server.

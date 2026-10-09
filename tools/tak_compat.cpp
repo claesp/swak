@@ -163,9 +163,17 @@ int main(int argc, char **argv)
     if (!profile.value(QStringLiteral("left")).toObject().contains(QStringLiteral("apiPort"))) {
         return finish(QStringLiteral("Complete"), true);
     }
+    // A load profile replaces the feature checks.
+    const auto load = profile.value(QStringLiteral("load")).toObject();
+    if (!load.isEmpty()) {
+        const auto result = runLoad(left, right, rightStore, load);
+        report.insert(QStringLiteral("load"), result);
+        return finish(QStringLiteral("Complete"), result.value(QStringLiteral("passed")).toBool());
+    }
     // The feature checks need the positions in the server history, so send them once more.
     exchange();
-    const auto checks = runFeatureChecks(left, right, leftStore, rightStore, a, b, profile);
+    auto checks = runFeatureChecks(left, right, leftStore, rightStore, a, b, profile);
+    runNetworkChecks(left, right, leftStore, rightStore, a, profile, checks);
     report.insert(QStringLiteral("features"), checks);
     QStringList failed;
     for (auto it = checks.begin(); it != checks.end(); ++it) {

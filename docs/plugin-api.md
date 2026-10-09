@@ -156,7 +156,7 @@ Read detail through `core/cot_detail.h`. `detailElements` and `detailElement` re
 
 # Track history and server icons
 
-`PluginServices::history` is the per-window `TrackHistory` service in `core/track_history.h`. `load` reads past positions for a time window, `add` adds a track, and `loaded` reports each result. The Trace plugin continues a loaded track. The history plugin implements `MapLayer` and `MenuPlugin`, and its MANIFEST declares `map-layer` and `menu`. `PluginServices::icons` is the per-window `IconCache` in `core/icon_cache.h`. `icon` returns a loaded icon or starts a bounded request, and `insert` adds an icon. The CoT layer reads the `usericon` path once for each event change and draws the icon when it is available.
+`PluginServices::history` is the per-window `TrackHistory` service in `core/track_history.h`. `load` reads past positions for a time window, `add` adds a track, and `loaded` reports each result. The Trace plugin continues a loaded track. The history plugin implements `MapLayer` and `MenuPlugin`, and its MANIFEST declares `map-layer` and `menu`. `PluginServices::icons` is the per-window `IconCache` in `core/icon_cache.h`. `icon` returns a loaded icon or starts a bounded request to `/api/icon/<iconset UID>/<group>/<name>`, and `insert` adds an icon. The CoT layer reads the `usericon` path once for each event change and draws the icon when it is available.
 
 # Video
 
@@ -164,7 +164,7 @@ Read detail through `core/cot_detail.h`. `detailElements` and `detailElement` re
 
 # Feeds, checklists, reports, and plugin data
 
-`core/data_feeds.h` reads the server data feed catalog, and `feedReceived` compares feed groups with the active channels. `PluginServices::excheck` is the per-window `ExCheck` service in `core/excheck.h`. It lists, reads, starts, and updates checklists, and `taskWithStatus` rewrites one task. `PluginServices::citrap` is the per-window `Citrap` service in `core/citrap.h`. It lists, creates, and updates reports and uploads attachments. `TakServerApi::submitPluginData` and `requestPluginData` give plugins a bounded call to a TAK Server plugin. The checklists and reports plugins implement `PanePlugin`, and their MANIFEST files declare `pane`.
+`core/data_feeds.h` reads the server data feed catalog, and `feedReceived` compares feed groups with the active channels. `PluginServices::excheck` is the per-window `ExCheck` service in `core/excheck.h`. It lists, reads, starts, and updates checklists, and `taskWithStatus` rewrites one task. A task status is one of the TAK XML values `Pending`, `Complete`, `Complete (late)`, and `Late`. `ChecklistTask::complete` is true for the two complete values. `PluginServices::citrap` is the per-window `Citrap` service in `core/citrap.h`. It lists, creates, and updates reports and uploads attachments. `TakServerApi::submitPluginData` and `requestPluginData` give plugins a bounded call to a TAK Server plugin. The checklists and reports plugins implement `PanePlugin`, and their MANIFEST files declare `pane`.
 
 # Emergency alerts
 

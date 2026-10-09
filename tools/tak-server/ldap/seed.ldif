@@ -1,0 +1,30 @@
+dn: dc=swak,dc=test
+objectClass: dcObject
+objectClass: organization
+dc: swak
+o: SWAK Test
+
+dn: ou=users,dc=swak,dc=test
+objectClass: organizationalUnit
+ou: users
+
+dn: ou=groups,dc=swak,dc=test
+objectClass: organizationalUnit
+ou: groups
+
+dn: cn=swak-ldap,ou=users,dc=swak,dc=test
+objectClass: inetOrgPerson
+cn: swak-ldap
+sn: Test
+uid: swak-ldap
+userPassword: swak-ldap-test
+
+dn: cn=SwakTest,ou=groups,dc=swak,dc=test
+objectClass: groupOfNames
+cn: SwakTest
+member: cn=swak-ldap,ou=users,dc=swak,dc=test
+
+dn: cn=SwakLdap,ou=groups,dc=swak,dc=test
+objectClass: groupOfNames
+cn: SwakLdap
+member: cn=swak-ldap,ou=users,dc=swak,dc=test

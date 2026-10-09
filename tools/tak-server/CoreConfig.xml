@@ -1,21 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Disposable test configuration. tools/tak_server.py copies it into the deployment. -->
+<!-- Disposable test configuration. tools/tak_server.py fills the @NAME@ fields for each server. -->
 <Configuration xmlns="http://bbn.com/marti/xml/config"
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:schemaLocation="CoreConfig.xsd">
     <network multicastTTL="1">
         <input _name="stdssl" protocol="tls" port="8089" coreVersion="2"/>
         <input _name="streamtcp" protocol="stcp" port="8088" auth="anonymous" coreVersion="2"/>
-        <connector port="8443" _name="https"/>
+        <input _name="quic" protocol="quic" port="8090" coreVersion="2"/>
+@INPUTS@        <connector port="8443" _name="https"/>
         <connector port="8446" clientAuth="false" _name="cert_https"/>
     </network>
-    <auth>
-        <File location="UserAuthenticationFile.xml"/>
+    <auth default="@AUTH_DEFAULT@">
+@LDAP@        <File location="UserAuthenticationFile.xml"/>
     </auth>
     <submission ignoreStaleMessages="false" validateXml="false"/>
-    <subscription reloadPersistent="false"/>
+    <subscription reloadPersistent="false">
+@STATIC@    </subscription>
     <repository enable="true" numDbConnections="8" primaryKeyBatchSize="500" insertionBatchSize="500">
-        <connection url="jdbc:postgresql://swak-tak-db:5432/cot" username="martiuser" password="swak-test"/>
+        <connection url="jdbc:postgresql://@DATABASE@:5432/cot" username="martiuser" password="swak-test"/>
     </repository>
     <repeater enable="true" periodMillis="3000" staleDelayMillis="15000">
         <repeatableType initiate-test="/event/detail/emergency[@type='911 Alert']" cancel-test="/event/detail/emergency[@cancel='true']" _name="911"/>
@@ -33,9 +35,17 @@
     </buffer>
     <security>
         <tls context="TLSv1.2" keymanager="SunX509"
-            keystore="JKS" keystoreFile="/opt/tak/certs/files/takserver.jks" keystorePass="atakatak"
+            keystore="JKS" keystoreFile="/opt/tak/certs/files/@KEYSTORE@" keystorePass="atakatak"
             truststore="JKS" truststoreFile="/opt/tak/certs/files/truststore-root.jks" truststorePass="atakatak"/>
     </security>
+    <federation enableFederation="true" allowFederatedDelete="false" allowMissionFederation="true">
+        <federation-server port="9000" v1enabled="false" v2port="9001" v2enabled="true"
+            initializationDelaySeconds="5">
+            <tls context="TLSv1.2" keymanager="SunX509"
+                keystore="JKS" keystoreFile="/opt/tak/certs/files/@KEYSTORE@" keystorePass="atakatak"
+                truststore="JKS" truststoreFile="/opt/tak/certs/files/fed-truststore.jks" truststorePass="atakatak"/>
+        </federation-server>
+@FEDERATION_OUTGOING@    </federation>
     <certificateSigning CA="TAKServer">
         <certificateConfig>
             <nameEntries>

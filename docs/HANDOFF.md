@@ -1648,3 +1648,17 @@ The video player and widget start at the first Play. The Qt FFmpeg backend probe
 # 2026-10-09: TAK Server container tests
 
 `tools/tak_server.py` and `tools/tak-server/` build and run official TAK Server 5.7-RELEASE-14 with the configuration, messaging, and API services, PostgreSQL with PostGIS, and test credentials, on loopback ports only. `swak_tak_compat` gains 31 feature checks through the production services: version, channels, contacts, chat and receipts, shared drawings and deletes, emergencies, data packages, missions, ExCheck, CI-TRAP, video, feeds, map layers, history, and enrollment. All checks pass, also under AddressSanitizer and UndefinedBehaviorSanitizer. The tests found and fixed five SWAK faults: stored zip entries that Java rejects, wrapped base64 in enrollment replies, JSON video lists, the CI-TRAP request formats, and missing ExCheck parameters. Unit tests now cover each fix. `docs/tak-compatibility.md` has the steps and results. The deployment was removed after the run. Its build and credentials remain under `build/tak-server`.
+
+# 2026-10-09: TAK probe for the remaining features
+
+The TAK test deployment now has two TAK Servers on a Podman network with the fixed subnet 10.89.77.0/24. Server A has the file users, a multicast input, and a static multicast subscription. Server B authenticates users with an OpenLDAP container from `tools/tak-server/ldap` and federates with server A through federation v2. `tools/tak_server.py up` shares the group `SwakTest` between the federates through the REST API. `test` runs the probe in the rootless network namespace of Podman, because rootless Podman cannot route multicast from the host. `test --loopback` keeps the host run with published ports. `load` sends positions at a fixed rate and reports delivery, latency, disconnects, and probe memory.
+
+`swak_tak_compat` now has 48 feature checks. The new checks cover ExCheck templates and task updates, iconsets, QUIC, multicast send and receive, LDAP enrollment and groups, and federation in both directions. The new code is in `tools/tak_compat_network.cpp`. All checks pass, also under AddressSanitizer and UndefinedBehaviorSanitizer. A 30-minute load at 20 positions per second with 50 UIDs delivered all 36000 positions without a repeat, a disconnect, or a queue drop. The median latency was 21 ms, the 95th percentile 40 ms, and the maximum 71 ms. The probe memory grew from 43.3 MiB to 43.9 MiB.
+
+The checks found and fixed three SWAK faults:
+
+- ExCheck sent status names such as `COMPLETE`. TAK Server accepts only `Pending`, `Complete`, `Complete (late)`, and `Late`, and stored no status. `taskWithStatus` now writes these values in schema order. The checklists pane uses them.
+- `IconCache` used `/api/iconimage`, which needs the admin role. It now uses `/api/icon/<uid>/<group>/<name>`.
+- A QUIC entry with a host name never connected, because the worker polled the stream during the name lookup. The worker now waits for the lookup, tries at most eight addresses with IPv4 first, and moves to the next address after five seconds.
+
+Unit tests cover the ExCheck values and order, the icon path, and QUIC by host name. The QUIC timeout move to the next address has no unit test, because it needs a host name with an address that does not answer. The probe load mode has no automated test for its disconnect and duplicate counters. Packet loss, federation hubs, LDAP over TLS, and Active Directory remain untested.

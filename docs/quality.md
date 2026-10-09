@@ -119,7 +119,7 @@ python3 tools/quality.py coverage --gui --lan
 
 The LAN test requires `unshare` and `ip`. A host policy that disables namespaces makes this diagnostic fail. The standard servers suite skips this integration case unless the isolated harness enables it.
 
-For an actual TAK Server test, run `tools/tak_server.py` to build and start a disposable TAK Server, then its `test` stage. Read [TAK compatibility](tak-compatibility.md) for the stages, the feature checks, and the results. This test sends synthetic messages to the local container. It does not run as part of CTest. Run it before a release and after changes to TAK features.
+For an actual TAK Server test, run `tools/tak_server.py` to build and start two disposable federated TAK Servers with an LDAP directory, then its `test` stage. Run its `load` stage for a sustained position load, for example `--seconds 1800 --rate 20`. Read [TAK compatibility](tak-compatibility.md) for the stages, the feature checks, and the results. This test sends synthetic messages to the local container. It does not run as part of CTest. Run it before a release and after changes to TAK features.
 
 # Emulator diagnostics
 

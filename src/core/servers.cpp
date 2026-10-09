@@ -48,6 +48,9 @@ QString tr(const char *s)
 }
 constexpr int MaxServers = 16;
 constexpr int MaxPeers = 16;
+// QUIC tries at most this many addresses of a host name, each for a few seconds.
+constexpr int MaxQuicAddresses = 8;
+constexpr qint64 QuicAddressTimeoutMs = 5000;
 constexpr int QueueLimit = 2048;
 constexpr quint16 DiscoveryPort = 17421;
 bool safe(const QString &s, int limit, bool empty = false)
@@ -395,6 +398,9 @@ private:
         std::unique_ptr<QTcpSocket> tcp;
         std::unique_ptr<QUdpSocket> udp;
         std::unique_ptr<QuicStream> quic;
+        // The other resolved addresses to try when the QUIC handshake fails.
+        QList<QHostAddress> quicAddresses;
+        qint64 quicAttempt = 0;
         // TAK Protocol version 1 after a successful negotiation.
         TakStream proto;
         bool binary = false, requested = false;
@@ -451,6 +457,7 @@ private:
             s.udp.reset();
         }
         s.quic.reset();
+        s.quicAddresses.clear();
         if (s.lookup >= 0) {
             QHostInfo::abortHostLookup(s.lookup);
             s.lookup = -1;
@@ -620,11 +627,33 @@ private:
                 fail(session, tr("The server host name cannot be resolved."));
                 return;
             }
-            connectQuic(session, info.addresses().first());
+            // A name such as localhost can resolve to IPv6 and IPv4. A server can listen on one
+            // of them only, so try each address. IPv4 comes first, as for most TAK servers.
+            auto addresses = info.addresses();
+            std::stable_partition(addresses.begin(), addresses.end(), [](const QHostAddress &item) {
+                return item.protocol() == QAbstractSocket::IPv4Protocol;
+            });
+            if (addresses.size() > MaxQuicAddresses) {
+                addresses.resize(MaxQuicAddresses);
+            }
+            session.quicAddresses = addresses.mid(1);
+            connectQuic(session, addresses.first());
         });
+    }
+    // Starts a new QUIC handshake with the next resolved address. Returns false when no
+    // address remains.
+    bool nextQuicAddress(Session &s)
+    {
+        if (s.quicAddresses.isEmpty()) {
+            return false;
+        }
+        s.quic = std::make_unique<QuicStream>();
+        connectQuic(s, s.quicAddresses.takeFirst());
+        return true;
     }
     void connectQuic(Session &s, const QHostAddress &address)
     {
+        s.quicAttempt = clock_.elapsed();
         const auto files = readTlsFiles(s.source);
         if (!files.error.isEmpty()) {
             fail(s, files.error);
@@ -957,8 +986,16 @@ private:
             return;
         }
         if (s.quic) {
+            // The stream starts after the host name lookup. Until then, it has nothing to poll.
+            if (s.lookup >= 0) {
+                return;
+            }
             QByteArray bytes;
             if (!s.quic->poll(bytes, MaxMessageBytes)) {
+                // Before the connection, try the next address of the host name.
+                if (!s.ready && nextQuicAddress(s)) {
+                    return;
+                }
                 // Copy the text. fail() destroys the QUIC stream that owns it.
                 const QString error = s.quic->error();
                 fail(s, error);
@@ -1339,6 +1376,11 @@ private:
             const auto now = clock_.elapsed();
             if (!s.tcp && !s.udp && !s.quic && now >= s.next) {
                 start(s);
+            }
+            // An address that does not answer gets a few seconds before the next one.
+            if (s.quic && !s.ready && !s.quicAddresses.isEmpty() &&
+                now - s.quicAttempt > QuicAddressTimeoutMs) {
+                nextQuicAddress(s);
             }
             if ((s.tcp || s.quic) && !s.ready &&
                 now - s.started >

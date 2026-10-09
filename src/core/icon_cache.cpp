@@ -17,6 +17,16 @@ bool serverIconPath(const QString &path)
     return pattern.match(path).hasMatch() && !path.startsWith(QStringLiteral("COT_MAPPING_")) &&
            !path.contains(QStringLiteral(".."));
 }
+// TAK Server lets every user read /api/icon/{uid}/{group}/{name}. The /api/iconimage
+// request needs the administrator role.
+QString iconRequestPath(const QString &path)
+{
+    QString result = QStringLiteral("/api/icon");
+    for (const auto &part : path.split(QLatin1Char('/'))) {
+        result += QLatin1Char('/') + QString::fromLatin1(QUrl::toPercentEncoding(part));
+    }
+    return result;
+}
 QImage decodeIcon(const QByteArray &bytes)
 {
     if (bytes.isEmpty() || bytes.size() > IconCache::MaxIconBytes) {
@@ -61,7 +71,7 @@ QImage IconCache::icon(const QString &serverId, const QString &path)
     if (failed_.contains(key) || pending_.contains(key) || !serverIconPath(path) || !api_ ||
         !servers_ ||
         TakServerApi::apiUrl(servers_->sources().value(serverId).toObject(),
-                             QStringLiteral("/iconimage"))
+                             QStringLiteral("/icon"))
             .isEmpty()) {
         return {};
     }
@@ -107,8 +117,7 @@ void IconCache::request(const QString &serverId, const QString &path)
     api_->martiRequest(
         serverId,
         "GET",
-        QStringLiteral("/api/iconimage?iconsetpath=") +
-            QString::fromLatin1(QUrl::toPercentEncoding(path)),
+        iconRequestPath(path),
         {},
         {},
         this,

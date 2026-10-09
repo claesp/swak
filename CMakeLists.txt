@@ -359,7 +359,7 @@ if(BUILD_TESTING)
     target_link_libraries(swak_cot_emulator PRIVATE swak_simulation)
     add_executable(
         swak_tak_compat tools/tak_compat.cpp tools/tak_compat_features.cpp
-                        tools/tak_compat_features.h
+                        tools/tak_compat_features.h tools/tak_compat_network.cpp
     )
     target_link_libraries(swak_tak_compat PRIVATE swak_core Qt6::Test)
     add_executable(swak_server_tests tests/test_servers.cpp)

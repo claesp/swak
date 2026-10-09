@@ -4,7 +4,18 @@ The development probe uses SWAK's actual Servers, Store, XML parser, and encoder
 
 # Disposable test server
 
-`tools/tak_server.py` builds and runs official TAK Server 5.7-RELEASE-14 from source commit 5187abd46d827d37cfc5708805eced197a837e49 in Podman containers. It needs Podman, Git, OpenSSL, network access for the first build, and about 4 GiB of free memory. Everything it writes stays under `build/tak-server`. The deployment publishes only loopback ports: 18088 (plain TCP CoT), 18089 (TLS CoT), 18443 (REST API with client certificates), and 18446 (enrollment with a user name and password). The database and the service network stay private.
+`tools/tak_server.py` builds and runs official TAK Server 5.7-RELEASE-14 from source commit 5187abd46d827d37cfc5708805eced197a837e49 in Podman containers. It needs rootless Podman, Git, OpenSSL, network access for the first build, and about 8 GiB of free memory. Everything it writes stays under `build/tak-server`.
+
+The deployment has two TAK Servers, two PostgreSQL databases, and one OpenLDAP directory on the Podman network `swak-tak` with the fixed subnet 10.89.77.0/24:
+
+| Container | Address | Use |
+| --- | --- | --- |
+| swak-tak-server (server A) | 10.89.77.10 | File users, multicast input and output, federation server |
+| swak-tak-server-b (server B) | 10.89.77.11 | LDAP users, outgoing federation to server A |
+| swak-tak-ldap | 10.89.77.12 | The test directory from `tools/tak-server/ldap` |
+| swak-tak-db, swak-tak-db-b | dynamic | The databases of server A and server B |
+
+The host gets only loopback ports. Server A publishes 18088 (plain TCP CoT), 18089 (TLS CoT), 18090/udp (QUIC), 18443 (REST API with client certificates), and 18446 (enrollment with a user name and password). Server B publishes 28089, 28443, and 28446. The databases and the directory stay private.
 
 Run the stages from the repository root:
 
@@ -15,17 +26,19 @@ python3 tools/tak_server.py certs
 python3 tools/tak_server.py up
 cmake --build --preset debug --target swak_tak_compat --parallel 4
 python3 tools/tak_server.py test
+python3 tools/tak_server.py load --seconds 600 --rate 10
 python3 tools/tak_server.py down
 ```
 
 - `fetch` clones the pinned source and adds the local release tag that the TAK build reads.
 - `build` builds the TAK Server war and the schema manager without the web dashboards. Gradle keeps its cache under `build/tak-server/gradle-home`.
-- `certs` creates a private test CA, the server keystores, and the client certificates `left`, `right`, and `admin`. They expire after seven days.
-- `up` starts PostgreSQL 15 with PostGIS 3.3, applies the TAK schema, and starts the configuration, messaging, and API services from `tools/tak-server/start.sh`. It writes the user file with BCrypt from the TAK build. The configuration is `tools/tak-server/CoreConfig.xml`.
-- `test` writes `build/tak-server/profile.json` and runs the probe. Use `--preset sanitize` to run the probe under AddressSanitizer and UndefinedBehaviorSanitizer. The report is `build/tak-server/report-<preset>.json`.
+- `certs` creates a private test CA, the keystores of both servers, and the client certificates `left`, `right`, and `admin`. Each server certificate names its container and address. Its keystore holds the CA after the server certificate, because federation reads the CA from that chain. The credentials expire after seven days.
+- `up` builds the directory image, starts the databases and the directory, applies the TAK schema, and starts the configuration, messaging, and API services of both servers from `tools/tak-server/start.sh`. It fills `tools/tak-server/CoreConfig.xml` for each server. It writes the user files with BCrypt from the TAK build. When both servers list the federate, it shares the group `SwakTest` in both directions through `/api/federategroups`.
+- `test` writes `build/tak-server/profile.json` and runs the probe in the rootless network namespace of Podman (`podman unshare --rootless-netns`). There the probe reaches the container addresses and the bridge, so it can use multicast. Use `--loopback` to run the probe on the host with the published ports and without the multicast checks. Use `--preset sanitize` to run the probe under AddressSanitizer and UndefinedBehaviorSanitizer. The report is `build/tak-server/report-<preset>.json`, or `report-<preset>-loopback.json`.
+- `load` runs the probe with a load profile instead of the feature checks. It takes `--seconds`, `--rate` (positions per second), and `--objects` (distinct UIDs). The report is `build/tak-server/load-<preset>.json`.
 - `status` shows the containers and ports. `down` removes the containers and the network but keeps the build and the credentials.
 
-The test users are `swak-left` and `swak-right` with certificates, `swak-admin` with the admin role, and `swak-enroll` with a password for enrollment. The probe sends synthetic objects with short lifetimes and creates and deletes a test mission and video connection.
+The test users on server A are `swak-left` and `swak-right` with certificates, `swak-admin` with the admin role, and `swak-enroll` with a password for enrollment. Server B has `swak-admin` in its user file and `swak-ldap` in the directory, in the LDAP groups `SwakTest` and `SwakLdap`. The probe sends synthetic objects with short lifetimes and creates and deletes a test mission, checklist template, and video connection. It also uploads a test iconset.
 
 # Feature checks
 
@@ -40,23 +53,41 @@ The test users are `swak-left` and `swak-right` with certificates, `swak-admin` 
 | packageUpload, packageOffer, packageImport, serverFiles | FileShares, data packages | Upload, the directed offer, download, hash check, import, and the file list |
 | missionCreate to missionDelete | Missions | Subscribe, add an object, write the log, export the archive |
 | excheckList | ExCheck | The active checklist list and templates |
+| excheckTemplate, excheckTemplateList, excheckStart, excheckLoad, excheckTaskUpdate | ExCheck | A posted template, its list entry, a started checklist, its tasks, and a task set to Complete and read back |
 | citrapCreate, citrapList, citrapUpdate | Citrap | A report with an attachment, the list, and a status change |
 | videoCreate, videoList | VideoSources | A connection from `/video` |
 | dataFeeds, mapLayers | readServerFeeds, readServerMapLayers | The catalogs parse |
 | history | TrackHistory | Past positions of the left client |
+| iconsetUpload, iconsetIcon | IconCache | The admin uploads an iconset, then the left client gets its icon |
+| quicConnect, quicExchange | Servers (QUIC) | A QUIC stream by host name, and CoT to and from a TLS client |
 | enrollment, enrolledConnection | TakEnrollment | A signed certificate, then a TLS stream with it |
+| multicastJoin, multicastSend, multicastReceive | Servers (mcast) | SWAK sends to the TAK input 239.2.3.1:6969 and receives from the TAK static subscription 239.2.3.2:6970 |
+| ldapEnrollment, ldapConnection, ldapGroups | TakEnrollment, TakChannels | The directory user enrolls on server B, connects, and gets the LDAP groups |
+| federationInbound, federationOutbound | Servers | Server A delivers an event from the server B client, and server B delivers an event from the left client |
+
+The multicast checks run only in the bridge mode of `test`. The load report records sent and delivered positions, the delivery ratio, repeated positions, disconnects, queue drops, latency percentiles, and the resident memory of the probe. The load passes when at least 99 percent of the positions arrive, without a repeated position or a disconnect.
 
 # Results, October 9, 2026
 
-All transport stages and all 31 feature checks passed against TAK Server 5.7-RELEASE-14. The run under AddressSanitizer and UndefinedBehaviorSanitizer also passed without a report. The first runs found these SWAK faults, which are now fixed:
+All transport stages and all 48 feature checks passed against TAK Server 5.7-RELEASE-14. The loopback mode passed its 45 checks. The run under AddressSanitizer and UndefinedBehaviorSanitizer also passed without a report. A 30-minute load at 20 positions per second with 50 UIDs delivered all 36000 positions without a repeat, a disconnect, or a queue drop. The median latency was 21 ms, the 95th percentile 40 ms, and the maximum 71 ms. The probe memory grew from 43.3 MiB to 43.9 MiB.
+
+The first runs found these SWAK faults, which are now fixed:
 
 - Data packages used stored zip entries with data descriptors. Java ZipInputStream, which TAK Server and ATAK use, rejects them. SWAK now writes deflated entries.
 - Enrollment rejected the signed certificate, because TAK Server wraps base64 text at 64 characters. SWAK now removes the line breaks.
 - `/api/video` answers JSON, not XML. SWAK now reads both.
 - CI-TRAP needs a zip package with the report XML to create a report, raw attachment bytes with a Content-Disposition file name, a WKT `POINT(longitude latitude)` location, and `userDescription` as an attribute. The search answers JSON. SWAK now uses this format.
 - ExCheck needs `clientUid` on the active list and `clientUid` and `startTime` to start a checklist.
+- ExCheck task status uses the XML values `Pending`, `Complete`, `Complete (late)`, and `Late`. SWAK sent the enumeration names, such as `COMPLETE`, and the server stored no status. SWAK now sends the XML values. It also writes `status` and `completeDTG` in the order of the task schema.
+- `/api/iconimage` needs the admin role. SWAK now gets iconset icons from `/api/icon/<iconset UID>/<group>/<name>`, which every user can read.
+- A QUIC entry with a host name never connected. SWAK polled the stream before the name lookup ended. SWAK now waits for the lookup, tries IPv4 addresses first, and tries the next address after five seconds.
 
-These results establish compatibility with this server version and configuration. LDAP, federation, QUIC, multicast, iconsets, ExCheck templates and task updates, long-duration loads, and packet loss remain outside the probe. The GUI tests cover the panes through local fixtures.
+TAK Server behavior that the probe works around:
+
+- TAK Server processes an iconset upload in the background and caches a missing icon. A client that asks before the processing ends gets HTTP 404 until the cache entry expires. The probe waits until `/api/iconseturl/<uid>` lists the icon.
+- Rootless Podman cannot route multicast between the host and the containers. The probe joins the groups on the bridge address 10.89.77.1 in the rootless network namespace.
+
+These results establish compatibility with this server version and configuration. Packet loss, federation hubs, LDAP over TLS, and Active Directory remain outside the probe. The GUI tests cover the panes through local fixtures.
 
 # Manual profile
 
@@ -100,7 +131,7 @@ Run the probe from the repository root after the server starts:
 ./build/debug/swak_tak_compat /path/to/profile.json
 ```
 
-The probe remains outside the release executable and installation. It requires no new runtime dependency. It does not replace GUI rendering tests, sustained load tests, or tests against your deployment's authentication policy.
+The probe remains outside the release executable and installation. It requires no new runtime dependency. It does not replace GUI rendering tests or tests against your deployment's authentication policy.
 
 # Local results, October 4, 2026
 

@@ -127,10 +127,10 @@ public:
                     showStatus({});
                 });
         connect(complete, &QPushButton::clicked, this, [this] {
-            update(QStringLiteral("COMPLETE"));
+            update(QStringLiteral("Complete"));
         });
         connect(pending, &QPushButton::clicked, this, [this] {
-            update(QStringLiteral("PENDING"));
+            update(QStringLiteral("Pending"));
         });
         connect(excheck_,
                 &ExCheck::updated,
@@ -235,7 +235,7 @@ private:
                 item->setToolTip(item->text());
                 tasks_->setItem(row, column, item);
             }
-            auto *state = new QTableWidgetItem(task.status.isEmpty() ? tr("PENDING") : task.status);
+            auto *state = new QTableWidgetItem(task.status.isEmpty() ? tr("Pending") : task.status);
             if (task.complete()) {
                 state->setForeground(QColor(QStringLiteral("#2e7d32")));
             }

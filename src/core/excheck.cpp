@@ -42,10 +42,22 @@ QString httpError(const NetworkReply &reply)
     }
     return ExCheck::tr("The server answered with HTTP %1.").arg(reply.status);
 }
+// These task elements come after completeDTG in the schema sequence.
+bool afterCompleteTime(QStringView name)
+{
+    return name == u"notes" || name == u"dueRelativeTime" || name == u"dueDTG" ||
+           name == u"lineBreakText";
+}
+// TAK Server accepts only these XML values for checklistTaskStatus.
 bool validStatus(const QString &status)
 {
-    static const QRegularExpression pattern(QStringLiteral("\\A[A-Z_]{1,32}\\z"));
-    return pattern.match(status).hasMatch();
+    return status == u"Pending" || status == u"Complete" || status == u"Complete (late)" ||
+           status == u"Late";
+}
+// These task elements come after status in the schema sequence.
+bool afterStatus(QStringView name)
+{
+    return name == u"customStatus" || name == u"completeBy" || afterCompleteTime(name);
 }
 } // namespace
 
@@ -180,13 +192,14 @@ QByteArray taskWithStatus(const QByteArray &taskXml, const QString &status, cons
     if (!validStatus(status) || taskXml.size() > 64 * 1024) {
         return {};
     }
-    const bool complete = status.startsWith(QStringLiteral("COMPLETE"));
+    const bool complete = status.startsWith(QStringLiteral("Complete"));
     QXmlStreamReader reader(taskXml);
     QByteArray output;
     QXmlStreamWriter writer(&output);
     int depth = 0;
     int skipping = 0;
     bool statusWritten = false;
+    bool timeWritten = !complete;
     bool root = false;
     while (!reader.atEnd()) {
         const auto token = reader.readNext();
@@ -218,6 +231,15 @@ QByteArray taskWithStatus(const QByteArray &taskXml, const QString &status, cons
                 skipping = 1;
                 continue;
             }
+            if (depth == 2 && !statusWritten && afterStatus(reader.name())) {
+                writer.writeTextElement(QStringLiteral("status"), status);
+                statusWritten = true;
+            }
+            if (depth == 2 && !timeWritten && afterCompleteTime(reader.name())) {
+                writer.writeTextElement(QStringLiteral("completeDTG"),
+                                        now.toUTC().toString(Qt::ISODateWithMs));
+                timeWritten = true;
+            }
             writer.writeStartElement(reader.namespaceUri().toString(), reader.name().toString());
             writer.writeAttributes(reader.attributes());
             break;
@@ -226,7 +248,7 @@ QByteArray taskWithStatus(const QByteArray &taskXml, const QString &status, cons
                 if (!statusWritten) {
                     writer.writeTextElement(QStringLiteral("status"), status);
                 }
-                if (complete) {
+                if (!timeWritten) {
                     writer.writeTextElement(QStringLiteral("completeDTG"),
                                             now.toUTC().toString(Qt::ISODateWithMs));
                 }
