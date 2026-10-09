@@ -262,15 +262,18 @@ QByteArray writeDataPackage(const QString &uid,
     xml.writeEndElement();
     xml.writeEndElement();
     xml.writeEndDocument();
-    // Stored entries are never larger than their content plus headers.
-    QByteArray output(total + manifest.size() + (entries.size() + 1) * 1024 + 4096, '\0');
+    // Deflate can grow incompressible data a little. Leave room for that and the headers.
+    const auto content = total + manifest.size();
+    QByteArray output(content + content / 64 + (entries.size() + 1) * 1024 + 64 * 1024, '\0');
     size_t used = 0;
     std::unique_ptr<archive, decltype(&archive_write_free)> writer(archive_write_new(),
                                                                    archive_write_free);
     std::unique_ptr<archive_entry, decltype(&archive_entry_free)> header(archive_entry_new(),
                                                                          archive_entry_free);
     if (!writer || !header || archive_write_set_format_zip(writer.get()) != ARCHIVE_OK ||
-        archive_write_set_options(writer.get(), "zip:compression=store") != ARCHIVE_OK ||
+        // Java ZipInputStream, which TAK Server and ATAK use, rejects stored entries with data
+        // descriptors. Deflated entries work with every reader.
+        archive_write_set_options(writer.get(), "zip:compression=deflate") != ARCHIVE_OK ||
         archive_write_open_memory(
             writer.get(), output.data(), static_cast<size_t>(output.size()), &used) != ARCHIVE_OK) {
         return fail(tr("Cannot create the package archive."));

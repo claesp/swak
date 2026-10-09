@@ -1227,6 +1227,19 @@ private slots:
         QVERIFY(result.certificate.startsWith("-----BEGIN CERTIFICATE-----"));
         QCOMPARE(QSslCertificate::fromData(result.authorities).size(), 1);
         QVERIFY(!readEnrollmentReply(reply, plain.pem, {}).error.isEmpty());
+        // TAK Server wraps the base64 text at 64 characters.
+        const auto wrap = [](QByteArray text) {
+            for (qsizetype i = 64; i < text.size(); i += 65) {
+                text.insert(i, '\n');
+            }
+            return QString::fromLatin1(text);
+        };
+        const auto wrapped =
+            QJsonDocument(QJsonObject{{QStringLiteral("signedCert"), wrap(signedCert)},
+                                      {QStringLiteral("ca0"), wrap(fixtureCertificateBase64())}})
+                .toJson();
+        QVERIFY2(readEnrollmentReply(wrapped, locked.pem, "secret").error.isEmpty(),
+                 qPrintable(readEnrollmentReply(wrapped, locked.pem, "secret").error));
         QVERIFY(
             !readEnrollmentReply("{\"signedCert\":\"!!\"}", locked.pem, "secret").error.isEmpty());
         QVERIFY(!readEnrollmentReply(
@@ -2313,6 +2326,13 @@ private slots:
         QCOMPARE(package.entries.size(), 2);
         QCOMPARE(package.entries.at(0).path, QStringLiteral("one/one.cot"));
         QCOMPARE(package.entries.at(1).bytes, QByteArray("<kml/>"));
+        // Java readers, such as TAK Server and ATAK, need deflated entries. Each local file
+        // header names compression method 8.
+        for (qsizetype at = zip.indexOf("PK\x03\x04"); at >= 0;
+             at = zip.indexOf("PK\x03\x04", at + 4)) {
+            QCOMPARE(static_cast<unsigned char>(zip.at(at + 8)), 8);
+            QCOMPARE(static_cast<unsigned char>(zip.at(at + 9)), 0);
+        }
         // The writer rejects unsafe content.
         QVERIFY(writeDataPackage(QStringLiteral("x"), {}, {{QStringLiteral("../x"), "x"}}, &error)
                     .isEmpty());
@@ -3636,6 +3656,21 @@ private slots:
         QCOMPARE(list.at(1).url.toString(), QStringLiteral("srt://10.0.0.7:9000/stream"));
         QCOMPARE(list.at(1).origin, QStringLiteral("tak"));
         QVERIFY(!readVideoConnections("<!DOCTYPE x><x/>", {}, &list));
+        // TAK Server 5 answers JSON with connections and their feeds.
+        const QByteArray json =
+            "{\"videoConnections\":[{\"uid\":\"v1\",\"alias\":\"Gate\",\"feeds\":["
+            "{\"alias\":\"North\",\"url\":\"rtsp://10.0.0.9:554/live\",\"active\":true},"
+            "{\"url\":\"srt://10.0.0.7:9000\"},{\"alias\":\"Off\",\"url\":\"rtsp://10.0.0.8/"
+            "x\",\"active\":false},"
+            "{\"url\":\"file:///tmp/x\"}]}]}";
+        QVERIFY(readVideoConnections(json, QStringLiteral("tak"), &list));
+        QCOMPARE(list.size(), 2);
+        QCOMPARE(list.at(0).name, QStringLiteral("North"));
+        QCOMPARE(list.at(1).name, QStringLiteral("Gate"));
+        QCOMPARE(list.at(1).protocol, VideoProtocol::Srt);
+        QVERIFY(readVideoConnections("{\"videoConnections\":[]}", {}, &list));
+        QVERIFY(list.isEmpty());
+        QVERIFY(!readVideoConnections("{\"other\":1}", {}, &list));
         QVERIFY(!readVideoConnections("<a><feed>", {}, &list));
         QByteArray many = "<v>";
         for (int i = 0; i <= 256; ++i) {
@@ -4003,16 +4038,17 @@ private slots:
         api.respond = [&](const QByteArray &request) {
             QByteArray body;
             int code = status;
-            if (request.startsWith("GET /Marti/api/excheck/checklist/active ")) {
+            if (request.startsWith("GET /Marti/api/excheck/checklist/active?clientUid=SWAK-1 ")) {
                 body = "<checklists>" + checklist.mid(checklist.indexOf("<checklist>")) +
                        "</checklists>";
             } else if (request.startsWith("GET /Marti/api/missions/exchecktemplates ")) {
                 body = "{\"data\":[{\"contents\":[{\"data\":{\"uid\":\"tpl-1\",\"name\":\"Base\"}}]"
                        "}]}";
                 code = templatesMissing ? 404 : 200;
-            } else if (request.startsWith("GET /Marti/api/excheck/checklist/c-1 ")) {
+            } else if (request.startsWith(
+                           "GET /Marti/api/excheck/checklist/c-1?clientUid=SWAK-1 ")) {
                 body = checklist;
-            } else if (request.startsWith("GET /Marti/api/excheck/checklist/empty ")) {
+            } else if (request.startsWith("GET /Marti/api/excheck/checklist/empty?clientUid=")) {
                 body = "<checklists/>";
             }
             return QByteArray("HTTP/1.1 ") + QByteArray::number(code) +
@@ -4069,6 +4105,8 @@ private slots:
         QVERIFY(api.requests.last().startsWith(
             "POST /Marti/api/excheck/tpl-1/start?name=Night%201&description=Go&callsign="));
         QVERIFY(api.requests.last().contains("clientUid=SWAK-1"));
+        // TAK Server requires the start time.
+        QVERIFY(api.requests.last().contains("&startTime=20"));
         QVERIFY(excheck
                     .setStatus(QStringLiteral("tak"),
                                QStringLiteral("c-1"),
@@ -4168,11 +4206,27 @@ private slots:
         QVERIFY(std::abs(again.first().longitude - 18.25) < 1e-6);
         QVERIFY(validCitrapId(QStringLiteral("r-1")));
         QVERIFY(!validCitrapId(QStringLiteral("..")));
+        // TAK Server writes WKT locations and answers a search with a JSON list.
+        QVERIFY(citrapReportXml(written).contains("location=\"POINT(18.2500000 59.5000000)\""));
+        QVERIFY(citrapReportXml(written).contains("userDescription=\"Water over road\""));
+        QVERIFY(readCitrapReports(
+            "[{\"id\":\"j-1\",\"title\":\"JSON\",\"location\":\"POINT (18.5 59.25)\","
+            "\"userDescription\":\"From JSON\",\"importance\":3},{\"id\":\"bad id\"}]",
+            &reports));
+        QCOMPARE(reports.size(), 1);
+        QCOMPARE(reports.first().latitude, 59.25);
+        QCOMPARE(reports.first().longitude, 18.5);
+        QCOMPARE(reports.first().description, QStringLiteral("From JSON"));
+        QByteArray tooMany = "[";
+        for (int i = 0; i <= MaxCitrapReports; ++i) {
+            tooMany += i ? ",{}" : "{}";
+        }
+        QVERIFY(!readCitrapReports(tooMany + "]", &reports));
         // The service lists, creates with attachments, and updates reports.
         HttpsHarness api;
         QVERIFY(api.load());
         int status = 200;
-        QByteArray createReply = "<report id=\"server-7\"/>";
+        QByteArray createReply = "{\"id\":\"server-7\"}";
         api.respond = [&](const QByteArray &request) {
             QByteArray body;
             int code = status;
@@ -4180,7 +4234,8 @@ private slots:
                 body = list;
             } else if (request.startsWith("POST /Marti/api/citrap?")) {
                 body = createReply;
-            } else if (request.contains("/attachment?") && request.contains("filename=_bad.bin")) {
+            } else if (request.contains("/attachment?") &&
+                       request.contains("filename=\"_bad.bin\"")) {
                 code = 500;
             }
             return QByteArray("HTTP/1.1 ") + QByteArray::number(code) +
@@ -4226,17 +4281,35 @@ private slots:
         QVERIFY(created.wait(10000));
         QCOMPARE(created.last().at(1).toString(), QStringLiteral("server-7"));
         QVERIFY(created.last().at(2).toString().contains(QStringLiteral("bad.bin")));
+        // The new report goes up as a zip package with the report XML.
+        const auto post =
+            std::find_if(api.requests.cbegin(), api.requests.cend(), [](const QByteArray &request) {
+                return request.startsWith("POST /Marti/api/citrap?clientUid=SWAK-1 ");
+            });
+        QVERIFY(post != api.requests.cend());
+        const auto package = readDataPackage(post->mid(post->indexOf("\r\n\r\n") + 4));
+        QVERIFY2(package.error.isEmpty(), qPrintable(package.error));
+        QCOMPARE(package.entries.size(), 1);
+        QCOMPARE(package.entries.first().path, QStringLiteral("report.xml"));
+        QVERIFY(package.entries.first().bytes.contains("title=\"New hazard\""));
+        // Attachments are raw bytes with the file name in Content-Disposition.
         const auto uploads = std::count_if(
             api.requests.cbegin(), api.requests.cend(), [](const QByteArray &request) {
                 return request.startsWith(
-                    "POST /Marti/api/citrap/server-7/attachment?clientUid=SWAK-1&filename=");
+                    "POST /Marti/api/citrap/server-7/attachment?clientUid=SWAK-1 ");
             });
         QCOMPARE(uploads, 2);
         QVERIFY(
             std::any_of(api.requests.cbegin(), api.requests.cend(), [](const QByteArray &request) {
-                return request.contains("filename=photo_1.jpg") &&
-                       request.contains("name=\"assetfile\"");
+                return request.contains(
+                           "Content-Disposition: attachment; filename=\"photo_1.jpg\"") &&
+                       request.endsWith("\r\n\r\njpeg");
             }));
+        // An XML reply names the new report too.
+        createReply = "<report id=\"xml-3\"/>";
+        QVERIFY(citrap.create(QStringLiteral("tak"), report, {}).isEmpty());
+        QVERIFY(created.wait(10000));
+        QCOMPARE(created.last().at(1).toString(), QStringLiteral("xml-3"));
         // A plain identifier reply also names the new report.
         createReply = "plain-9";
         QVERIFY(citrap.create(QStringLiteral("tak"), report, {}).isEmpty());

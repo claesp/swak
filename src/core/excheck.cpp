@@ -289,7 +289,7 @@ void ExCheck::list(const QString &serverId)
     api_->martiRequest(
         serverId,
         "GET",
-        QStringLiteral("/api/excheck/checklist/active"),
+        QStringLiteral("/api/excheck/checklist/active?clientUid=") + encoded(clientUid()),
         {},
         {},
         this,
@@ -329,7 +329,7 @@ void ExCheck::load(const QString &serverId, const QString &uid)
     api_->martiRequest(
         serverId,
         "GET",
-        QStringLiteral("/api/excheck/checklist/") + uid,
+        QStringLiteral("/api/excheck/checklist/%1?clientUid=%2").arg(uid, encoded(clientUid())),
         {},
         {},
         this,
@@ -363,12 +363,15 @@ QString ExCheck::start(const QString &serverId,
     api_->martiRequest(
         serverId,
         "POST",
-        QStringLiteral("/api/excheck/%1/start?name=%2&description=%3&callsign=%4&clientUid=%5")
+        // TAK Server requires all of these parameters, including the start time.
+        QStringLiteral("/api/excheck/%1/start?name=%2&description=%3&callsign=%4&clientUid=%5"
+                       "&startTime=%6")
             .arg(templateUid,
                  encoded(title),
                  encoded(plain(description)),
                  encoded(callsign),
-                 encoded(uid)),
+                 encoded(uid),
+                 encoded(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs))),
         {},
         {},
         this,

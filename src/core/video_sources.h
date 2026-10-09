@@ -37,7 +37,8 @@ inline constexpr int MaxVideoSources = 64;
 // Returns the protocol of a stream URL, or Unsupported with a reason in error.
 VideoProtocol videoProtocol(const QUrl &url, QString *error = nullptr);
 QString videoProtocolName(VideoProtocol protocol);
-// Reads a /Marti/api/video reply (videoConnections XML). Returns false for other content.
+// Reads a /Marti/api/video reply. TAK Server 5 answers JSON with videoConnections and their
+// feeds. Older servers answer videoConnections XML. Returns false for other content.
 bool readVideoConnections(const QByteArray &xml,
                           const QString &origin,
                           QList<VideoSource> *sources);

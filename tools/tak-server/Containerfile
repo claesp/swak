@@ -1,0 +1,4 @@
+# The build and runtime image for the disposable TAK Server test deployment.
+FROM docker.io/library/eclipse-temurin:17-jdk
+RUN apt-get update && apt-get install -y --no-install-recommends patch git openssl unzip \
+    && rm -rf /var/lib/apt/lists/*

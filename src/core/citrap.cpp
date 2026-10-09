@@ -1,9 +1,13 @@
 #include "core/citrap.h"
 
+#include "core/data_package.h"
 #include "core/identity.h"
 #include "core/tak_server_api.h"
 
 #include <QHash>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QRegularExpression>
 #include <QUrl>
 #include <QUuid>
@@ -75,13 +79,26 @@ CitrapReport reportFrom(const QHash<QString, QString> &fields)
     report.callsign = field({"userCallsign", "callsign"}, 128);
     report.description = field({"userDescription", "description"}, 4096);
     report.time = QDateTime::fromString(field({"dateTime", "time"}, 64), Qt::ISODateWithMs);
-    const auto location = field({"location"}, 64).split(QLatin1Char(','));
-    if (location.size() >= 2) {
-        bool latitudeOk = false;
-        bool longitudeOk = false;
-        const double latitude = location.at(0).trimmed().toDouble(&latitudeOk);
-        const double longitude = location.at(1).trimmed().toDouble(&longitudeOk);
-        if (latitudeOk && longitudeOk && std::abs(latitude) <= 90 && std::abs(longitude) <= 180) {
+    // TAK Server stores WKT, POINT(longitude latitude). Older reports use latitude,longitude.
+    auto location = field({"location"}, 64);
+    QStringList parts;
+    bool wkt = false;
+    if (location.startsWith(QStringLiteral("POINT"), Qt::CaseInsensitive)) {
+        location = location.mid(location.indexOf(QLatin1Char('(')) + 1);
+        location.chop(location.endsWith(QLatin1Char(')')) ? 1 : 0);
+        parts = location.simplified().split(QLatin1Char(' '));
+        wkt = true;
+    } else {
+        parts = location.split(QLatin1Char(','));
+    }
+    if (parts.size() >= 2) {
+        bool firstOk = false;
+        bool secondOk = false;
+        const double first = parts.at(0).trimmed().toDouble(&firstOk);
+        const double second = parts.at(1).trimmed().toDouble(&secondOk);
+        const double latitude = wkt ? second : first;
+        const double longitude = wkt ? first : second;
+        if (firstOk && secondOk && std::abs(latitude) <= 90 && std::abs(longitude) <= 180) {
             report.latitude = latitude;
             report.longitude = longitude;
         }
@@ -97,6 +114,29 @@ bool validCitrapId(const QString &id)
 }
 bool readCitrapReports(const QByteArray &xml, QList<CitrapReport> *reports)
 {
+    // TAK Server 5 answers a search with a JSON list of report objects.
+    const auto json = QJsonDocument::fromJson(xml);
+    if (json.isArray()) {
+        if (json.array().size() > MaxCitrapReports) {
+            return false;
+        }
+        QList<CitrapReport> result;
+        for (const auto &value : json.array()) {
+            QHash<QString, QString> fields;
+            const auto object = value.toObject();
+            for (auto it = object.begin(); it != object.end(); ++it) {
+                if (it.value().isString()) {
+                    fields.insert(it.key(), it.value().toString().left(4096));
+                }
+            }
+            const auto report = reportFrom(fields);
+            if (validCitrapId(report.id)) {
+                result.append(report);
+            }
+        }
+        *reports = result;
+        return true;
+    }
     QXmlStreamReader reader(xml);
     QList<CitrapReport> result;
     QHash<QString, QString> fields;
@@ -155,7 +195,7 @@ QByteArray citrapReportXml(const CitrapReport &report)
     writer.writeStartElement(QStringLiteral("report"));
     const auto attribute = [&writer](const QString &name, const QString &value) {
         if (!value.isEmpty()) {
-            writer.writeAttribute(name, plain(value));
+            writer.writeAttribute(name, plain(value, 4096));
         }
     };
     attribute(QStringLiteral("id"), report.id);
@@ -169,9 +209,10 @@ QByteArray citrapReportXml(const CitrapReport &report)
                   .toUTC()
                   .toString(Qt::ISODateWithMs));
     attribute(QStringLiteral("location"),
-              QStringLiteral("%1,%2").arg(QString::number(report.latitude, 'f', 7),
-                                          QString::number(report.longitude, 'f', 7)));
-    writer.writeTextElement(QStringLiteral("userDescription"), plain(report.description, 4096));
+              QStringLiteral("POINT(%1 %2)")
+                  .arg(QString::number(report.longitude, 'f', 7),
+                       QString::number(report.latitude, 'f', 7)));
+    attribute(QStringLiteral("userDescription"), plain(report.description, 4096));
     writer.writeEndElement();
     writer.writeEndDocument();
     return output;
@@ -241,22 +282,33 @@ QString Citrap::create(const QString &serverId,
     if (report.status.isEmpty()) {
         report.status = QStringLiteral("Open");
     }
+    // TAK Server reads a new report from a zip package with the report XML.
+    QString error;
+    const auto package = writeDataPackage(
+        report.id, report.title, {{QStringLiteral("report.xml"), citrapReportXml(report)}}, &error);
+    if (package.isEmpty()) {
+        return error;
+    }
     api_->martiRequest(
         serverId,
         "POST",
         QStringLiteral("/api/citrap?clientUid=") + encoded(clientUid()),
-        citrapReportXml(report),
-        "application/xml",
+        package,
+        "application/octet-stream",
         this,
         [this, serverId, id = report.id, attachments](const NetworkReply &reply) {
             if (!reply.ok()) {
                 emit created(serverId, {}, httpError(reply));
                 return;
             }
-            // The server answers with the stored report or its identifier.
+            // TAK Server answers {"id":"..."}. Other servers answer the report or the plain id.
             QList<CitrapReport> stored;
             auto created = id;
-            if (readCitrapReports(reply.body, &stored) && !stored.isEmpty()) {
+            const auto answer =
+                QJsonDocument::fromJson(reply.body).object().value(QStringLiteral("id")).toString();
+            if (validCitrapId(answer)) {
+                created = answer;
+            } else if (readCitrapReports(reply.body, &stored) && !stored.isEmpty()) {
                 created = stored.first().id;
             } else if (validCitrapId(QString::fromUtf8(reply.body).trimmed())) {
                 created = QString::fromUtf8(reply.body).trimmed();
@@ -278,18 +330,12 @@ void Citrap::upload(const QString &serverId,
     }
     const auto attachment = attachments.takeFirst();
     const auto fileName = safeFileName(attachment.fileName);
-    const auto boundary = QUuid::createUuid().toString(QUuid::Id128).toLatin1();
-    const QByteArray body =
-        "--" + boundary + "\r\nContent-Disposition: form-data; name=\"assetfile\"; filename=\"" +
-        fileName.toUtf8() + "\"\r\nContent-Type: application/octet-stream\r\n\r\n" +
-        attachment.bytes + "\r\n--" + boundary + "--\r\n";
     api_->martiRequest(
         serverId,
         "POST",
-        QStringLiteral("/api/citrap/%1/attachment?clientUid=%2&filename=%3")
-            .arg(id, encoded(clientUid()), encoded(fileName)),
-        body,
-        "multipart/form-data; boundary=" + boundary,
+        QStringLiteral("/api/citrap/%1/attachment?clientUid=%2").arg(id, encoded(clientUid())),
+        attachment.bytes,
+        "application/octet-stream",
         this,
         [this, serverId, id, attachments, errors, fileName](const NetworkReply &reply) mutable {
             if (!reply.ok()) {
@@ -298,7 +344,10 @@ void Citrap::upload(const QString &serverId,
             upload(serverId, id, attachments, errors);
         },
         64 * 1024,
-        RequestTimeoutMs);
+        RequestTimeoutMs,
+        // TAK Server takes the attachment name from this header.
+        {{QByteArrayLiteral("Content-Disposition"),
+          "attachment; filename=\"" + fileName.toUtf8() + "\""}});
 }
 QString Citrap::update(const QString &serverId, const CitrapReport &report)
 {

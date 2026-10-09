@@ -5,6 +5,9 @@
 #include "core/store.h"
 #include "core/tak_server_api.h"
 
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QXmlStreamReader>
 
 #include <algorithm>
@@ -85,8 +88,50 @@ QString videoProtocolName(VideoProtocol protocol)
     }
     return {};
 }
+namespace {
+// Reads the JSON form: {"videoConnections":[{"alias":..., "feeds":[{"alias":..., "url":...}]}]}.
+bool readVideoJson(const QJsonObject &root, const QString &origin, QList<VideoSource> *sources)
+{
+    const auto connections = root.value(QStringLiteral("videoConnections"));
+    if (!connections.isArray() || connections.toArray().size() > MaxFeeds) {
+        return false;
+    }
+    QList<VideoSource> result;
+    int feeds = 0;
+    for (const auto &value : connections.toArray()) {
+        const auto connection = value.toObject();
+        for (const auto &entry : connection.value(QStringLiteral("feeds")).toArray()) {
+            if (++feeds > MaxFeeds) {
+                return false;
+            }
+            const auto feed = entry.toObject();
+            const QUrl url(feed.value(QStringLiteral("url")).toString().trimmed(),
+                           QUrl::StrictMode);
+            const auto protocol = videoProtocol(url);
+            if (protocol == VideoProtocol::Unsupported || result.size() >= MaxVideoSources ||
+                !feed.value(QStringLiteral("active")).toBool(true)) {
+                continue;
+            }
+            auto name = plain(feed.value(QStringLiteral("alias")).toString());
+            if (name.isEmpty()) {
+                name = plain(connection.value(QStringLiteral("alias")).toString());
+            }
+            if (name.isEmpty()) {
+                name = url.host();
+            }
+            result.append({url.toString(QUrl::RemoveUserInfo), name, url, protocol, origin});
+        }
+    }
+    *sources = result;
+    return true;
+}
+} // namespace
 bool readVideoConnections(const QByteArray &xml, const QString &origin, QList<VideoSource> *sources)
 {
+    const auto json = QJsonDocument::fromJson(xml);
+    if (json.isObject()) {
+        return readVideoJson(json.object(), origin, sources);
+    }
     QXmlStreamReader reader(xml);
     QList<VideoSource> result;
     QHash<QString, QString> feed;

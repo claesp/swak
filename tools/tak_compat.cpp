@@ -1,8 +1,10 @@
 #include "core/files.h"
 #include "core/servers.h"
 #include "core/store.h"
+#include "tak_compat_features.h"
 
 #include <QCoreApplication>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTest>
@@ -105,6 +107,9 @@ int main(int argc, char **argv)
     a.latitude = 0.125;
     a.longitude = 0.25;
     a.altitude = 10;
+    // A contact endpoint makes TAK Server list the client as a contact.
+    a.detail = QStringLiteral(
+        "<contact endpoint=\"*:-1:stcp\"/><takv platform=\"SWAK\" version=\"test\"/>");
     Event b = a;
     b.uid += QStringLiteral("-B");
     b.callsign = QStringLiteral("SWAK TEST B");
@@ -155,5 +160,19 @@ int main(int argc, char **argv)
         return finish(QStringLiteral("Exchange after reconnect"), false);
     }
     report.insert(QStringLiteral("reconnect"), true);
-    return finish(QStringLiteral("Complete"), true);
+    if (!profile.value(QStringLiteral("left")).toObject().contains(QStringLiteral("apiPort"))) {
+        return finish(QStringLiteral("Complete"), true);
+    }
+    // The feature checks need the positions in the server history, so send them once more.
+    exchange();
+    const auto checks = runFeatureChecks(left, right, leftStore, rightStore, a, b, profile);
+    report.insert(QStringLiteral("features"), checks);
+    QStringList failed;
+    for (auto it = checks.begin(); it != checks.end(); ++it) {
+        if (!it.value().toObject().value(QStringLiteral("passed")).toBool()) {
+            failed.append(it.key());
+        }
+    }
+    report.insert(QStringLiteral("failedFeatures"), QJsonArray::fromStringList(failed));
+    return finish(QStringLiteral("Complete"), failed.isEmpty());
 }

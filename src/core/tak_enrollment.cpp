@@ -121,8 +121,13 @@ QByteArray writeKey(EVP_PKEY *key, const QByteArray &password)
 // TAK returns base64 DER without PEM lines. Rebuild PEM with 64-character lines.
 QByteArray pemCertificate(const QString &base64)
 {
+    // TAK Server wraps the base64 text at 64 characters. Remove the line breaks first.
+    auto text = base64.toLatin1();
+    text.removeIf([](char ch) {
+        return ch == '\n' || ch == '\r' || ch == ' ' || ch == '\t';
+    });
     const auto der = QByteArray::fromBase64(
-        base64.toLatin1(), QByteArray::Base64Encoding | QByteArray::AbortOnBase64DecodingErrors);
+        text, QByteArray::Base64Encoding | QByteArray::AbortOnBase64DecodingErrors);
     if (der.isEmpty() || der.size() > MaxKeyBytes) {
         return {};
     }

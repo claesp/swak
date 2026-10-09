@@ -86,7 +86,7 @@ Tools > Plugins > Checklists shows the active ExCheck checklists of a TAK Server
 
 # Reports (CI-TRAP)
 
-Tools > Plugins > Reports lists the CI-TRAP reports of a TAK Server entry with a REST API port, from `/Marti/api/citrap`. New Report ... sends a report with a title, type, importance, position, and description, and then uploads up to 8 attachments of at most 16 MiB each as multipart files. Close and Reopen send the report again with a new status. SWAK reads report fields as attributes or child elements, because server versions differ. Limits: 500 reports.
+Tools > Plugins > Reports lists the CI-TRAP reports of a TAK Server entry with a REST API port, from `/Marti/api/citrap`. New Report ... sends a report with a title, type, importance, position, and description, and then uploads up to 8 attachments of at most 16 MiB each as multipart files. Close and Reopen send the report again with a new status. SWAK sends a new report as a zip package with the report XML, and attachments as raw bytes with their file name. The location uses WKT, `POINT(longitude latitude)`. SWAK reads JSON lists and report fields as attributes or child elements, because server versions differ. Limits: 500 reports.
 
 # Plugin data
 
