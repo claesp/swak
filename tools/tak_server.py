@@ -47,7 +47,15 @@ RECEIVER_LOG = "plugin-receiver-events.log"
 # a TAK Server drops a second connection to the same hub before it sends a token.
 HUB_TOKEN_PORT = 9103
 HUB_CONNECTION = "swak-hub"
-CONTAINERS = (SERVER, SERVER_B, DATABASE, DATABASE_B, LDAP, HUB)
+# With --hub-token manual, server B uses a token that the hub UI issues for this token group.
+TOKEN_GROUP = "SWAK_token_group"
+MANUAL_FINGERPRINT = "swak-b-manual"
+# The hub UI listens on 9100 in the container and on this loopback port of the host.
+HUB_UI_PORT = 19100
+# The hub keeps mission changes in this MongoDB for replay after a disconnect.
+HUB_DB = "swak-tak-hub-db"
+MONGO_IMAGE = "docker.io/library/mongo:6.0"
+CONTAINERS = (SERVER, SERVER_B, DATABASE, DATABASE_B, LDAP, HUB, HUB_DB)
 # A fixed subnet lets the server certificates name the container addresses.
 SUBNET = "10.89.77.0/24"
 GATEWAY = "10.89.77.1"
@@ -56,6 +64,7 @@ ADDRESS = {
     SERVER_B: "10.89.77.11",
     LDAP: "10.89.77.12",
     HUB: "10.89.77.13",
+    HUB_DB: "10.89.77.14",
     # Fixed database addresses keep dynamic allocation away from the addresses above.
     DATABASE: "10.89.77.20",
     DATABASE_B: "10.89.77.21",
@@ -190,6 +199,7 @@ def build(_args):
         ":federation-hub-broker:bootJar",
         ":federation-hub-plugin-manager:bootJar",
         ":federation-hub-plugins:buildSDK",
+        ":federation-hub-ui:bootWar",
         "-x",
         "test",
         "-x",
@@ -452,7 +462,7 @@ def write_users(run_dir, server):
     )
 
 
-def core_config(server, directory="openldap", federation="direct"):
+def core_config(server, directory="openldap", federation="direct", manual_token=""):
     """Fill the CoreConfig template for server A, or for server B with one directory.
 
     In direct federation, server B connects to server A. In hub federation, both servers
@@ -471,10 +481,15 @@ def core_config(server, directory="openldap", federation="direct"):
         f'        <federation-outgoing displayName="{HUB_CONNECTION}" address="{HUB}" '
         'port="9102" protocolVersion="2" reconnectInterval="5" enabled="true"/>\n'
     )
+    token = (
+        f'tokenType="manual" connectionToken="{manual_token}"'
+        if manual_token
+        else 'tokenType="automatic"'
+    )
     hub_token = (
         f'        <federation-outgoing displayName="{HUB_CONNECTION}" address="{HUB}" '
         f'port="{HUB_TOKEN_PORT}" protocolVersion="2" reconnectInterval="5" enabled="true" '
-        'useToken="true" tokenType="automatic"/>\n'
+        f'useToken="true" {token}/>\n'
     )
     if server == SERVER:
         if federation == "hub":
@@ -556,7 +571,7 @@ def ca_group(name="ca"):
     return issuer.split("=", 1)[1] + "-" + digest
 
 
-def hub_policy():
+def hub_policy(tokens=()):
     """Return the hub policy for the CA groups of server A and server B.
 
     The groups are not interconnected. The edge from A to B lets only SwakTest through, so the
@@ -615,11 +630,27 @@ def hub_policy():
             "disabled": False,
         }
 
+    # A manual token puts its federate in the token group, so the token group has the same
+    # edges as the CA group of server B. Only the listed tokens are valid.
+    token_group = {
+        "graphType": "FederationTokenGroupCell",
+        "id": "swak-ca-t",
+        "roger_federation": {
+            "type": "FederationTokenGroup",
+            "stringId": "SWAK",
+            "name": TOKEN_GROUP,
+            "interconnected": False,
+            "tokens": [{"token": token, "expiration": -1} for token in tokens],
+        },
+    }
     cells = [
         group_cell("a"),
         group_cell("b"),
+        token_group,
         edge_cell("a", "b", "allowed", [FEDERATION_GROUP]),
         edge_cell("b", "a", "allGroups", []),
+        edge_cell("a", "t", "allowed", [FEDERATION_GROUP]),
+        edge_cell("t", "a", "allGroups", []),
     ]
     return {
         "name": "swak",
@@ -639,7 +670,7 @@ def hub_policy():
     }
 
 
-def prepare_hub():
+def prepare_hub(disruption=False):
     """Copy the hub jars, configuration, policy, keystores, plugin, and token probe."""
     jars = {
         "federation-hub-policy.jar": SOURCE / "src" / "federation-hub-policy",
@@ -676,10 +707,36 @@ def prepare_hub():
                     and "/" not in name
                 ):
                     (libraries / name).write_bytes(archive.read(entry))
-    shutil.copy2(
-        TEMPLATES / "hub" / "federation-hub-broker.yml",
-        HUB_RUN / "configs" / "federation-hub-broker.yml",
+    ui = (
+        SOURCE / "src" / "federation-hub-ui" / "build" / "libs" / f"federation-hub-ui-{RELEASE}.war"
     )
+    if not ui.exists():
+        sys.exit("Run build again. The federation hub UI is missing.")
+    shutil.copy2(ui, HUB_RUN / "jars" / "federation-hub-ui.war")
+    shutil.copy2(
+        TEMPLATES / "hub" / "federation-hub-ui.yml", HUB_RUN / "configs" / "federation-hub-ui.yml"
+    )
+    # With replay, the hub closes the mission stream of a federate after the replay, so live
+    # mission changes stop. Replay is therefore an option.
+    broker = (TEMPLATES / "hub" / "federation-hub-broker.yml").read_text()
+    (HUB_RUN / "configs" / "federation-hub-broker.yml").write_text(
+        broker.replace(
+            "missionFederationDisruptionEnabled: true",
+            f"missionFederationDisruptionEnabled: {'true' if disruption else 'false'}",
+        )
+    )
+    # The UI admits the test administrator by CN and SHA-512 fingerprint.
+    sha512 = run(
+        ["openssl", "x509", "-in", str(CERTS / "admin.pem"), "-noout", "-fingerprint", "-sha512"],
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    (HUB_RUN / "authorized_users.yml").write_text(
+        f'---\nusers:\n- username: "swak-admin"\n  fingerprint: "{sha512.split("=", 1)[1].upper()}"\n'
+    )
+    # A policy that an earlier run activated would replace the new one.
+    shutil.rmtree(HUB_RUN / "policies", ignore_errors=True)
+    (HUB_RUN / "probe" / "tokens.json").unlink(missing_ok=True)
     (HUB_RUN / "ui_generated_policy.json").write_text(json.dumps(hub_policy(), indent=2))
     files = HUB_RUN / "certs" / "files"
     files.mkdir(parents=True, exist_ok=True)
@@ -847,13 +904,116 @@ def start_server(name, run_dir, ports, udp_ports):
     )
 
 
+def ui_request(path, body=None):
+    """Send a request to the hub UI as the test administrator and return the JSON reply."""
+    context = ssl.create_default_context(cafile=str(CERTS / "ca.pem"))
+    context.load_cert_chain(str(CERTS / "admin.pem"), str(CERTS / "admin.key"))
+    request = urllib.request.Request(
+        f"https://localhost:{HUB_UI_PORT}/api{path}",
+        data=None if body is None else json.dumps(body).encode(),
+        method="GET" if body is None else "POST",
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(request, context=context, timeout=30) as reply:
+        text = reply.read()
+    return json.loads(text) if text.strip() else None
+
+
+def start_hub(args):
+    """Start MongoDB when the hub replays, start the hub, then issue the manual tokens and
+    activate the policy."""
+    if args.hub_disruption:
+        start_mongo()
+    podman(
+        "run",
+        "-d",
+        "--name",
+        HUB,
+        "--network",
+        NETWORK,
+        "--ip",
+        ADDRESS[HUB],
+        "-p",
+        f"127.0.0.1:{HUB_UI_PORT}:9100",
+        "-v",
+        f"{HUB_RUN}:/opt/tak/federation-hub:Z",
+        IMAGE,
+        "/opt/tak/federation-hub/start.sh",
+    )
+    if not wait_port(HUB_UI_PORT, args.timeout, tls=True):
+        sys.exit("The hub UI did not start. Read build/tak-server/hub/logs/ui.log.")
+    # The UI issues tokens for the token group. The policy lists only the first one.
+    tokens = {}
+    for name, fingerprint in (("listed", MANUAL_FINGERPRINT), ("unlisted", "swak-unlisted")):
+        reply = ui_request(
+            "/generateJwtToken",
+            {"clientFingerprint": fingerprint, "clientGroup": TOKEN_GROUP, "expiration": -1},
+        )
+        tokens[name] = reply["token"]
+    (HUB_RUN / "ui_generated_policy.json").write_text(
+        json.dumps(hub_policy([tokens["listed"]]), indent=2)
+    )
+    ui_request("/activateFederationPolicy/swak")
+    (HUB_RUN / "probe" / "tokens.json").write_text(json.dumps(tokens))
+    if args.hub_token == "manual":
+        (RUN_B / "CoreConfig.xml").write_text(
+            core_config(SERVER_B, args.directory, "hub", tokens["listed"])
+        )
+    print("The hub issued the manual tokens and activated the policy.")
+
+
+def start_mongo():
+    """Start the hub MongoDB and wait until it answers."""
+    podman(
+        "run",
+        "-d",
+        "--name",
+        HUB_DB,
+        "--network",
+        NETWORK,
+        "--ip",
+        ADDRESS[HUB_DB],
+        "-e",
+        "MONGO_INITDB_ROOT_USERNAME=martiuser",
+        "-e",
+        "MONGO_INITDB_ROOT_PASSWORD=swak-test",
+        MONGO_IMAGE,
+    )
+    # The broker tests MongoDB only once at start, so MongoDB must answer first.
+    for _ in range(60):
+        if mongo("db.runCommand({ping: 1}).ok") == "1":
+            return
+        time.sleep(2)
+    sys.exit("MongoDB did not start.")
+
+
+def mongo(script):
+    """Run a mongosh script in the hub MongoDB and return its output."""
+    result = podman(
+        "exec",
+        HUB_DB,
+        "mongosh",
+        "--quiet",
+        "-u",
+        "martiuser",
+        "-p",
+        "swak-test",
+        "--authenticationDatabase",
+        "admin",
+        "--eval",
+        script,
+        check=False,
+    )
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
 def up(args):
     """Start the databases, the directory, and the two federated TAK Servers."""
     directory = DIRECTORIES[args.directory]
     prepare(RUN, SERVER, federation=args.federation)
     prepare(RUN_B, SERVER_B, args.directory, args.federation)
     if args.federation == "hub":
-        prepare_hub()
+        prepare_hub(args.hub_disruption)
     if not (CERTS / "ldap.pem").exists():
         sys.exit("Run certs again. The directory needs its certificate.")
     run(
@@ -886,21 +1046,17 @@ def up(args):
         directory["image"],
     )
     if args.federation == "hub":
-        podman(
-            "run",
-            "-d",
-            "--name",
-            HUB,
-            "--network",
-            NETWORK,
-            "--ip",
-            ADDRESS[HUB],
-            "-v",
-            f"{HUB_RUN}:/opt/tak/federation-hub:Z",
-            IMAGE,
-            "/opt/tak/federation-hub/start.sh",
+        start_hub(args)
+    DEPLOYMENT.write_text(
+        json.dumps(
+            {
+                "directory": args.directory,
+                "federation": args.federation,
+                "hubToken": args.hub_token,
+                "hubDisruption": args.federation == "hub" and args.hub_disruption,
+            }
         )
-    DEPLOYMENT.write_text(json.dumps({"directory": args.directory, "federation": args.federation}))
+    )
     for name in (DATABASE, DATABASE_B):
         start_database(name)
     for name in (DATABASE, DATABASE_B):
@@ -948,6 +1104,7 @@ def deployment():
     return {
         "directory": directory if directory in DIRECTORIES else "openldap",
         "federation": federation if federation in ("direct", "hub") else "direct",
+        "hubDisruption": data.get("hubDisruption") is True,
     }
 
 
@@ -956,7 +1113,7 @@ def deployed_directory():
     return deployment()["directory"]
 
 
-def profile(bridge, load=None, directory="openldap", federation="direct"):
+def profile(bridge, load=None, directory="openldap", federation="direct", disruption=False):
     """Write the probe profile with the test credentials.
 
     A bridge profile uses the container addresses. The probe then runs in the rootless network
@@ -1010,6 +1167,10 @@ def profile(bridge, load=None, directory="openldap", federation="direct"):
             "group": DIRECTORIES[directory]["group"],
             # Through the hub, the policy drops the Ops events and the test plugins run.
             "hub": federation == "hub",
+            # The outgoing connection of server B, which the disruption check turns off.
+            "outgoing": HUB_CONNECTION if federation == "hub" else "swak-a",
+            # The hub replays mission changes from MongoDB.
+            "hubDisruption": federation == "hub" and disruption,
             # The outgoing connections that the token checks read through the REST API.
             **(
                 {
@@ -1056,7 +1217,12 @@ def run_probe(args, report, load=None):
         SWAK_COT_LDAP=DIRECTORIES[directory]["password"],
         QT_QPA_PLATFORM="offscreen",
     )
-    command = [str(probe), str(profile(not args.loopback, load, directory, state["federation"]))]
+    command = [
+        str(probe),
+        str(
+            profile(not args.loopback, load, directory, state["federation"], state["hubDisruption"])
+        ),
+    ]
     if not args.loopback:
         command = ["podman", "unshare", "--rootless-netns", *command]
     loss = getattr(args, "loss", 0) or getattr(args, "delay", 0)
@@ -1070,7 +1236,10 @@ def run_probe(args, report, load=None):
             impair(0, 0)
     code = result.returncode
     if state["federation"] == "hub" and load is None:
-        code = merge_checks(report, hub_token_checks()) or code
+        checks = hub_token_checks()
+        if state["hubDisruption"]:
+            checks.update(hub_disruption_checks())
+        code = merge_checks(report, checks) or code
     print(report.read_text())
     sys.exit(code)
 
@@ -1091,6 +1260,7 @@ def hub_token_checks():
         f"{files}/takserver-b.pem",
         f"{files}/takserver.pem",
         str(HUB_TOKEN_PORT),
+        "probe/tokens.json",
         check=False,
     )
     try:
@@ -1101,6 +1271,18 @@ def hub_token_checks():
         detail = (result.stderr or result.stdout or "no output").strip()[-300:]
         checks = {"hubTokenProbe": {"passed": False, "detail": detail}}
     return checks
+
+
+def hub_disruption_checks():
+    """Check that the hub stored federated mission changes in MongoDB."""
+    count = mongo('db.getSiblingDB("cot").federate_event.countDocuments({})')
+    stored = count.isdigit() and int(count) > 0
+    return {
+        "hubDisruptionStored": {
+            "passed": stored,
+            "detail": f"{count or 'no answer'} stored changes in cot.federate_event",
+        }
+    }
 
 
 def merge_checks(report, checks):
@@ -1195,6 +1377,17 @@ def main():
         default="openldap",
         choices=sorted(DIRECTORIES),
         help="the LDAPS directory of server B",
+    )
+    start.add_argument(
+        "--hub-token",
+        default="automatic",
+        choices=["automatic", "manual"],
+        help="the hub token of server B: issued by the hub, or from the hub UI",
+    )
+    start.add_argument(
+        "--hub-disruption",
+        action="store_true",
+        help="keep mission changes in MongoDB and replay them; this stops live mission changes",
     )
     start.add_argument(
         "--federation",

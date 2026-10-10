@@ -16,6 +16,7 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QUrl>
 #include <QUuid>
 
 #include <algorithm>
@@ -204,6 +205,9 @@ void groupFilterCheck(Servers &right,
 // event to every federate.
 // A mission that server A creates for SwakTest appears on server B with its object. SWAK adds
 // the object on server A and reads the mission on server B as the directory user.
+// The optional hooks cut the federation of server B before server A creates the mission, and
+// restore it after the object is added. Each hook returns an error text or nothing.
+using Hook = std::function<QString()>;
 void missionFederationCheck(Servers &left,
                             Servers &remote,
                             Store &leftStore,
@@ -211,7 +215,11 @@ void missionFederationCheck(Servers &left,
                             TakServerApi &remoteApi,
                             NetworkClient &network,
                             const Event &a,
-                            const Record &record)
+                            const Record &record,
+                            const QString &check = QStringLiteral("missionFederation"),
+                            const Hook &disconnect = {},
+                            const Hook &reconnect = {},
+                            bool expectMissing = false)
 {
     TakServerApi leftApi(left, network);
     Identity leftIdentity, remoteIdentity;
@@ -224,6 +232,11 @@ void missionFederationCheck(Servers &left,
     }
     const auto name =
         QStringLiteral("swak-federated-") + QUuid::createUuid().toString(QUuid::Id128).left(12);
+    const auto cut = disconnect ? disconnect() : QString{};
+    if (!cut.isEmpty()) {
+        record(check, false, QStringLiteral("disconnect: ") + cut);
+        return;
+    }
     const auto created = call(leftApi,
                               "PUT",
                               QStringLiteral("/api/missions/%1?creatorUid=%2&group=%3")
@@ -234,21 +247,27 @@ void missionFederationCheck(Servers &left,
     const bool joined = created.ok() && leftSubscribed.wait(Wait) &&
                         leftSubscribed.last().at(2).toString().isEmpty();
     auto object = a;
-    object.uid += QStringLiteral("-MISSION");
+    object.uid += disconnect ? QStringLiteral("-OFFLINE") : QStringLiteral("-MISSION");
     object.callsign = QStringLiteral("SWAK TEST MISSION");
     object.time = object.start = QDateTime::currentDateTimeUtc();
     object.stale = object.time.addSecs(600);
     const auto added =
         joined ? leftMissions.addEvent(QStringLiteral("test"), name, object)
                : QStringLiteral("server A did not create the mission: ") + replyText(created);
+    // Give server A or the hub time to keep the change, then restore the federation.
+    QString restored;
+    if (reconnect) {
+        QTest::qWait(5000);
+        restored = reconnect();
+    }
     // Server B creates the mission from the federated changes. Subscribe when it exists.
     Missions remoteMissions(remoteStore, &remote, &remoteApi, &remoteIdentity);
     QSignalSpy remoteSubscribed(&remoteMissions, &Missions::subscribed);
-    QString status = added;
+    QString status = restored.isEmpty() ? added : QStringLiteral("reconnect: ") + restored;
     QElapsedTimer elapsed;
     elapsed.start();
-    const bool federated =
-        added.isEmpty() && QTest::qWaitFor(
+    const bool federated = added.isEmpty() && restored.isEmpty() &&
+                           QTest::qWaitFor(
                                [&] {
                                    const auto *mission =
                                        remoteMissions.subscription(QStringLiteral("enroll"), name);
@@ -281,7 +300,20 @@ void missionFederationCheck(Servers &left,
                      .arg(replyText(reply))
                      .arg(readMissionEvents(reply.body).size());
     }
-    record(QStringLiteral("missionFederation"),
+    if (expectMissing) {
+        // A known fault: after a replay, the hub closes the mission stream of server B, and
+        // TAK Server does not open it again. This check fails when the fault is gone.
+        record(check,
+               !federated,
+               federated ? QStringLiteral("server B received the live change, so the hub fault is "
+                                          "gone; update the probe")
+                         : QStringLiteral("server B did not receive the live change after the "
+                                          "replay closed its mission stream"));
+        leftMissions.unsubscribe(QStringLiteral("test"), name);
+        remoteMissions.unsubscribe(QStringLiteral("enroll"), name);
+        return;
+    }
+    record(check,
            federated,
            federated ? QStringLiteral("server B has %1 with the object after %2 s")
                            .arg(name)
@@ -295,6 +327,26 @@ void missionFederationCheck(Servers &left,
     leftMissions.unsubscribe(QStringLiteral("test"), name);
     remoteMissions.unsubscribe(QStringLiteral("enroll"), name);
     call(leftApi, "DELETE", QStringLiteral("/api/missions/%1?creatorUid=%2").arg(name, a.uid));
+}
+// A disabled Servers object with the administrator certificate for the REST API of a server.
+// The target gives host, port, and API port.
+std::unique_ptr<Servers>
+adminServers(Store &store, const QJsonObject &admin, const QJsonObject &target)
+{
+    auto servers = std::make_unique<Servers>(store);
+    auto entry = serverDefaults();
+    for (auto it = admin.begin(); it != admin.end(); ++it) {
+        entry.insert(it.key(), it.value());
+    }
+    for (const auto *key : {"host", "port", "apiPort"}) {
+        if (target.contains(QLatin1String(key))) {
+            entry.insert(QLatin1String(key), target.value(QLatin1String(key)));
+        }
+    }
+    entry.insert(QStringLiteral("name"), QStringLiteral("Admin"));
+    entry.insert(QStringLiteral("enabled"), false);
+    servers->put(QStringLiteral("test"), entry);
+    return servers;
 }
 // Reads the outgoing federation connections of a server as the administrator.
 QJsonArray outgoingConnections(Servers &servers, NetworkClient &network)
@@ -317,22 +369,6 @@ void hubTokenChecks(const QJsonObject &profile, NetworkClient &network, const Re
         return;
     }
     const auto admin = profile.value(QStringLiteral("admin")).toObject();
-    const auto adminServers = [&admin](Store &store, const QJsonObject &target) {
-        auto servers = std::make_unique<Servers>(store);
-        auto entry = serverDefaults();
-        for (auto it = admin.begin(); it != admin.end(); ++it) {
-            entry.insert(it.key(), it.value());
-        }
-        for (const auto *key : {"host", "port", "apiPort"}) {
-            if (target.contains(QLatin1String(key))) {
-                entry.insert(QLatin1String(key), target.value(QLatin1String(key)));
-            }
-        }
-        entry.insert(QStringLiteral("name"), QStringLiteral("Admin"));
-        entry.insert(QStringLiteral("enabled"), false);
-        servers->put(QStringLiteral("test"), entry);
-        return servers;
-    };
     const auto connection = [](const QJsonArray &list, const QString &name) {
         const auto found = std::find_if(list.begin(), list.end(), [&name](const QJsonValue &value) {
             return value.toObject().value(QStringLiteral("displayName")).toString() == name;
@@ -346,7 +382,7 @@ void hubTokenChecks(const QJsonObject &profile, NetworkClient &network, const Re
             .toString();
     };
     Store storeB;
-    const auto serversB = adminServers(storeB, federation);
+    const auto serversB = adminServers(storeB, admin, federation);
     const auto good = connection(outgoingConnections(*serversB, network),
                                  token.value(QStringLiteral("connection")).toString());
     const bool tokenUsed =
@@ -360,6 +396,83 @@ void hubTokenChecks(const QJsonObject &profile, NetworkClient &network, const Re
                .arg(good.value(QStringLiteral("useToken")).toBool() ? QStringLiteral("yes")
                                                                     : QStringLiteral("no"),
                     state(good)));
+}
+// Disconnects the federation of server B, changes a mission on server A, and reconnects. In
+// direct federation, server A sends the missed change when server B connects again. Through
+// the hub, server A stays connected, so the hub must replay the change from MongoDB.
+void missionDisruptionCheck(Servers &left,
+                            Servers &remote,
+                            Store &leftStore,
+                            Store &remoteStore,
+                            TakServerApi &remoteApi,
+                            NetworkClient &network,
+                            const Event &a,
+                            const QJsonObject &profile,
+                            const Record &record)
+{
+    const auto federation = profile.value(QStringLiteral("federation")).toObject();
+    const auto outgoing = federation.value(QStringLiteral("outgoing")).toString();
+    // Without replay, the hub does not keep the change, and server A stays connected to it.
+    if (outgoing.isEmpty() || (federation.value(QStringLiteral("hub")).toBool() &&
+                               !federation.value(QStringLiteral("hubDisruption")).toBool())) {
+        return;
+    }
+    Store adminStore;
+    const auto admin =
+        adminServers(adminStore, profile.value(QStringLiteral("admin")).toObject(), federation);
+    TakServerApi api(*admin, network);
+    const auto path = QStringLiteral("/api/outgoingconnectionstatus/") +
+                      QString::fromLatin1(QUrl::toPercentEncoding(outgoing));
+    const auto state = [&] {
+        for (const auto &value : outgoingConnections(*admin, network)) {
+            const auto item = value.toObject();
+            if (item.value(QStringLiteral("displayName")).toString() == outgoing) {
+                return item.value(QStringLiteral("connectionInfoSummary"))
+                    .toObject()
+                    .value(QStringLiteral("connectionStatusValue"))
+                    .toString();
+            }
+        }
+        return QString{};
+    };
+    // Sets the connection and waits for the expected state.
+    const auto set = [&](bool enabled, const QString &expected) {
+        const auto reply = call(api,
+                                "POST",
+                                path + (enabled ? QStringLiteral("?newStatus=true")
+                                                : QStringLiteral("?newStatus=false")));
+        if (!reply.ok()) {
+            return replyText(reply);
+        }
+        QString current;
+        const bool reached = QTest::qWaitFor(
+            [&] {
+                current = state();
+                return current == expected;
+            },
+            3 * Wait);
+        return reached ? QString{} : QStringLiteral("state %1, not %2").arg(current, expected);
+    };
+    missionFederationCheck(
+        left,
+        remote,
+        leftStore,
+        remoteStore,
+        remoteApi,
+        network,
+        a,
+        record,
+        QStringLiteral("missionDisruption"),
+        [&] {
+            return set(false, QStringLiteral("DISABLED"));
+        },
+        [&] {
+            return set(true, QStringLiteral("CONNECTED"));
+        });
+    // Leave the federation connected for later runs, also after a failure.
+    if (state() != u"CONNECTED") {
+        static_cast<void>(set(true, QStringLiteral("CONNECTED")));
+    }
 }
 // The receiver plugin writes the UIDs that it receives to a file. Read a bounded part.
 QStringList receivedUids(const QString &path)
@@ -606,11 +719,29 @@ void runNetworkChecks(Servers &left,
                    outbound,
                    outbound ? QString{} : QStringLiteral("server B did not deliver the event"));
             groupFilterCheck(right, leftStore, store, a, profile, record);
-            missionFederationCheck(left, remote, leftStore, store, api, network, a, record);
+            // With hub replay, the live change is expected to be lost. See the check text.
+            const bool replay = federation.value(QStringLiteral("hub")).toBool() &&
+                                federation.value(QStringLiteral("hubDisruption")).toBool();
+            missionFederationCheck(left,
+                                   remote,
+                                   leftStore,
+                                   store,
+                                   api,
+                                   network,
+                                   a,
+                                   record,
+                                   replay ? QStringLiteral("hubReplayStopsLiveMissions")
+                                          : QStringLiteral("missionFederation"),
+                                   {},
+                                   {},
+                                   replay);
             hubTokenChecks(profile, network, record);
             if (federation.value(QStringLiteral("hub")).toBool()) {
                 hubPluginChecks(left, remote, leftStore, store, a, federation, record);
             }
+            // This check cuts the federation for a time, so it runs last.
+            missionDisruptionCheck(
+                left, remote, leftStore, store, api, network, a, profile, record);
         }
     }
 }

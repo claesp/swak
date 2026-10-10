@@ -136,10 +136,18 @@ class ProfileTest(unittest.TestCase):
 
     def test_deployment(self):
         with patch.object(tak_server, "DEPLOYMENT", Path(self.directory.name) / "d.json"):
-            default = {"directory": "openldap", "federation": "direct"}
+            default = {"directory": "openldap", "federation": "direct", "hubDisruption": False}
             self.assertEqual(tak_server.deployment(), default)
-            tak_server.DEPLOYMENT.write_text('{"directory": "ad", "federation": "hub"}')
-            self.assertEqual(tak_server.deployment(), {"directory": "ad", "federation": "hub"})
+            tak_server.DEPLOYMENT.write_text(
+                '{"directory": "ad", "federation": "hub", "hubDisruption": true}'
+            )
+            self.assertEqual(
+                tak_server.deployment(),
+                {"directory": "ad", "federation": "hub", "hubDisruption": True},
+            )
+            # Only a JSON true turns replay on.
+            tak_server.DEPLOYMENT.write_text('{"hubDisruption": "yes"}')
+            self.assertFalse(tak_server.deployment()["hubDisruption"])
             tak_server.DEPLOYMENT.write_text('{"federation": "mesh"}')
             self.assertEqual(tak_server.deployment(), default)
             tak_server.DEPLOYMENT.write_text("[1]")
@@ -209,7 +217,7 @@ class HubTest(unittest.TestCase):
         )
 
     def test_policy(self):
-        policy = self.hub(tak_server.hub_policy)
+        policy = self.hub(tak_server.hub_policy, ["listed.token"])
         group_a = self.hub(tak_server.ca_group, "ca-a")
         group_b = self.hub(tak_server.ca_group, "ca-b")
         # Filters apply only between groups that are not interconnected.
@@ -234,10 +242,20 @@ class HubTest(unittest.TestCase):
             },
             {group_a: False, group_b: True},
         )
+        # The token group lists only the given tokens and has the edges of server B.
+        tokens = {
+            cell["id"]: cell for cell in cells if cell["graphType"] == "FederationTokenGroupCell"
+        }
+        self.assertEqual(len(tokens), 1)
+        token_group = next(iter(tokens.values()))["roger_federation"]
+        self.assertEqual(token_group["name"], tak_server.TOKEN_GROUP)
+        self.assertFalse(token_group["interconnected"])
+        self.assertEqual(token_group["tokens"], [{"token": "listed.token", "expiration": -1}])
+        named = {**groups, **tokens}
         rules = {}
         for edge in edges:
-            source = groups[edge["source"]["id"]]["roger_federation"]["name"]
-            target = groups[edge["target"]["id"]]["roger_federation"]["name"]
+            source = named[edge["source"]["id"]]["roger_federation"]["name"]
+            target = named[edge["target"]["id"]]["roger_federation"]["name"]
             rules[(source, target)] = (
                 edge["roger_federation"]["groupsFilterType"],
                 edge["roger_federation"]["allowedGroups"],
@@ -248,6 +266,8 @@ class HubTest(unittest.TestCase):
             {
                 (group_a, group_b): ("allowed", [tak_server.FEDERATION_GROUP]),
                 (group_b, group_a): ("allGroups", []),
+                (group_a, tak_server.TOKEN_GROUP): ("allowed", [tak_server.FEDERATION_GROUP]),
+                (tak_server.TOKEN_GROUP, group_a): ("allGroups", []),
             },
         )
         # The hub fails on a missing plugin list, so each entry has every list.
@@ -275,9 +295,10 @@ class HubTokenTest(unittest.TestCase):
         # The probe asks for a token with the certificate of server B and then server A.
         arguments = podman.call_args.args
         self.assertEqual(arguments[3], tak_server.HUB)
-        self.assertTrue(arguments[-3].endswith("takserver-b.pem"))
-        self.assertTrue(arguments[-2].endswith("takserver.pem"))
-        self.assertEqual(arguments[-1], str(tak_server.HUB_TOKEN_PORT))
+        self.assertTrue(arguments[-4].endswith("takserver-b.pem"))
+        self.assertTrue(arguments[-3].endswith("takserver.pem"))
+        self.assertEqual(arguments[-2], str(tak_server.HUB_TOKEN_PORT))
+        self.assertEqual(arguments[-1], "probe/tokens.json")
         # A failed run becomes one failed check with the error text.
         for stdout in ("", "not json", "[1]"):
             with self.subTest(stdout=stdout):
@@ -304,6 +325,46 @@ class HubTokenTest(unittest.TestCase):
             for text in ("{", "[]"):
                 report.write_text(text)
                 self.assertEqual(tak_server.merge_checks(report, {}), 1)
+
+
+class HubOptionsTest(unittest.TestCase):
+    def test_manual_token(self):
+        root = parse(tak_server.core_config(tak_server.SERVER_B, "openldap", "hub", "a.b.c"))
+        outgoing = next(root.iter(NAMESPACE + "federation-outgoing"))
+        self.assertEqual(outgoing.get("tokenType"), "manual")
+        self.assertEqual(outgoing.get("connectionToken"), "a.b.c")
+        self.assertEqual(outgoing.get("port"), str(tak_server.HUB_TOKEN_PORT))
+
+    def test_broker_template(self):
+        # prepare_hub turns replay off by replacing this exact line.
+        template = (tak_server.TEMPLATES / "hub" / "federation-hub-broker.yml").read_text()
+        self.assertEqual(template.count("missionFederationDisruptionEnabled: true"), 1)
+        self.assertIn(f"dbHost: {tak_server.HUB_DB}", template)
+        self.assertIn(f"port: {tak_server.HUB_TOKEN_PORT}", template)
+
+    def test_disruption_checks(self):
+        for output, passed in (("27", True), ("0", False), ("", False), ("error", False)):
+            with (
+                self.subTest(output=output),
+                patch.object(tak_server, "mongo", return_value=output),
+            ):
+                check = tak_server.hub_disruption_checks()["hubDisruptionStored"]
+                self.assertEqual(check["passed"], passed)
+
+    def test_disruption_profile(self):
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(tak_server, "WORK", Path(directory)),
+        ):
+            data = json.loads(
+                tak_server.profile(True, federation="hub", disruption=True).read_text()
+            )
+            self.assertTrue(data["federation"]["hubDisruption"])
+            self.assertEqual(data["federation"]["outgoing"], tak_server.HUB_CONNECTION)
+            data = json.loads(tak_server.profile(True, disruption=True).read_text())
+            # Replay applies only to the hub. Direct federation turns off the link to server A.
+            self.assertFalse(data["federation"]["hubDisruption"])
+            self.assertEqual(data["federation"]["outgoing"], "swak-a")
 
 
 class LoadTest(unittest.TestCase):

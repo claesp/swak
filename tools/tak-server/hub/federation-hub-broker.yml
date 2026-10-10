@@ -27,11 +27,13 @@ useCaGroups: true
 dbUsername: martiuser
 dbPassword: swak-test
 dbPort: 27017
-dbHost: localhost
+# The MongoDB container of tools/tak_server.py. The broker tests the connection once at start.
+dbHost: swak-tak-hub-db
 dbConnectionTimeoutMS: 5000
 missionFederationDBRetentionDays: 7
 missionFederationRecencySeconds: 43200
-missionFederationDisruptionEnabled: false
+# The hub keeps mission changes and replays them when a federate connects again.
+missionFederationDisruptionEnabled: true
 missionFederationDisruptionMaxFileSizeBytes: 200
 # Federates with a token connect to this port without a client certificate.
 federationTokenAuthServers:

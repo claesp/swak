@@ -1699,3 +1699,11 @@ In hub mode, server B connects to the hub token port 9103 with an automatic toke
 Direct federation passes 51 checks, the hub 60, and loopback 48. The hub and direct runs also pass under the sanitizers.
 
 Manual hub tokens from the hub UI and hub disruption tolerance with MongoDB remain untested.
+
+# 2026-10-10: Manual hub tokens and hub replay
+
+`tak_server.py build` also builds the hub UI. In hub mode, the hub container runs the UI on loopback port 19100. `up` asks the UI for two manual tokens of the token group `SWAK_token_group`, lists one in the policy, and activates the policy through the UI. `--hub-token manual` connects server B with the listed token. HubTokenProbe checks that the hub accepts the listed token and refuses the unlisted one.
+
+`--hub-disruption` starts MongoDB and turns on the hub replay. The new check `missionDisruption` turns off the outgoing connection of server B, changes a mission on server A, and turns it on again. Server B then has the change: from server A in direct federation, and from the hub replay with `--hub-disruption`. The hub has a fault: after the replay, it completes the mission stream of the federate, and TAK Server does not open it again. Live mission changes then stop. `hubReplayStopsLiveMissions` records this fault and fails when it is gone. Replay is off by default for this reason.
+
+Direct federation passes 52 checks, the hub 62, the hub with a manual token and replay 64, and loopback 49. The hub with replay and direct federation also pass under the sanitizers. Hub OAuth sign-in and the replay of mission files remain untested.

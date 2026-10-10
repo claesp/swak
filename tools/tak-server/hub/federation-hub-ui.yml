@@ -1,0 +1,11 @@
+# Disposable test configuration of the TAK federation hub UI. It signs manual tokens with the
+# same keystore as the broker, so the broker accepts them.
+keystoreType: JKS
+keystoreFile: /opt/tak/federation-hub/certs/files/fedhub.jks
+keystorePassword: atakatak
+truststoreType: JKS
+truststoreFile: /opt/tak/federation-hub/certs/files/fed-truststore.jks
+truststorePassword: atakatak
+authUsers: /opt/tak/federation-hub/authorized_users.yml
+port: 9100
+allowOauth: false

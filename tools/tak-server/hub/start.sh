@@ -1,6 +1,6 @@
 #!/bin/sh
 # Starts the TAK federation hub in one container: the policy service, the plugin manager, the
-# broker, and the SWAK test plugins when tools/tak_server.py enables them.
+# broker, the UI, and the SWAK test plugins when tools/tak_server.py enables them.
 set -eu
 cd /opt/tak/federation-hub
 export JDK_JAVA_OPTIONS="-Dio.netty.tmpdir=/opt/tak/federation-hub/tmp \
@@ -12,6 +12,11 @@ sleep 20
 java -Xmx256m -jar jars/federation-hub-plugin-manager.jar > logs/plugin-manager.log 2>&1 &
 java -Xmx768m --add-opens java.base/jdk.internal.misc=ALL-UNNAMED \
  -Dio.netty.tryReflectionSetAccessible=true -jar jars/federation-hub-broker.jar > logs/broker.log 2>&1 &
+if [ -f jars/federation-hub-ui.war ]; then
+    # The UI issues manual tokens and activates policies.
+    sleep 10
+    java -Xmx512m -jar jars/federation-hub-ui.war configs/federation-hub-ui.yml > logs/ui.log 2>&1 &
+fi
 if [ -f plugins/SwakHubPlugin.java ]; then
     sleep 20
     # The plugins use the SDK and the Ignite libraries of the plugin manager.
