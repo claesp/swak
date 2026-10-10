@@ -47,6 +47,29 @@ QByteArray kmz(const QByteArray &xml, const char *name = "doc.kml", bool duplica
     buffer.resize(static_cast<qsizetype>(written));
     return buffer;
 }
+// Writes a zip archive with the given entries.
+QByteArray zipEntries(const QList<std::pair<QByteArray, QByteArray>> &entries)
+{
+    QByteArray buffer(4 * 1024 * 1024, '\0');
+    size_t written = 0;
+    auto *writer = archive_write_new();
+    archive_write_set_format_zip(writer);
+    archive_write_open_memory(writer, buffer.data(), static_cast<size_t>(buffer.size()), &written);
+    for (const auto &[name, bytes] : entries) {
+        auto *entry = archive_entry_new();
+        archive_entry_set_pathname(entry, name.constData());
+        archive_entry_set_size(entry, bytes.size());
+        archive_entry_set_filetype(entry, AE_IFREG);
+        archive_entry_set_perm(entry, 0600);
+        archive_write_header(writer, entry);
+        archive_write_data(writer, bytes.constData(), static_cast<size_t>(bytes.size()));
+        archive_entry_free(entry);
+    }
+    archive_write_close(writer);
+    archive_write_free(writer);
+    buffer.resize(static_cast<qsizetype>(written));
+    return buffer;
+}
 DataProvider *format()
 {
     for (auto *plugin : QPluginLoader::staticInstances()) {
@@ -408,6 +431,103 @@ private slots:
         QVERIFY(format()
                     ->decode(QByteArray(point).replace("0,0,0", QByteArray(200, '1')), cancelled)
                     .shapes.isEmpty());
+    }
+    void vectorLimits()
+    {
+        std::atomic_bool cancelled = false;
+        const auto collection = [](const QByteArray &features) {
+            return R"({"type":"FeatureCollection","features":[)" + features + "]}";
+        };
+        const auto feature = [](const QByteArray &geometry) {
+            return R"({"type":"Feature","properties":{},"geometry":)" + geometry + "}";
+        };
+        const auto error = [&](const QByteArray &bytes) {
+            return format()->decode(bytes, cancelled).error;
+        };
+        // Degenerate rings and lines have no map shape.
+        const auto degenerate = format()->decode(
+            collection(feature(R"({"type":"Polygon","coordinates":[[[0,0],[1,0]]]})") + "," +
+                       feature(R"({"type":"LineString","coordinates":[[0,0]]})")),
+            cancelled);
+        QVERIFY2(degenerate.error.isEmpty(), qPrintable(degenerate.error));
+        QVERIFY(degenerate.shapes.isEmpty());
+        // A line may cross the antimeridian, but not go around the world more than once.
+        QCOMPARE(error(collection(
+                     feature(R"({"type":"LineString","coordinates":[[0,0],[120,0],[-120,0],[0,0],)"
+                             R"([120,0],[-120,0],[0,0],[120,0],[-120,0],[0,0]]})"))),
+                 QStringLiteral("A geometry wraps around the world too many times."));
+        // Collections can nest to a limited depth.
+        QByteArray nested = R"({"type":"Point","coordinates":[1,1]})";
+        for (int depth = 0; depth < 10; ++depth) {
+            nested = R"({"type":"GeometryCollection","geometries":[)" + nested + "]}";
+        }
+        QCOMPARE(error(collection(feature(nested))),
+                 QStringLiteral("Nested geometry exceeds its limit."));
+        // The shape and coordinate limits stop large documents.
+        QByteArrayList points;
+        for (int index = 0; index <= 10000; ++index) {
+            points.append(feature(R"({"type":"Point","coordinates":[1,1]})"));
+        }
+        QCOMPARE(error(collection(points.join(','))),
+                 QStringLiteral("The data has more than 10000 shapes."));
+        QByteArrayList coordinates;
+        for (int index = 0; index <= 100000; ++index) {
+            coordinates.append(QByteArray::number(index % 100) + ",1");
+        }
+        QCOMPARE(
+            error(QByteArray(point).replace("<Point><coordinates>0,0,0</coordinates></Point>",
+                                            "<LineString><coordinates>" + coordinates.join(' ') +
+                                                "</coordinates></LineString>")),
+            QStringLiteral("The data has more than 100000 coordinates."));
+        // A cancelled decoder stops at the next feature.
+        std::atomic_bool stop = true;
+        QCOMPARE(format()
+                     ->decode(collection(feature(R"({"type":"Point","coordinates":[1,1]})")), stop)
+                     .error,
+                 QStringLiteral("Data parsing cancelled."));
+        // Archives must hold safe entries, within the entry limit.
+        QCOMPARE(error(zipEntries({})), QStringLiteral("Invalid or empty archive."));
+        QList<std::pair<QByteArray, QByteArray>> many;
+        for (int index = 0; index <= 256; ++index) {
+            many.append({"part" + QByteArray::number(index) + ".txt", "x"});
+        }
+        QCOMPARE(error(zipEntries(many)), QStringLiteral("The archive has more than 256 entries."));
+        // GDAL leaves out entries with "..", and changes backslashes to slashes. The archive
+        // then has no dataset. The name rules of the decoder stay as a second defense.
+        QVERIFY(!error(zipEntries({{"../doc.kml", point}})).isEmpty());
+        // Local files: archives, XML document types, unreadable files, and KML skip counts.
+        QTemporaryDir directory;
+        const auto write = [&](const QString &name, const QByteArray &bytes) {
+            const auto path = directory.filePath(name);
+            QFile file(path);
+            return file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size() ? path
+                                                                                        : QString{};
+        };
+        const auto local =
+            format()->decodeFile(write(QStringLiteral("doc.kmz"), kmz(point)), cancelled);
+        QVERIFY2(local.error.isEmpty(), qPrintable(local.error));
+        QCOMPARE(local.shapes.size(), 1);
+        QCOMPARE(
+            format()->decodeFile(write(QStringLiteral("bad.kmz"), zipEntries({})), cancelled).error,
+            QStringLiteral("Invalid or empty archive."));
+        QCOMPARE(format()
+                     ->decodeFile(write(QStringLiteral("doctype.kml"),
+                                        "<?xml version=\"1.0\"?><!DOCTYPE kml []>" + point),
+                                  cancelled)
+                     .error,
+                 QStringLiteral("XML declarations and external entities are not allowed."));
+        const auto locked = write(QStringLiteral("locked.kml"), point);
+        QVERIFY(QFile::setPermissions(locked, {}));
+        QCOMPARE(format()->decodeFile(locked, cancelled).error,
+                 QStringLiteral("Cannot read the local data file."));
+        const auto links = format()->decodeFile(
+            write(QStringLiteral("links.kml"),
+                  QByteArray(point).replace(
+                      "</Document>",
+                      "<NetworkLink><Link><href>x.kml</href></Link></NetworkLink></Document>")),
+            cancelled);
+        QVERIFY2(links.error.isEmpty(), qPrintable(links.error));
+        QCOMPARE(links.ignoredLinks, 1);
     }
     void catalog()
     {

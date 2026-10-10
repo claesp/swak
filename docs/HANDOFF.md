@@ -1737,3 +1737,19 @@ Fixes:
 - An earlier commit added a Python cache file. It is removed, and Git ignores `__pycache__/`.
 
 The coverage, quick, GUI, and analysis modes passed. This review did not run the `--lan` mode, so LAN discovery stays a gap in this report.
+
+# 2026-10-11: Startup, signals, and the remaining gaps
+
+SWAK now closes on SIGTERM and SIGINT through its event loop. `core/quit_signals.*` reports the signal on the interface thread. `main` closes all windows, which also ends an open dialog, and quits. The window saves its preferences while it closes. Before this change, a signal stopped SWAK at once and lost unsaved preferences. If the handler cannot be installed, the logger reports a warning.
+
+`tests/test_startup.py` starts the executable. The quality runner runs it without a display in quick and coverage modes, and with the window in GUI mode and in coverage mode with `--gui`.
+
+New tests cover the receiver policy, connection errors, enrollment failures, GDAL vector and raster limits, map attribution, editor files, channels, the server table, window dialogs, pane settings, and step keys. Coverage with the GUI suite and `--lan` reached 95.3 percent of lines and 96.8 percent of functions. Read the October 11 sections of `docs/testing.md` for the paths that remain untested.
+
+Fixes:
+
+- The receiver tested the type `t-x-c-t` twice. The duplicate test is removed.
+- The editor import and export buttons have object names for tests.
+
+The coverage, quick, GUI, and analysis modes passed.
+

@@ -969,7 +969,6 @@ private:
             return;
         }
         if (result.event->type == QLatin1String("t-x-c-t") ||
-            result.event->type == QLatin1String("t-x-c-t") ||
             result.event->type == QLatin1String("t-x-c-t-r")) {
             ++s.controls;
             return;

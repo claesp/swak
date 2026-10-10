@@ -13,6 +13,7 @@
 #include "core/polygon.h"
 #include "core/prediction.h"
 #include "core/projection.h"
+#include "core/quit_signals.h"
 #include "core/routing.h"
 #include "core/servers.h"
 #include "core/store.h"
@@ -1722,6 +1723,32 @@ private slots:
         const auto coordinate = view.coordinate(view.screen(59.3, 18.0));
         QVERIFY(std::abs(coordinate.x() - 18) < 1e-8);
         QVERIFY(std::abs(coordinate.y() - 59.3) < 1e-8);
+    }
+    void quitSignals()
+    {
+        struct sigaction before{};
+        QCOMPARE(::sigaction(SIGTERM, nullptr, &before), 0);
+        {
+            QuitSignals handler;
+            QVERIFY(handler.active());
+            // Only one object handles the signals.
+            QuitSignals second;
+            QVERIFY(!second.active());
+            QSignalSpy requested(&handler, &QuitSignals::requested);
+            QCOMPARE(::raise(SIGTERM), 0);
+            QVERIFY(requested.wait(5000));
+            QCOMPARE(requested.last().at(0).toInt(), SIGTERM);
+            QCOMPARE(::raise(SIGINT), 0);
+            QVERIFY(requested.wait(5000));
+            QCOMPARE(requested.last().at(0).toInt(), SIGINT);
+            QCOMPARE(requested.size(), 2);
+        }
+        // The destructor restores the previous handler, and a new object can install again.
+        struct sigaction after{};
+        QCOMPARE(::sigaction(SIGTERM, nullptr, &after), 0);
+        QVERIFY(after.sa_handler == before.sa_handler);
+        QuitSignals again;
+        QVERIFY(again.active());
     }
     void fileBoundaries()
     {

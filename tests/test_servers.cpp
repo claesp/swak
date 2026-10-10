@@ -78,6 +78,7 @@
 #include <netinet/in.h>
 #include <openssl/err.h>
 #include <openssl/pem.h>
+#include <openssl/rsa.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
 #include <optional>
@@ -704,6 +705,86 @@ private slots:
         request.tls = readTlsFiles(entry);
         QVERIFY(!request.tls.error.isEmpty());
         QCOMPARE(fetch(client, request).error, request.tls.error);
+    }
+    void receiverPolicy()
+    {
+        // A UDP input counts control messages, and rejects stale, future, older, and invalid
+        // events. Only valid events reach the store.
+        quint16 port = 0;
+        {
+            QUdpSocket probe;
+            QVERIFY(probe.bind(QHostAddress::LocalHost, 0));
+            port = probe.localPort();
+        }
+        Store store;
+        Servers servers(store);
+        auto entry = source(port);
+        entry.insert(QStringLiteral("protocol"), QStringLiteral("udp"));
+        QVERIFY(servers.put(QStringLiteral("in"), entry).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return servers.status(QStringLiteral("in")).startsWith(QStringLiteral("Listening"));
+            },
+            5000));
+        QUdpSocket sender;
+        const auto send = [&](const Event &event) {
+            const auto bytes = encodeCot(event);
+            QCOMPARE(sender.writeDatagram(bytes, QHostAddress::LocalHost, port), bytes.size());
+        };
+        const auto counter = [&](const QString &name) {
+            return servers.statistics().value(QStringLiteral("in")).toObject().value(name).toInt();
+        };
+        const auto waitFor = [&](const QString &name, int value) {
+            return QTest::qWaitFor(
+                [&] {
+                    return counter(name) == value;
+                },
+                5000);
+        };
+        const auto now = QDateTime::currentDateTimeUtc();
+        for (const auto *type : {"t-x-c-t", "t-x-c-t-r"}) {
+            auto control = sampleEvent(QStringLiteral("ping"));
+            control.type = QString::fromLatin1(type);
+            send(control);
+        }
+        QVERIFY(waitFor(QStringLiteral("control"), 2));
+        auto stale = sampleEvent(QStringLiteral("stale"));
+        stale.stale = now.addSecs(-1);
+        send(stale);
+        auto distant = sampleEvent(QStringLiteral("distant"));
+        distant.stale = now.addDays(8);
+        send(distant);
+        auto future = sampleEvent(QStringLiteral("future"));
+        future.time = now.addSecs(600);
+        future.stale = now.addSecs(900);
+        send(future);
+        auto early = sampleEvent(QStringLiteral("early"));
+        early.start = now.addSecs(600);
+        early.stale = now.addSecs(900);
+        send(early);
+        QCOMPARE(sender.writeDatagram("<event", QHostAddress::LocalHost, port), 6);
+        QVERIFY(waitFor(QStringLiteral("rejected"), 5));
+        // An older copy of a queued event is rejected. A newer copy replaces it.
+        auto current = sampleEvent(QStringLiteral("current"));
+        send(current);
+        auto older = current;
+        older.time = older.start = now.addSecs(-30);
+        older.callsign = QStringLiteral("Older");
+        send(older);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return counter(QStringLiteral("received")) + counter(QStringLiteral("rejected")) ==
+                       7;
+            },
+            5000));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return store.rowCount() == 1;
+            },
+            5000));
+        QCOMPARE(store.events().first().uid, QStringLiteral("current"));
+        QVERIFY(store.events().first().callsign != QStringLiteral("Older"));
+        QCOMPARE(counter(QStringLiteral("control")), 2);
     }
     void udpOutput()
     {
@@ -1488,6 +1569,100 @@ private slots:
         QVERIFY(!enrollment.start(options).isEmpty());
         options.serverId = QStringLiteral("missing");
         QVERIFY(!enrollment.start(options).isEmpty());
+    }
+    void enrollmentFailures()
+    {
+        // A short RSA key is refused before any request.
+        EVP_PKEY *weak = EVP_RSA_gen(1024);
+        QVERIFY(weak);
+        BIO *memory = BIO_new(BIO_s_mem());
+        QCOMPARE(PEM_write_bio_PrivateKey(memory, weak, nullptr, nullptr, 0, nullptr, nullptr), 1);
+        char *data = nullptr;
+        const auto length = BIO_get_mem_data(memory, &data);
+        const QByteArray weakPem(data, static_cast<qsizetype>(length));
+        BIO_free(memory);
+        EVP_PKEY_free(weak);
+        QCOMPARE(readEnrollmentKey(weakPem, {}).error,
+                 QStringLiteral("Use an RSA key with at least 2048 bits, or an EC key."));
+        // Each step reports a server failure.
+        HttpsHarness enroll;
+        QVERIFY(enroll.load());
+        QByteArray config = "<certificateConfig><nameEntries><nameEntry name=\"O\" value=\"TAK\"/>"
+                            "</nameEntries></certificateConfig>";
+        int configStatus = 200;
+        int signStatus = 200;
+        enroll.respond = [&](const QByteArray &request) {
+            if (request.startsWith("GET /Marti/api/tls/config ")) {
+                return httpReply(configStatus, config);
+            }
+            if (request.startsWith("POST /Marti/api/tls/signClient/v2?")) {
+                if (signStatus != 200) {
+                    return httpReply(signStatus, {});
+                }
+                QString subject;
+                const auto body = request.mid(request.indexOf("\r\n\r\n") + 4);
+                return httpReply(
+                    200,
+                    QJsonDocument(QJsonObject{{QStringLiteral("signedCert"),
+                                               QString::fromLatin1(signRequest(body, &subject))},
+                                              {QStringLiteral("ca0"),
+                                               QString::fromLatin1(fixtureCertificateBase64())}})
+                        .toJson());
+            }
+            return httpReply(404, {});
+        };
+        QTemporaryDir directory;
+        Store store;
+        Servers servers(store);
+        NetworkClient network;
+        TakEnrollment enrollment(servers, network);
+        enrollment.setDirectory(directory.path());
+        auto v = source(9);
+        v.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        v.insert(QStringLiteral("apiPort"), 0);
+        v.insert(QStringLiteral("enabled"), false);
+        v.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+        v.insert(QStringLiteral("passwordEnv"), QStringLiteral("SWAK_COT_TEST_KEY"));
+        qputenv("SWAK_COT_TEST_KEY", "key-secret");
+        QVERIFY(servers.put(QStringLiteral("tak"), v).isEmpty());
+        QSignalSpy finished(&enrollment, &TakEnrollment::finished);
+        TakEnrollment::Options options;
+        options.serverId = QStringLiteral("tak");
+        options.username = QStringLiteral("alice");
+        options.password = "secret";
+        options.clientUid = QStringLiteral("SWAK-1");
+        options.port = 0;
+        QCOMPARE(enrollment.start(options),
+                 QStringLiteral("Use an enrollment port from 1 through 65535."));
+        options.port = enroll.serverPort();
+        const auto result = [&] {
+            if (!enrollment.start(options).isEmpty() || !finished.wait(20000)) {
+                return QStringLiteral("not finished");
+            }
+            return finished.last().first().toString();
+        };
+        configStatus = 500;
+        QCOMPARE(result(), QStringLiteral("The enrollment service answered with HTTP status 500."));
+        configStatus = 200;
+        config = "<other/>";
+        QCOMPARE(result(), QStringLiteral("The server sent invalid certificate settings."));
+        config = "<certificateConfig><nameEntries/></certificateConfig>";
+        signStatus = 500;
+        QVERIFY(result().startsWith(QStringLiteral("The server did not sign the certificate.")));
+        // The certificate folder cannot be made below a regular file.
+        signStatus = 200;
+        const auto blocker = directory.filePath(QStringLiteral("file"));
+        QFile file(blocker);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.close();
+        enrollment.setDirectory(blocker);
+        QCOMPARE(result(), QStringLiteral("The certificate directory cannot be created."));
+        QVERIFY(servers.sources()
+                    .value(QStringLiteral("tak"))
+                    .toObject()
+                    .value(QStringLiteral("certificate"))
+                    .toString()
+                    .isEmpty());
     }
     void takChannels()
     {
@@ -5338,6 +5513,20 @@ private slots:
             3000));
         QVERIFY(
             servers.status(QStringLiteral("tls-mismatch")).contains(QStringLiteral("plain TCP")));
+        // The reserved .invalid domain never resolves.
+        values.insert(QStringLiteral("protocol"), QStringLiteral("stcp"));
+        values.insert(QStringLiteral("host"), QStringLiteral("swak-test.invalid"));
+        QVERIFY(servers.put(QStringLiteral("unknown"), values).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return servers.status(QStringLiteral("unknown"))
+                    .contains(QStringLiteral("Host name not found"));
+            },
+            15000));
+        // The entry check refuses a broadcast address.
+        values.insert(QStringLiteral("host"), QStringLiteral("255.255.255.255"));
+        QCOMPARE(servers.put(QStringLiteral("broadcast"), values),
+                 QStringLiteral("Use a unicast address."));
     }
     void tlsCertificates()
     {

@@ -277,6 +277,19 @@ def main():
                     240,
                     env,
                 )
+            if args.mode in ("quick", "coverage"):
+                run(
+                    [
+                        sys.executable,
+                        "-B",
+                        ROOT / "tests/test_startup.py",
+                        "--executable",
+                        build / "swak",
+                    ],
+                    report / "startup.log",
+                    120,
+                    env,
+                )
             if args.lan:
                 run(
                     [
@@ -318,6 +331,23 @@ def main():
                     180,
                     env,
                     report,
+                )
+                run(
+                    [
+                        "xvfb-run",
+                        "-a",
+                        "-s",
+                        "-screen 0 1600x1200x24 -nolisten tcp",
+                        sys.executable,
+                        "-B",
+                        ROOT / "tests/test_startup.py",
+                        "--executable",
+                        build / "swak",
+                        "--gui",
+                    ],
+                    report / "startup-gui.log",
+                    180,
+                    env,
                 )
             if args.mode == "coverage":
                 coverage_report(build, report, env)

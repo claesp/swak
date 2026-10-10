@@ -18,13 +18,13 @@ Use the build environment described in [Build and run](build.md). Run these comm
 
 # Regular runs
 
-The quick mode builds with address and undefined behavior sanitizers. It runs the vector, data, map, core, internal-event, logging, preferences, and short workload suites. Each suite has a 60-second limit. A separate process enforces the limit even when the application event loop stops.
+The quick mode builds with address and undefined behavior sanitizers. It runs the vector, data, map, core, internal-event, logging, preferences, and short workload suites. Each suite has a 60-second limit. A separate process enforces the limit even when the application event loop stops. `tests/test_startup.py` then starts the `swak` executable without a display: it checks the command-line options, and stops the startup error message with SIGTERM and SIGINT.
 
 ```sh
 python3 tools/quality.py quick
 ```
 
-The GUI mode tests the native interface under Xvfb. It includes dock changes, repeated closure, rendering, and restored preferences. This mode has a three-minute test limit. The default EGL graphics path avoids the known Mesa GLX startup leak on this host. An explicit GLX override still exposes that leak.
+The GUI mode tests the native interface under Xvfb. It includes dock changes, repeated closure, rendering, and restored preferences. This mode has a three-minute test limit. The startup test then opens the window under Xvfb and stops it with SIGTERM and SIGINT. It expects status 0. The default EGL graphics path avoids the known Mesa GLX startup leak on this host. An explicit GLX override still exposes that leak.
 
 ```sh
 python3 tools/quality.py gui

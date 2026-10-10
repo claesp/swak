@@ -135,7 +135,9 @@ public:
         layout->addWidget(preview_);
         auto *files = new QHBoxLayout;
         auto *importButton = new QPushButton(tr("Import XML…"), this);
+        importButton->setObjectName(QStringLiteral("importEvent"));
         export_ = new QPushButton(tr("Export XML…"), this);
+        export_->setObjectName(QStringLiteral("exportEvent"));
         export_->setEnabled(false);
         files->addWidget(importButton);
         files->addWidget(export_);

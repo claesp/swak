@@ -386,6 +386,7 @@ private slots:
         const TrustServer trust(server);
         const auto expiry = QByteArray::number(QDateTime::currentSecsSinceEpoch() + 86400 * 14);
         QByteArray sessionStatus = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n";
+        QByteArray viewportStatus = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n";
         QByteArray sessionReply = json({{QStringLiteral("session"), QStringLiteral("token-1")},
                                         {QStringLiteral("expiry"), QString::fromLatin1(expiry)}});
         server.respond = [&](const QByteArray &head) -> std::pair<QByteArray, QByteArray> {
@@ -394,7 +395,7 @@ private slots:
                 return {sessionStatus, sessionReply};
             }
             if (line.startsWith("GET /viewport")) {
-                return {"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n",
+                return {viewportStatus,
                         json({{QStringLiteral("copyright"),
                                QStringLiteral("<b>Map data</b> &copy; Test\u0007")}})};
             }
@@ -448,6 +449,23 @@ private slots:
         draw(renderer, canvas);
         QTest::qWait(900);
         QCOMPARE(viewportRequests(), asked);
+        // A narrower view reports its own bounds. A failed request keeps the last attribution.
+        viewportStatus = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\n";
+        const auto zoomIn = [&] {
+            QPainter painter(&canvas);
+            renderer.paint(painter, Viewport{QSizeF(256, 256), QPointF(0.55, 0.3), 3}, 1, false);
+        };
+        zoomIn();
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                zoomIn();
+                return viewportRequests() > asked;
+            },
+            5000));
+        QTest::qWait(300);
+        QCOMPARE(renderer.attribution(), QStringLiteral("Map data © Test"));
+        QVERIFY(provider.lastBounds.west > -180 && provider.lastBounds.east < 180);
+        QVERIFY(provider.lastBounds.west < provider.lastBounds.east);
         // A new source clears the attribution. A rejected session stops tiles.
         sessionStatus = "HTTP/1.1 403 Forbidden\r\nContent-Type: application/json\r\n";
         server.requests.clear();
@@ -907,6 +925,33 @@ private slots:
         tile = renderOnWorker(RasterRequest{source, "map-token", {}, 0, 1, 0, 0});
         QVERIFY2(tile.error.isEmpty(), qPrintable(tile.error));
         QVERIFY(server.requests.last().toLower().contains("authorization: bearer map-token"));
+        source.insert(QStringLiteral("authMode"), QStringLiteral("basic"));
+        source.insert(QStringLiteral("authUser"), QStringLiteral("test-user"));
+        tile = renderOnWorker(RasterRequest{source, "password", {}, 0, 2, 2, 2});
+        QVERIFY2(tile.error.isEmpty(), qPrintable(tile.error));
+        QVERIFY(server.requests.last().contains("Authorization: Basic dGVzdC11c2VyOnBhc3N3b3Jk"));
+        source.insert(QStringLiteral("authMode"), QStringLiteral("header"));
+        source.insert(QStringLiteral("authParameter"), QStringLiteral("X-API-Key"));
+        tile = renderOnWorker(RasterRequest{source, "map-key", {}, 0, 2, 3, 2});
+        QVERIFY2(tile.error.isEmpty(), qPrintable(tile.error));
+        QVERIFY(server.requests.last().toLower().contains("x-api-key: map-key"));
+        // A zoom above the provider range and an invalid provider fail without a request.
+        const auto requests = server.requests.size();
+        tile = renderOnWorker(RasterRequest{source, "map-key", {}, 0, 4, 0, 0});
+        QCOMPARE(tile.error, QStringLiteral("The map tile is beyond the provider zoom range."));
+        auto invalid = source;
+        invalid.insert(QStringLiteral("service"), QStringLiteral("wmts"));
+        invalid.insert(QStringLiteral("endpoint"),
+                       QStringLiteral("https://localhost:%1/wmts").arg(server.serverPort()));
+        invalid.insert(QStringLiteral("layer"), QStringLiteral("roads"));
+        invalid.insert(QStringLiteral("imageFormat"), QStringLiteral("image/png"));
+        invalid.insert(QStringLiteral("matrixSet"), QString());
+        QCOMPARE(raster->validate(invalid),
+                 QStringLiteral("Enter a bounded layer and matrix set."));
+        tile = renderOnWorker(RasterRequest{invalid, "map-key", {}, 0, 1, 0, 0});
+        QCOMPARE(tile.error, QStringLiteral("The map provider is invalid."));
+        QVERIFY(tile.providerWide);
+        QCOMPARE(server.requests.size(), requests);
         source.insert(QStringLiteral("authMode"), QStringLiteral("query"));
         source.insert(QStringLiteral("authParameter"), QStringLiteral("apikey"));
         tile = renderOnWorker(RasterRequest{source, "a&b", {}, 0, 1, 1, 0});

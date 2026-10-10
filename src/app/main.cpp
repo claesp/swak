@@ -3,6 +3,7 @@
 #include "core/graphics.h"
 #include "core/logging.h"
 #include "core/plugin_catalog.h"
+#include "core/quit_signals.h"
 #include "swak/version.h"
 
 #include <QApplication>
@@ -26,6 +27,13 @@ int main(int argc, char **argv)
     QCoreApplication::setOrganizationName(QStringLiteral("SWAK"));
     QCoreApplication::setApplicationVersion(QStringLiteral(SWAK_VERSION));
     QGuiApplication::setDesktopFileName(QStringLiteral("org.swak.Swak"));
+    // SIGTERM and SIGINT close the window through the event loop, so it saves its preferences.
+    // Closing all windows also ends an open dialog, which quit alone does not end.
+    const swak::QuitSignals quitSignals;
+    QObject::connect(&quitSignals, &swak::QuitSignals::requested, &app, [] {
+        QApplication::closeAllWindows();
+        QCoreApplication::quit();
+    });
     QCommandLineParser parser;
     parser.setApplicationDescription(
         QCoreApplication::translate("main", "Receive, create, and present CoT data."));
@@ -41,6 +49,13 @@ int main(int argc, char **argv)
                                         ? parser.value(preferencesOption)
                                         : swak::Preferences::defaultPath();
     swak::configureLoggingFromFile(preferencesPath);
+    if (!quitSignals.active()) {
+        swak::logMessage(
+            swak::Severity::Warning,
+            swak::Urgency::Attention,
+            QStringLiteral("swak.startup"),
+            QStringLiteral("SIGTERM and SIGINT stop SWAK without saving preferences."));
+    }
     // The window and its GDAL workers close first. Then GDAL releases its cached resources.
     const swak::GdalShutdownGuard gdal;
     try {

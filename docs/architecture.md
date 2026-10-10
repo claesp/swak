@@ -88,6 +88,8 @@ Application and plugin code uses `logMessage` from `src/core/logging.h`. Every c
 
 The logger serializes concurrent calls and limits message size and rate. A separate nonblocking descriptor handles pipes and terminals without changing the original descriptor flags. Socket output uses nonblocking sends. Closed pipes do not deliver a fatal signal to the application. The logger drops unavailable output and never retries inside the interface thread.
 
+`core/quit_signals.*` reports SIGTERM and SIGINT on the interface thread. Its signal handler only writes one byte to a pipe. `main` then closes all windows, which also ends an open dialog, and quits the event loop. The window saves its preferences while it closes. The destructor restores the previous signal handlers.
+
 This design adds no external dependency. The output adapter uses Linux descriptors and signal masks. It does not intercept arbitrary output from native libraries. Qt documents the supported handler in [Qt logging](https://doc.qt.io/qt-6.8/qtlogging.html).
 
 The Settings dialog separates General sections from pane customization. The host marks pane pages explicitly and keeps stable identifiers separate from translated titles. Section names and choice labels use `QCollator` ordering. Choice values remain attached to their labels after sorting. The default collator follows the system collation locale, including `LC_COLLATE` on Linux. Qt documents this behavior in [QCollator](https://doc.qt.io/qt-6/qcollator.html).

@@ -1670,9 +1670,9 @@ private slots:
         }
         return nullptr;
     }
-    // Types a path into the next Qt file dialog that opens, and accepts it. QFileDialog::selectFile
-    // does not change the name field while the field has focus, so the timer sets the field.
-    // The timer stops with its context.
+    // Types a path into the next Qt file dialog that opens, and accepts it. An empty path cancels
+    // the dialog. QFileDialog::selectFile does not change the name field while the field has
+    // focus, so the timer sets the field. The timer stops with its context.
     static void chooseFile(QObject *context, const QString &path)
     {
         auto *timer = new QTimer(context);
@@ -1688,6 +1688,10 @@ private slots:
                                     : nullptr;
                 if (picker && picker->isVisible() && name) {
                     timer->deleteLater();
+                    if (path.isEmpty()) {
+                        picker->reject();
+                        return;
+                    }
                     name->setText(path);
                     static_cast<QDialog *>(picker)->accept();
                     return;
@@ -1695,6 +1699,207 @@ private slots:
             }
         });
         timer->start(20);
+    }
+    void editorFiles()
+    {
+        // The editor imports CoT files into the store and exports its XML preview.
+        const QtDialogs dialogs;
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("editor.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        window.findChild<QDockWidget *>(QStringLiteral("org.swak.editor.pane"))->show();
+        auto *label = window.findChild<QLabel *>(QStringLiteral("editorStatus"));
+        auto *preview = window.findChild<QPlainTextEdit *>(QStringLiteral("xmlPreview"));
+        auto *importButton = window.findChild<QPushButton *>(QStringLiteral("importEvent"));
+        auto *exportButton = window.findChild<QPushButton *>(QStringLiteral("exportEvent"));
+        QVERIFY(label && preview && importButton && exportButton);
+        const auto write = [&](const QString &name, const QByteArray &bytes) {
+            const auto path = directory.filePath(name);
+            QFile file(path);
+            if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size()) {
+                return QString{};
+            }
+            return path;
+        };
+        const auto import = [&](const QString &path) {
+            chooseFile(&window, path);
+            importButton->click();
+        };
+        swak::Event event;
+        event.uid = QStringLiteral("imported-1");
+        event.type = QStringLiteral("a-f-G-U-C");
+        event.how = QStringLiteral("h-e");
+        event.callsign = QStringLiteral("Kilo");
+        event.latitude = 59.5;
+        event.longitude = 18.25;
+        event.time = event.start = QDateTime::currentDateTimeUtc();
+        event.stale = event.time.addSecs(600);
+        const auto valid = write(QStringLiteral("event.xml"), swak::encodeCot(event));
+        QVERIFY(!valid.isEmpty());
+        // Cancel changes nothing.
+        const auto before = label->text();
+        import({});
+        QCOMPARE(label->text(), before);
+        import(valid);
+        QCOMPARE(label->text(),
+                 QStringLiteral("The event was imported. Exports keep its detail fields."));
+        QCOMPARE(window.store().rowCount(), 1);
+        QVERIFY(preview->toPlainText().contains(QStringLiteral("imported-1")));
+        QVERIFY(exportButton->isEnabled());
+        // A file without an event, an unreadable file, and an event that the store refuses fail.
+        import(write(QStringLiteral("other.xml"), "<kml/>"));
+        QVERIFY(!label->text().isEmpty());
+        QVERIFY(!label->text().startsWith(QStringLiteral("The event was imported")));
+        const auto locked = write(QStringLiteral("locked.xml"), swak::encodeCot(event));
+        QVERIFY(QFile::setPermissions(locked, {}));
+        import(locked);
+        QCOMPARE(label->text(), QStringLiteral("The file cannot be opened."));
+        auto stale = event;
+        stale.uid = QStringLiteral("stale-1");
+        stale.stale = stale.time.addSecs(-60);
+        import(write(QStringLiteral("stale.xml"), swak::encodeCot(stale)));
+        QVERIFY(!label->text().startsWith(QStringLiteral("The event was imported")));
+        QCOMPARE(window.store().rowCount(), 1);
+        // Export writes the preview. A directory without write access fails.
+        const auto saved = directory.filePath(QStringLiteral("saved.xml"));
+        chooseFile(&window, saved);
+        exportButton->click();
+        QCOMPARE(label->text(), QStringLiteral("The XML preview was saved."));
+        QFile output(saved);
+        QVERIFY(output.open(QIODevice::ReadOnly));
+        QCOMPARE(QString::fromUtf8(output.readAll()), preview->toPlainText());
+        const auto readOnly = directory.filePath(QStringLiteral("read-only"));
+        QVERIFY(QDir().mkdir(readOnly));
+        QVERIFY(QFile::setPermissions(readOnly, QFileDevice::ReadOwner | QFileDevice::ExeOwner));
+        chooseFile(&window, readOnly + QStringLiteral("/event.xml"));
+        exportButton->click();
+        QVERIFY(label->text().startsWith(QStringLiteral("The file cannot be saved: ")));
+        chooseFile(&window, {});
+        exportButton->click();
+        QVERIFY(label->text().startsWith(QStringLiteral("The file cannot be saved: ")));
+        QFile::setPermissions(
+            readOnly, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+    }
+    void windowDialogs()
+    {
+        // Pane entries without a saved layout place the panes.
+        QTemporaryDir directory;
+        const auto path = directory.filePath(QStringLiteral("dialogs.json"));
+        QFile profile(path);
+        QVERIFY(profile.open(QIODevice::WriteOnly));
+        profile.write(
+            QJsonDocument(
+                QJsonObject{{QStringLiteral("version"), 1},
+                            {QStringLiteral("panes"),
+                             QJsonObject{{QStringLiteral("org.swak.editor.pane"),
+                                          QJsonObject{{QStringLiteral("area"), 1},
+                                                      {QStringLiteral("floating"), false},
+                                                      {QStringLiteral("visible"), true}}},
+                                         {QStringLiteral("org.swak.udp.pane"),
+                                          QJsonObject{{QStringLiteral("area"), 99},
+                                                      {QStringLiteral("visible"), false}}}}}})
+                .toJson());
+        profile.close();
+        swak::Window window(path, QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *editor = window.findChild<QDockWidget *>(QStringLiteral("org.swak.editor.pane"));
+        auto *udp = window.findChild<QDockWidget *>(QStringLiteral("org.swak.udp.pane"));
+        QVERIFY(editor && udp);
+        QCOMPARE(window.dockWidgetArea(editor), Qt::LeftDockWidgetArea);
+        QVERIFY(!editor->isHidden());
+        QVERIFY(udp->isHidden());
+        // Apply in Identity checks and applies the values, and saves them.
+        auto *identity = window.findChild<swak::Identity *>();
+        QVERIFY(identity);
+        bool applied = false;
+        QTimer::singleShot(0, &window, [&] {
+            auto *dialog = visibleDialog(window, QStringLiteral("identityDialog"));
+            if (!dialog) {
+                return;
+            }
+            dialog->findChild<QLineEdit *>(QStringLiteral("org.swak.identity/callsign"))
+                ->setText(QStringLiteral("Lima"));
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Apply)->click();
+            applied = identity->savePreferences().value(QStringLiteral("callsign")).toString() ==
+                      QStringLiteral("Lima");
+            dialog->reject();
+        });
+        window.findChild<QAction *>(QStringLiteral("identityAction"))->trigger();
+        QVERIFY(applied);
+        QFile saved(path);
+        QVERIFY(saved.open(QIODevice::ReadOnly));
+        QVERIFY(saved.readAll().contains("\"Lima\""));
+        // Apply in Servers saves the profile.
+        bool serversShown = false;
+        QTimer::singleShot(0, &window, [&] {
+            auto *dialog = qobject_cast<swak::SettingsDialog *>(QApplication::activeModalWidget());
+            if (!dialog) {
+                return;
+            }
+            serversShown = dialog->windowTitle() == QStringLiteral("Servers");
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Apply)->click();
+            dialog->reject();
+        });
+        window.findChild<QAction *>(QStringLiteral("serversAction"))->trigger();
+        QVERIFY(serversShown);
+        // A second request shows the open manager again instead of a new one.
+        for (const auto *name :
+             {"mapProvidersAction", "dataProvidersAction", "markerCollectionsAction"}) {
+            auto *action = window.findChild<QAction *>(QString::fromLatin1(name));
+            action->trigger();
+            const auto before = window.findChildren<QDialog *>().size();
+            for (auto *dialog : window.findChildren<QDialog *>()) {
+                if (dialog->isVisible() && dialog->isWindow()) {
+                    dialog->hide();
+                }
+            }
+            action->trigger();
+            QCOMPARE(window.findChildren<QDialog *>().size(), before);
+        }
+        for (auto *dialog : window.findChildren<QDialog *>()) {
+            dialog->close();
+        }
+        // Pane settings detach a pane at a position, and move it to another edge.
+        const auto paneSettings = [&](const std::function<void(swak::SettingsDialog *)> &change) {
+            bool done = false;
+            QTimer::singleShot(0, &window, [&] {
+                auto *dialog = window.findChild<swak::SettingsDialog *>();
+                if (!dialog) {
+                    return;
+                }
+                change(dialog);
+                dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Apply)->click();
+                done = true;
+                dialog->reject();
+            });
+            window.findChild<QAction *>(QStringLiteral("settingsAction"))->trigger();
+            return done;
+        };
+        const auto id = editor->objectName();
+        QVERIFY(paneSettings([&](swak::SettingsDialog *dialog) {
+            for (const auto *key : {"/floating", "/x", "/y", "/width", "/height", "/area"}) {
+                QVERIFY2(dialog->findChild<QWidget *>(id + QString::fromLatin1(key)), key);
+            }
+            dialog->findChild<QCheckBox *>(id + QStringLiteral("/floating"))->setChecked(true);
+            dialog->findChild<QDoubleSpinBox *>(id + QStringLiteral("/x"))->setValue(40);
+            dialog->findChild<QDoubleSpinBox *>(id + QStringLiteral("/y"))->setValue(50);
+            dialog->findChild<QDoubleSpinBox *>(id + QStringLiteral("/width"))->setValue(700);
+            dialog->findChild<QDoubleSpinBox *>(id + QStringLiteral("/height"))->setValue(500);
+        }));
+        QVERIFY(editor->isFloating());
+        // The pane keeps its minimum height.
+        QCOMPARE(editor->pos(), QPoint(40, 50));
+        QCOMPARE(editor->width(), 700);
+        QVERIFY(paneSettings([&](swak::SettingsDialog *dialog) {
+            dialog->findChild<QCheckBox *>(id + QStringLiteral("/floating"))->setChecked(false);
+            auto *area = dialog->findChild<QComboBox *>(id + QStringLiteral("/area"));
+            area->setCurrentIndex(area->findData(8));
+        }));
+        QVERIFY(!editor->isFloating());
+        QCOMPARE(window.dockWidgetArea(editor), Qt::BottomDockWidgetArea);
     }
     void reportsPaneServer()
     {
@@ -5464,6 +5669,51 @@ private slots:
         }
         swak::Window restored(profile, QPluginLoader::staticInstances());
         QVERIFY(restored.findChild<QAction *>(QStringLiteral("mapNavigationLock"))->isChecked());
+    }
+    void keyboardStepKeys()
+    {
+        // The step keys have no default. When bound, each press moves the view by 64 pixels.
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("steps.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        window.activateWindow();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *map = window.findChild<QOpenGLWidget *>();
+        auto *settings = dynamic_cast<swak::SettingsParticipant *>(map);
+        QVERIFY(settings);
+        map->setFocus();
+        QVERIFY(QTest::qWaitFor([&] {
+            return map->hasFocus();
+        }));
+        auto values = settings->savePreferences();
+        values.insert(QStringLiteral("zoom"), 4);
+        values.insert(QStringLiteral("stepWestKey"), QStringLiteral("J"));
+        values.insert(QStringLiteral("stepEastKey"), QStringLiteral("L"));
+        values.insert(QStringLiteral("stepNorthKey"), QStringLiteral("I"));
+        values.insert(QStringLiteral("stepSouthKey"), QStringLiteral("K"));
+        settings->restorePreferences(values);
+        const auto center = [&] {
+            const auto state = settings->savePreferences();
+            return QPointF(state.value(QStringLiteral("centerX")).toDouble(),
+                           state.value(QStringLiteral("centerY")).toDouble());
+        };
+        // At zoom 4 the world is 4096 pixels wide.
+        const double step = 64.0 / 4096.0;
+        for (const auto &[key, offset] : {std::pair{Qt::Key_J, QPointF(-step, 0)},
+                                          std::pair{Qt::Key_L, QPointF(step, 0)},
+                                          std::pair{Qt::Key_I, QPointF(0, -step)},
+                                          std::pair{Qt::Key_K, QPointF(0, step)}}) {
+            const auto before = center();
+            QTest::keyClick(map, key);
+            const auto moved = center() - before;
+            QVERIFY2(std::abs(moved.x() - offset.x()) < 1e-9 &&
+                         std::abs(moved.y() - offset.y()) < 1e-9,
+                     qPrintable(QStringLiteral("%1 %2").arg(moved.x()).arg(moved.y())));
+        }
+        // The minus key zooms out.
+        QTest::keyClick(map, Qt::Key_Minus);
+        QCOMPARE(settings->savePreferences().value(QStringLiteral("zoom")).toDouble(), 3.0);
     }
     void keyboardPanAndWheelSettings()
     {
@@ -9370,6 +9620,180 @@ private slots:
         enroll->trigger();
         QCOMPARE(status->text(), QStringLiteral("Enter the password of the TAK account."));
         QVERIFY(enroll->isEnabled());
+    }
+    void serverChannelsDialog()
+    {
+        // Channels ... reads the groups of the user, and applies the checked channels.
+        HttpsHarness api;
+        QVERIFY(api.load());
+        QByteArray groups =
+            "{\"data\":[{\"name\":\"Cyan\",\"direction\":\"IN\",\"bitpos\":2,\"active\":true},"
+            "{\"name\":\"Cyan\",\"direction\":\"OUT\",\"bitpos\":2,\"active\":true},"
+            "{\"name\":\"Ops\",\"direction\":\"IN\",\"bitpos\":3,\"active\":false,"
+            "\"description\":\"Operations\"}]}";
+        int status = 200;
+        api.respond = [&](const QByteArray &request) {
+            if (request.startsWith("GET /Marti/api/groups/all?useCache=true ")) {
+                return httpReply(status, groups);
+            }
+            return httpReply(status, {});
+        };
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("channels.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *servers = window.findChild<swak::Servers *>();
+        auto *channels = window.findChild<QAction *>(QStringLiteral("serverChannels"));
+        auto *label = window.findChild<QLabel *>(QStringLiteral("enrollStatus"));
+        auto *list = window.findChild<QTableWidget *>(QStringLiteral("serverList"));
+        QVERIFY(servers && channels && label && list);
+        auto entry = swak::serverDefaults();
+        entry.insert(QStringLiteral("name"), QStringLiteral("TAK"));
+        entry.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
+        entry.insert(QStringLiteral("port"), 9);
+        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        entry.insert(QStringLiteral("enabled"), false);
+        entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+        entry.insert(QStringLiteral("apiPort"), api.serverPort());
+        QVERIFY(servers->put(QStringLiteral("tak"), entry).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return list->rowCount() == 1;
+            },
+            2000));
+        list->setCurrentCell(0, 1);
+        // The dialog shows each channel once, with its state and description.
+        const auto choose = [&](bool accept) {
+            auto shown = std::make_shared<QStringList>();
+            auto *timer = new QTimer(&window);
+            QObject::connect(timer, &QTimer::timeout, timer, [&window, timer, shown, accept] {
+                auto *dialog = visibleDialog(window, QStringLiteral("channelDialog"));
+                if (!dialog) {
+                    return;
+                }
+                timer->deleteLater();
+                auto *channelList = dialog->findChild<QListWidget *>(QStringLiteral("channelList"));
+                for (int row = 0; row < channelList->count(); ++row) {
+                    auto *item = channelList->item(row);
+                    shown->append(item->text() +
+                                  (item->checkState() == Qt::Checked ? QStringLiteral("+")
+                                                                     : QStringLiteral("-")) +
+                                  item->toolTip());
+                    item->setCheckState(item->checkState() == Qt::Checked ? Qt::Unchecked
+                                                                          : Qt::Checked);
+                }
+                accept ? dialog->accept() : dialog->reject();
+            });
+            timer->start(20);
+            channels->trigger();
+            return shown;
+        };
+        const auto sent = api.requests.size();
+        auto shown = choose(false);
+        QCOMPARE(label->text(), QStringLiteral("Reading the channels of the server…"));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return !shown->isEmpty();
+            },
+            15000));
+        QCOMPARE(*shown, (QStringList{QStringLiteral("Cyan+"), QStringLiteral("Ops-Operations")}));
+        QTest::qWait(100);
+        QCOMPARE(api.requests.size(), sent + 1);
+        choose(true);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return label->text() == QStringLiteral("The active channels are updated.");
+            },
+            15000));
+        const auto put = api.requests.last();
+        QVERIFY(put.startsWith("PUT /Marti/api/groups/active?"));
+        const auto body = QJsonDocument::fromJson(put.mid(put.indexOf("\r\n\r\n") + 4)).array();
+        QCOMPARE(body.size(), 3);
+        QVERIFY(!body.at(0).toObject().value(QStringLiteral("active")).toBool());
+        QVERIFY(body.at(2).toObject().value(QStringLiteral("active")).toBool());
+        // A user without channels and a refused read show the reason.
+        groups = "{\"data\":[]}";
+        channels->trigger();
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return label->text() == QStringLiteral("The server has no channels for this user.");
+            },
+            15000));
+        status = 403;
+        channels->trigger();
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return label->text().contains(QStringLiteral("does not allow"));
+            },
+            15000));
+    }
+    void serverBrowserTable()
+    {
+        // The table names each protocol. Its check box enables an entry, and a double click
+        // opens the editor.
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("server-table.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *servers = window.findChild<swak::Servers *>();
+        auto *list = window.findChild<QTableWidget *>(QStringLiteral("serverList"));
+        QVERIFY(servers && list);
+        auto output = swak::serverDefaults();
+        output.insert(QStringLiteral("name"), QStringLiteral("A output"));
+        output.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
+        output.insert(QStringLiteral("port"), 4242);
+        output.insert(QStringLiteral("protocol"), QStringLiteral("udpout"));
+        output.insert(QStringLiteral("enabled"), false);
+        QVERIFY(servers->put(QStringLiteral("out"), output).isEmpty());
+        auto mesh = output;
+        mesh.insert(QStringLiteral("name"), QStringLiteral("B mesh"));
+        mesh.insert(QStringLiteral("host"), QStringLiteral("239.2.3.1"));
+        mesh.insert(QStringLiteral("port"), 6969);
+        mesh.insert(QStringLiteral("protocol"), QStringLiteral("mcast"));
+        mesh.insert(QStringLiteral("localAddress"), QStringLiteral("127.0.0.1"));
+        const auto meshError = servers->put(QStringLiteral("mesh"), mesh);
+        QVERIFY2(meshError.isEmpty(), qPrintable(meshError));
+        auto input = output;
+        input.insert(QStringLiteral("name"), QStringLiteral("C input"));
+        input.insert(QStringLiteral("protocol"), QStringLiteral("udp"));
+        QVERIFY(servers->put(QStringLiteral("in"), input).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return list->rowCount() == 3;
+            },
+            2000));
+        QCOMPARE(list->item(0, 2)->text(), QStringLiteral("UDP output"));
+        QCOMPARE(list->item(1, 2)->text(), QStringLiteral("Multicast mesh"));
+        QCOMPARE(list->item(2, 2)->text(), QStringLiteral("UDP"));
+        QCOMPARE(list->item(0, 1)->toolTip(), QStringLiteral("127.0.0.1:4242"));
+        // The check box saves the entry with the new state.
+        auto *active = window.findChild<QAbstractButton *>(QStringLiteral("activeProvider/out"));
+        QVERIFY(active && !active->isChecked());
+        active->click();
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return servers->sources()
+                    .value(QStringLiteral("out"))
+                    .toObject()
+                    .value(QStringLiteral("enabled"))
+                    .toBool();
+            },
+            2000));
+        // A double click on the name opens the editor. A double click on the check box does not.
+        bool edited = false;
+        QTimer::singleShot(0, &window, [&] {
+            auto *dialog = visibleDialog(window, QStringLiteral("serverEditor"));
+            edited = dialog != nullptr;
+            if (dialog) {
+                dialog->reject();
+            }
+        });
+        emit list->cellDoubleClicked(1, 1);
+        QVERIFY(edited);
+        emit list->cellDoubleClicked(1, 0);
+        QVERIFY(!visibleDialog(window, QStringLiteral("serverEditor")));
     }
     void serverBrowserAndIdentity()
     {

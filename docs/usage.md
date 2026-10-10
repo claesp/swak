@@ -6,7 +6,7 @@ Tools > Plugins restores hidden docks, which are movable containers for tool pan
 
 CoT Messages, CoT Event Generator, Servers, and Plugins each have an independent dock. The three tool docks start as tabs beside the map. Drag a dock title or tab to detach that pane.
 
-Each detached pane has a resize handle in its lower-right corner. Close a pane to hide it. Use File > Quit to close the application.
+Each detached pane has a resize handle in its lower-right corner. Close a pane to hide it. Use File > Quit to close the application. SIGTERM and SIGINT, for example from a session logout or Ctrl+C in a terminal, also close it and save the preferences.
 
 Use Tools > Plugins > CoT Messages > Clear to remove all current events and clear the selection. Plugins add their commands under Tools > Plugins.
 

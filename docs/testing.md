@@ -97,3 +97,28 @@ The largest remaining gaps:
 
 The Python tests now cover the command helpers of `tools/tak_server.py`: failed commands, Podman lookups, password hashing, packet loss rules, probe runs, and argument errors. Container start functions run only against a live deployment. `tools/quality.py` mode orchestration runs only in real diagnostic runs.
 
+# Remaining gaps, October 11
+
+Coverage with the native GUI suite and the LAN mode reached 23195 of 24345 source lines (95.3 percent) and 2383 of 2462 functions (96.8 percent). The report is `build/quality/20261011-010029-coverage-3413530`.
+
+New tests:
+
+- `tests/test_startup.py` starts the executable. It checks `--version`, `--help`, and a wrong option. Without OpenGL, it stops the startup error message with SIGTERM and SIGINT. With `--gui`, it opens the window and expects status 0 after each signal. `app/main.cpp` now runs completely.
+- `quitSignals` checks the new signal handler, its single instance, and the restored handlers.
+- `receiverPolicy` sends control messages, stale, distant, future, early, invalid, and older events to a UDP input.
+- `connectionDiagnostics` also checks an unknown host and a refused broadcast address.
+- `enrollmentFailures` checks a short RSA key, an invalid port, failed configuration and signing steps, invalid settings, and a certificate folder that cannot be made.
+- `vectorLimits` checks degenerate shapes, wrapped lines, nested collections, the shape and coordinate limits, cancellation, archive limits, and local KML and KMZ files.
+- The GDAL raster test also sends basic and header credentials, and checks the zoom range and an invalid WMTS entry.
+- The session map test checks the bounds of a narrow view and a failed attribution request.
+- GUI tests cover editor import and export, the Channels dialog, the server table, the Identity and Servers dialogs, pane settings, restored pane places, and the step keys.
+
+Paths that remain untested:
+
+- Allocation failures of tile and raster images, and exception handlers around workers. The tests cannot cause these failures without a fault injection hook.
+- The default socket error text. Qt reports the errors that a local test can cause with named error codes.
+- Archive entry names with `..` or backslashes. GDAL removes or changes these names before SWAK checks them, so the check is a second defense.
+- OpenSSL failures during key and request creation, and file write failures after a successful enrollment.
+- LAN peer rows in the Local LAN pane. Only the namespace test makes LAN peers, and it runs without the GUI.
+- Some mouse paths of the drawing tools, and legacy route preferences with four coordinate fields.
+
