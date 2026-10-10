@@ -1,8 +1,10 @@
 """Test the configuration that tools/tak_server.py writes for the TAK test deployment."""
 
 import argparse
+import base64
 import contextlib
 import hashlib
+import http.cookiejar
 import importlib.util
 import io
 import json
@@ -21,6 +23,8 @@ tak_server = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tak_server)
 
 NAMESPACE = "{http://bbn.com/marti/xml/config}"
+# A JWT that expired at the epoch. The tests do not check its signature.
+EXPIRED = "e30." + base64.urlsafe_b64encode(b'{"exp": 0}').decode().rstrip("=") + ".c2ln"
 
 
 def parse(text):
@@ -49,27 +53,22 @@ class CoreConfigTest(unittest.TestCase):
         self.assertEqual(self.outgoing(root), [])
         self.assertIn("swak-tak-db:5432", tak_server.core_config(tak_server.SERVER))
 
-    def test_server_b_directories(self):
-        for directory, style, url in (
-            ("openldap", "DS", "ldaps://swak-tak-ldap:636/"),
-            ("ad", "AD", "ldaps://swak-tak-ldap:636/dc=swak,dc=test"),
-        ):
-            with self.subTest(directory=directory):
-                text = tak_server.core_config(tak_server.SERVER_B, directory)
-                root = parse(text)
-                ldap = next(root.iter(NAMESPACE + "ldap"))
-                self.assertEqual(ldap.get("style"), style)
-                self.assertEqual(ldap.get("url"), url)
-                self.assertTrue(ldap.get("ldapsTruststoreFile").endswith("truststore-root.jks"))
-                self.assertEqual(next(root.iter(NAMESPACE + "auth")).get("default"), "ldap")
-                self.assertEqual(self.outgoing(root), [(tak_server.SERVER, "9001")])
-                self.assertIn("swak-tak-db-b:5432", text)
-                self.assertIn("takserver-b.jks", text)
-                self.assertIsNone(next(root.iter(NAMESPACE + "static"), None))
+    def test_server_b(self):
+        text = tak_server.core_config(tak_server.SERVER_B)
+        root = parse(text)
+        ldap = next(root.iter(NAMESPACE + "ldap"))
+        self.assertEqual(ldap.get("style"), "DS")
+        self.assertEqual(ldap.get("url"), "ldaps://swak-tak-ldap:636/")
+        self.assertTrue(ldap.get("ldapsTruststoreFile").endswith("truststore-root.jks"))
+        self.assertEqual(next(root.iter(NAMESPACE + "auth")).get("default"), "ldap")
+        self.assertEqual(self.outgoing(root), [(tak_server.SERVER, "9001")])
+        self.assertIn("swak-tak-db-b:5432", text)
+        self.assertIn("takserver-b.jks", text)
+        self.assertIsNone(next(root.iter(NAMESPACE + "static"), None))
 
     def test_hub_federation(self):
         def connections(server):
-            root = parse(tak_server.core_config(server, "openldap", "hub"))
+            root = parse(tak_server.core_config(server, "hub"))
             return {
                 item.get("displayName"): item
                 for item in root.iter(NAMESPACE + "federation-outgoing")
@@ -109,17 +108,17 @@ class ProfileTest(unittest.TestCase):
         self.assertNotIn("load", data)
 
     def test_loopback(self):
-        data = json.loads(tak_server.profile(False, {"seconds": 5}, "ad").read_text())
+        data = json.loads(tak_server.profile(False, {"seconds": 5}).read_text())
         self.assertEqual(data["left"]["host"], "localhost")
         self.assertEqual(data["left"]["port"], tak_server.PORTS[8089])
         self.assertEqual(data["quic"]["port"], tak_server.UDP_PORTS[8090])
         self.assertEqual(data["federation"]["port"], tak_server.PORTS_B[8089])
-        self.assertEqual(data["federation"]["enrollment"]["username"], "swak-ad")
-        self.assertEqual(data["federation"]["group"], "SwakAd")
+        self.assertEqual(data["federation"]["enrollment"]["username"], "swak-ldap")
+        self.assertEqual(data["federation"]["group"], "SwakLdap")
         self.assertNotIn("multicast", data)
         self.assertEqual(data["load"], {"seconds": 5})
         # The profile names environment variables, never passwords.
-        self.assertNotIn(tak_server.DIRECTORIES["ad"]["password"], json.dumps(data))
+        self.assertNotIn(tak_server.DIRECTORY["password"], json.dumps(data))
 
     def test_hub_profile(self):
         data = json.loads(tak_server.profile(True, federation="hub").read_text())
@@ -136,15 +135,10 @@ class ProfileTest(unittest.TestCase):
 
     def test_deployment(self):
         with patch.object(tak_server, "DEPLOYMENT", Path(self.directory.name) / "d.json"):
-            default = {"directory": "openldap", "federation": "direct", "hubDisruption": False}
+            default = {"federation": "direct", "hubDisruption": False}
             self.assertEqual(tak_server.deployment(), default)
-            tak_server.DEPLOYMENT.write_text(
-                '{"directory": "ad", "federation": "hub", "hubDisruption": true}'
-            )
-            self.assertEqual(
-                tak_server.deployment(),
-                {"directory": "ad", "federation": "hub", "hubDisruption": True},
-            )
+            tak_server.DEPLOYMENT.write_text('{"federation": "hub", "hubDisruption": true}')
+            self.assertEqual(tak_server.deployment(), {"federation": "hub", "hubDisruption": True})
             # Only a JSON true turns replay on.
             tak_server.DEPLOYMENT.write_text('{"hubDisruption": "yes"}')
             self.assertFalse(tak_server.deployment()["hubDisruption"])
@@ -152,16 +146,8 @@ class ProfileTest(unittest.TestCase):
             self.assertEqual(tak_server.deployment(), default)
             tak_server.DEPLOYMENT.write_text("[1]")
             self.assertEqual(tak_server.deployment(), default)
-
-    def test_deployed_directory(self):
-        with patch.object(tak_server, "DEPLOYMENT", Path(self.directory.name) / "d.json"):
-            self.assertEqual(tak_server.deployed_directory(), "openldap")
-            tak_server.DEPLOYMENT.write_text('{"directory": "ad"}')
-            self.assertEqual(tak_server.deployed_directory(), "ad")
-            tak_server.DEPLOYMENT.write_text('{"directory": "other"}')
-            self.assertEqual(tak_server.deployed_directory(), "openldap")
             tak_server.DEPLOYMENT.write_text("{")
-            self.assertEqual(tak_server.deployed_directory(), "openldap")
+            self.assertEqual(tak_server.deployment(), default)
 
 
 def openssl(*arguments):
@@ -329,7 +315,7 @@ class HubTokenTest(unittest.TestCase):
 
 class HubOptionsTest(unittest.TestCase):
     def test_manual_token(self):
-        root = parse(tak_server.core_config(tak_server.SERVER_B, "openldap", "hub", "a.b.c"))
+        root = parse(tak_server.core_config(tak_server.SERVER_B, "hub", "a.b.c"))
         outgoing = next(root.iter(NAMESPACE + "federation-outgoing"))
         self.assertEqual(outgoing.get("tokenType"), "manual")
         self.assertEqual(outgoing.get("connectionToken"), "a.b.c")
@@ -389,6 +375,7 @@ class HubOAuthTest(unittest.TestCase):
                 "oauth_status",
                 side_effect=lambda path, token=None: statuses[(path, token)],
             ),
+            patch.object(tak_server, "hub_oauth_browser_checks", return_value={}),
         ):
             checks = tak_server.hub_oauth_checks()
         self.assertEqual(
@@ -409,6 +396,7 @@ class HubOAuthTest(unittest.TestCase):
         with (
             patch.object(tak_server, "oauth_token", return_value="a.b.c"),
             patch.object(tak_server, "oauth_status", return_value=(302, "https://elsewhere/")),
+            patch.object(tak_server, "hub_oauth_browser_checks", return_value={}),
         ):
             checks = tak_server.hub_oauth_checks()
         self.assertFalse(checks["hubOAuthAdmin"]["passed"])
@@ -418,6 +406,101 @@ class HubOAuthTest(unittest.TestCase):
             checks = tak_server.hub_oauth_checks()
         self.assertEqual(list(checks), ["hubOAuthToken"])
         self.assertFalse(checks["hubOAuthToken"]["passed"])
+
+    @staticmethod
+    def jar(**cookies):
+        jar = http.cookiejar.CookieJar()
+        for name, value in cookies.items():
+            jar.set_cookie(
+                http.cookiejar.Cookie(
+                    0, name, value, None, False, "localhost.local", False, False, "/", True,
+                    True, None, False, None, None, {},
+                )
+            )  # fmt: skip
+        return jar
+
+    def browser_checks(self, statuses, signed_in=True):
+        """Run the browser checks with a sign-in result and mocked answers of the UI."""
+        admin = self.jar(access_token=EXPIRED, refresh_token="r")
+        browsers = {
+            tak_server.OAUTH_ADMIN: (admin, "" if signed_in else "code exchange: HTTP 500"),
+            tak_server.OAUTH_VIEWER: (self.jar(access_token="viewer"), ""),
+            (tak_server.OAUTH_ADMIN[0], "wrong-password"): (
+                self.jar(),
+                "Keycloak sign-in: HTTP 200",
+            ),
+        }
+
+        def status(path, token=None, jar=None, refresh=None):
+            if jar is not None:
+                # The UI refreshes the expired token and sets a new one.
+                jar.clear()
+                jar.set_cookie(next(iter(self.jar(access_token="renewed"))))
+                return statuses["refresh"], ""
+            return statuses[(path, token, refresh)]
+
+        with (
+            patch.object(tak_server, "oauth_browser", side_effect=lambda user: browsers[user]),
+            patch.object(tak_server, "oauth_status", side_effect=status),
+            patch.object(tak_server.time, "sleep"),
+        ):
+            return tak_server.hub_oauth_browser_checks()
+
+    def test_browser(self):
+        checks = self.browser_checks(
+            {
+                # The first administrator check and the expired check use the same token.
+                # Here the UI accepts it the first time and signs out the second time.
+                ("/api/isAdmin", EXPIRED, None): (200, ""),
+                ("/api/isAdmin", "viewer", None): (403, ""),
+                ("/api/oauth/login/redirect?code=swak&state=other", None, None): (400, ""),
+                "refresh": 200,
+                ("/api/isAdmin", EXPIRED, "swak.invalid"): (301, "/"),
+            }
+        )
+        self.assertEqual(
+            set(checks),
+            {
+                "hubOAuthBrowserAdmin",
+                "hubOAuthBrowserNotAdmin",
+                "hubOAuthBrowserWrongPassword",
+                "hubOAuthStateMismatch",
+                "hubOAuthRefresh",
+                "hubOAuthRefreshRefused",
+                "hubOAuthExpired",
+            },
+        )
+        # The mock answers 200 to the expired check, so only that check fails.
+        failed = {name for name, check in checks.items() if not check["passed"]}
+        self.assertEqual(failed, {"hubOAuthExpired"})
+
+    def test_browser_failures(self):
+        # A failed sign-in skips the refresh checks. A redirect that signs in on a wrong state
+        # fails, and so does a viewer that the UI admits.
+        checks = self.browser_checks(
+            {
+                ("/api/oauth/login/redirect?code=swak&state=other", None, None): (302, "/"),
+                ("/api/isAdmin", "viewer", None): (200, ""),
+                ("/api/isAdmin", EXPIRED, None): (200, ""),
+            },
+            signed_in=False,
+        )
+        for name in ("hubOAuthBrowserAdmin", "hubOAuthBrowserNotAdmin", "hubOAuthStateMismatch"):
+            self.assertFalse(checks[name]["passed"], name)
+        self.assertTrue(checks["hubOAuthBrowserWrongPassword"]["passed"])
+        self.assertNotIn("hubOAuthRefresh", checks)
+
+    def test_jwt_claims(self):
+        self.assertEqual(tak_server.jwt_claims(EXPIRED), {"exp": 0})
+
+    def test_login_form(self):
+        form = tak_server.LoginForm()
+        form.feed(
+            '<form id="other" action="/a"></form>'
+            '<form id="kc-form-login" action="/b?x=1&amp;y=2"></form>'
+        )
+        # The parser decodes the entities of attribute values.
+        self.assertEqual(form.action, "/b?x=1&y=2")
 
     def test_configuration(self):
         # The UI must find all eight Keycloak values, or it does not open the OAuth port.

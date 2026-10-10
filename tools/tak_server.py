@@ -6,6 +6,10 @@ uses production data. Read docs/tak-compatibility.md for the stages and the prob
 """
 
 import argparse
+import base64
+import html
+import html.parser
+import http.cookiejar
 import json
 import os
 import shutil
@@ -90,38 +94,23 @@ UDP_PORTS = {8090: 18090}
 CLIENTS = ("left", "right", "admin", "ops")
 ENROLL_USER = "swak-enroll"
 ENROLL_PASSWORD = "swak-enroll-test"
-# Server B uses one of these directories over LDAPS. Each has a test user in the groups
-# SwakTest and the group named here. The ad image is a Samba Active Directory controller.
-DIRECTORIES = {
-    "openldap": {
-        "image": "localhost/swak-tak-ldap:local",
-        "context": "ldap",
-        "user": "swak-ldap",
-        "password": "swak-ldap-test",
-        "group": "SwakLdap",
-        "ldap": (
-            '        <ldap url="ldaps://swak-tak-ldap:636/" style="DS" '
-            'userstring="cn={username},ou=users,dc=swak,dc=test" '
-            'serviceAccountDN="cn=admin,dc=swak,dc=test" '
-            'serviceAccountCredential="swak-ldap-admin" '
-            'groupBaseRDN="ou=groups,dc=swak,dc=test" nestedGroupLookup="true" '
-            'groupObjectClass="groupOfNames" userObjectClass="inetOrgPerson" '
-            'groupNameExtractorRegex="(?i)cn=(.*?)(?:,|$)" @TRUST@/>\n'
-        ),
-    },
-    "ad": {
-        "image": "localhost/swak-tak-ad:local",
-        "context": "ad",
-        "user": "swak-ad",
-        "password": "swak-ad-test",
-        "group": "SwakAd",
-        "ldap": (
-            '        <ldap url="ldaps://swak-tak-ldap:636/dc=swak,dc=test" style="AD" '
-            'userstring="{username}@swak.test" '
-            'serviceAccountDN="Administrator@swak.test" '
-            'serviceAccountCredential="Swak-AD-test1" @TRUST@/>\n'
-        ),
-    },
+# Server B authenticates its users with this OpenLDAP directory over LDAPS. The test user is in
+# the groups SwakTest and SwakLdap.
+DIRECTORY = {
+    "image": "localhost/swak-tak-ldap:local",
+    "context": "ldap",
+    "user": "swak-ldap",
+    "password": "swak-ldap-test",
+    "group": "SwakLdap",
+    "ldap": (
+        '        <ldap url="ldaps://swak-tak-ldap:636/" style="DS" '
+        'userstring="cn={username},ou=users,dc=swak,dc=test" '
+        'serviceAccountDN="cn=admin,dc=swak,dc=test" '
+        'serviceAccountCredential="swak-ldap-admin" '
+        'groupBaseRDN="ou=groups,dc=swak,dc=test" nestedGroupLookup="true" '
+        'groupObjectClass="groupOfNames" userObjectClass="inetOrgPerson" '
+        'groupNameExtractorRegex="(?i)cn=(.*?)(?:,|$)" @TRUST@/>\n'
+    ),
 }
 # TAK Server checks the directory certificate with the test CA.
 LDAPS_TRUST = (
@@ -479,8 +468,8 @@ def write_users(run_dir, server):
     )
 
 
-def core_config(server, directory="openldap", federation="direct", manual_token=""):
-    """Fill the CoreConfig template for server A, or for server B with one directory.
+def core_config(server, federation="direct", manual_token=""):
+    """Fill the CoreConfig template for server A or server B.
 
     In direct federation, server B connects to server A. In hub federation, both servers
     connect to the hub.
@@ -526,7 +515,7 @@ def core_config(server, directory="openldap", federation="direct", manual_token=
             AUTH_DEFAULT="ldap",
             DATABASE=DATABASE_B,
             KEYSTORE="takserver-b.jks",
-            LDAP=DIRECTORIES[directory]["ldap"].replace("@TRUST@", LDAPS_TRUST),
+            LDAP=DIRECTORY["ldap"].replace("@TRUST@", LDAPS_TRUST),
             FEDERATION_OUTGOING=(
                 hub_token
                 if federation == "hub"
@@ -540,7 +529,7 @@ def core_config(server, directory="openldap", federation="direct", manual_token=
     return text
 
 
-def prepare(run_dir, server, directory="openldap", federation="direct"):
+def prepare(run_dir, server, federation="direct"):
     """Copy the build output and the configuration into the deployment folder of one server."""
     war = SOURCE / "src" / "takserver-core" / "build" / "libs" / f"takserver-core-{RELEASE}.war"
     schema = (
@@ -560,7 +549,7 @@ def prepare(run_dir, server, directory="openldap", federation="direct"):
     shutil.copy2(schema, run_dir / "SchemaManager.jar")
     for name in ("TAKIgniteConfig.xml", "start.sh"):
         shutil.copy2(TEMPLATES / name, run_dir / name)
-    (run_dir / "CoreConfig.xml").write_text(core_config(server, directory, federation))
+    (run_dir / "CoreConfig.xml").write_text(core_config(server, federation))
     (run_dir / "logs").mkdir(exist_ok=True)
     if run_dir != RUN:
         # Each server has its own copy, so the containers do not share a volume.
@@ -977,9 +966,7 @@ def start_hub(args):
     ui_request("/activateFederationPolicy/swak")
     (HUB_RUN / "probe" / "tokens.json").write_text(json.dumps(tokens))
     if args.hub_token == "manual":
-        (RUN_B / "CoreConfig.xml").write_text(
-            core_config(SERVER_B, args.directory, "hub", tokens["listed"])
-        )
+        (RUN_B / "CoreConfig.xml").write_text(core_config(SERVER_B, "hub", tokens["listed"]))
     print("The hub issued the manual tokens and activated the policy.")
 
 
@@ -1012,6 +999,9 @@ def start_keycloak(timeout):
         KEYCLOAK_IMAGE,
         "start-dev",
         "--import-realm",
+        # One issuer for every token, also for the requests of the host through the loopback
+        # port. Keycloak refuses to refresh a token of another issuer.
+        f"--hostname=https://{KEYCLOAK}:8443",
         "--http-enabled=false",
         "--https-port=8443",
         "--https-certificate-file=/certs/keycloak.pem",
@@ -1055,13 +1045,22 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def oauth_status(path, token=None):
-    """Return the HTTP status and Location of a request to the OAuth port of the hub UI."""
+def oauth_status(path, token=None, jar=None, refresh=None):
+    """Return the HTTP status and Location of a request to the OAuth port of the hub UI.
+
+    The request sends the cookies of the jar, or the given access and refresh tokens.
+    """
     context = ssl.create_default_context(cafile=str(CERTS / "ca.pem"))
-    opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=context), NoRedirect)
+    handlers = [urllib.request.HTTPSHandler(context=context), NoRedirect]
+    if jar is not None:
+        handlers.append(urllib.request.HTTPCookieProcessor(jar))
+    opener = urllib.request.build_opener(*handlers)
     request = urllib.request.Request(f"https://localhost:{HUB_OAUTH_PORT}{path}")
     if token is not None:
-        request.add_header("Cookie", f"access_token={token}")
+        value = f"access_token={token}"
+        if refresh is not None:
+            value += f"; refresh_token={refresh}"
+        request.add_header("Cookie", value)
     try:
         with opener.open(request, timeout=20) as reply:
             return reply.status, reply.headers.get("Location", "")
@@ -1069,6 +1068,132 @@ def oauth_status(path, token=None):
         return error.code, error.headers.get("Location", "")
     except OSError as error:
         return 0, str(error)
+
+
+class LoginForm(html.parser.HTMLParser):
+    """Find the action of the Keycloak sign-in form."""
+
+    def __init__(self):
+        super().__init__()
+        self.action = None
+
+    def handle_starttag(self, tag, attrs):
+        values = dict(attrs)
+        if tag == "form" and values.get("id") == "kc-form-login":
+            self.action = values.get("action")
+
+
+def oauth_browser(user):
+    """Sign in to the hub UI like a browser: the UI redirects to Keycloak, the user posts the
+    sign-in form, and Keycloak redirects back with a code that the UI exchanges for tokens.
+
+    Return the cookie jar and a text that names the step that failed, or an empty text.
+    """
+    context = ssl.create_default_context(cafile=str(CERTS / "ca.pem"))
+    jar = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPSHandler(context=context),
+        urllib.request.HTTPCookieProcessor(jar),
+        NoRedirect,
+    )
+
+    def step(url, form=None):
+        data = None if form is None else urllib.parse.urlencode(form).encode()
+        try:
+            with opener.open(urllib.request.Request(url, data=data), timeout=20) as reply:
+                return reply.status, reply.headers.get("Location", ""), reply.read()
+        except urllib.error.HTTPError as error:
+            return error.code, error.headers.get("Location", ""), error.read()
+
+    hub = f"https://localhost:{HUB_OAUTH_PORT}"
+    code, location, _ = step(hub + "/api/oauth/login/auth")
+    if code != 302:
+        return jar, f"sign-in start: HTTP {code}"
+
+    # The host can reach Keycloak only through its loopback port.
+    def local(url):
+        return url.replace(f"https://{KEYCLOAK}:8443", f"https://localhost:{KEYCLOAK_PORT}")
+
+    code, _, page = step(local(location))
+    form = LoginForm()
+    form.feed(page.decode("utf-8", "replace"))
+    if code != 200 or not form.action:
+        return jar, f"Keycloak sign-in page: HTTP {code}"
+    code, location, _ = step(
+        local(html.unescape(form.action)),
+        {"username": user[0], "password": user[1], "credentialId": ""},
+    )
+    if code != 302 or not location.startswith(hub + "/api/oauth/login/redirect"):
+        return jar, f"Keycloak sign-in: HTTP {code}"
+    code, location, _ = step(location)
+    if code != 302:
+        return jar, f"code exchange: HTTP {code}"
+    return jar, ""
+
+
+def cookie(jar, name):
+    """Return a cookie value of the jar, or an empty text."""
+    return next((item.value for item in jar if item.name == name), "")
+
+
+def jwt_claims(token):
+    """Decode the claims of a JWT without a check of its signature."""
+    payload = token.split(".")[1]
+    return json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+
+
+def hub_oauth_browser_checks():
+    """Check the browser sign-in of the hub UI and the refresh of an expired access token."""
+    checks = {}
+
+    def record(name, passed, detail):
+        checks[name] = {"passed": passed, "detail": detail}
+
+    jar, error = oauth_browser(OAUTH_ADMIN)
+    access, refresh = cookie(jar, "access_token"), cookie(jar, "refresh_token")
+    code, _ = oauth_status("/api/isAdmin", access) if access else (0, "")
+    record(
+        "hubOAuthBrowserAdmin",
+        not error and bool(refresh) and code == 200,
+        error or f"cookies set, administrator check HTTP {code}",
+    )
+    viewer_jar, viewer_error = oauth_browser(OAUTH_VIEWER)
+    viewer_code, _ = oauth_status("/api/isAdmin", cookie(viewer_jar, "access_token"))
+    record(
+        "hubOAuthBrowserNotAdmin",
+        not viewer_error and viewer_code == 403,
+        viewer_error or f"administrator check HTTP {viewer_code}",
+    )
+    wrong_jar, wrong_error = oauth_browser((OAUTH_ADMIN[0], "wrong-password"))
+    record(
+        "hubOAuthBrowserWrongPassword",
+        wrong_error.startswith("Keycloak sign-in:") and not cookie(wrong_jar, "access_token"),
+        wrong_error or "the sign-in passed",
+    )
+    # A redirect with another state value than the state cookie must not sign in.
+    state_code, _ = oauth_status("/api/oauth/login/redirect?code=swak&state=other")
+    record("hubOAuthStateMismatch", state_code not in (200, 302), f"HTTP {state_code}")
+    if error or not access:
+        return checks
+    # Wait until the access token expires, also with the 60-second clock skew of the UI.
+    wait = jwt_claims(access)["exp"] + 62 - time.time()
+    time.sleep(max(0, min(wait, 180)))
+    refreshed_code, _ = oauth_status("/api/isAdmin", jar=jar)
+    renewed = cookie(jar, "access_token")
+    record(
+        "hubOAuthRefresh",
+        refreshed_code == 200 and renewed not in ("", access),
+        f"expired token: HTTP {refreshed_code}, "
+        f"new access token {'yes' if renewed not in ('', access) else 'no'}",
+    )
+    # Without a usable refresh token, the UI signs the user out.
+    for name, refresh_value in (
+        ("hubOAuthRefreshRefused", "swak.invalid"),
+        ("hubOAuthExpired", None),
+    ):
+        status, location = oauth_status("/api/isAdmin", access, refresh=refresh_value)
+        record(name, status == 301 and location == "/", f"HTTP {status} to {location or 'nothing'}")
+    return checks
 
 
 def hub_oauth_checks():
@@ -1098,6 +1223,7 @@ def hub_oauth_checks():
     # The interactive sign-in starts with a redirect to the Keycloak authorization endpoint.
     code, location = oauth_status("/api/oauth/login/auth")
     expected = f"https://{KEYCLOAK}:8443/realms/swak/protocol/openid-connect/auth?"
+    checks.update(hub_oauth_browser_checks())
     record(
         "hubOAuthLoginRedirect",
         code == 302
@@ -1155,18 +1281,17 @@ def mongo(script):
 
 def up(args):
     """Start the databases, the directory, and the two federated TAK Servers."""
-    directory = DIRECTORIES[args.directory]
-    prepare(RUN, SERVER, federation=args.federation)
-    prepare(RUN_B, SERVER_B, args.directory, args.federation)
+    prepare(RUN, SERVER, args.federation)
+    prepare(RUN_B, SERVER_B, args.federation)
     if args.federation == "hub":
         prepare_hub(args.hub_disruption)
     if not (CERTS / "ldap.pem").exists():
         sys.exit("Run certs again. The directory needs its certificate.")
     run(
-        ["podman", "build", "-q", "-t", directory["image"], str(TEMPLATES / directory["context"])],
+        ["podman", "build", "-q", "-t", DIRECTORY["image"], str(TEMPLATES / DIRECTORY["context"])],
         capture_output=True,
     )
-    # The directory reads its certificate from a private copy. Samba requires key mode 0600.
+    # The directory reads its certificate from a private copy.
     directory_certs = WORK / "directory-certs"
     directory_certs.mkdir(mode=0o700, exist_ok=True)
     for name in ("ca.pem", "ldap.pem", "ldap.key"):
@@ -1181,22 +1306,19 @@ def up(args):
         "-d",
         "--name",
         LDAP,
-        "--hostname",
-        "swakad",
         "--network",
         NETWORK,
         "--ip",
         ADDRESS[LDAP],
         "-v",
         f"{directory_certs}:/certs:ro,Z",
-        directory["image"],
+        DIRECTORY["image"],
     )
     if args.federation == "hub":
         start_hub(args)
     DEPLOYMENT.write_text(
         json.dumps(
             {
-                "directory": args.directory,
                 "federation": args.federation,
                 "hubToken": args.hub_token,
                 "hubDisruption": args.federation == "hub" and args.hub_disruption,
@@ -1219,7 +1341,7 @@ def up(args):
         sys.exit("The TAK Servers did not start. Read build/tak-server/run*/logs.")
     federate(args.timeout)
     print("The TAK Servers are ready on loopback ports", ", ".join(str(p) for p in PORTS.values()))
-    print("Server B uses the directory", args.directory, "and federation", args.federation)
+    print("Server B uses OpenLDAP and federation", args.federation)
 
 
 def down(_args):
@@ -1238,28 +1360,21 @@ def status(_args):
 
 
 def deployment():
-    """Return the directory and federation mode of the running deployment."""
+    """Return the federation mode of the running deployment."""
     try:
         data = json.loads(DEPLOYMENT.read_text())
     except (OSError, ValueError):
         data = {}
     if not isinstance(data, dict):
         data = {}
-    directory = data.get("directory")
     federation = data.get("federation")
     return {
-        "directory": directory if directory in DIRECTORIES else "openldap",
         "federation": federation if federation in ("direct", "hub") else "direct",
         "hubDisruption": data.get("hubDisruption") is True,
     }
 
 
-def deployed_directory():
-    """Return the directory of the running deployment."""
-    return deployment()["directory"]
-
-
-def profile(bridge, load=None, directory="openldap", federation="direct", disruption=False):
+def profile(bridge, load=None, federation="direct", disruption=False):
     """Write the probe profile with the test credentials.
 
     A bridge profile uses the container addresses. The probe then runs in the rootless network
@@ -1310,7 +1425,7 @@ def profile(bridge, load=None, directory="openldap", federation="direct", disrup
             "port": port(SERVER_B, 8089),
             "apiPort": port(SERVER_B, 8443),
             "ca": str(CERTS / "ca.pem"),
-            "group": DIRECTORIES[directory]["group"],
+            "group": DIRECTORY["group"],
             # Through the hub, the policy drops the Ops events and the test plugins run.
             "hub": federation == "hub",
             # The outgoing connection of server B, which the disruption check turns off.
@@ -1332,7 +1447,7 @@ def profile(bridge, load=None, directory="openldap", federation="direct", disrup
             "receiverLog": str(HUB_RUN / "logs" / RECEIVER_LOG),
             "enrollment": {
                 "port": port(SERVER_B, 8446),
-                "username": DIRECTORIES[directory]["user"],
+                "username": DIRECTORY["user"],
                 "passwordEnv": "SWAK_COT_LDAP",
             },
         },
@@ -1356,18 +1471,15 @@ def run_probe(args, report, load=None):
     if not probe.exists():
         sys.exit(f"Build swak_tak_compat with the {args.preset} preset first.")
     state = deployment()
-    directory = state["directory"]
     environment = dict(
         os.environ,
         SWAK_COT_ENROLL=ENROLL_PASSWORD,
-        SWAK_COT_LDAP=DIRECTORIES[directory]["password"],
+        SWAK_COT_LDAP=DIRECTORY["password"],
         QT_QPA_PLATFORM="offscreen",
     )
     command = [
         str(probe),
-        str(
-            profile(not args.loopback, load, directory, state["federation"], state["hubDisruption"])
-        ),
+        str(profile(not args.loopback, load, state["federation"], state["hubDisruption"])),
     ]
     if not args.loopback:
         command = ["podman", "unshare", "--rootless-netns", *command]
@@ -1518,12 +1630,6 @@ def main():
     commands.add_parser("certs", help="create test credentials").set_defaults(run=certs)
     start = commands.add_parser("up", help="start the test deployment")
     start.add_argument("--timeout", type=int, default=420)
-    start.add_argument(
-        "--directory",
-        default="openldap",
-        choices=sorted(DIRECTORIES),
-        help="the LDAPS directory of server B",
-    )
     start.add_argument(
         "--hub-token",
         default="automatic",

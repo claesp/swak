@@ -1715,3 +1715,11 @@ In hub mode, `up` also starts Keycloak 26.0 with the test realm `tools/tak-serve
 The mission checks now also add a 1024-byte and a 16384-byte file on server A. `missionFiles` expects both on server B with the same bytes. `missionDisruptionFiles` expects both after the reconnect in direct federation, and only the small one through the hub replay, because the broker configuration limits replayed files to 4096 bytes. The hub log calls this byte limit MB, and the shipped configuration sets 200.
 
 Direct federation passes 54 checks, the hub 69, the hub with replay 71, and loopback 51. The hub with replay and direct federation also pass under the sanitizers. The browser part of the OAuth sign-in and token refresh remain untested.
+
+# 2026-10-10: OAuth browser sign-in and refresh, no Active Directory
+
+Active Directory is out of scope for SWAK. The Samba directory image, `up --directory`, and the AD checks are removed. Server B always uses the OpenLDAP directory over LDAPS. Earlier sections that name `--directory ad` are historical.
+
+`tak_server.py test` now also signs in to the hub UI like a browser: it follows the redirect to Keycloak, posts the Keycloak form, and returns with the code. It checks the administrator, the viewer, a wrong password, and a wrong state value. The realm gives access tokens a lifetime of 10 seconds. After the expiry and the 60-second clock tolerance of the UI, the UI must refresh the token with the refresh token cookie and set a new one. With an invalid or no refresh token, it must sign the user out. Keycloak now runs with the fixed host name `swak-tak-keycloak`, because it refuses to refresh a token of another issuer.
+
+Direct federation passes 54 checks, the hub 76, and loopback 51. The hub and direct runs also pass under the sanitizers.
