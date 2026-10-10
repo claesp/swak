@@ -575,5 +575,235 @@ class LoadTest(unittest.TestCase):
         )
 
 
+def completed(code=0, stdout="", stderr=""):
+    return subprocess.CompletedProcess([], code, stdout=stdout, stderr=stderr)
+
+
+class CommandTest(unittest.TestCase):
+    """Test the command helpers without Podman. Each failure must stop the script."""
+
+    def setUp(self):
+        quiet = patch("sys.stdout", new_callable=io.StringIO)
+        quiet.start()
+        self.addCleanup(quiet.stop)
+
+    def test_run(self):
+        with patch.object(tak_server.subprocess, "run", return_value=completed()) as run:
+            self.assertEqual(tak_server.run(["true"]).returncode, 0)
+            self.assertFalse(run.call_args.kwargs["check"])
+        with patch.object(tak_server.subprocess, "run", return_value=completed(3)):
+            with self.assertRaisesRegex(SystemExit, "status 3"):
+                tak_server.run(["false"])
+
+    def test_podman_without_check(self):
+        # Without check, a failed command returns its result and does not stop the script.
+        with patch.object(tak_server.subprocess, "run", return_value=completed(1)) as run:
+            self.assertEqual(tak_server.podman("inspect", "x", check=False).returncode, 1)
+        self.assertEqual(run.call_args.args[0], ["podman", "inspect", "x"])
+
+    def test_network_subnet(self):
+        for result, expected in (
+            (completed(0, "10.89.77.0/24\n"), "10.89.77.0/24"),
+            (completed(125, "", "no such network"), None),
+        ):
+            with self.subTest(expected=expected):
+                with patch.object(tak_server.subprocess, "run", return_value=result):
+                    self.assertEqual(tak_server.network_subnet(), expected)
+
+    def test_bcrypt_hash(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(tak_server, "RUN", Path(directory)):
+                with patch.object(
+                    tak_server.subprocess, "run", return_value=completed(0, "$2a$10$abc\n")
+                ) as run:
+                    self.assertEqual(tak_server.bcrypt_hash("secret"), "$2a$10$abc")
+                # The password goes in the environment, not in the shell script.
+                command = run.call_args.args[0]
+                self.assertIn("PASSWORD_TO_HASH=secret", command)
+                self.assertNotIn("secret", command[-1])
+                for result in (completed(1, "", "no java"), completed(0, "error")):
+                    with patch.object(tak_server.subprocess, "run", return_value=result):
+                        with self.assertRaisesRegex(SystemExit, "Cannot hash"):
+                            tak_server.bcrypt_hash("secret")
+
+    def test_fetch_existing_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)
+            (source / ".git").mkdir()
+            with (
+                patch.object(tak_server, "SOURCE", source),
+                patch.object(tak_server, "run") as run,
+            ):
+                tak_server.fetch(None)
+            run.assert_not_called()
+
+    def test_podman_unshare(self):
+        with patch.object(tak_server.subprocess, "run", return_value=completed(2)) as run:
+            self.assertEqual(tak_server.podman_unshare("ip", check=False).returncode, 2)
+            with self.assertRaisesRegex(SystemExit, "Command failed: ip"):
+                tak_server.podman_unshare("ip")
+        self.assertEqual(run.call_args.args[0][:3], ["podman", "unshare", "--rootless-netns"])
+
+    def impair(self, loss, delay, addresses):
+        calls = []
+
+        def unshare(*command, capture=False, check=True):
+            calls.append((command, check))
+            return completed(0, addresses if capture else "")
+
+        with (
+            patch.object(tak_server, "podman", return_value=completed(0, "4242\n")),
+            patch.object(tak_server, "podman_unshare", side_effect=unshare),
+            patch.object(tak_server.shutil, "which", return_value="/sbin/tc"),
+        ):
+            tak_server.impair(loss, delay)
+        return calls[1:]
+
+    def test_impair(self):
+        addresses = (
+            "1: lo    inet 127.0.0.1/8 scope host lo\n"
+            "3: podman1    inet 10.89.77.1/24 brd 10.89.77.255 scope global podman1\n"
+        )
+        calls = self.impair(5, 100, addresses)
+        rule = ("root", "netem", "loss", "5%", "delay", "100ms")
+        self.assertEqual(
+            calls,
+            [
+                (("/sbin/tc", "qdisc", "replace", "dev", "podman1", *rule), True),
+                (
+                    ("nsenter", "-t", "4242", "-n", "/sbin/tc", "qdisc", "replace", "dev", "eth0")
+                    + rule,
+                    True,
+                ),
+            ],
+        )
+        # Zero values remove the rules. A missing rule must not stop the script.
+        calls = self.impair(0, 0, addresses)
+        self.assertEqual([command[-4] for command, _ in calls], ["del", "del"])
+        self.assertEqual([check for _, check in calls], [False, False])
+        with self.assertRaisesRegex(SystemExit, "Podman bridge"):
+            self.impair(5, 0, "1: lo    inet 127.0.0.1/8 scope host lo\n")
+
+    def test_down_and_status(self):
+        with patch.object(tak_server, "podman", return_value=completed(1)) as podman:
+            tak_server.down(None)
+        # Removal continues when a container or the network is absent.
+        self.assertEqual([call.kwargs["check"] for call in podman.call_args_list], [False, False])
+        with (
+            patch.object(tak_server, "podman", return_value=completed(1)),
+            patch.object(tak_server, "wait_port", return_value=False),
+        ):
+            tak_server.status(None)
+        output = tak_server.sys.stdout.getvalue()
+        self.assertIn(f"{tak_server.SERVER} absent", output)
+        self.assertIn("port 18443 (8443): closed", output)
+
+    def probe_args(self, **options):
+        return argparse.Namespace(**{"preset": "debug", "loopback": False, "delay": 0, **options})
+
+    def test_run_probe_without_build(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                patch.object(tak_server, "ROOT", Path(directory)),
+                self.assertRaisesRegex(SystemExit, "Build swak_tak_compat"),
+            ):
+                tak_server.run_probe(self.probe_args(loss=0), Path(directory) / "report.json")
+
+    def run_probe(self, state, probe_code, checks, load=None, loss=0, side_effect=None):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "build" / "debug").mkdir(parents=True)
+            (root / "build" / "debug" / "swak_tak_compat").touch()
+            report = root / "report.json"
+
+            def probe(command, stdout, **_options):
+                if side_effect:
+                    raise side_effect
+                stdout.write(json.dumps({"passed": probe_code == 0, "features": {}}))
+                return completed(probe_code)
+
+            with (
+                patch.object(tak_server, "ROOT", root),
+                patch.object(tak_server, "deployment", return_value=state),
+                patch.object(tak_server, "profile", return_value=root / "profile.json"),
+                patch.object(tak_server.subprocess, "run", side_effect=probe) as run,
+                patch.object(tak_server, "impair") as impair,
+                patch.object(tak_server, "hub_token_checks", return_value=checks),
+                patch.object(tak_server, "hub_oauth_checks", return_value={}),
+                patch.object(tak_server, "hub_disruption_checks", return_value={}) as replay,
+            ):
+                try:
+                    with self.assertRaises(SystemExit) as stop:
+                        tak_server.run_probe(self.probe_args(loss=loss), report, load)
+                finally:
+                    self.impair_calls = impair.call_args_list
+                    self.replay_called = replay.called
+                    self.command = run.call_args.args[0] if run.called else None
+            return stop.exception.code, json.loads(report.read_text() or "{}")
+
+    def test_run_probe_hub(self):
+        direct = {"federation": "direct", "hubDisruption": False}
+        hub = {"federation": "hub", "hubDisruption": False}
+        failed = {"hubToken": {"passed": False, "detail": "x"}}
+        passed = {"hubToken": {"passed": True, "detail": "x"}}
+        code, report = self.run_probe(direct, 0, failed)
+        self.assertEqual(code, 0)
+        self.assertNotIn("hubToken", report["features"])
+        self.assertEqual(self.command[:3], ["podman", "unshare", "--rootless-netns"])
+        # A failed hub check fails a probe run that passed.
+        code, report = self.run_probe(hub, 0, failed)
+        self.assertEqual((code, report["failedFeatures"]), (1, ["hubToken"]))
+        self.assertFalse(self.replay_called)
+        # A failed probe stays failed when the hub checks pass.
+        code, _ = self.run_probe(hub, 2, passed)
+        self.assertEqual(code, 1)
+        self.run_probe({"federation": "hub", "hubDisruption": True}, 0, passed)
+        self.assertTrue(self.replay_called)
+        # A load run does not add the hub checks.
+        code, report = self.run_probe(hub, 0, failed, load={"seconds": 1})
+        self.assertEqual(code, 0)
+        self.assertNotIn("hubToken", report["features"])
+
+    def test_run_probe_removes_impairment(self):
+        self.run_probe({"federation": "direct", "hubDisruption": False}, 0, {}, loss=5)
+        self.assertEqual([call.args for call in self.impair_calls], [(5, 0), (0, 0)])
+        # The script removes the rules also when the probe cannot start.
+        with self.assertRaises(OSError):
+            self.run_probe(
+                {"federation": "direct", "hubDisruption": False},
+                0,
+                {},
+                loss=5,
+                side_effect=OSError("exec format error"),
+            )
+        self.assertEqual([call.args for call in self.impair_calls], [(5, 0), (0, 0)])
+
+    def main(self, *arguments):
+        with (
+            patch.object(tak_server.sys, "argv", ["tak_server.py", *arguments]),
+            patch("sys.stderr", new_callable=io.StringIO),
+        ):
+            tak_server.main()
+
+    def test_main(self):
+        with patch.object(tak_server, "up") as up:
+            self.main("up", "--federation", "hub", "--hub-disruption")
+        args = up.call_args.args[0]
+        self.assertEqual(
+            (args.federation, args.hub_disruption, args.hub_token, args.timeout),
+            ("hub", True, "automatic", 420),
+        )
+        with patch.object(tak_server, "load") as load:
+            self.main("load", "--client", "quic", "--loopback")
+        args = load.call_args.args[0]
+        self.assertEqual(
+            (args.client, args.loopback, args.preset, args.minimum), ("quic", True, "debug", None)
+        )
+        for arguments in ((), ("up", "--federation", "mesh"), ("test", "--preset", "fast")):
+            with self.subTest(arguments=arguments), self.assertRaises(SystemExit) as stop:
+                self.main(*arguments)
+            self.assertEqual(stop.exception.code, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -79,3 +79,21 @@ The release startup test used a fresh temporary profile with `QT_DEBUG_PLUGINS=1
 The native sanitizer GUI cases passed their assertions. LeakSanitizer still reported the known 240732-byte Mesa leak in 1073 allocations, and the runner retained the failure. The logging handler runs only in the application and logging probes. It does not suppress test framework or sanitizer reports.
 
 The review located the mouse capture warning in Qt 6.8 Wayland source. It did not reproduce the exact triggering gesture in a native Wayland session. Hardware graphics, native Wayland placement, and Qt 6.4 remain untested.
+
+# Coverage review, October 11
+
+Coverage with the native GUI suite reached 22759 of 24296 source lines (93.7 percent) and 2354 of 2456 functions (95.8 percent). The report is `build/quality/20261011-000628-coverage-3234727`. An earlier report counted four removed plugins at 0 percent, because their old objects stayed in the build tree. The runner now skips sources that no longer exist.
+
+New GUI tests run the Checklists, Reports, Missions, and Files panes against a local HTTPS server. They list, open, start, update, subscribe, download, delete, upload, and export, and they check server errors and cancelled dialogs. The shared server is `tests/https_harness.h`. The tests use Qt file dialogs, because a desktop theme can supply native dialogs that a test cannot control. The Reports test found a defect: every attachment failed, because the file reader accepted at most 1 MiB, and attachments need 16 MiB. The QUIC test now also connects with a PEM certificate and a plain or encrypted PEM key, and it checks a wrong key password.
+
+The largest remaining gaps:
+
+- `core/servers.cpp`: LAN discovery and peers. The `--lan` integration mode runs this code. This review did not run it.
+- `core/server_browser.cpp`, `app/window.cpp`, and the drawing plugins: mouse and keyboard paths of the map and the editors.
+- `core/tiles.cpp`: allocation failures and some cache recovery branches.
+- `app/main.cpp`: application startup. No automated test starts the executable. Earlier sessions started the installed executable by hand.
+- `plugins/gdal_vector.cpp` and `plugins/gdal_raster.cpp`: GDAL error branches for damaged files.
+- `core/tak_enrollment.cpp`: OpenSSL failures during key and request creation.
+
+The Python tests now cover the command helpers of `tools/tak_server.py`: failed commands, Podman lookups, password hashing, packet loss rules, probe runs, and argument errors. Container start functions run only against a live deployment. `tools/quality.py` mode orchestration runs only in real diagnostic runs.
+

@@ -63,13 +63,16 @@ class RunnerTest(unittest.TestCase):
             report = Path(directory) / "report"
             build.mkdir()
             report.mkdir()
+            source = Path(directory) / "src"
+            source.mkdir()
+            (source / "example.cpp").touch()
             for name in ("one", "two"):
                 (build / f"{name}.gcno").touch()
 
             def gcov(command, *args):
                 count = 3 if command[-1].stem == "two" else 0
                 data = {
-                    "current_working_directory": str(quality.ROOT),
+                    "current_working_directory": directory,
                     "files": [
                         {
                             "file": "src/example.cpp",
@@ -80,12 +83,18 @@ class RunnerTest(unittest.TestCase):
                             "functions": [{"name": "example", "execution_count": count}],
                         },
                         {"file": "/usr/include/external.h", "lines": [], "functions": []},
+                        # A removed source with old objects in the build tree.
+                        {
+                            "file": "src/removed.cpp",
+                            "lines": [{"line_number": 1, "count": 0}],
+                            "functions": [],
+                        },
                     ],
                 }
                 with gzip.open(report / "example.gcov.json.gz", "wt") as output:
                     json.dump(data, output)
 
-            with patch.object(quality, "run", gcov):
+            with patch.object(quality, "run", gcov), patch.object(quality, "ROOT", Path(directory)):
                 quality.coverage_report(build, report, {})
             result = json.loads((report / "coverage.json").read_text())
             self.assertEqual(list(result), ["example.cpp"])

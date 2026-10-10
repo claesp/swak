@@ -36,6 +36,7 @@
 #include "core/track_history.h"
 #include "core/user_objects.h"
 #include "core/video_sources.h"
+#include "https_harness.h"
 
 #include <QAbstractItemModelTester>
 #include <QApplication>
@@ -224,73 +225,6 @@ public:
         });
         connect(socket, &QSslSocket::readyRead, socket, [this, socket] {
             received.append(socket->readAll().left(64 * 1024));
-        });
-        connect(socket, &QSslSocket::disconnected, socket, &QObject::deleteLater);
-        socket->startServerEncryption();
-    }
-};
-// An HTTPS server for client tests. It reads one request and answers through respond.
-class HttpsHarness final : public QTcpServer
-{
-public:
-    QSslCertificate certificate;
-    QSslKey key;
-    bool requireClient = false;
-    bool hold = false;
-    QList<QByteArray> requests;
-    int clientCertificates = 0;
-    std::function<QByteArray(const QByteArray &)> respond = [](const QByteArray &) {
-        const QByteArray body = "{\"ok\":true}";
-        return QByteArray("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
-                          "Content-Length: ") +
-               QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
-    };
-    bool load()
-    {
-        QFile cert(QFINDTESTDATA("fixtures/map-test-cert.pem")),
-            secret(QFINDTESTDATA("fixtures/map-test-key.pem"));
-        if (!cert.open(QIODevice::ReadOnly) || !secret.open(QIODevice::ReadOnly)) {
-            return false;
-        }
-        certificate = QSslCertificate(cert.readAll());
-        key = QSslKey(secret.readAll(), QSsl::Rsa);
-        return !certificate.isNull() && !key.isNull() && listen(QHostAddress::LocalHost, 0);
-    }
-    void incomingConnection(qintptr descriptor) override
-    {
-        auto *socket = new QSslSocket(this);
-        socket->setLocalCertificate(certificate);
-        socket->setPrivateKey(key);
-        auto configuration = socket->sslConfiguration();
-        configuration.setCaCertificates({certificate});
-        configuration.setPeerVerifyMode(requireClient ? QSslSocket::VerifyPeer
-                                                      : QSslSocket::VerifyNone);
-        socket->setSslConfiguration(configuration);
-        if (!socket->setSocketDescriptor(descriptor)) {
-            delete socket;
-            return;
-        }
-        auto input = std::make_shared<QByteArray>();
-        connect(socket, &QSslSocket::readyRead, socket, [this, socket, input] {
-            input->append(socket->readAll());
-            const auto end = input->indexOf("\r\n\r\n");
-            if (end < 0) {
-                return;
-            }
-            static const QRegularExpression length(QStringLiteral("(?i)content-length: *(\\d+)"));
-            const auto match = length.match(QString::fromLatin1(input->left(end)));
-            const auto expected = end + 4 + (match.hasMatch() ? match.captured(1).toInt() : 0);
-            if (input->size() < expected) {
-                return;
-            }
-            requests.append(*input);
-            if (!socket->peerCertificate().isNull()) {
-                ++clientCertificates;
-            }
-            if (!hold) {
-                socket->write(respond(*input));
-                socket->disconnectFromHost();
-            }
         });
         connect(socket, &QSslSocket::disconnected, socket, &QObject::deleteLater);
         socket->startServerEncryption();
@@ -1065,6 +999,56 @@ private slots:
                 server.received.startsWith("<auth><cot username=\"alice\" password=\"secret\""));
             QVERIFY(server.received.contains("uid=\"SWAK-Q\""));
         }
+        // A PEM certificate with a PEM key, plain or encrypted, travels over QUIC too.
+        QTemporaryDir keys;
+        QFile plain(QFINDTESTDATA("fixtures/map-test-key.pem"));
+        QVERIFY(plain.open(QIODevice::ReadOnly));
+        const QSslKey key(plain.readAll(), QSsl::Rsa);
+        QVERIFY(!key.isNull());
+        const auto encrypted = keys.filePath(QStringLiteral("encrypted.pem"));
+        QFile output(encrypted);
+        QVERIFY(output.open(QIODevice::WriteOnly));
+        output.write(key.toPem("swak-pem-test"));
+        output.close();
+        qputenv("SWAK_COT_PEM_PASSWORD", "swak-pem-test");
+        qputenv("SWAK_COT_PEM_WRONG", "wrong");
+        const auto pemClient = [&](const QString &keyPath, const QString &passwordEnv) {
+            auto server = std::make_unique<QuicHarness>();
+            server->requireClient = true;
+            server->payload = encodeCot(sampleEvent());
+            if (!server->start()) {
+                return std::make_pair(QString(QStringLiteral("no server")), false);
+            }
+            Store store;
+            Servers servers(store);
+            auto entry = source(server->port);
+            entry.insert(QStringLiteral("protocol"), QStringLiteral("quic"));
+            entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+            entry.insert(QStringLiteral("certificate"),
+                         QFINDTESTDATA("fixtures/map-test-cert.pem"));
+            entry.insert(QStringLiteral("key"), keyPath);
+            entry.insert(QStringLiteral("passwordEnv"), passwordEnv);
+            entry.insert(QStringLiteral("apiPort"), 0);
+            if (!servers.put(QStringLiteral("quic"), entry).isEmpty()) {
+                return std::make_pair(QString(QStringLiteral("not saved")), false);
+            }
+            // The caller checks the result, so the wait result does not matter.
+            static_cast<void>(QTest::qWaitFor(
+                [&] {
+                    return store.rowCount() == 1 || servers.status(QStringLiteral("quic"))
+                                                        .contains(QStringLiteral("cannot be used"));
+                },
+                10000));
+            return std::make_pair(servers.status(QStringLiteral("quic")),
+                                  store.rowCount() == 1 && server->sawClientCertificate);
+        };
+        QVERIFY(pemClient(QFINDTESTDATA("fixtures/map-test-key.pem"), {}).second);
+        QVERIFY(pemClient(encrypted, QStringLiteral("SWAK_COT_PEM_PASSWORD")).second);
+        const auto wrong = pemClient(encrypted, QStringLiteral("SWAK_COT_PEM_WRONG"));
+        QVERIFY(!wrong.second);
+        QVERIFY2(wrong.first.contains(QStringLiteral("cannot be used")), qPrintable(wrong.first));
+        // Without a password, OpenSSL cannot read the encrypted key and does not ask for one.
+        QVERIFY(pemClient(encrypted, {}).first.contains(QStringLiteral("cannot be used")));
     }
     void takProtocolMessages()
     {

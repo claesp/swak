@@ -51,7 +51,7 @@ The default workload does not render the map. Add `--gui` to run the workload wi
 
 # Coverage and dead code
 
-Coverage records which code the tests execute. This mode requires GCC and a matching `gcov` version. It resets old counters, runs the suites, and produces `coverage.json` and `coverage.md`. Add `--gui` to include native interface paths.
+Coverage records which code the tests execute. This mode requires GCC and a matching `gcov` version. It resets old counters, runs the suites, and produces `coverage.json` and `coverage.md`. The report skips sources that no longer exist, because old objects can stay in the build tree. Add `--gui` to include native interface paths.
 
 ```sh
 python3 tools/quality.py coverage --gui

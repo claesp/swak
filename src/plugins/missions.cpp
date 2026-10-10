@@ -265,8 +265,8 @@ public:
             if (const auto *mission = current()) {
                 const auto serverId = mission->serverId;
                 const auto name = mission->name;
-                showStatus(missions_->exportArchive(serverId, name));
-                showStatus(tr("Downloading the mission archive…"));
+                const auto error = missions_->exportArchive(serverId, name);
+                showStatus(error.isEmpty() ? tr("Downloading the mission archive…") : error);
             }
         });
         connect(missions_,

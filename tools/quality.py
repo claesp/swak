@@ -65,6 +65,9 @@ def coverage_report(build, report, env):
                     name = str(path.resolve().relative_to(ROOT / "src"))
                 except ValueError:
                     continue
+                # Old objects in the build tree can refer to removed sources. Do not report them.
+                if not path.is_file():
+                    continue
                 target = files.setdefault(name, {"lines": {}, "functions": {}, "branches": {}})
                 for line in item["lines"]:
                     key = str(line["line_number"])

@@ -37,7 +37,7 @@ FileResult readRegularFile(const QString &path, qsizetype limit)
     const auto tr = [](const char *text) {
         return QCoreApplication::translate("Files", text);
     };
-    if (limit <= 0 || limit > 1024 * 1024) {
+    if (limit <= 0 || limit > MaxRegularFileBytes) {
         return {{}, tr("The file size limit is invalid.")};
     }
     if (path.contains(QChar::Null)) {

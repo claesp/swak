@@ -25,6 +25,8 @@
 
 namespace swak {
 namespace {
+static_assert(MaxCitrapAttachmentBytes <= MaxRegularFileBytes,
+              "readRegularFile must accept the attachment limit.");
 class ReportsPane final : public QWidget, public PreferenceParticipant
 {
 public:

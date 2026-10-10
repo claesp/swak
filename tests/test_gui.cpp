@@ -45,6 +45,7 @@
 #include "core/ui_icons.h"
 #include "core/user_objects.h"
 #include "core/video_sources.h"
+#include "https_harness.h"
 #include "swak/version.h"
 #include "tile_server.h"
 #include "vector_fixture.h"
@@ -301,6 +302,22 @@ static void answerDeletion(Qt::Key key = Qt::Key_Return)
     });
 }
 
+// Uses Qt file dialogs while it exists, so a test can find them. A desktop theme can supply
+// native dialogs that a test cannot control.
+struct QtDialogs
+{
+    QtDialogs()
+    {
+        QApplication::setAttribute(Qt::AA_DontUseNativeDialogs, true);
+    }
+    ~QtDialogs()
+    {
+        QApplication::setAttribute(Qt::AA_DontUseNativeDialogs, native);
+    }
+    QtDialogs(const QtDialogs &) = delete;
+    QtDialogs &operator=(const QtDialogs &) = delete;
+    bool native = QApplication::testAttribute(Qt::AA_DontUseNativeDialogs);
+};
 class GuiTest final : public QObject
 {
     Q_OBJECT
@@ -1643,6 +1660,171 @@ private slots:
         QVERIFY(pane);
         pane->restorePreferences(pane->savePreferences());
     }
+    // Returns the open dialog with a name. A closed dialog can remain until its deletion.
+    static QDialog *visibleDialog(const QWidget &window, const QString &name)
+    {
+        for (auto *dialog : window.findChildren<QDialog *>(name)) {
+            if (dialog->isVisible()) {
+                return dialog;
+            }
+        }
+        return nullptr;
+    }
+    // Types a path into the next Qt file dialog that opens, and accepts it. QFileDialog::selectFile
+    // does not change the name field while the field has focus, so the timer sets the field.
+    // The timer stops with its context.
+    static void chooseFile(QObject *context, const QString &path)
+    {
+        auto *timer = new QTimer(context);
+        auto tries = std::make_shared<int>(0);
+        QObject::connect(timer, &QTimer::timeout, timer, [timer, path, tries] {
+            if (++*tries > 500) {
+                timer->deleteLater();
+                return;
+            }
+            for (auto *widget : QApplication::topLevelWidgets()) {
+                auto *picker = qobject_cast<QFileDialog *>(widget);
+                auto *name = picker ? picker->findChild<QLineEdit *>(QStringLiteral("fileNameEdit"))
+                                    : nullptr;
+                if (picker && picker->isVisible() && name) {
+                    timer->deleteLater();
+                    name->setText(path);
+                    static_cast<QDialog *>(picker)->accept();
+                    return;
+                }
+            }
+        });
+        timer->start(20);
+    }
+    void reportsPaneServer()
+    {
+        // The pane lists, sends with attachments, and updates reports of a server.
+        const QtDialogs dialogs;
+        HttpsHarness api;
+        QVERIFY(api.load());
+        int status = 200;
+        api.respond = [&](const QByteArray &request) {
+            QByteArray body;
+            if (request.startsWith("GET /Marti/api/citrap?")) {
+                body = "<reports><report id=\"r-1\" title=\"Bridge out\" type=\"Hazard\" "
+                       "status=\"Open\" importance=\"High\" userCallsign=\"Echo\" "
+                       "dateTime=\"2026-10-09T08:00:00.000Z\" location=\"59.5,18.25\">"
+                       "<userDescription>Water over road</userDescription></report>"
+                       "<report><id>r-2</id></report></reports>";
+            } else if (request.startsWith("POST /Marti/api/citrap?")) {
+                body = "{\"id\":\"server-7\"}";
+            }
+            return httpReply(status, body);
+        };
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("reports.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        window.findChild<QDockWidget *>(QStringLiteral("org.swak.reports.pane"))->show();
+        auto *label = window.findChild<QLabel *>(QStringLiteral("reportStatus"));
+        auto *table = window.findChild<QTableWidget *>(QStringLiteral("citrapReports"));
+        auto *servers = window.findChild<swak::Servers *>();
+        QVERIFY(label && table && servers);
+        const auto click = [&window](const QString &name) {
+            window.findChild<QPushButton *>(name)->click();
+        };
+        const auto waitFor = [&](const QString &text) {
+            return QTest::qWaitFor(
+                [&] {
+                    return label->text().contains(text);
+                },
+                15000);
+        };
+        auto entry = swak::serverDefaults();
+        entry.insert(QStringLiteral("name"), QStringLiteral("Test TAK"));
+        entry.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
+        entry.insert(QStringLiteral("port"), 9);
+        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        entry.insert(QStringLiteral("enabled"), false);
+        entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+        entry.insert(QStringLiteral("apiPort"), api.serverPort());
+        QVERIFY(servers->put(QStringLiteral("tak"), entry).isEmpty());
+        click(QStringLiteral("listReports"));
+        QVERIFY(waitFor(QStringLiteral("2 reports.")));
+        QCOMPARE(table->rowCount(), 2);
+        QCOMPARE(table->item(0, 0)->text(), QStringLiteral("Bridge out"));
+        QCOMPARE(table->item(0, 0)->toolTip(), QStringLiteral("Water over road"));
+        QCOMPARE(table->item(0, 4)->text(), QStringLiteral("Echo"));
+        QVERIFY(!table->item(0, 5)->text().isEmpty());
+        // A report without a title shows its identifier and no time.
+        QCOMPARE(table->item(1, 0)->text(), QStringLiteral("r-2"));
+        QVERIFY(table->item(1, 5)->text().isEmpty());
+        // Close and Reopen send the new status. A successful update reads the list again.
+        table->selectRow(0);
+        click(QStringLiteral("closeReport"));
+        QCOMPARE(label->text(), QStringLiteral("Updating the report…"));
+        QVERIFY(waitFor(QStringLiteral("2 reports.")));
+        QVERIFY(std::any_of(api.requests.cbegin(), api.requests.cend(), [](const auto &request) {
+            return request.startsWith("PUT /Marti/api/citrap/r-1?") &&
+                   request.contains("status=\"Closed\"");
+        }));
+        // The dialog adds attachments through the file dialog. The pane reads each file.
+        QTemporaryDir files;
+        const auto photo = files.filePath(QStringLiteral("photo.jpg"));
+        QFile output(photo);
+        QVERIFY(output.open(QIODevice::WriteOnly) && output.write("jpeg") == 4);
+        output.close();
+        const auto gone = files.filePath(QStringLiteral("gone.jpg"));
+        QVERIFY(QFile::copy(photo, gone));
+        const auto send = [&](const QStringList &attachments) {
+            QTimer::singleShot(0, &window, [&window, attachments] {
+                auto *dialog = visibleDialog(window, QStringLiteral("newReportDialog"));
+                if (!dialog) {
+                    return;
+                }
+                dialog->findChild<QLineEdit *>(QStringLiteral("reportTitle"))
+                    ->setText(QStringLiteral("Smoke"));
+                for (const auto &path : attachments) {
+                    chooseFile(dialog, path);
+                    dialog->findChild<QPushButton *>(QStringLiteral("addReportFile"))->click();
+                }
+                dialog->accept();
+            });
+            click(QStringLiteral("newReport"));
+        };
+        send({photo});
+        QCOMPARE(label->text(), QStringLiteral("Sending the report…"));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return std::any_of(
+                    api.requests.cbegin(), api.requests.cend(), [](const auto &request) {
+                        return request.startsWith("POST /Marti/api/citrap/server-7/attachment?") &&
+                               request.contains("filename=\"photo.jpg\"");
+                    });
+            },
+            15000));
+        // A sent report reads the list again.
+        QVERIFY(waitFor(QStringLiteral("2 reports.")));
+        // A file that disappears before Send stops the report with the read error.
+        const auto requests = api.requests.size();
+        QTimer::singleShot(0, &window, [&window, gone] {
+            auto *dialog = visibleDialog(window, QStringLiteral("newReportDialog"));
+            if (!dialog) {
+                return;
+            }
+            dialog->findChild<QLineEdit *>(QStringLiteral("reportTitle"))
+                ->setText(QStringLiteral("Smoke"));
+            chooseFile(dialog, gone);
+            dialog->findChild<QPushButton *>(QStringLiteral("addReportFile"))->click();
+            QFile::remove(gone);
+            dialog->accept();
+        });
+        click(QStringLiteral("newReport"));
+        QCOMPARE(label->text(), QStringLiteral("The file cannot be opened."));
+        QCOMPARE(api.requests.size(), requests);
+        // A refused update shows the server error and does not read the list.
+        status = 403;
+        table->selectRow(0);
+        click(QStringLiteral("reopenReport"));
+        QVERIFY(waitFor(QStringLiteral("does not allow")));
+        QCOMPARE(table->rowCount(), 2);
+    }
     void checklistsPane()
     {
         QTemporaryDir directory;
@@ -1690,6 +1872,153 @@ private slots:
             window.findChild<QWidget *>(QStringLiteral("checklistPane")));
         QVERIFY(pane);
         pane->restorePreferences(pane->savePreferences());
+    }
+    void checklistsPaneServer()
+    {
+        // The pane lists, opens, starts, and updates checklists of a server.
+        HttpsHarness api;
+        QVERIFY(api.load());
+        const QByteArray checklist =
+            "<checklist><checklistDetails><name>Patrol</name><uid>c-1</uid>"
+            "<description>Night</description><templateName>Base</templateName>"
+            "</checklistDetails><checklistColumns><checklistColumn><columnName>Step</columnName>"
+            "</checklistColumn></checklistColumns><checklistTasks>"
+            "<checklistTask><uid>t-1</uid><value>Radio check</value><status>Pending</status>"
+            "</checklistTask><checklistTask><uid>t-2</uid><value>Return</value>"
+            "<status>Complete</status></checklistTask></checklistTasks></checklist>";
+        int status = 200;
+        api.respond = [&](const QByteArray &request) {
+            QByteArray body;
+            if (request.startsWith("GET /Marti/api/excheck/checklist/active?")) {
+                body = "<checklists>" + checklist + "</checklists>";
+            } else if (request.startsWith("GET /Marti/api/missions/exchecktemplates ")) {
+                body = "{\"data\":[{\"contents\":[{\"data\":{\"uid\":\"tpl-1\",\"name\":\"Base\"}}]"
+                       "}]}";
+            } else if (request.startsWith("GET /Marti/api/excheck/checklist/c-1?")) {
+                body = checklist;
+            } else if (request.startsWith("PUT /Marti/api/missions/c-1/subscription?")) {
+                body = "{\"data\":{\"role\":{\"type\":\"MISSION_SUBSCRIBER\"}}}";
+            }
+            return httpReply(status, body);
+        };
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("checklists.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        window.findChild<QDockWidget *>(QStringLiteral("org.swak.checklists.pane"))->show();
+        auto *label = window.findChild<QLabel *>(QStringLiteral("checklistStatus"));
+        auto *list = window.findChild<QListWidget *>(QStringLiteral("checklistList"));
+        auto *tasks = window.findChild<QTableWidget *>(QStringLiteral("checklistTasks"));
+        auto *servers = window.findChild<swak::Servers *>();
+        QVERIFY(label && list && tasks && servers);
+        const auto click = [&window](const QString &name) {
+            window.findChild<QPushButton *>(name)->click();
+        };
+        const auto waitFor = [&](const QString &text) {
+            return QTest::qWaitFor(
+                [&] {
+                    return label->text() == text;
+                },
+                15000);
+        };
+        auto entry = swak::serverDefaults();
+        entry.insert(QStringLiteral("name"), QStringLiteral("Test TAK"));
+        entry.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
+        entry.insert(QStringLiteral("port"), 9);
+        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        entry.insert(QStringLiteral("enabled"), false);
+        entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+        entry.insert(QStringLiteral("apiPort"), api.serverPort());
+        QVERIFY(servers->put(QStringLiteral("tak"), entry).isEmpty());
+        click(QStringLiteral("listChecklists"));
+        QVERIFY(waitFor(QStringLiteral("1 checklists.")));
+        QCOMPARE(list->count(), 1);
+        QCOMPARE(list->item(0)->text(), QStringLiteral("Patrol"));
+        QCOMPARE(list->item(0)->toolTip(), QStringLiteral("Night"));
+        // Selecting a checklist reads its tasks. The status column follows the task columns.
+        list->setCurrentRow(0);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return tasks->rowCount() == 2;
+            },
+            15000));
+        QCOMPARE(tasks->columnCount(), 2);
+        QCOMPARE(tasks->horizontalHeaderItem(0)->text(), QStringLiteral("Step"));
+        QCOMPARE(tasks->item(0, 0)->text(), QStringLiteral("Radio check"));
+        QCOMPARE(tasks->item(1, 1)->text(), QStringLiteral("Complete"));
+        QVERIFY(label->isHidden());
+        // A task update reads the checklist again.
+        tasks->selectRow(0);
+        click(QStringLiteral("completeTask"));
+        QVERIFY(waitFor(QStringLiteral("The task is updated.")));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return api.requests.last().startsWith("GET /Marti/api/excheck/checklist/c-1?");
+            },
+            15000));
+        QVERIFY(std::any_of(api.requests.cbegin(), api.requests.cend(), [](const auto &request) {
+            return request.startsWith("PUT /Marti/api/excheck/checklist/c-1/task/t-1?") &&
+                   request.contains("<status>Complete</status>");
+        }));
+        // The start dialog sends the template, name, and description. Cancel sends nothing.
+        const auto start = [&](bool accept) {
+            QTimer::singleShot(0, &window, [&window, accept] {
+                auto *dialog = window.findChild<QDialog *>(QStringLiteral("startChecklistDialog"));
+                if (!dialog) {
+                    return;
+                }
+                dialog->findChild<QLineEdit *>(QStringLiteral("checklistName"))
+                    ->setText(QStringLiteral("Night 2"));
+                dialog->findChild<QLineEdit *>(QStringLiteral("checklistDescription"))
+                    ->setText(QStringLiteral("Go"));
+                accept ? dialog->accept() : dialog->reject();
+            });
+            click(QStringLiteral("startChecklist"));
+        };
+        const auto sent = api.requests.size();
+        start(false);
+        QCOMPARE(api.requests.size(), sent);
+        start(true);
+        QVERIFY(waitFor(QStringLiteral("The checklist is started.")));
+        QVERIFY(std::any_of(api.requests.cbegin(), api.requests.cend(), [](const auto &request) {
+            return request.startsWith("POST /Marti/api/excheck/tpl-1/start?name=Night%202&"
+                                      "description=Go&");
+        }));
+        // A started checklist reads the list again.
+        QVERIFY(waitFor(QStringLiteral("1 checklists.")));
+        list->setCurrentRow(0);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return tasks->rowCount() == 2;
+            },
+            15000));
+        click(QStringLiteral("checklistMission"));
+        QCOMPARE(label->text(),
+                 QStringLiteral("Subscribing. Missions shows the checklist mission."));
+        // Server errors show in the status line. A failed update does not read the checklist.
+        status = 403;
+        tasks->selectRow(1);
+        click(QStringLiteral("pendingTask"));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return label->text().contains(QStringLiteral("does not allow"));
+            },
+            15000));
+        start(true);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return label->text().contains(QStringLiteral("does not allow"));
+            },
+            15000));
+        click(QStringLiteral("listChecklists"));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return label->text().contains(QStringLiteral("does not allow"));
+            },
+            15000));
+        QCOMPARE(list->count(), 0);
+        QCOMPARE(tasks->rowCount(), 0);
     }
     void videoPane()
     {
@@ -2139,6 +2468,218 @@ private slots:
         QVERIFY(pane);
         pane->restorePreferences(pane->savePreferences());
     }
+    void missionsPaneServer()
+    {
+        // The pane lists and subscribes to missions, and shows their files and logs.
+        const QtDialogs dialogs;
+        HttpsHarness api;
+        QVERIFY(api.load());
+        bool archiveFails = false;
+        api.respond = [&](const QByteArray &request) {
+            const auto line = request.left(request.indexOf("\r\n"));
+            QByteArray body = "{}";
+            int status = 200;
+            if (line.startsWith("GET /Marti/api/missions?passwordProtected=true ")) {
+                body = "{\"data\":[{\"name\":\"Ops\",\"description\":\"Ops room\","
+                       "\"creatorUid\":\"ANDROID-1\"},{\"name\":\"Secret\","
+                       "\"passwordProtected\":true},{\"name\":\"Team\"}]}";
+            } else if (line.startsWith("PUT /Marti/api/missions/Ops/subscription?")) {
+                body = "{\"data\":{\"role\":{\"type\":\"MISSION_OWNER\"}}}";
+            } else if (line.startsWith("PUT /Marti/api/missions/Team/subscription?")) {
+                body = "{\"data\":{\"role\":{\"type\":\"MISSION_SUBSCRIBER\"}}}";
+            } else if (line.startsWith("PUT /Marti/api/missions/Secret/subscription?")) {
+                status = line.contains("password=pw") ? 200 : 403;
+                body = "{\"data\":{\"role\":{\"type\":\"MISSION_READONLY_SUBSCRIBER\"}}}";
+            } else if (line.contains("/cot ")) {
+                body = "<events></events>";
+            } else if (line.startsWith("GET /Marti/api/missions/Ops/log ")) {
+                body = "{\"data\":[{\"id\":\"1\",\"content\":\"Started\",\"creatorUid\":"
+                       "\"ANDROID-1\",\"dtg\":\"2026-10-08T10:00:00.000Z\"}]}";
+            } else if (line.startsWith("GET /Marti/api/missions/Ops/archive ")) {
+                status = archiveFails ? 500 : 200;
+                body = "PK archive";
+            } else if (line.startsWith("GET /Marti/api/missions/Ops ")) {
+                body = "{\"data\":[{\"name\":\"Ops\",\"contents\":[{\"data\":{\"hash\":\"" +
+                       QByteArray(64, 'c') +
+                       "\",\"name\":\"map.kmz\",\"size\":2048,\"submitter\":\"Echo\"}},"
+                       "{\"data\":{\"hash\":\"" +
+                       QByteArray(64, 'd') + "\",\"name\":\"notes.txt\"}}]}]}";
+            } else if (line.contains("/log ")) {
+                body = "{\"data\":[]}";
+            } else if (line.startsWith("GET /Marti/api/missions/")) {
+                const auto name = line.mid(24, line.indexOf(' ', 24) - 24);
+                body = "{\"data\":[{\"name\":\"" + name + "\"}]}";
+            }
+            return httpReply(status, body);
+        };
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("missions.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        window.findChild<QDockWidget *>(QStringLiteral("org.swak.missions.view.pane"))->show();
+        auto *label = window.findChild<QLabel *>(QStringLiteral("missionsStatus"));
+        auto *available = window.findChild<QTableWidget *>(QStringLiteral("missionList"));
+        auto *subscriptions =
+            window.findChild<QListWidget *>(QStringLiteral("missionSubscriptions"));
+        auto *files = window.findChild<QListWidget *>(QStringLiteral("missionFiles"));
+        auto *logs = window.findChild<QListWidget *>(QStringLiteral("missionLogs"));
+        auto *logInput = window.findChild<QLineEdit *>(QStringLiteral("missionLogInput"));
+        auto *servers = window.findChild<swak::Servers *>();
+        QVERIFY(label && available && subscriptions && files && logs && logInput && servers);
+        const auto click = [&window](const QString &name) {
+            window.findChild<QPushButton *>(name)->click();
+        };
+        const auto waitFor = [&](const QString &text) {
+            return QTest::qWaitFor(
+                [&] {
+                    return label->text().contains(text);
+                },
+                15000);
+        };
+        const auto row = [&](const QString &name) {
+            for (int index = 0; index < subscriptions->count(); ++index) {
+                if (subscriptions->item(index)->text().startsWith(name + QStringLiteral(" · "))) {
+                    return index;
+                }
+            }
+            return -1;
+        };
+        auto entry = swak::serverDefaults();
+        entry.insert(QStringLiteral("name"), QStringLiteral("Test TAK"));
+        entry.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
+        entry.insert(QStringLiteral("port"), 9);
+        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        entry.insert(QStringLiteral("enabled"), false);
+        entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+        entry.insert(QStringLiteral("apiPort"), api.serverPort());
+        QVERIFY(servers->put(QStringLiteral("tak"), entry).isEmpty());
+        click(QStringLiteral("listMissions"));
+        QVERIFY(waitFor(QStringLiteral("3 missions.")));
+        QCOMPARE(available->rowCount(), 3);
+        QCOMPARE(available->item(0, 1)->text(), QStringLiteral("Ops room"));
+        QCOMPARE(available->item(0, 2)->text(), QStringLiteral("ANDROID-1"));
+        QCOMPARE(available->item(0, 3)->text(), QStringLiteral("No"));
+        QCOMPARE(available->item(1, 3)->text(), QStringLiteral("Yes"));
+        // The subscription shows the role, the files, and the log of the mission.
+        available->selectRow(0);
+        click(QStringLiteral("subscribeMission"));
+        QCOMPARE(label->text(), QStringLiteral("Subscribing to Ops…"));
+        QVERIFY(waitFor(QStringLiteral("Subscribed to Ops.")));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return row(QStringLiteral("Ops")) >= 0 && files->count() == 2 && logs->count() == 1;
+            },
+            15000));
+        QVERIFY(subscriptions->item(row(QStringLiteral("Ops")))
+                    ->text()
+                    .contains(QStringLiteral(" · owner · ")));
+        QVERIFY(files->item(0)->text().startsWith(QStringLiteral("map.kmz (")));
+        QCOMPARE(files->item(0)->toolTip(), QStringLiteral("Echo"));
+        QCOMPARE(files->item(1)->text(), QStringLiteral("notes.txt (unknown size)"));
+        QVERIFY(logs->item(0)->text().contains(QStringLiteral("ANDROID-1")));
+        QVERIFY(logs->item(0)->text().endsWith(QStringLiteral("\nStarted")));
+        QVERIFY(logInput->isEnabled());
+        // A log entry goes to the server, and the input clears.
+        logInput->setText(QStringLiteral("Checkpoint"));
+        QTest::keyClick(logInput, Qt::Key_Return);
+        QVERIFY(logInput->text().isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return std::any_of(
+                    api.requests.cbegin(), api.requests.cend(), [](const auto &request) {
+                        return request.startsWith("POST /Marti/api/missions/logs/entries ") &&
+                               request.contains("Checkpoint");
+                    });
+            },
+            15000));
+        // A selected file downloads through the file shares.
+        files->setCurrentRow(0);
+        click(QStringLiteral("downloadMissionFile"));
+        QVERIFY(label->text().startsWith(QStringLiteral("Downloading map.kmz.")));
+        // Export saves the archive in the selected file. A failed save or download shows an
+        // error.
+        const auto archive = directory.filePath(QStringLiteral("ops.zip"));
+        chooseFile(&window, archive);
+        click(QStringLiteral("exportMission"));
+        QCOMPARE(label->text(), QStringLiteral("Downloading the mission archive…"));
+        QVERIFY(waitFor(QStringLiteral("The mission archive is saved.")));
+        QFile saved(archive);
+        QVERIFY(saved.open(QIODevice::ReadOnly));
+        QCOMPARE(saved.readAll(), QByteArray("PK archive"));
+        const auto locked = directory.filePath(QStringLiteral("locked"));
+        QVERIFY(QDir().mkdir(locked));
+        QVERIFY(QFile::setPermissions(locked, QFileDevice::ReadOwner | QFileDevice::ExeOwner));
+        chooseFile(&window, locked + QStringLiteral("/ops.zip"));
+        click(QStringLiteral("exportMission"));
+        QVERIFY(waitFor(QStringLiteral("Cannot save the mission archive.")));
+        archiveFails = true;
+        click(QStringLiteral("exportMission"));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return !label->text().startsWith(QStringLiteral("Downloading"));
+            },
+            15000));
+        QVERIFY(!label->text().contains(QStringLiteral("saved")));
+        QFile::setPermissions(
+            locked, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+        // A password mission asks for the password. Cancel sends nothing.
+        const auto password = [&](bool accept, const QString &text) {
+            QTimer::singleShot(0, &window, [&window, accept, text] {
+                auto *dialog = qobject_cast<QInputDialog *>(
+                    visibleDialog(window, QStringLiteral("missionPassword")));
+                if (!dialog) {
+                    return;
+                }
+                dialog->setTextValue(text);
+                accept ? dialog->accept() : dialog->reject();
+            });
+            available->selectRow(1);
+            click(QStringLiteral("subscribeMission"));
+        };
+        const auto sent = api.requests.size();
+        password(false, QStringLiteral("pw"));
+        QCOMPARE(api.requests.size(), sent);
+        password(true, QStringLiteral("wrong"));
+        QVERIFY(waitFor(QStringLiteral("does not allow")));
+        // The refused subscription stays with the error as its status, so the user can retry.
+        QVERIFY(row(QStringLiteral("Secret")) >= 0);
+        QVERIFY(subscriptions->item(row(QStringLiteral("Secret")))
+                    ->text()
+                    .contains(QStringLiteral("does not allow")));
+        password(true, QStringLiteral("pw"));
+        QVERIFY(waitFor(QStringLiteral("Subscribed to Secret.")));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return row(QStringLiteral("Secret")) >= 0;
+            },
+            15000));
+        QVERIFY(subscriptions->item(row(QStringLiteral("Secret")))
+                    ->text()
+                    .contains(QStringLiteral(" · read-only · ")));
+        // A read-only mission does not accept log entries.
+        subscriptions->setCurrentRow(row(QStringLiteral("Secret")));
+        QVERIFY(!logInput->isEnabled());
+        // A double click subscribes too.
+        available->scrollToItem(available->item(2, 0));
+        const auto cell = available->visualItemRect(available->item(2, 0)).center();
+        QVERIFY(available->viewport()->rect().contains(cell));
+        QTest::mouseClick(available->viewport(), Qt::LeftButton, Qt::NoModifier, cell);
+        QTest::mouseDClick(available->viewport(), Qt::LeftButton, Qt::NoModifier, cell);
+        QVERIFY(waitFor(QStringLiteral("Subscribed to Team.")));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return row(QStringLiteral("Team")) >= 0;
+            },
+            15000));
+        QVERIFY(subscriptions->item(row(QStringLiteral("Team")))
+                    ->text()
+                    .contains(QStringLiteral(" · subscriber · ")));
+        // The selection stays on its mission when the list changes.
+        subscriptions->setCurrentRow(row(QStringLiteral("Secret")));
+        click(QStringLiteral("reloadMission"));
+        QVERIFY(subscriptions->currentItem()->text().startsWith(QStringLiteral("Secret · ")));
+    }
     void filesPane()
     {
         QTemporaryDir directory;
@@ -2297,6 +2838,181 @@ private slots:
         QCOMPARE(tabs->currentIndex(), 0);
         dock->raise();
         QVERIFY(window.grab().save(QStringLiteral("files-pane.png")));
+    }
+    void filesPaneServer()
+    {
+        // The server tab lists, downloads, and deletes server files. Send Package uploads.
+        HttpsHarness api;
+        QVERIFY(api.load());
+        const QByteArray hash(64, 'a');
+        int deleteStatus = 200;
+        int uploadStatus = 200;
+        api.respond = [&](const QByteArray &request) {
+            QByteArray body;
+            int status = 200;
+            if (request.startsWith("GET /Marti/sync/search ")) {
+                body = "{\"resultCount\":2,\"results\":[{\"hash\":\"" + hash +
+                       "\",\"name\":\"Patrol\",\"filename\":\"patrol.zip\",\"submitter\":"
+                       "\"alice\",\"size\":1234,\"submissionTime\":\"2026-10-08T10:00:00.000Z\"},"
+                       "{\"hash\":\"" +
+                       QByteArray(64, 'b') + "\",\"filename\":\"roads.kml\"}]}";
+            } else if (request.startsWith("DELETE ")) {
+                status = deleteStatus;
+            } else if (request.startsWith("POST ")) {
+                status = uploadStatus;
+            } else {
+                status = 404;
+            }
+            return httpReply(status, body);
+        };
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("files.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        window.findChild<QDockWidget *>(QStringLiteral("org.swak.files.pane"))->show();
+        auto *serverFiles = window.findChild<QTableWidget *>(QStringLiteral("serverFiles"));
+        auto *tabs = window.findChild<QTabWidget *>(QStringLiteral("filesTabs"));
+        auto *label = window.findChild<QLabel *>(QStringLiteral("filesStatus"));
+        auto *files = window.findChild<swak::FileShares *>(QStringLiteral("fileShares"));
+        auto *contacts = window.findChild<swak::Contacts *>(QStringLiteral("contacts"));
+        auto *objects = window.findChild<swak::UserObjects *>();
+        auto *servers = window.findChild<swak::Servers *>();
+        QVERIFY(serverFiles && tabs && label && files && contacts && objects && servers);
+        files->setDirectory(directory.filePath(QStringLiteral("packages")));
+        const auto click = [&window](const QString &name) {
+            window.findChild<QPushButton *>(name)->click();
+        };
+        const auto waitFor = [&](const QString &text) {
+            return QTest::qWaitFor(
+                [&] {
+                    return label->text().contains(text);
+                },
+                15000);
+        };
+        const auto answer = [&](const QString &button) {
+            QTimer::singleShot(0, &window, [&window, button] {
+                auto *box = window.findChild<QMessageBox *>(QStringLiteral("actionConfirmation"));
+                if (!box) {
+                    return;
+                }
+                for (auto *candidate : box->buttons()) {
+                    if (candidate->text() == button) {
+                        candidate->click();
+                        return;
+                    }
+                }
+                box->reject();
+            });
+        };
+        auto entry = swak::serverDefaults();
+        entry.insert(QStringLiteral("name"), QStringLiteral("Test TAK"));
+        entry.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
+        entry.insert(QStringLiteral("port"), 9);
+        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        entry.insert(QStringLiteral("enabled"), false);
+        entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+        entry.insert(QStringLiteral("apiPort"), api.serverPort());
+        QVERIFY(servers->put(QStringLiteral("tak"), entry).isEmpty());
+        tabs->setCurrentIndex(1);
+        click(QStringLiteral("searchServerFiles"));
+        QVERIFY(waitFor(QStringLiteral("2 files.")));
+        QCOMPARE(serverFiles->rowCount(), 2);
+        QCOMPARE(serverFiles->item(0, 1)->text(), QStringLiteral("alice"));
+        QVERIFY(!serverFiles->item(0, 2)->text().isEmpty());
+        QVERIFY(!serverFiles->item(0, 3)->text().isEmpty());
+        QVERIFY(serverFiles->item(1, 3)->text().isEmpty());
+        // Download asks first. Cancel sends nothing.
+        serverFiles->selectRow(0);
+        auto sent = api.requests.size();
+        answer({});
+        click(QStringLiteral("downloadServerFile"));
+        QCOMPARE(api.requests.size(), sent);
+        answer(QStringLiteral("Download"));
+        click(QStringLiteral("downloadServerFile"));
+        QVERIFY(label->text().startsWith(QStringLiteral("Downloading ")));
+        QVERIFY(label->text().endsWith(QStringLiteral(". Received shows the result.")));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return api.requests.size() > sent &&
+                       api.requests.last().startsWith("GET /Marti/sync/content?hash=" + hash);
+            },
+            15000));
+        // Delete asks first. A refused delete keeps the row, and a deletion removes it.
+        sent = api.requests.size();
+        answer({});
+        click(QStringLiteral("deleteServerFile"));
+        QCOMPARE(api.requests.size(), sent);
+        deleteStatus = 403;
+        serverFiles->selectRow(0);
+        answer(QStringLiteral("Delete"));
+        click(QStringLiteral("deleteServerFile"));
+        QVERIFY(waitFor(QStringLiteral("does not allow")));
+        QCOMPARE(serverFiles->rowCount(), 2);
+        deleteStatus = 200;
+        serverFiles->selectRow(0);
+        answer(QStringLiteral("Delete"));
+        click(QStringLiteral("deleteServerFile"));
+        QVERIFY(waitFor(QStringLiteral("The file is deleted.")));
+        QCOMPARE(serverFiles->rowCount(), 1);
+        QVERIFY(api.requests.last().startsWith("DELETE /Marti/sync/delete?hash=" + hash));
+        // Send Package uploads the checked objects and offers them to the checked contacts.
+        swak::UserObject marker;
+        marker.id = QStringLiteral("m1");
+        marker.type = QStringLiteral("circle");
+        marker.title = QStringLiteral("Rally");
+        marker.geometry = {{QStringLiteral("x"), 0.5}, {QStringLiteral("y"), 0.3}};
+        QVERIFY(objects->put(marker).isEmpty());
+        swak::Event user;
+        user.uid = QStringLiteral("ANDROID-8");
+        user.callsign = QStringLiteral("Golf");
+        user.type = QStringLiteral("a-f-G-U-C");
+        user.how = QStringLiteral("m-g");
+        user.origin = QStringLiteral("tak");
+        user.detail = QStringLiteral("<contact endpoint=\"*:-1:stcp\"/>");
+        user.time = user.start = QDateTime::currentDateTimeUtc();
+        user.stale = user.time.addSecs(600);
+        QVERIFY(window.store().accept(user).isEmpty());
+        contacts->rebuild();
+        const auto send = [&](bool accept) {
+            QTimer::singleShot(0, &window, [&window, accept] {
+                auto *dialog = visibleDialog(window, QStringLiteral("sendPackageDialog"));
+                if (!dialog) {
+                    return;
+                }
+                dialog->findChild<QListWidget *>(QStringLiteral("packageObjects"))
+                    ->item(0)
+                    ->setCheckState(Qt::Checked);
+                auto *people =
+                    dialog->findChild<QListWidget *>(QStringLiteral("packageRecipients"));
+                QCOMPARE(people->count(), 1);
+                QCOMPARE(people->item(0)->text(), QStringLiteral("Golf"));
+                people->item(0)->setCheckState(Qt::Checked);
+                accept ? dialog->accept() : dialog->reject();
+            });
+            click(QStringLiteral("sendPackage"));
+        };
+        sent = api.requests.size();
+        send(false);
+        QCOMPARE(api.requests.size(), sent);
+        uploadStatus = 500;
+        send(true);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return api.requests.size() > sent && api.requests.last().startsWith("POST ");
+            },
+            15000));
+        QVERIFY(waitFor(QStringLiteral("500")));
+        // The server entry has no connection, so the offer cannot go out after the upload.
+        uploadStatus = 200;
+        send(true);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return !label->text().contains(QStringLiteral("500")) &&
+                       !label->text().contains(QStringLiteral("…"));
+            },
+            15000));
+        QVERIFY(!label->text().contains(QStringLiteral("uploaded and offered")));
     }
     void chatPane()
     {
@@ -3519,16 +4235,7 @@ private slots:
     {
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
-        const bool native = QApplication::testAttribute(Qt::AA_DontUseNativeDialogs);
-        QApplication::setAttribute(Qt::AA_DontUseNativeDialogs, true);
-        struct RestoreDialogs
-        {
-            bool value;
-            ~RestoreDialogs()
-            {
-                QApplication::setAttribute(Qt::AA_DontUseNativeDialogs, value);
-            }
-        } restore{native};
+        const QtDialogs dialogs;
         swak::MarkerCollections collections(QPluginLoader::staticInstances());
         collections.setDirectory(directory.path());
         auto value = swak::coreMarkerCollection();

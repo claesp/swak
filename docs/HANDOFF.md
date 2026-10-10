@@ -1723,3 +1723,17 @@ Active Directory is out of scope for SWAK. The Samba directory image, `up --dire
 `tak_server.py test` now also signs in to the hub UI like a browser: it follows the redirect to Keycloak, posts the Keycloak form, and returns with the code. It checks the administrator, the viewer, a wrong password, and a wrong state value. The realm gives access tokens a lifetime of 10 seconds. After the expiry and the 60-second clock tolerance of the UI, the UI must refresh the token with the refresh token cookie and set a new one. With an invalid or no refresh token, it must sign the user out. Keycloak now runs with the fixed host name `swak-tak-keycloak`, because it refuses to refresh a token of another issuer.
 
 Direct federation passes 54 checks, the hub 76, and loopback 51. The hub and direct runs also pass under the sanitizers.
+
+# 2026-10-11: Coverage review and pane tests
+
+Coverage with the native GUI suite reached 93.7 percent of source lines and 95.8 percent of functions. Read the October 11 section of `docs/testing.md` for the remaining gaps. The coverage report now skips removed sources. Old objects of four removed plugins had made the report show them at 0 percent.
+
+New GUI tests run the Checklists, Reports, Missions, and Files panes against the local HTTPS server in `tests/https_harness.h`. The QUIC test also connects with PEM certificates and keys. The Python tests cover the command helpers of `tools/tak_server.py`.
+
+Fixes:
+
+- Report attachments always failed with "The file size limit is invalid." `readRegularFile` accepted at most 1 MiB. It now accepts `MaxRegularFileBytes`, 16 MiB, and a static check keeps the attachment limit within it.
+- Missions > Export ... hid an export error behind the download status.
+- An earlier commit added a Python cache file. It is removed, and Git ignores `__pycache__/`.
+
+The coverage, quick, GUI, and analysis modes passed. This review did not run the `--lan` mode, so LAN discovery stays a gap in this report.

@@ -1743,6 +1743,22 @@ private slots:
         QCOMPARE(file.write(QByteArray(MaxMessageBytes + 1, 'x')), MaxMessageBytes + 1);
         file.close();
         QVERIFY(!readEventFile(path).error.isEmpty());
+        // The limit must be positive and at most MaxRegularFileBytes. A file over its limit
+        // fails, and a file at its limit is read.
+        const QByteArray large(2 * 1024 * 1024, 'y');
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QCOMPARE(file.write(large), large.size());
+        file.close();
+        QCOMPARE(readRegularFile(path, MaxRegularFileBytes).bytes, large);
+        QCOMPARE(readRegularFile(path, large.size()).bytes, large);
+        QVERIFY(!readRegularFile(path, large.size() - 1).error.isEmpty());
+        for (const auto limit : {qsizetype{0}, qsizetype{-1}, MaxRegularFileBytes + 1}) {
+            const auto result = readRegularFile(path, limit);
+            QCOMPARE(result.error, QStringLiteral("The file size limit is invalid."));
+            QVERIFY(result.bytes.isEmpty());
+        }
+        QCOMPARE(readRegularFile(path + QChar::Null, 16).error,
+                 QStringLiteral("The file path contains a null character."));
     }
     void namespaceLimit()
     {
