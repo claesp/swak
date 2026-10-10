@@ -1677,3 +1677,9 @@ The paths that the previous section listed as untested now have tests:
 All 48 probe checks pass with OpenLDAP, with Active Directory, and through the hub. `docs/tak-compatibility.md` has the loss results. - Slow peers: a stream with 256 KiB of unsent data dropped new events without a count. The worker now adds these drops, and failed UDP sends, to the queue drop count in the status. The `slowPeer` server test covers it.
 
 A Windows AD server, hub group filters, and hub plugins remain untested.
+
+# 2026-10-10: Hub group filters and plugins
+
+The hub policy now has a group that is not interconnected and an edge that lets only `SwakTest` through. Both TAK Servers turn on federated group mapping, and server A also sends the group `Ops` from the new certificate user `swak-ops`. The probe check `federationGroupFilter` expects the hub to drop the `Ops` event and direct federation to deliver it. The hub also runs the plugin manager and the test plugin `tools/tak-server/hub/SwakHubPlugin.java` as an interceptor and a sender. `hubPluginIntercept` and `hubPluginSender` check their effects at the servers. `tak_server.py build` now also builds the plugin manager and the plugin SDK.
+
+Direct federation passes 49 checks, the hub 51, and loopback 46, also under the sanitizers. `docs/tak-compatibility.md` lists the hub behavior that the tests found, including SDK faults that the test policy avoids. Hub policies with several CA groups and receiver plugins remain untested.

@@ -14,7 +14,9 @@ import ssl
 import subprocess
 import sys
 import time
+import urllib.parse
 import urllib.request
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -58,7 +60,8 @@ PORTS = {8088: 18088, 8089: 18089, 8443: 18443, 8446: 18446}
 PORTS_B = {8089: 28089, 8443: 28443, 8446: 28446}
 # QUIC uses UDP.
 UDP_PORTS = {8090: 18090}
-CLIENTS = ("left", "right", "admin")
+# The ops client is only in the group Ops, which the hub policy does not let through.
+CLIENTS = ("left", "right", "admin", "ops")
 ENROLL_USER = "swak-enroll"
 ENROLL_PASSWORD = "swak-enroll-test"
 # Server B uses one of these directories over LDAPS. Each has a test user in the groups
@@ -104,6 +107,8 @@ DEPLOYMENT = WORK / "deployment.json"
 MULTICAST_INPUT = ("239.2.3.1", 6969)
 MULTICAST_OUTPUT = ("239.2.3.2", 6970)
 FEDERATION_GROUP = "SwakTest"
+# Server A also sends this group to its federate. The hub policy filters it out.
+FILTERED_GROUP = "Ops"
 
 
 def run(command, **options):
@@ -177,6 +182,8 @@ def build(_args):
         ":takserver-schemamanager:shadowJar",
         ":federation-hub-policy:bootJar",
         ":federation-hub-broker:bootJar",
+        ":federation-hub-plugin-manager:bootJar",
+        ":federation-hub-plugins:buildSDK",
         "-x",
         "test",
         "-x",
@@ -405,6 +412,8 @@ def write_users(run_dir, server):
             "</User>",
             f'<User identifier="swak-right" fingerprint="{fingerprint(CERTS / "right.pem")}" '
             'role="ROLE_ANONYMOUS"><groupList>SwakTest</groupList></User>',
+            f'<User identifier="swak-ops" fingerprint="{fingerprint(CERTS / "ops.pem")}" '
+            f'role="ROLE_ANONYMOUS"><groupList>{FILTERED_GROUP}</groupList></User>',
             f'<User identifier="{ENROLL_USER}" password="{bcrypt_hash(ENROLL_PASSWORD)}" '
             'passwordHashed="true" role="ROLE_ANONYMOUS"><groupList>SwakTest</groupList></User>',
         ]
@@ -516,27 +525,75 @@ def ca_group():
 
 
 def hub_policy():
-    """Return a hub policy with one interconnected group for the test CA."""
+    """Return the hub policy for the test CA group.
+
+    The group is not interconnected. One edge from the group to itself lets only the group
+    SwakTest through, so the hub drops events of the group Ops. The plugin entries enable the
+    SWAK test interceptor and sender for every federate.
+    """
     group = ca_group()
-    cell = {
-        "graphType": "GroupCell",
-        "id": "swak-test-ca",
-        "type": "bpmn.Activity",
-        "roger_federation": {
-            "name": group,
-            "description": "SWAK Test CA",
-            "attributes": [],
-            "interconnected": True,
-            "groupFilters": [],
-            "type": "Group",
-            "stringId": "SWAK Test CA",
+    cells = [
+        {
+            "graphType": "GroupCell",
+            "id": "swak-test-ca",
+            "type": "bpmn.Activity",
+            "roger_federation": {
+                "name": group,
+                "description": "SWAK Test CA",
+                "attributes": [],
+                "interconnected": False,
+                "groupFilters": [],
+                "type": "Group",
+                "stringId": "SWAK Test CA",
+            },
         },
-    }
+        {
+            "graphType": "EdgeCell",
+            "id": "swak-test-filter",
+            "type": "bpmn.Flow",
+            "source": {"id": "swak-test-ca"},
+            "target": {"id": "swak-test-ca"},
+            "roger_federation": {
+                "name": "SWAK Test CA -> SWAK Test CA",
+                "groupsFilterType": "allowed",
+                "allowedGroups": [FEDERATION_GROUP],
+                "disallowedGroups": [],
+                "edgeFilters": [],
+                "type": "Federate Policy",
+            },
+        },
+    ]
+
+    def plugin(name, send, receive):
+        # The hub fails on missing lists, so every list is present.
+        return {
+            "pluginName": name,
+            "sendTo": [],
+            "dontSend": [],
+            "receiveFrom": [],
+            "dontReceive": [],
+            "sendByDefault": send,
+            "receiveByDefault": receive,
+            "disabled": False,
+        }
+
     return {
         "name": "swak",
-        "federate_edges": [],
-        "groups": [{"uid": group, "interconnected": True}],
-        "additionalData": {"uiData": {"name": "swak", "description": "SWAK test", "cells": [cell]}},
+        "federate_edges": [
+            {
+                "source": group,
+                "destination": group,
+                "groupsFilterType": "allowed",
+            }
+        ],
+        "groups": [{"uid": group, "interconnected": False}],
+        "additionalData": {"uiData": {"name": "swak", "description": "SWAK test", "cells": cells}},
+        "pluginsData": {
+            "plugins": [
+                plugin("swak-interceptor", False, True),
+                plugin("swak-sender", True, False),
+            ]
+        },
     }
 
 
@@ -545,6 +602,8 @@ def prepare_hub():
     jars = {
         "federation-hub-policy.jar": SOURCE / "src" / "federation-hub-policy",
         "federation-hub-broker.jar": SOURCE / "src" / "federation-hub-broker",
+        "federation-hub-plugin-manager.jar": SOURCE / "src" / "federation-hub-plugin-manager",
+        "federation-hub-plugins-sdk.jar": SOURCE / "src" / "federation-hub-plugins",
     }
     (HUB_RUN / "jars").mkdir(parents=True, exist_ok=True)
     (HUB_RUN / "configs").mkdir(exist_ok=True)
@@ -554,6 +613,19 @@ def prepare_hub():
             sys.exit("Run build again. The federation hub jars are missing.")
         shutil.copy2(built, HUB_RUN / "jars" / name)
     shutil.copy2(TEMPLATES / "hub" / "start.sh", HUB_RUN / "start.sh")
+    (HUB_RUN / "plugins").mkdir(exist_ok=True)
+    shutil.copy2(
+        TEMPLATES / "hub" / "SwakHubPlugin.java", HUB_RUN / "plugins" / "SwakHubPlugin.java"
+    )
+    # The plugins need Ignite and its dependencies. The plugin manager jar holds them.
+    libraries = HUB_RUN / "plugin-lib"
+    shutil.rmtree(libraries, ignore_errors=True)
+    libraries.mkdir()
+    with zipfile.ZipFile(HUB_RUN / "jars" / "federation-hub-plugin-manager.jar") as archive:
+        for entry in archive.infolist():
+            name = entry.filename
+            if name.startswith("BOOT-INF/lib/") and name.endswith(".jar") and "/" not in name[13:]:
+                (libraries / name[13:]).write_bytes(archive.read(entry))
     shutil.copy2(
         TEMPLATES / "hub" / "federation-hub-broker.yml",
         HUB_RUN / "configs" / "federation-hub-broker.yml",
@@ -582,7 +654,7 @@ def wait_port(port, seconds, tls=False):
     return False
 
 
-def admin_request(port, path, body=None):
+def admin_request(port, path, body=None, method=None):
     """Send a REST request as the test administrator and return the decoded JSON reply."""
     context = ssl.create_default_context(cafile=str(CERTS / "ca.pem"))
     context.load_cert_chain(str(CERTS / "admin.pem"), str(CERTS / "admin.key"))
@@ -590,7 +662,7 @@ def admin_request(port, path, body=None):
     request = urllib.request.Request(
         f"https://localhost:{port}/Marti{path}",
         data=data,
-        method="GET" if body is None else "POST",
+        method=method or ("GET" if body is None else "POST"),
         headers={"Content-Type": "application/json"},
     )
     with urllib.request.urlopen(request, context=context, timeout=20) as reply:
@@ -609,16 +681,43 @@ def federate(seconds):
                 except OSError:
                     federates = []
                 if federates:
-                    pending[port] = federates[0]["id"]
+                    pending[port] = federates[0]
         time.sleep(3)
     if None in pending.values():
         sys.exit("The servers did not federate. Read the messaging logs.")
-    for port, federate_id in pending.items():
+    # Group mapping makes the servers send the group names of each event, which the hub
+    # policy filters. Each server maps the received names to its local SwakTest.
+    remote_groups = {
+        PORTS[8443]: [FEDERATION_GROUP],
+        PORTS_B[8443]: [FEDERATION_GROUP, FILTERED_GROUP],
+    }
+    for port, federate in pending.items():
+        federate_id = federate["id"]
         admin_request(
             port,
             "/api/federategroups",
             {"federateId": federate_id, "group": FEDERATION_GROUP, "direction": "BOTH"},
         )
+        admin_request(
+            port, "/api/federatedetails", {**federate, "federatedGroupMapping": True}, "PUT"
+        )
+        for remote in remote_groups[port]:
+            query = urllib.parse.urlencode({"remoteGroup": remote, "localGroup": FEDERATION_GROUP})
+            admin_request(
+                port,
+                f"/api/federategroupsmap/{urllib.parse.quote(federate_id, safe='')}?{query}",
+                {},
+            )
+    # Server A also sends Ops. Without the hub filter, the server B user receives Ops events.
+    admin_request(
+        PORTS[8443],
+        "/api/federategroups",
+        {
+            "federateId": pending[PORTS[8443]]["id"],
+            "group": FILTERED_GROUP,
+            "direction": "OUTBOUND",
+        },
+    )
     print("Server A and server B federate the group", FEDERATION_GROUP)
 
 
@@ -788,16 +887,28 @@ def status(_args):
         print(f"port {outside} ({inside}):", "open" if wait_port(outside, 1) else "closed")
 
 
+def deployment():
+    """Return the directory and federation mode of the running deployment."""
+    try:
+        data = json.loads(DEPLOYMENT.read_text())
+    except (OSError, ValueError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    directory = data.get("directory")
+    federation = data.get("federation")
+    return {
+        "directory": directory if directory in DIRECTORIES else "openldap",
+        "federation": federation if federation in ("direct", "hub") else "direct",
+    }
+
+
 def deployed_directory():
     """Return the directory of the running deployment."""
-    try:
-        name = json.loads(DEPLOYMENT.read_text()).get("directory", "openldap")
-    except (OSError, ValueError):
-        name = "openldap"
-    return name if name in DIRECTORIES else "openldap"
+    return deployment()["directory"]
 
 
-def profile(bridge, load=None, directory="openldap"):
+def profile(bridge, load=None, directory="openldap", federation="direct"):
     """Write the probe profile with the test credentials.
 
     A bridge profile uses the container addresses. The probe then runs in the rootless network
@@ -828,6 +939,7 @@ def profile(bridge, load=None, directory="openldap"):
         "left": client("left"),
         "right": client("right"),
         "admin": client("admin"),
+        "ops": client("ops"),
         "plain": {"protocol": "stcp", "host": host(SERVER), "port": port(SERVER, 8088)},
         "quic": client("left", "quic", 8090),
         "enrollment": {
@@ -841,6 +953,8 @@ def profile(bridge, load=None, directory="openldap"):
             "apiPort": port(SERVER_B, 8443),
             "ca": str(CERTS / "ca.pem"),
             "group": DIRECTORIES[directory]["group"],
+            # Through the hub, the policy drops the Ops events and the test plugins run.
+            "hub": federation == "hub",
             "enrollment": {
                 "port": port(SERVER_B, 8446),
                 "username": DIRECTORIES[directory]["user"],
@@ -866,14 +980,15 @@ def run_probe(args, report, load=None):
     probe = ROOT / "build" / args.preset / "swak_tak_compat"
     if not probe.exists():
         sys.exit(f"Build swak_tak_compat with the {args.preset} preset first.")
-    directory = deployed_directory()
+    state = deployment()
+    directory = state["directory"]
     environment = dict(
         os.environ,
         SWAK_COT_ENROLL=ENROLL_PASSWORD,
         SWAK_COT_LDAP=DIRECTORIES[directory]["password"],
         QT_QPA_PLATFORM="offscreen",
     )
-    command = [str(probe), str(profile(not args.loopback, load, directory))]
+    command = [str(probe), str(profile(not args.loopback, load, directory, state["federation"]))]
     if not args.loopback:
         command = ["podman", "unshare", "--rootless-netns", *command]
     loss = getattr(args, "loss", 0) or getattr(args, "delay", 0)

@@ -89,6 +89,113 @@ qint64 residentKiB()
     const auto value = found->mid(6).trimmed().split(' ').value(0).toLongLong(&ok);
     return ok ? value : -1;
 }
+using Record = std::function<void(const QString &, bool, const QString &)>;
+const Event *find(const Store &store, const QString &uid)
+{
+    const auto found =
+        std::find_if(store.events().cbegin(), store.events().cend(), [&uid](const Event &event) {
+            return event.uid == uid;
+        });
+    return found == store.events().cend() ? nullptr : &*found;
+}
+// Server A sends the groups SwakTest and Ops to its federate. Through the hub, the policy lets
+// only SwakTest through. In direct federation, server B also delivers Ops events, which shows
+// that the hub, not the servers, drops them.
+void groupFilterCheck(Servers &right,
+                      const Store &remote,
+                      const Event &a,
+                      const QJsonObject &profile,
+                      const Record &record)
+{
+    const auto opsProfile = profile.value(QStringLiteral("ops")).toObject();
+    if (opsProfile.isEmpty()) {
+        return;
+    }
+    const bool hub = profile.value(QStringLiteral("federation"))
+                         .toObject()
+                         .value(QStringLiteral("hub"))
+                         .toBool();
+    Store opsStore;
+    Servers ops(opsStore);
+    auto entry = serverDefaults();
+    for (auto it = opsProfile.begin(); it != opsProfile.end(); ++it) {
+        entry.insert(it.key(), it.value());
+    }
+    entry.insert(QStringLiteral("name"), QStringLiteral("Ops"));
+    entry.insert(QStringLiteral("enabled"), true);
+    const auto error = ops.put(QStringLiteral("test"), entry);
+    const bool ready = error.isEmpty() && QTest::qWaitFor(
+                                              [&] {
+                                                  return connected(ops, QStringLiteral("test"));
+                                              },
+                                              Wait);
+    auto allowed = a;
+    allowed.uid += QStringLiteral("-ALLOWED");
+    allowed.callsign = QStringLiteral("SWAK TEST ALLOWED");
+    auto blocked = a;
+    blocked.uid += QStringLiteral("-OPS");
+    blocked.callsign = QStringLiteral("SWAK TEST OPS");
+    // The allowed event shows that the path works. Then the Ops event gets enough time.
+    const bool allowedArrived = ready && sendUntil(
+                                             right,
+                                             allowed,
+                                             [&] {
+                                                 return has(remote, allowed.uid);
+                                             },
+                                             3 * Wait);
+    const bool blockedArrived = ready && sendUntil(
+                                             ops,
+                                             blocked,
+                                             [&] {
+                                                 return has(remote, blocked.uid);
+                                             },
+                                             hub ? 12000 : 3 * Wait);
+    record(QStringLiteral("federationGroupFilter"),
+           allowedArrived && blockedArrived != hub,
+           QStringLiteral("%1; SwakTest event %2; Ops event %3")
+                   .arg(hub ? QStringLiteral("hub policy") : QStringLiteral("direct, no filter"),
+                        allowedArrived ? QStringLiteral("delivered") : QStringLiteral("missing"),
+                        blockedArrived ? QStringLiteral("delivered") : QStringLiteral("dropped")) +
+               (ready ? QString{}
+                      : QStringLiteral("; ") + error + ops.status(QStringLiteral("test"))));
+}
+// The SWAK test plugins of the hub rename events with the suffix -PLUGIN and send their own
+// event to every federate.
+void hubPluginChecks(Servers &left,
+                     const Store &leftStore,
+                     const Store &remote,
+                     const Event &a,
+                     const Record &record)
+{
+    auto marked = a;
+    marked.uid += QStringLiteral("-PLUGIN");
+    marked.callsign = QStringLiteral("SWAK TEST PLUGIN");
+    const auto expected = QStringLiteral("SWAK HUB PLUGIN");
+    const bool renamed = sendUntil(
+        left,
+        marked,
+        [&] {
+            const auto *event = find(remote, marked.uid);
+            return event && event->callsign == expected;
+        },
+        3 * Wait);
+    const auto *received = find(remote, marked.uid);
+    record(QStringLiteral("hubPluginIntercept"),
+           renamed,
+           received ? QStringLiteral("callsign: ") + received->callsign
+                    : QStringLiteral("no event"));
+    const auto uid = QStringLiteral("SWAK-HUB-PLUGIN-SENDER");
+    const bool sent = QTest::qWaitFor(
+        [&] {
+            return has(remote, uid) && has(leftStore, uid);
+        },
+        3 * Wait);
+    record(QStringLiteral("hubPluginSender"),
+           sent,
+           QStringLiteral("server A %1, server B %2")
+               .arg(has(leftStore, uid) ? QStringLiteral("received") : QStringLiteral("missing"),
+                    has(remote, uid) ? QStringLiteral("received") : QStringLiteral("missing")));
+}
 } // namespace
 
 EnrolledClient enrollClient(Servers &servers,
@@ -253,9 +360,12 @@ void runNetworkChecks(Servers &left,
             record(QStringLiteral("federationOutbound"),
                    outbound,
                    outbound ? QString{} : QStringLiteral("server B did not deliver the event"));
+            groupFilterCheck(right, store, a, profile, record);
+            if (federation.value(QStringLiteral("hub")).toBool()) {
+                hubPluginChecks(left, leftStore, store, a, record);
+            }
         }
     }
-    static_cast<void>(right);
 }
 
 QJsonObject runLoad(Servers &left, const Servers &right, Store &rightStore, const QJsonObject &load)

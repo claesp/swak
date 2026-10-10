@@ -107,6 +107,24 @@ class ProfileTest(unittest.TestCase):
         # The profile names environment variables, never passwords.
         self.assertNotIn(tak_server.DIRECTORIES["ad"]["password"], json.dumps(data))
 
+    def test_hub_profile(self):
+        data = json.loads(tak_server.profile(True, federation="hub").read_text())
+        self.assertTrue(data["federation"]["hub"])
+        self.assertTrue(data["ops"]["certificate"].endswith("ops.pem"))
+        data = json.loads(tak_server.profile(True).read_text())
+        self.assertFalse(data["federation"]["hub"])
+
+    def test_deployment(self):
+        with patch.object(tak_server, "DEPLOYMENT", Path(self.directory.name) / "d.json"):
+            default = {"directory": "openldap", "federation": "direct"}
+            self.assertEqual(tak_server.deployment(), default)
+            tak_server.DEPLOYMENT.write_text('{"directory": "ad", "federation": "hub"}')
+            self.assertEqual(tak_server.deployment(), {"directory": "ad", "federation": "hub"})
+            tak_server.DEPLOYMENT.write_text('{"federation": "mesh"}')
+            self.assertEqual(tak_server.deployment(), default)
+            tak_server.DEPLOYMENT.write_text("[1]")
+            self.assertEqual(tak_server.deployment(), default)
+
     def test_deployed_directory(self):
         with patch.object(tak_server, "DEPLOYMENT", Path(self.directory.name) / "d.json"):
             self.assertEqual(tak_server.deployed_directory(), "openldap")
@@ -155,11 +173,28 @@ class HubTest(unittest.TestCase):
                 policy = tak_server.hub_policy()
         # The hub names a CA group by the RFC 2253 issuer and the lowercase SHA-256 hex.
         self.assertEqual(group, "CN=SWAK Test CA,O=SWAK Test-" + hashlib.sha256(der).hexdigest())
-        self.assertEqual(policy["groups"], [{"uid": group, "interconnected": True}])
-        cell = policy["additionalData"]["uiData"]["cells"][0]
+        # Filters apply only between groups that are not interconnected.
+        self.assertEqual(policy["groups"], [{"uid": group, "interconnected": False}])
+        cell, edge = policy["additionalData"]["uiData"]["cells"]
         self.assertEqual(cell["graphType"], "GroupCell")
         self.assertEqual(cell["roger_federation"]["name"], group)
-        self.assertTrue(cell["roger_federation"]["interconnected"])
+        self.assertFalse(cell["roger_federation"]["interconnected"])
+        # One edge from the group to itself lets only SwakTest through.
+        self.assertEqual(edge["graphType"], "EdgeCell")
+        self.assertEqual(edge["source"], {"id": cell["id"]})
+        self.assertEqual(edge["target"], {"id": cell["id"]})
+        self.assertEqual(edge["roger_federation"]["groupsFilterType"], "allowed")
+        self.assertEqual(edge["roger_federation"]["allowedGroups"], [tak_server.FEDERATION_GROUP])
+        self.assertNotIn(tak_server.FILTERED_GROUP, json.dumps(edge))
+        # The hub fails on a missing plugin list, so each entry has every list.
+        plugins = {item["pluginName"]: item for item in policy["pluginsData"]["plugins"]}
+        self.assertEqual(set(plugins), {"swak-interceptor", "swak-sender"})
+        for item in plugins.values():
+            for key in ("sendTo", "dontSend", "receiveFrom", "dontReceive"):
+                self.assertEqual(item[key], [])
+            self.assertFalse(item["disabled"])
+        self.assertTrue(plugins["swak-interceptor"]["receiveByDefault"])
+        self.assertTrue(plugins["swak-sender"]["sendByDefault"])
 
 
 class LoadTest(unittest.TestCase):
