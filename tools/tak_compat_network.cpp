@@ -9,10 +9,12 @@
 #include "tak_compat_features.h"
 #include "tak_load_meter.h"
 
+#include <QCryptographicHash>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QRandomGenerator>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
@@ -31,6 +33,9 @@ constexpr int ResendMs = 2000;
 // seconds. The messaging process adds stream and federated content, so the API process can
 // show an old mission until its cache entry ends. Mission checks wait longer than that.
 constexpr int MissionCacheWait = 150000;
+// Mission file sizes around the hub replay limit in tools/tak-server/hub.
+constexpr qsizetype MissionSmallFile = 1024;
+constexpr qsizetype MissionLargeFile = 16384;
 
 bool connected(const Servers &servers, const QString &id)
 {
@@ -219,7 +224,9 @@ void missionFederationCheck(Servers &left,
                             const QString &check = QStringLiteral("missionFederation"),
                             const Hook &disconnect = {},
                             const Hook &reconnect = {},
-                            bool expectMissing = false)
+                            bool expectMissing = false,
+                            const QString &filesCheck = {},
+                            bool expectLarge = true)
 {
     TakServerApi leftApi(left, network);
     Identity leftIdentity, remoteIdentity;
@@ -254,6 +261,48 @@ void missionFederationCheck(Servers &left,
     const auto added =
         joined ? leftMissions.addEvent(QStringLiteral("test"), name, object)
                : QStringLiteral("server A did not create the mission: ") + replyText(created);
+    // Server A also adds a small and a large file. The hub replays only files up to its size
+    // limit of 4096 bytes. The live path and server A send both.
+    QByteArray small(MissionSmallFile, Qt::Uninitialized),
+        large(MissionLargeFile, Qt::Uninitialized);
+    for (auto *file : {&small, &large}) {
+        std::generate(file->begin(), file->end(), [] {
+            return static_cast<char>(QRandomGenerator::global()->bounded(256));
+        });
+    }
+    const auto hash = [](const QByteArray &bytes) {
+        return QString::fromLatin1(
+            QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
+    };
+    QString filesError;
+    if (!filesCheck.isEmpty() && added.isEmpty()) {
+        for (const auto *file : {&small, &large}) {
+            const auto uploaded =
+                call(leftApi,
+                     "POST",
+                     QStringLiteral("/sync/upload?name=%1-%2.bin&creatorUid=%3")
+                         .arg(name,
+                              file == &small ? QStringLiteral("small") : QStringLiteral("large"),
+                              a.uid),
+                     *file,
+                     "application/octet-stream");
+            if (!uploaded.ok()) {
+                filesError = QStringLiteral("upload: ") + replyText(uploaded);
+            }
+        }
+        const auto body = QJsonDocument(QJsonObject{{QStringLiteral("hashes"),
+                                                     QJsonArray{hash(small), hash(large)}}})
+                              .toJson(QJsonDocument::Compact);
+        const auto contents =
+            call(leftApi,
+                 "PUT",
+                 QStringLiteral("/api/missions/%1/contents?creatorUid=%2").arg(name, a.uid),
+                 body,
+                 "application/json");
+        if (filesError.isEmpty() && !contents.ok()) {
+            filesError = QStringLiteral("add files: ") + replyText(contents);
+        }
+    }
     // Give server A or the hub time to keep the change, then restore the federation.
     QString restored;
     if (reconnect) {
@@ -286,6 +335,66 @@ void missionFederationCheck(Servers &left,
                                    return mission->objects > 0 && has(remoteStore, object.uid);
                                },
                                MissionCacheWait);
+    // The files: wait for the small one, and for the large one when it must arrive. When it must
+    // not arrive, give it the same time again. Then compare the bytes from server B.
+    if (!filesCheck.isEmpty()) {
+        const auto listed = [&](const QByteArray &bytes) {
+            const auto *subscription = remoteMissions.subscription(QStringLiteral("enroll"), name);
+            return subscription && std::any_of(subscription->files.cbegin(),
+                                               subscription->files.cend(),
+                                               [&](const MissionFile &file) {
+                                                   return file.hash == hash(bytes);
+                                               });
+        };
+        const auto refresh = [&] {
+            remoteMissions.reload(QStringLiteral("enroll"), name);
+            QTest::qWait(1500);
+        };
+        QElapsedTimer filesTime;
+        filesTime.start();
+        const bool smallListed = federated && filesError.isEmpty() &&
+                                 QTest::qWaitFor(
+                                     [&] {
+                                         refresh();
+                                         return listed(small) && (!expectLarge || listed(large));
+                                     },
+                                     MissionCacheWait);
+        const auto waited = filesTime.elapsed();
+        if (smallListed && !expectLarge) {
+            static_cast<void>(QTest::qWaitFor(
+                [&] {
+                    refresh();
+                    return listed(large);
+                },
+                static_cast<int>(std::max<qint64>(10000, waited))));
+        }
+        const auto content = [&](const QByteArray &bytes) {
+            return call(remoteApi,
+                        "GET",
+                        QStringLiteral("/sync/content?hash=") + hash(bytes),
+                        {},
+                        {},
+                        QStringLiteral("enroll"))
+                .body;
+        };
+        const bool smallSame = smallListed && content(small) == small;
+        const bool largeListed = listed(large);
+        const bool largeSame = largeListed && content(large) == large;
+        const bool passed = smallSame && (expectLarge ? largeSame : !largeListed);
+        record(filesCheck,
+               passed,
+               filesError.isEmpty()
+                   ? QStringLiteral("small file %1, large file %2, expected large file %3, %4 s")
+                         .arg(smallSame ? QStringLiteral("same bytes")
+                                        : (smallListed ? QStringLiteral("other bytes")
+                                                       : QStringLiteral("missing")),
+                              largeSame ? QStringLiteral("same bytes")
+                                        : (largeListed ? QStringLiteral("other bytes")
+                                                       : QStringLiteral("missing")),
+                              expectLarge ? QStringLiteral("yes") : QStringLiteral("no"))
+                         .arg(waited / 1000)
+                   : filesError);
+    }
     const auto *mission = remoteMissions.subscription(QStringLiteral("enroll"), name);
     // On a failure, also show what server B answers now, without the SWAK mission code.
     QString direct;
@@ -468,7 +577,11 @@ void missionDisruptionCheck(Servers &left,
         },
         [&] {
             return set(true, QStringLiteral("CONNECTED"));
-        });
+        },
+        false,
+        QStringLiteral("missionDisruptionFiles"),
+        // The hub replays only files up to its size limit. Server A sends every file.
+        !federation.value(QStringLiteral("hub")).toBool());
     // Leave the federation connected for later runs, also after a failure.
     if (state() != u"CONNECTED") {
         static_cast<void>(set(true, QStringLiteral("CONNECTED")));
@@ -734,7 +847,8 @@ void runNetworkChecks(Servers &left,
                                           : QStringLiteral("missionFederation"),
                                    {},
                                    {},
-                                   replay);
+                                   replay,
+                                   replay ? QString{} : QStringLiteral("missionFiles"));
             hubTokenChecks(profile, network, record);
             if (federation.value(QStringLiteral("hub")).toBool()) {
                 hubPluginChecks(left, remote, leftStore, store, a, federation, record);

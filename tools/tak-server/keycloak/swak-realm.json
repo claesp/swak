@@ -1,0 +1,57 @@
+{
+  "realm": "swak",
+  "enabled": true,
+  "sslRequired": "external",
+  "roles": {
+    "realm": [
+      {"name": "hub-admin", "description": "SWAK test administrator of the federation hub UI"}
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "swak-hub",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "swak-hub-test-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["https://localhost:19104/api/oauth/login/redirect"],
+      "protocolMappers": [
+        {
+          "name": "swak roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "swak_roles",
+            "multivalued": "true",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "swak-hub-admin",
+      "enabled": true,
+      "email": "swak-hub-admin@swak.test",
+      "emailVerified": true,
+      "firstName": "SWAK",
+      "lastName": "Admin",
+      "credentials": [{"type": "password", "value": "swak-hub-admin-test", "temporary": false}],
+      "realmRoles": ["hub-admin"]
+    },
+    {
+      "username": "swak-hub-viewer",
+      "enabled": true,
+      "email": "swak-hub-viewer@swak.test",
+      "emailVerified": true,
+      "firstName": "SWAK",
+      "lastName": "Viewer",
+      "credentials": [{"type": "password", "value": "swak-hub-viewer-test", "temporary": false}]
+    }
+  ]
+}

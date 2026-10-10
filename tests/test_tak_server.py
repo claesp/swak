@@ -341,6 +341,7 @@ class HubOptionsTest(unittest.TestCase):
         self.assertEqual(template.count("missionFederationDisruptionEnabled: true"), 1)
         self.assertIn(f"dbHost: {tak_server.HUB_DB}", template)
         self.assertIn(f"port: {tak_server.HUB_TOKEN_PORT}", template)
+        self.assertIn("missionFederationDisruptionMaxFileSizeBytes: 4096", template)
 
     def test_disruption_checks(self):
         for output, passed in (("27", True), ("0", False), ("", False), ("error", False)):
@@ -365,6 +366,91 @@ class HubOptionsTest(unittest.TestCase):
             # Replay applies only to the hub. Direct federation turns off the link to server A.
             self.assertFalse(data["federation"]["hubDisruption"])
             self.assertEqual(data["federation"]["outgoing"], "swak-a")
+
+
+class HubOAuthTest(unittest.TestCase):
+    def test_checks(self):
+        statuses = {
+            ("/api/isAdmin", "a.b.c"): (200, ""),
+            ("/api/isAdmin", "v.w.x"): (403, ""),
+            ("/api/isAdmin", "a.b.A"): (401, ""),
+            ("/api/isAdmin", None): (401, ""),
+            ("/api/oauth/login/auth", None): (
+                302,
+                f"https://{tak_server.KEYCLOAK}:8443/realms/swak/protocol/openid-connect/auth?"
+                "response_type=code&client_id=swak-hub",
+            ),
+        }
+        tokens = {tak_server.OAUTH_ADMIN: "a.b.c", tak_server.OAUTH_VIEWER: "v.w.x"}
+        with (
+            patch.object(tak_server, "oauth_token", side_effect=tokens.get),
+            patch.object(
+                tak_server,
+                "oauth_status",
+                side_effect=lambda path, token=None: statuses[(path, token)],
+            ),
+        ):
+            checks = tak_server.hub_oauth_checks()
+        self.assertEqual(
+            set(checks),
+            {
+                "hubOAuthToken",
+                "hubOAuthAdmin",
+                "hubOAuthNotAdmin",
+                "hubOAuthTampered",
+                "hubOAuthNoToken",
+                "hubOAuthLoginRedirect",
+            },
+        )
+        self.assertTrue(all(check["passed"] for check in checks.values()), checks)
+
+    def test_wrong_answers_fail(self):
+        # An administrator token that the UI refuses, and a redirect to another server.
+        with (
+            patch.object(tak_server, "oauth_token", return_value="a.b.c"),
+            patch.object(tak_server, "oauth_status", return_value=(302, "https://elsewhere/")),
+        ):
+            checks = tak_server.hub_oauth_checks()
+        self.assertFalse(checks["hubOAuthAdmin"]["passed"])
+        self.assertFalse(checks["hubOAuthLoginRedirect"]["passed"])
+        # Without tokens, only the token check remains, and it fails.
+        with patch.object(tak_server, "oauth_token", side_effect=OSError("refused")):
+            checks = tak_server.hub_oauth_checks()
+        self.assertEqual(list(checks), ["hubOAuthToken"])
+        self.assertFalse(checks["hubOAuthToken"]["passed"])
+
+    def test_configuration(self):
+        # The UI must find all eight Keycloak values, or it does not open the OAuth port.
+        text = (tak_server.TEMPLATES / "hub" / "federation-hub-ui.yml").read_text()
+        values = dict(
+            line.split(": ", 1) for line in text.splitlines() if ": " in line and line[0] != "#"
+        )
+        self.assertEqual(values["allowOauth"], "true")
+        self.assertEqual(values["oauthPort"], "9104")
+        self.assertEqual(values["keycloakClientId"], tak_server.OAUTH_CLIENT[0])
+        self.assertEqual(values["keycloakSecret"], tak_server.OAUTH_CLIENT[1])
+        self.assertIn(
+            f"{tak_server.HUB_OAUTH_PORT}/api/oauth/login/redirect", values["keycloakrRedirectUri"]
+        )
+        for key in (
+            "keycloakAdminClaimValue",
+            "keycloakConfigurationEndpoint",
+            "keycloakClaimName",
+            "keycloakTlsCertFile",
+            "keycloakServerName",
+        ):
+            self.assertTrue(values.get(key), key)
+        realm = json.loads((tak_server.TEMPLATES / "keycloak" / "swak-realm.json").read_text())
+        client = realm["clients"][0]
+        self.assertEqual((client["clientId"], client["secret"]), tak_server.OAUTH_CLIENT)
+        self.assertIn(values["keycloakrRedirectUri"], client["redirectUris"])
+        mapper = client["protocolMappers"][0]["config"]
+        self.assertEqual(mapper["claim.name"], values["keycloakClaimName"])
+        users = {user["username"]: user for user in realm["users"]}
+        self.assertEqual(
+            users[tak_server.OAUTH_ADMIN[0]]["realmRoles"], [values["keycloakAdminClaimValue"]]
+        )
+        self.assertNotIn("realmRoles", users[tak_server.OAUTH_VIEWER[0]])
 
 
 class LoadTest(unittest.TestCase):

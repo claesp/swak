@@ -34,7 +34,8 @@ missionFederationDBRetentionDays: 7
 missionFederationRecencySeconds: 43200
 # The hub keeps mission changes and replays them when a federate connects again.
 missionFederationDisruptionEnabled: true
-missionFederationDisruptionMaxFileSizeBytes: 200
+# The hub replays files only up to this size in bytes. The probe uses one file below and one above.
+missionFederationDisruptionMaxFileSizeBytes: 4096
 # Federates with a token connect to this port without a client certificate.
 federationTokenAuthServers:
   - type: jwt

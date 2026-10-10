@@ -1707,3 +1707,11 @@ Manual hub tokens from the hub UI and hub disruption tolerance with MongoDB rema
 `--hub-disruption` starts MongoDB and turns on the hub replay. The new check `missionDisruption` turns off the outgoing connection of server B, changes a mission on server A, and turns it on again. Server B then has the change: from server A in direct federation, and from the hub replay with `--hub-disruption`. The hub has a fault: after the replay, it completes the mission stream of the federate, and TAK Server does not open it again. Live mission changes then stop. `hubReplayStopsLiveMissions` records this fault and fails when it is gone. Replay is off by default for this reason.
 
 Direct federation passes 52 checks, the hub 62, the hub with a manual token and replay 64, and loopback 49. The hub with replay and direct federation also pass under the sanitizers. Hub OAuth sign-in and the replay of mission files remain untested.
+
+# 2026-10-10: Hub OAuth and mission file replay
+
+In hub mode, `up` also starts Keycloak 26.0 with the test realm `tools/tak-server/keycloak/swak-realm.json`, and the hub UI opens its OAuth port. After the probe, `test` gets tokens with the password grant and checks `/api/isAdmin`: 200 for the administrator, 403 without the role `hub-admin`, 401 for a changed signature and without a token. It also checks that the interactive sign-in redirects to Keycloak. The UI reads the token only from the `access_token` cookie and checks neither the issuer nor the audience.
+
+The mission checks now also add a 1024-byte and a 16384-byte file on server A. `missionFiles` expects both on server B with the same bytes. `missionDisruptionFiles` expects both after the reconnect in direct federation, and only the small one through the hub replay, because the broker configuration limits replayed files to 4096 bytes. The hub log calls this byte limit MB, and the shipped configuration sets 200.
+
+Direct federation passes 54 checks, the hub 69, the hub with replay 71, and loopback 51. The hub with replay and direct federation also pass under the sanitizers. The browser part of the OAuth sign-in and token refresh remain untested.

@@ -14,6 +14,7 @@ import ssl
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
@@ -55,7 +56,16 @@ HUB_UI_PORT = 19100
 # The hub keeps mission changes in this MongoDB for replay after a disconnect.
 HUB_DB = "swak-tak-hub-db"
 MONGO_IMAGE = "docker.io/library/mongo:6.0"
-CONTAINERS = (SERVER, SERVER_B, DATABASE, DATABASE_B, LDAP, HUB, HUB_DB)
+# The hub UI also admits OAuth users of this Keycloak test realm on its OAuth port. The realm
+# file tools/tak-server/keycloak/swak-realm.json holds the users and the client.
+KEYCLOAK = "swak-tak-keycloak"
+KEYCLOAK_IMAGE = "quay.io/keycloak/keycloak:26.0"
+KEYCLOAK_PORT = 18543
+HUB_OAUTH_PORT = 19104
+OAUTH_CLIENT = ("swak-hub", "swak-hub-test-secret")
+OAUTH_ADMIN = ("swak-hub-admin", "swak-hub-admin-test")
+OAUTH_VIEWER = ("swak-hub-viewer", "swak-hub-viewer-test")
+CONTAINERS = (SERVER, SERVER_B, DATABASE, DATABASE_B, LDAP, HUB, HUB_DB, KEYCLOAK)
 # A fixed subnet lets the server certificates name the container addresses.
 SUBNET = "10.89.77.0/24"
 GATEWAY = "10.89.77.1"
@@ -65,6 +75,7 @@ ADDRESS = {
     LDAP: "10.89.77.12",
     HUB: "10.89.77.13",
     HUB_DB: "10.89.77.14",
+    KEYCLOAK: "10.89.77.15",
     # Fixed database addresses keep dynamic allocation away from the addresses above.
     DATABASE: "10.89.77.20",
     DATABASE_B: "10.89.77.21",
@@ -342,6 +353,12 @@ def certs(_args):
     )
     for client in CLIENTS:
         issue(client, f"/O=SWAK Test/CN=swak-{client}", "extendedKeyUsage=clientAuth\n")
+    issue(
+        "keycloak",
+        f"/O=SWAK Test/CN={KEYCLOAK}",
+        f"subjectAltName=DNS:{KEYCLOAK},DNS:localhost,IP:{ADDRESS[KEYCLOAK]},IP:127.0.0.1\n"
+        "extendedKeyUsage=serverAuth\n",
+    )
     issue(
         "ldap",
         f"/O=SWAK Test/CN={LDAP}",
@@ -924,6 +941,8 @@ def start_hub(args):
     activate the policy."""
     if args.hub_disruption:
         start_mongo()
+    # The UI reads the Keycloak discovery document only during its first minute.
+    start_keycloak(args.timeout)
     podman(
         "run",
         "-d",
@@ -935,6 +954,8 @@ def start_hub(args):
         ADDRESS[HUB],
         "-p",
         f"127.0.0.1:{HUB_UI_PORT}:9100",
+        "-p",
+        f"127.0.0.1:{HUB_OAUTH_PORT}:9104",
         "-v",
         f"{HUB_RUN}:/opt/tak/federation-hub:Z",
         IMAGE,
@@ -960,6 +981,131 @@ def start_hub(args):
             core_config(SERVER_B, args.directory, "hub", tokens["listed"])
         )
     print("The hub issued the manual tokens and activated the policy.")
+
+
+def start_keycloak(timeout):
+    """Start Keycloak with the test realm over HTTPS and wait for its discovery document."""
+    if not (CERTS / "keycloak.pem").exists():
+        sys.exit("Run certs again. Keycloak needs its certificate.")
+    # Keycloak runs as a user other than root, so it needs a readable copy of the test key.
+    files = WORK / "keycloak-certs"
+    files.mkdir(exist_ok=True)
+    os.chmod(files, 0o755)
+    for name in ("keycloak.pem", "keycloak.key"):
+        shutil.copy2(CERTS / name, files / name)
+        os.chmod(files / name, 0o644)
+    podman(
+        "run",
+        "-d",
+        "--name",
+        KEYCLOAK,
+        "--network",
+        NETWORK,
+        "--ip",
+        ADDRESS[KEYCLOAK],
+        "-p",
+        f"127.0.0.1:{KEYCLOAK_PORT}:8443",
+        "-v",
+        f"{files}:/certs:ro,Z",
+        "-v",
+        f"{TEMPLATES / 'keycloak'}:/opt/keycloak/data/import:ro,Z",
+        KEYCLOAK_IMAGE,
+        "start-dev",
+        "--import-realm",
+        "--http-enabled=false",
+        "--https-port=8443",
+        "--https-certificate-file=/certs/keycloak.pem",
+        "--https-certificate-key-file=/certs/keycloak.key",
+    )
+    context = ssl.create_default_context(cafile=str(CERTS / "ca.pem"))
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            url = f"https://localhost:{KEYCLOAK_PORT}/realms/swak/.well-known/openid-configuration"
+            with urllib.request.urlopen(url, context=context, timeout=5) as reply:
+                if "token_endpoint" in json.loads(reply.read()):
+                    return
+        except (OSError, ValueError):
+            pass
+        time.sleep(3)
+    sys.exit("Keycloak did not start.")
+
+
+def oauth_token(user):
+    """Get an access token for a test realm user with the password grant."""
+    context = ssl.create_default_context(cafile=str(CERTS / "ca.pem"))
+    form = urllib.parse.urlencode(
+        {
+            "grant_type": "password",
+            "client_id": OAUTH_CLIENT[0],
+            "client_secret": OAUTH_CLIENT[1],
+            "username": user[0],
+            "password": user[1],
+        }
+    ).encode()
+    url = f"https://localhost:{KEYCLOAK_PORT}/realms/swak/protocol/openid-connect/token"
+    with urllib.request.urlopen(url, data=form, context=context, timeout=20) as reply:
+        return json.loads(reply.read())["access_token"]
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Return redirects to the caller instead of following them."""
+
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+def oauth_status(path, token=None):
+    """Return the HTTP status and Location of a request to the OAuth port of the hub UI."""
+    context = ssl.create_default_context(cafile=str(CERTS / "ca.pem"))
+    opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=context), NoRedirect)
+    request = urllib.request.Request(f"https://localhost:{HUB_OAUTH_PORT}{path}")
+    if token is not None:
+        request.add_header("Cookie", f"access_token={token}")
+    try:
+        with opener.open(request, timeout=20) as reply:
+            return reply.status, reply.headers.get("Location", "")
+    except urllib.error.HTTPError as error:
+        return error.code, error.headers.get("Location", "")
+    except OSError as error:
+        return 0, str(error)
+
+
+def hub_oauth_checks():
+    """Check the OAuth sign-in of the hub UI with Keycloak tokens."""
+    checks = {}
+
+    def record(name, passed, detail):
+        checks[name] = {"passed": passed, "detail": detail}
+
+    try:
+        admin, viewer = oauth_token(OAUTH_ADMIN), oauth_token(OAUTH_VIEWER)
+    except (OSError, ValueError, KeyError) as error:
+        record("hubOAuthToken", False, f"Keycloak gave no token: {error}")
+        return checks
+    record("hubOAuthToken", True, "Keycloak issued tokens for both test users")
+    # A changed signature character. The last one can hold unused bits.
+    head, payload, signature = admin.split(".")
+    tampered = ".".join((head, payload, ("A" if signature[0] != "A" else "B") + signature[1:]))
+    for name, token, expected, meaning in (
+        ("hubOAuthAdmin", admin, 200, "an administrator token"),
+        ("hubOAuthNotAdmin", viewer, 403, "a token without the hub-admin role"),
+        ("hubOAuthTampered", tampered, 401, "a token with a changed signature"),
+        ("hubOAuthNoToken", None, 401, "no token"),
+    ):
+        code, _ = oauth_status("/api/isAdmin", token)
+        record(name, code == expected, f"{meaning}: HTTP {code}, expected {expected}")
+    # The interactive sign-in starts with a redirect to the Keycloak authorization endpoint.
+    code, location = oauth_status("/api/oauth/login/auth")
+    expected = f"https://{KEYCLOAK}:8443/realms/swak/protocol/openid-connect/auth?"
+    record(
+        "hubOAuthLoginRedirect",
+        code == 302
+        and location.startswith(expected)
+        and f"client_id={OAUTH_CLIENT[0]}" in location,
+        f"HTTP {code} to {location[:120]}",
+    )
+    return checks
 
 
 def start_mongo():
@@ -1236,7 +1382,7 @@ def run_probe(args, report, load=None):
             impair(0, 0)
     code = result.returncode
     if state["federation"] == "hub" and load is None:
-        checks = hub_token_checks()
+        checks = {**hub_token_checks(), **hub_oauth_checks()}
         if state["hubDisruption"]:
             checks.update(hub_disruption_checks())
         code = merge_checks(report, checks) or code

@@ -8,4 +8,16 @@ truststoreFile: /opt/tak/federation-hub/certs/files/fed-truststore.jks
 truststorePassword: atakatak
 authUsers: /opt/tak/federation-hub/authorized_users.yml
 port: 9100
-allowOauth: false
+allowOauth: true
+# OAuth sign-in with the Keycloak test realm of tools/tak-server/keycloak. The UI reads the
+# access token from the access_token cookie and admits users with the role hub-admin.
+oauthPort: 9104
+oauthPortTls: true
+keycloakServerName: SWAK Keycloak
+keycloakTlsCertFile: /opt/tak/federation-hub/certs/files/ca.pem
+keycloakClientId: swak-hub
+keycloakSecret: swak-hub-test-secret
+keycloakrRedirectUri: https://localhost:19104/api/oauth/login/redirect
+keycloakConfigurationEndpoint: https://swak-tak-keycloak:8443/realms/swak/.well-known/openid-configuration
+keycloakClaimName: swak_roles
+keycloakAdminClaimValue: hub-admin
