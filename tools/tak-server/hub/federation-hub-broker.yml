@@ -33,3 +33,8 @@ missionFederationDBRetentionDays: 7
 missionFederationRecencySeconds: 43200
 missionFederationDisruptionEnabled: false
 missionFederationDisruptionMaxFileSizeBytes: 200
+# Federates with a token connect to this port without a client certificate.
+federationTokenAuthServers:
+  - type: jwt
+    port: 9103
+    tls: true

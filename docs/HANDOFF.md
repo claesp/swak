@@ -1689,3 +1689,13 @@ Direct federation passes 49 checks, the hub 51, and loopback 46, also under the 
 `tak_server.py certs` now creates the intermediate CAs `ca-a` and `ca-b` under the test root. They sign the certificates of server A and server B, so the hub sees two CA groups. The hub policy has an edge from A to B that lets only `SwakTest` through, and an edge from B to A that lets every group through. `swak-ops` is now also a user on server B. The new check `federationGroupReverse` expects an `Ops` event from server B at server A. The test plugin has a third role, a receiver that takes messages only from the CA group of server A and writes their UIDs to a file. `hubPluginReceiver` expects the event from server A in the file and not the delivered event from server B.
 
 Direct federation passes 50 checks, the hub 53, and loopback 47. The hub run also passes under the sanitizers. Hub token authentication and mission federation through the hub remain untested.
+
+# 2026-10-10: Hub tokens and mission federation
+
+In hub mode, server B connects to the hub token port 9103 with an automatic token, and server A keeps its certificate on port 9102. The CA group of server B has `allowTokenAuth`. `hubTokenFederation` reads the outgoing connection of server B. A TAK Server drops a second connection to the same hub before it sends a token, so `tak_server.py test` runs `tools/tak-server/hub/HubTokenProbe.java` in the hub container for the refusals. It checks a forged token, a CA group without token permission, an issued token, and a changed signature, and merges the results into the report. The hub issues a token to any client that posts a certificate of a permitted CA group, without proof of the private key. `docs/tak-compatibility.md` records this risk.
+
+`missionFederation` creates a mission for `SwakTest` on server A, adds an object with SWAK, and reads the mission with SWAK as the directory user on server B, directly and through the hub. Three early runs failed because a mission read on server B or on server A showed no object for at least one minute. The database already held the object. With a 150-second wait, one later run showed the object after 122 seconds, just after the 120-second local mission cache of TAK Server. The mission checks now wait 150 seconds and report their time.
+
+Direct federation passes 51 checks, the hub 60, and loopback 48. The hub and direct runs also pass under the sanitizers.
+
+Manual hub tokens from the hub UI and hub disruption tolerance with MongoDB remain untested.

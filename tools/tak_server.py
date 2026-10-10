@@ -42,6 +42,11 @@ LDAP = "swak-tak-ldap"
 HUB = "swak-tak-hub"
 HUB_RUN = WORK / "hub"
 RECEIVER_LOG = "plugin-receiver-events.log"
+# Server B connects to the hub token port with an automatic token. Server A keeps its
+# certificate. tools/tak-server/hub/HubTokenProbe.java checks the token port directly, because
+# a TAK Server drops a second connection to the same hub before it sends a token.
+HUB_TOKEN_PORT = 9103
+HUB_CONNECTION = "swak-hub"
 CONTAINERS = (SERVER, SERVER_B, DATABASE, DATABASE_B, LDAP, HUB)
 # A fixed subnet lets the server certificates name the container addresses.
 SUBNET = "10.89.77.0/24"
@@ -357,8 +362,13 @@ def certs(_args):
         f"-deststorepass {PASSWORD} && "
         f"keytool -importcert -noprompt -alias ca -file ca.pem -keystore truststore-root.jks "
         f"-storetype JKS -storepass {PASSWORD} && "
-        # Messaging opens the federation truststore even when federation is off.
-        f"cp truststore-root.jks fed-truststore.jks"
+        # Messaging opens the federation truststore even when federation is off. The hub needs
+        # the intermediate CAs to issue automatic tokens for the certificates that they sign.
+        f"cp truststore-root.jks fed-truststore.jks && "
+        f"keytool -importcert -noprompt -alias ca-a -file ca-a.pem -keystore fed-truststore.jks "
+        f"-storetype JKS -storepass {PASSWORD} && "
+        f"keytool -importcert -noprompt -alias ca-b -file ca-b.pem -keystore fed-truststore.jks "
+        f"-storetype JKS -storepass {PASSWORD}"
     )
     podman(
         "run",
@@ -458,8 +468,13 @@ def core_config(server, directory="openldap", federation="direct"):
         "FEDERATION_OUTGOING": "",
     }
     hub_outgoing = (
-        f'        <federation-outgoing displayName="swak-hub" address="{HUB}" '
+        f'        <federation-outgoing displayName="{HUB_CONNECTION}" address="{HUB}" '
         'port="9102" protocolVersion="2" reconnectInterval="5" enabled="true"/>\n'
+    )
+    hub_token = (
+        f'        <federation-outgoing displayName="{HUB_CONNECTION}" address="{HUB}" '
+        f'port="{HUB_TOKEN_PORT}" protocolVersion="2" reconnectInterval="5" enabled="true" '
+        'useToken="true" tokenType="automatic"/>\n'
     )
     if server == SERVER:
         if federation == "hub":
@@ -481,7 +496,7 @@ def core_config(server, directory="openldap", federation="direct"):
             KEYSTORE="takserver-b.jks",
             LDAP=DIRECTORIES[directory]["ldap"].replace("@TRUST@", LDAPS_TRUST),
             FEDERATION_OUTGOING=(
-                hub_outgoing
+                hub_token
                 if federation == "hub"
                 else f'        <federation-outgoing displayName="swak-a" address="{SERVER}" '
                 'port="9001" protocolVersion="2" reconnectInterval="5" enabled="true"/>\n'
@@ -552,6 +567,7 @@ def hub_policy():
     groups = {"a": ca_group("ca-a"), "b": ca_group("ca-b")}
 
     def group_cell(key):
+        # Only server B uses a token. The hub issues it for this CA group without expiry.
         return {
             "graphType": "GroupCell",
             "id": f"swak-ca-{key}",
@@ -561,6 +577,8 @@ def hub_policy():
                 "description": f"SWAK Test CA {key.upper()}",
                 "attributes": [],
                 "interconnected": False,
+                "allowTokenAuth": key == "b",
+                "tokenAuthDuration": -1,
                 "groupFilters": [],
                 "type": "Group",
                 "stringId": f"SWAK Test CA {key.upper()}",
@@ -622,7 +640,7 @@ def hub_policy():
 
 
 def prepare_hub():
-    """Copy the hub jars, configuration, policy, and keystores into the hub folder."""
+    """Copy the hub jars, configuration, policy, keystores, plugin, and token probe."""
     jars = {
         "federation-hub-policy.jar": SOURCE / "src" / "federation-hub-policy",
         "federation-hub-broker.jar": SOURCE / "src" / "federation-hub-broker",
@@ -637,19 +655,27 @@ def prepare_hub():
             sys.exit("Run build again. The federation hub jars are missing.")
         shutil.copy2(built, HUB_RUN / "jars" / name)
     shutil.copy2(TEMPLATES / "hub" / "start.sh", HUB_RUN / "start.sh")
-    (HUB_RUN / "plugins").mkdir(exist_ok=True)
-    shutil.copy2(
-        TEMPLATES / "hub" / "SwakHubPlugin.java", HUB_RUN / "plugins" / "SwakHubPlugin.java"
-    )
-    # The plugins need Ignite and its dependencies. The plugin manager jar holds them.
-    libraries = HUB_RUN / "plugin-lib"
-    shutil.rmtree(libraries, ignore_errors=True)
-    libraries.mkdir()
-    with zipfile.ZipFile(HUB_RUN / "jars" / "federation-hub-plugin-manager.jar") as archive:
-        for entry in archive.infolist():
-            name = entry.filename
-            if name.startswith("BOOT-INF/lib/") and name.endswith(".jar") and "/" not in name[13:]:
-                (libraries / name[13:]).write_bytes(archive.read(entry))
+    for folder, source in (("plugins", "SwakHubPlugin.java"), ("probe", "HubTokenProbe.java")):
+        (HUB_RUN / folder).mkdir(exist_ok=True)
+        shutil.copy2(TEMPLATES / "hub" / source, HUB_RUN / folder / source)
+    # The plugins need Ignite and its dependencies from the plugin manager jar. The token probe
+    # needs gRPC and the federation classes from the broker jar.
+    for folder, jar in (
+        ("plugin-lib", "federation-hub-plugin-manager.jar"),
+        ("broker-lib", "federation-hub-broker.jar"),
+    ):
+        libraries = HUB_RUN / folder
+        shutil.rmtree(libraries, ignore_errors=True)
+        libraries.mkdir()
+        with zipfile.ZipFile(HUB_RUN / "jars" / jar) as archive:
+            for entry in archive.infolist():
+                name = entry.filename[len("BOOT-INF/lib/") :]
+                if (
+                    entry.filename.startswith("BOOT-INF/lib/")
+                    and name.endswith(".jar")
+                    and "/" not in name
+                ):
+                    (libraries / name).write_bytes(archive.read(entry))
     shutil.copy2(
         TEMPLATES / "hub" / "federation-hub-broker.yml",
         HUB_RUN / "configs" / "federation-hub-broker.yml",
@@ -657,7 +683,7 @@ def prepare_hub():
     (HUB_RUN / "ui_generated_policy.json").write_text(json.dumps(hub_policy(), indent=2))
     files = HUB_RUN / "certs" / "files"
     files.mkdir(parents=True, exist_ok=True)
-    for name in ("fedhub.jks", "fed-truststore.jks", "ca.pem"):
+    for name in ("fedhub.jks", "fed-truststore.jks", "ca.pem", "takserver.pem", "takserver-b.pem"):
         shutil.copy2(CERTS / name, files / name)
 
 
@@ -984,6 +1010,17 @@ def profile(bridge, load=None, directory="openldap", federation="direct"):
             "group": DIRECTORIES[directory]["group"],
             # Through the hub, the policy drops the Ops events and the test plugins run.
             "hub": federation == "hub",
+            # The outgoing connections that the token checks read through the REST API.
+            **(
+                {
+                    "token": {
+                        "port": HUB_TOKEN_PORT,
+                        "connection": HUB_CONNECTION,
+                    }
+                }
+                if federation == "hub"
+                else {}
+            ),
             # The receiver plugin writes the UIDs that it receives to this file.
             "receiverLog": str(HUB_RUN / "logs" / RECEIVER_LOG),
             "enrollment": {
@@ -1031,8 +1068,59 @@ def run_probe(args, report, load=None):
     finally:
         if loss:
             impair(0, 0)
+    code = result.returncode
+    if state["federation"] == "hub" and load is None:
+        code = merge_checks(report, hub_token_checks()) or code
     print(report.read_text())
-    sys.exit(result.returncode)
+    sys.exit(code)
+
+
+def hub_token_checks():
+    """Run HubTokenProbe in the hub container and return its checks."""
+    files = "/opt/tak/federation-hub/certs/files"
+    result = podman(
+        "exec",
+        "-w",
+        "/opt/tak/federation-hub",
+        HUB,
+        "java",
+        "-cp",
+        "broker-lib/*",
+        "probe/HubTokenProbe.java",
+        f"{files}/ca.pem",
+        f"{files}/takserver-b.pem",
+        f"{files}/takserver.pem",
+        str(HUB_TOKEN_PORT),
+        check=False,
+    )
+    try:
+        checks = json.loads(result.stdout.strip().splitlines()[-1])
+    except (IndexError, ValueError):
+        checks = {}
+    if not isinstance(checks, dict) or not checks:
+        detail = (result.stderr or result.stdout or "no output").strip()[-300:]
+        checks = {"hubTokenProbe": {"passed": False, "detail": detail}}
+    return checks
+
+
+def merge_checks(report, checks):
+    """Add checks to a probe report. Return 1 when a check failed, else 0."""
+    try:
+        data = json.loads(report.read_text())
+    except (OSError, ValueError):
+        return 1
+    if not isinstance(data, dict):
+        return 1
+    features = data.setdefault("features", {})
+    features.update(checks)
+    data["failedFeatures"] = sorted(
+        name for name, check in features.items() if not check.get("passed")
+    )
+    data["passed"] = bool(data.get("passed")) and all(
+        check.get("passed") for check in checks.values()
+    )
+    report.write_text(json.dumps(data, indent=4))
+    return 0 if data["passed"] else 1
 
 
 def test(args):

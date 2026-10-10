@@ -1,3 +1,5 @@
+#include "core/identity.h"
+#include "core/missions.h"
 #include "core/network_client.h"
 #include "core/servers.h"
 #include "core/store.h"
@@ -10,6 +12,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
@@ -23,6 +26,10 @@ namespace {
 constexpr int Wait = 20000;
 // UDP and federation can lose the first events, so the checks send again at this interval.
 constexpr int ResendMs = 2000;
+// Without a cluster, TAK Server keeps missions in a cache of each process for up to 120
+// seconds. The messaging process adds stream and federated content, so the API process can
+// show an old mission until its cache entry ends. Mission checks wait longer than that.
+constexpr int MissionCacheWait = 150000;
 
 bool connected(const Servers &servers, const QString &id)
 {
@@ -195,6 +202,165 @@ void groupFilterCheck(Servers &right,
 }
 // The SWAK test plugins of the hub rename events with the suffix -PLUGIN and send their own
 // event to every federate.
+// A mission that server A creates for SwakTest appears on server B with its object. SWAK adds
+// the object on server A and reads the mission on server B as the directory user.
+void missionFederationCheck(Servers &left,
+                            Servers &remote,
+                            Store &leftStore,
+                            Store &remoteStore,
+                            TakServerApi &remoteApi,
+                            NetworkClient &network,
+                            const Event &a,
+                            const Record &record)
+{
+    TakServerApi leftApi(left, network);
+    Identity leftIdentity, remoteIdentity;
+    for (auto *identity : {&leftIdentity, &remoteIdentity}) {
+        auto values = identity->savePreferences();
+        values.insert(QStringLiteral("uid"),
+                      a.uid + (identity == &leftIdentity ? QString{} : QStringLiteral("-LDAP")));
+        values.insert(QStringLiteral("callsign"), a.callsign);
+        identity->restorePreferences(values);
+    }
+    const auto name =
+        QStringLiteral("swak-federated-") + QUuid::createUuid().toString(QUuid::Id128).left(12);
+    const auto created = call(leftApi,
+                              "PUT",
+                              QStringLiteral("/api/missions/%1?creatorUid=%2&group=%3")
+                                  .arg(name, a.uid, QStringLiteral("SwakTest")));
+    Missions leftMissions(leftStore, &left, &leftApi, &leftIdentity);
+    QSignalSpy leftSubscribed(&leftMissions, &Missions::subscribed);
+    leftMissions.subscribe(QStringLiteral("test"), name);
+    const bool joined = created.ok() && leftSubscribed.wait(Wait) &&
+                        leftSubscribed.last().at(2).toString().isEmpty();
+    auto object = a;
+    object.uid += QStringLiteral("-MISSION");
+    object.callsign = QStringLiteral("SWAK TEST MISSION");
+    object.time = object.start = QDateTime::currentDateTimeUtc();
+    object.stale = object.time.addSecs(600);
+    const auto added =
+        joined ? leftMissions.addEvent(QStringLiteral("test"), name, object)
+               : QStringLiteral("server A did not create the mission: ") + replyText(created);
+    // Server B creates the mission from the federated changes. Subscribe when it exists.
+    Missions remoteMissions(remoteStore, &remote, &remoteApi, &remoteIdentity);
+    QSignalSpy remoteSubscribed(&remoteMissions, &Missions::subscribed);
+    QString status = added;
+    QElapsedTimer elapsed;
+    elapsed.start();
+    const bool federated =
+        added.isEmpty() && QTest::qWaitFor(
+                               [&] {
+                                   const auto *mission =
+                                       remoteMissions.subscription(QStringLiteral("enroll"), name);
+                                   if (!mission) {
+                                       remoteSubscribed.clear();
+                                       remoteMissions.subscribe(QStringLiteral("enroll"), name);
+                                       static_cast<void>(remoteSubscribed.wait(5000));
+                                       if (!remoteSubscribed.isEmpty()) {
+                                           status = remoteSubscribed.last().at(2).toString();
+                                       }
+                                       return false;
+                                   }
+                                   remoteMissions.reload(QStringLiteral("enroll"), name);
+                                   QTest::qWait(1500);
+                                   status = mission->status;
+                                   return mission->objects > 0 && has(remoteStore, object.uid);
+                               },
+                               MissionCacheWait);
+    const auto *mission = remoteMissions.subscription(QStringLiteral("enroll"), name);
+    // On a failure, also show what server B answers now, without the SWAK mission code.
+    QString direct;
+    if (!federated) {
+        const auto reply = call(remoteApi,
+                                "GET",
+                                QStringLiteral("/api/missions/%1/cot").arg(name),
+                                {},
+                                {},
+                                QStringLiteral("enroll"));
+        direct = QStringLiteral("; server B cot: %1, %2 events")
+                     .arg(replyText(reply))
+                     .arg(readMissionEvents(reply.body).size());
+    }
+    record(QStringLiteral("missionFederation"),
+           federated,
+           federated ? QStringLiteral("server B has %1 with the object after %2 s")
+                           .arg(name)
+                           .arg(elapsed.elapsed() / 1000)
+                     : QStringLiteral("%1; subscribed %2, objects %3, in store %4")
+                               .arg(status, mission ? QStringLiteral("yes") : QStringLiteral("no"))
+                               .arg(mission ? mission->objects : 0)
+                               .arg(has(remoteStore, object.uid) ? QStringLiteral("yes")
+                                                                 : QStringLiteral("no")) +
+                           direct);
+    leftMissions.unsubscribe(QStringLiteral("test"), name);
+    remoteMissions.unsubscribe(QStringLiteral("enroll"), name);
+    call(leftApi, "DELETE", QStringLiteral("/api/missions/%1?creatorUid=%2").arg(name, a.uid));
+}
+// Reads the outgoing federation connections of a server as the administrator.
+QJsonArray outgoingConnections(Servers &servers, NetworkClient &network)
+{
+    TakServerApi api(servers, network);
+    const auto reply = call(api, "GET", QStringLiteral("/api/outgoingconnections"));
+    return reply.ok() ? QJsonDocument::fromJson(reply.body)
+                            .object()
+                            .value(QStringLiteral("data"))
+                            .toArray()
+                      : QJsonArray{};
+}
+// Through the hub, server B connects with an automatic token to the token port. The deployment
+// script checks the refusals of the token port with its own client.
+void hubTokenChecks(const QJsonObject &profile, NetworkClient &network, const Record &record)
+{
+    const auto federation = profile.value(QStringLiteral("federation")).toObject();
+    const auto token = federation.value(QStringLiteral("token")).toObject();
+    if (token.isEmpty()) {
+        return;
+    }
+    const auto admin = profile.value(QStringLiteral("admin")).toObject();
+    const auto adminServers = [&admin](Store &store, const QJsonObject &target) {
+        auto servers = std::make_unique<Servers>(store);
+        auto entry = serverDefaults();
+        for (auto it = admin.begin(); it != admin.end(); ++it) {
+            entry.insert(it.key(), it.value());
+        }
+        for (const auto *key : {"host", "port", "apiPort"}) {
+            if (target.contains(QLatin1String(key))) {
+                entry.insert(QLatin1String(key), target.value(QLatin1String(key)));
+            }
+        }
+        entry.insert(QStringLiteral("name"), QStringLiteral("Admin"));
+        entry.insert(QStringLiteral("enabled"), false);
+        servers->put(QStringLiteral("test"), entry);
+        return servers;
+    };
+    const auto connection = [](const QJsonArray &list, const QString &name) {
+        const auto found = std::find_if(list.begin(), list.end(), [&name](const QJsonValue &value) {
+            return value.toObject().value(QStringLiteral("displayName")).toString() == name;
+        });
+        return found == list.end() ? QJsonObject{} : (*found).toObject();
+    };
+    const auto state = [](const QJsonObject &item) {
+        return item.value(QStringLiteral("connectionInfoSummary"))
+            .toObject()
+            .value(QStringLiteral("connectionStatusValue"))
+            .toString();
+    };
+    Store storeB;
+    const auto serversB = adminServers(storeB, federation);
+    const auto good = connection(outgoingConnections(*serversB, network),
+                                 token.value(QStringLiteral("connection")).toString());
+    const bool tokenUsed =
+        good.value(QStringLiteral("useToken")).toBool() &&
+        good.value(QStringLiteral("port")).toInt() == token.value(QStringLiteral("port")).toInt() &&
+        state(good) == u"CONNECTED";
+    record(QStringLiteral("hubTokenFederation"),
+           tokenUsed,
+           QStringLiteral("server B port %1, token %2, %3")
+               .arg(good.value(QStringLiteral("port")).toInt())
+               .arg(good.value(QStringLiteral("useToken")).toBool() ? QStringLiteral("yes")
+                                                                    : QStringLiteral("no"),
+                    state(good)));
+}
 // The receiver plugin writes the UIDs that it receives to a file. Read a bounded part.
 QStringList receivedUids(const QString &path)
 {
@@ -440,6 +606,8 @@ void runNetworkChecks(Servers &left,
                    outbound,
                    outbound ? QString{} : QStringLiteral("server B did not deliver the event"));
             groupFilterCheck(right, leftStore, store, a, profile, record);
+            missionFederationCheck(left, remote, leftStore, store, api, network, a, record);
+            hubTokenChecks(profile, network, record);
             if (federation.value(QStringLiteral("hub")).toBool()) {
                 hubPluginChecks(left, remote, leftStore, store, a, federation, record);
             }

@@ -29,6 +29,7 @@
 #include "core/video_sources.h"
 
 #include <QBuffer>
+#include <QElapsedTimer>
 #include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -80,40 +81,6 @@ struct Client
     Client &operator=(const Client &) = delete;
     bool ownsApi = false;
 };
-// Waits for one reply of a raw REST request.
-NetworkReply call(TakServerApi &api,
-                  const QByteArray &method,
-                  const QString &path,
-                  const QByteArray &body = {},
-                  const QByteArray &type = {})
-{
-    NetworkReply result;
-    bool done = false;
-    QObject context;
-    api.martiRequest(
-        QStringLiteral("test"),
-        method,
-        path,
-        body,
-        type,
-        &context,
-        [&](const NetworkReply &reply) {
-            result = reply;
-            done = true;
-        },
-        8 * 1024 * 1024,
-        60000);
-    static_cast<void>(QTest::qWaitFor(
-        [&] {
-            return done;
-        },
-        70000));
-    return result;
-}
-QString replyText(const NetworkReply &reply)
-{
-    return reply.error.isEmpty() ? QStringLiteral("HTTP %1").arg(reply.status) : reply.error;
-}
 bool has(const Store &store, const QString &uid)
 {
     return std::any_of(store.events().cbegin(), store.events().cend(), [&uid](const Event &event) {
@@ -145,6 +112,42 @@ UserObject area(const QString &id)
     return item;
 }
 } // namespace
+
+// Waits for one reply of a raw REST request.
+NetworkReply call(TakServerApi &api,
+                  const QByteArray &method,
+                  const QString &path,
+                  const QByteArray &body,
+                  const QByteArray &type,
+                  const QString &serverId)
+{
+    NetworkReply result;
+    bool done = false;
+    QObject context;
+    api.martiRequest(
+        serverId,
+        method,
+        path,
+        body,
+        type,
+        &context,
+        [&](const NetworkReply &reply) {
+            result = reply;
+            done = true;
+        },
+        8 * 1024 * 1024,
+        60000);
+    static_cast<void>(QTest::qWaitFor(
+        [&] {
+            return done;
+        },
+        70000));
+    return result;
+}
+QString replyText(const NetworkReply &reply)
+{
+    return reply.error.isEmpty() ? QStringLiteral("HTTP %1").arg(reply.status) : reply.error;
+}
 
 QJsonObject runFeatureChecks(Servers &left,
                              Servers &right,
@@ -380,6 +383,10 @@ QJsonObject runFeatureChecks(Servers &left,
         const auto event = sharedObjectEvent(item, sender, {}, QDateTime::currentDateTimeUtc());
         const auto added = joined && event ? missions.addEvent(QStringLiteral("test"), name, *event)
                                            : QStringLiteral("not subscribed");
+        // TAK Server can show the mission from an old cache entry for up to 120 seconds,
+        // because its messaging process adds the object. Wait longer than that.
+        QElapsedTimer elapsed;
+        elapsed.start();
         const bool hasObject =
             added.isEmpty() && QTest::qWaitFor(
                                    [&] {
@@ -389,8 +396,11 @@ QJsonObject runFeatureChecks(Servers &left,
                                            missions.subscription(QStringLiteral("test"), name);
                                        return mission && mission->objects > 0;
                                    },
-                                   Wait);
-        record(QStringLiteral("missionAddObject"), hasObject, added);
+                                   150000);
+        record(QStringLiteral("missionAddObject"),
+               hasObject,
+               added.isEmpty() ? QStringLiteral("after %1 s").arg(elapsed.elapsed() / 1000)
+                               : added);
         const auto logged =
             joined ? missions.addLog(QStringLiteral("test"), name, QStringLiteral("SWAK log entry"))
                    : QStringLiteral("not subscribed");

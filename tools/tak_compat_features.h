@@ -1,5 +1,6 @@
 #pragma once
 #include "core/event.h"
+#include "core/network_client.h"
 
 #include <QJsonObject>
 
@@ -7,7 +8,18 @@ namespace swak {
 class NetworkClient;
 class Servers;
 class Store;
+class TakServerApi;
 } // namespace swak
+
+// Waits for one reply of a raw REST request to a server entry.
+swak::NetworkReply call(swak::TakServerApi &api,
+                        const QByteArray &method,
+                        const QString &path,
+                        const QByteArray &body = {},
+                        const QByteArray &type = {},
+                        const QString &serverId = QStringLiteral("test"));
+// The HTTP status or the transport error of a reply.
+QString replyText(const swak::NetworkReply &reply);
 
 // Runs the TAK Server feature checks with two connected clients. Each check records passed and
 // a detail text. A failed check does not stop the later checks.

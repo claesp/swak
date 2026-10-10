@@ -68,10 +68,24 @@ class CoreConfigTest(unittest.TestCase):
                 self.assertIsNone(next(root.iter(NAMESPACE + "static"), None))
 
     def test_hub_federation(self):
-        for server in (tak_server.SERVER, tak_server.SERVER_B):
-            with self.subTest(server=server):
-                root = parse(tak_server.core_config(server, "openldap", "hub"))
-                self.assertEqual(self.outgoing(root), [(tak_server.HUB, "9102")])
+        def connections(server):
+            root = parse(tak_server.core_config(server, "openldap", "hub"))
+            return {
+                item.get("displayName"): item
+                for item in root.iter(NAMESPACE + "federation-outgoing")
+            }
+
+        # Server A uses its certificate on the v2 port.
+        a = connections(tak_server.SERVER)
+        self.assertEqual(set(a), {tak_server.HUB_CONNECTION})
+        self.assertEqual(a[tak_server.HUB_CONNECTION].get("port"), "9102")
+        self.assertIsNone(a[tak_server.HUB_CONNECTION].get("useToken"))
+        # Server B uses an automatic token on the token port.
+        b = connections(tak_server.SERVER_B)
+        self.assertEqual(set(b), {tak_server.HUB_CONNECTION})
+        self.assertEqual(b[tak_server.HUB_CONNECTION].get("port"), str(tak_server.HUB_TOKEN_PORT))
+        self.assertEqual(b[tak_server.HUB_CONNECTION].get("useToken"), "true")
+        self.assertEqual(b[tak_server.HUB_CONNECTION].get("tokenType"), "automatic")
 
 
 class ProfileTest(unittest.TestCase):
@@ -115,8 +129,10 @@ class ProfileTest(unittest.TestCase):
         self.assertEqual(data["opsB"]["certificate"], data["ops"]["certificate"])
         self.assertEqual(data["opsB"]["host"], tak_server.ADDRESS[tak_server.SERVER_B])
         self.assertTrue(data["federation"]["receiverLog"].endswith(tak_server.RECEIVER_LOG))
+        self.assertEqual(data["federation"]["token"]["port"], tak_server.HUB_TOKEN_PORT)
         data = json.loads(tak_server.profile(True).read_text())
         self.assertFalse(data["federation"]["hub"])
+        self.assertNotIn("token", data["federation"])
 
     def test_deployment(self):
         with patch.object(tak_server, "DEPLOYMENT", Path(self.directory.name) / "d.json"):
@@ -209,6 +225,15 @@ class HubTest(unittest.TestCase):
         )
         for cell in groups.values():
             self.assertFalse(cell["roger_federation"]["interconnected"])
+            self.assertEqual(cell["roger_federation"]["tokenAuthDuration"], -1)
+        # Only the CA group of server B may get a token.
+        self.assertEqual(
+            {
+                cell["roger_federation"]["name"]: cell["roger_federation"]["allowTokenAuth"]
+                for cell in groups.values()
+            },
+            {group_a: False, group_b: True},
+        )
         rules = {}
         for edge in edges:
             source = groups[edge["source"]["id"]]["roger_federation"]["name"]
@@ -237,6 +262,48 @@ class HubTest(unittest.TestCase):
         # The receiver takes messages only from the CA group of server A.
         self.assertFalse(plugins["swak-receiver"]["receiveByDefault"])
         self.assertEqual(plugins["swak-receiver"]["receiveFrom"], [group_a])
+
+
+class HubTokenTest(unittest.TestCase):
+    def test_token_checks(self):
+        reply = subprocess.CompletedProcess(
+            [], 0, 'Picked up options\n{"hubTokenForged": {"passed": true, "detail": "x"}}\n', ""
+        )
+        with patch.object(tak_server, "podman", return_value=reply) as podman:
+            checks = tak_server.hub_token_checks()
+        self.assertEqual(checks, {"hubTokenForged": {"passed": True, "detail": "x"}})
+        # The probe asks for a token with the certificate of server B and then server A.
+        arguments = podman.call_args.args
+        self.assertEqual(arguments[3], tak_server.HUB)
+        self.assertTrue(arguments[-3].endswith("takserver-b.pem"))
+        self.assertTrue(arguments[-2].endswith("takserver.pem"))
+        self.assertEqual(arguments[-1], str(tak_server.HUB_TOKEN_PORT))
+        # A failed run becomes one failed check with the error text.
+        for stdout in ("", "not json", "[1]"):
+            with self.subTest(stdout=stdout):
+                failed = subprocess.CompletedProcess([], 1, stdout, "error: no class")
+                with patch.object(tak_server, "podman", return_value=failed):
+                    checks = tak_server.hub_token_checks()
+                self.assertFalse(checks["hubTokenProbe"]["passed"])
+
+    def test_merge_checks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "report.json"
+            report.write_text(json.dumps({"passed": True, "features": {"a": {"passed": True}}}))
+            self.assertEqual(tak_server.merge_checks(report, {"b": {"passed": True}}), 0)
+            data = json.loads(report.read_text())
+            self.assertTrue(data["passed"])
+            self.assertEqual(set(data["features"]), {"a", "b"})
+            self.assertEqual(tak_server.merge_checks(report, {"c": {"passed": False}}), 1)
+            data = json.loads(report.read_text())
+            self.assertFalse(data["passed"])
+            self.assertEqual(data["failedFeatures"], ["c"])
+            # A failed probe stays failed after passing hub checks.
+            report.write_text(json.dumps({"passed": False, "features": {}}))
+            self.assertEqual(tak_server.merge_checks(report, {"d": {"passed": True}}), 1)
+            for text in ("{", "[]"):
+                report.write_text(text)
+                self.assertEqual(tak_server.merge_checks(report, {}), 1)
 
 
 class LoadTest(unittest.TestCase):
