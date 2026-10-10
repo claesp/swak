@@ -111,6 +111,10 @@ class ProfileTest(unittest.TestCase):
         data = json.loads(tak_server.profile(True, federation="hub").read_text())
         self.assertTrue(data["federation"]["hub"])
         self.assertTrue(data["ops"]["certificate"].endswith("ops.pem"))
+        # The same Ops user connects to server B.
+        self.assertEqual(data["opsB"]["certificate"], data["ops"]["certificate"])
+        self.assertEqual(data["opsB"]["host"], tak_server.ADDRESS[tak_server.SERVER_B])
+        self.assertTrue(data["federation"]["receiverLog"].endswith(tak_server.RECEIVER_LOG))
         data = json.loads(tak_server.profile(True).read_text())
         self.assertFalse(data["federation"]["hub"])
 
@@ -136,65 +140,103 @@ class ProfileTest(unittest.TestCase):
             self.assertEqual(tak_server.deployed_directory(), "openldap")
 
 
+def openssl(*arguments):
+    return subprocess.run(["openssl", *arguments], check=True, capture_output=True).stdout
+
+
 class HubTest(unittest.TestCase):
+    def setUp(self):
+        # A root and two intermediate CAs, as tak_server.py certs creates them.
+        self.directory = tempfile.TemporaryDirectory()
+        certs = Path(self.directory.name)
+        self.certs = certs
+        openssl(
+            "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+            "-subj", "/O=SWAK Test/CN=SWAK Test CA",
+            "-keyout", str(certs / "ca.key"), "-out", str(certs / "ca.pem"),
+        )  # fmt: skip
+        (certs / "ext").write_text("basicConstraints=critical,CA:TRUE,pathlen:0\n")
+        for name in ("ca-a", "ca-b"):
+            openssl(
+                "req", "-newkey", "rsa:2048", "-nodes", "-subj", f"/O=SWAK Test/CN={name}",
+                "-keyout", str(certs / f"{name}.key"), "-out", str(certs / f"{name}.csr"),
+            )  # fmt: skip
+            openssl(
+                "x509", "-req", "-in", str(certs / f"{name}.csr"), "-days", "1",
+                "-CA", str(certs / "ca.pem"), "-CAkey", str(certs / "ca.key"),
+                "-CAcreateserial", "-extfile", str(certs / "ext"),
+                "-out", str(certs / f"{name}.pem"),
+            )  # fmt: skip
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def hub(self, function, *arguments):
+        with (
+            patch.object(tak_server, "CERTS", self.certs),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            return function(*arguments)
+
     def test_ca_group(self):
-        with tempfile.TemporaryDirectory() as directory:
-            certs = Path(directory)
-            subprocess.run(
-                [
-                    "openssl",
-                    "req",
-                    "-x509",
-                    "-newkey",
-                    "rsa:2048",
-                    "-nodes",
-                    "-days",
-                    "1",
-                    "-subj",
-                    "/O=SWAK Test/CN=SWAK Test CA",
-                    "-keyout",
-                    str(certs / "ca.key"),
-                    "-out",
-                    str(certs / "ca.pem"),
-                ],
-                check=True,
-                capture_output=True,
-            )
-            der = subprocess.run(
-                ["openssl", "x509", "-in", str(certs / "ca.pem"), "-outform", "DER"],
-                check=True,
-                capture_output=True,
-            ).stdout
-            with (
-                patch.object(tak_server, "CERTS", certs),
-                contextlib.redirect_stdout(io.StringIO()),
-            ):
-                group = tak_server.ca_group()
-                policy = tak_server.hub_policy()
-        # The hub names a CA group by the RFC 2253 issuer and the lowercase SHA-256 hex.
-        self.assertEqual(group, "CN=SWAK Test CA,O=SWAK Test-" + hashlib.sha256(der).hexdigest())
+        # The hub names a CA group by the RFC 2253 issuer of the CA certificate and the
+        # lowercase SHA-256 hex of that certificate.
+        for name in ("ca", "ca-a", "ca-b"):
+            with self.subTest(name=name):
+                der = openssl("x509", "-in", str(self.certs / f"{name}.pem"), "-outform", "DER")
+                self.assertEqual(
+                    self.hub(tak_server.ca_group, name),
+                    "CN=SWAK Test CA,O=SWAK Test-" + hashlib.sha256(der).hexdigest(),
+                )
+        self.assertNotEqual(
+            self.hub(tak_server.ca_group, "ca-a"), self.hub(tak_server.ca_group, "ca-b")
+        )
+
+    def test_policy(self):
+        policy = self.hub(tak_server.hub_policy)
+        group_a = self.hub(tak_server.ca_group, "ca-a")
+        group_b = self.hub(tak_server.ca_group, "ca-b")
         # Filters apply only between groups that are not interconnected.
-        self.assertEqual(policy["groups"], [{"uid": group, "interconnected": False}])
-        cell, edge = policy["additionalData"]["uiData"]["cells"]
-        self.assertEqual(cell["graphType"], "GroupCell")
-        self.assertEqual(cell["roger_federation"]["name"], group)
-        self.assertFalse(cell["roger_federation"]["interconnected"])
-        # One edge from the group to itself lets only SwakTest through.
-        self.assertEqual(edge["graphType"], "EdgeCell")
-        self.assertEqual(edge["source"], {"id": cell["id"]})
-        self.assertEqual(edge["target"], {"id": cell["id"]})
-        self.assertEqual(edge["roger_federation"]["groupsFilterType"], "allowed")
-        self.assertEqual(edge["roger_federation"]["allowedGroups"], [tak_server.FEDERATION_GROUP])
-        self.assertNotIn(tak_server.FILTERED_GROUP, json.dumps(edge))
+        self.assertEqual(
+            policy["groups"],
+            [{"uid": group_a, "interconnected": False}, {"uid": group_b, "interconnected": False}],
+        )
+        cells = policy["additionalData"]["uiData"]["cells"]
+        groups = {cell["id"]: cell for cell in cells if cell["graphType"] == "GroupCell"}
+        edges = [cell for cell in cells if cell["graphType"] == "EdgeCell"]
+        self.assertEqual(
+            {cell["roger_federation"]["name"] for cell in groups.values()}, {group_a, group_b}
+        )
+        for cell in groups.values():
+            self.assertFalse(cell["roger_federation"]["interconnected"])
+        rules = {}
+        for edge in edges:
+            source = groups[edge["source"]["id"]]["roger_federation"]["name"]
+            target = groups[edge["target"]["id"]]["roger_federation"]["name"]
+            rules[(source, target)] = (
+                edge["roger_federation"]["groupsFilterType"],
+                edge["roger_federation"]["allowedGroups"],
+            )
+        # From server A to server B, only SwakTest passes. The other direction passes all.
+        self.assertEqual(
+            rules,
+            {
+                (group_a, group_b): ("allowed", [tak_server.FEDERATION_GROUP]),
+                (group_b, group_a): ("allGroups", []),
+            },
+        )
         # The hub fails on a missing plugin list, so each entry has every list.
         plugins = {item["pluginName"]: item for item in policy["pluginsData"]["plugins"]}
-        self.assertEqual(set(plugins), {"swak-interceptor", "swak-sender"})
+        self.assertEqual(set(plugins), {"swak-interceptor", "swak-sender", "swak-receiver"})
         for item in plugins.values():
-            for key in ("sendTo", "dontSend", "receiveFrom", "dontReceive"):
+            for key in ("sendTo", "dontSend", "dontReceive"):
                 self.assertEqual(item[key], [])
             self.assertFalse(item["disabled"])
         self.assertTrue(plugins["swak-interceptor"]["receiveByDefault"])
         self.assertTrue(plugins["swak-sender"]["sendByDefault"])
+        # The receiver takes messages only from the CA group of server A.
+        self.assertFalse(plugins["swak-receiver"]["receiveByDefault"])
+        self.assertEqual(plugins["swak-receiver"]["receiveFrom"], [group_a])
 
 
 class LoadTest(unittest.TestCase):

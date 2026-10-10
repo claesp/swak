@@ -28,5 +28,7 @@ if [ -f plugins/SwakHubPlugin.java ]; then
     done
     java -Xmx256m $OPENS -cp "$CLASSPATH" plugins/SwakHubPlugin.java interceptor > logs/plugin-interceptor.log 2>&1 &
     java -Xmx256m $OPENS -cp "$CLASSPATH" plugins/SwakHubPlugin.java sender SwakTest > logs/plugin-sender.log 2>&1 &
+    java -Xmx256m $OPENS -cp "$CLASSPATH" plugins/SwakHubPlugin.java receiver \
+        logs/plugin-receiver-events.log > logs/plugin-receiver.log 2>&1 &
 fi
 wait

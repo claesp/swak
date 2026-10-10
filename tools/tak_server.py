@@ -41,6 +41,7 @@ LDAP = "swak-tak-ldap"
 # In hub mode, both servers federate through a TAK federation hub instead of directly.
 HUB = "swak-tak-hub"
 HUB_RUN = WORK / "hub"
+RECEIVER_LOG = "plugin-receiver-events.log"
 CONTAINERS = (SERVER, SERVER_B, DATABASE, DATABASE_B, LDAP, HUB)
 # A fixed subnet lets the server certificates name the container addresses.
 SUBNET = "10.89.77.0/24"
@@ -232,7 +233,7 @@ def certs(_args):
         "keyUsage=critical,keyCertSign,cRLSign",
     )
 
-    def issue(name, subject, extensions):
+    def issue(name, subject, extensions, ca="ca"):
         key, request, pem = CERTS / f"{name}.key", CERTS / f"{name}.csr", CERTS / f"{name}.pem"
         extension_file = CERTS / f"{name}.ext"
         extension_file.write_text(extensions)
@@ -254,9 +255,9 @@ def certs(_args):
             "-in",
             str(request),
             "-CA",
-            str(ca_pem),
+            str(CERTS / f"{ca}.pem"),
             "-CAkey",
-            str(ca_key),
+            str(CERTS / f"{ca}.key"),
             "-CAcreateserial",
             "-days",
             "7",
@@ -270,12 +271,28 @@ def certs(_args):
         extension_file.unlink()
         return key, pem
 
-    for name, container in (("takserver", SERVER), ("takserver-b", SERVER_B), ("fedhub", HUB)):
+    # Each server has its own intermediate CA under the root, so the hub sees two CA groups.
+    for ca, label in (("ca-a", "A"), ("ca-b", "B")):
+        issue(
+            ca,
+            f"/O=SWAK Test/CN=SWAK Test CA {label}",
+            "basicConstraints=critical,CA:TRUE,pathlen:0\nkeyUsage=critical,keyCertSign,cRLSign\n",
+        )
+    for name, container, ca in (
+        ("takserver", SERVER, "ca-a"),
+        ("takserver-b", SERVER_B, "ca-b"),
+        ("fedhub", HUB, "ca"),
+    ):
         server_key, server_pem = issue(
             name,
             f"/O=SWAK Test/CN={container}",
             f"subjectAltName=DNS:localhost,DNS:{container},IP:127.0.0.1,IP:{ADDRESS[container]}\n"
             "extendedKeyUsage=serverAuth,clientAuth\n",
+            ca,
+        )
+        chain = CERTS / f"{name}-chain.pem"
+        chain.write_bytes(
+            (b"" if ca == "ca" else (CERTS / f"{ca}.pem").read_bytes()) + ca_pem.read_bytes()
         )
         openssl(
             "pkcs12",
@@ -284,9 +301,9 @@ def certs(_args):
             str(server_pem),
             "-inkey",
             str(server_key),
-            # Federation reads the CA from the chain after the server certificate.
+            # Federation and the hub read the CAs from the chain after the server certificate.
             "-certfile",
-            str(ca_pem),
+            str(chain),
             "-name",
             "takserver",
             "-passout",
@@ -397,13 +414,15 @@ def bcrypt_hash(password):
 
 
 def write_users(run_dir, server):
-    """Write the TAK user file. Server A has three certificate users and one enrollment user.
+    """Write the TAK user file. Server A has four certificate users and one enrollment user.
 
-    Server B has only the administrator. Its other users come from LDAP.
+    Server B has the administrator and swak-ops. Its other users come from the directory.
     """
     users = [
         f'<User identifier="swak-admin" fingerprint="{fingerprint(CERTS / "admin.pem")}" '
         'role="ROLE_ADMIN"><groupList>SwakTest</groupList></User>',
+        f'<User identifier="swak-ops" fingerprint="{fingerprint(CERTS / "ops.pem")}" '
+        f'role="ROLE_ANONYMOUS"><groupList>{FILTERED_GROUP}</groupList></User>',
     ]
     if server == SERVER:
         users += [
@@ -412,8 +431,6 @@ def write_users(run_dir, server):
             "</User>",
             f'<User identifier="swak-right" fingerprint="{fingerprint(CERTS / "right.pem")}" '
             'role="ROLE_ANONYMOUS"><groupList>SwakTest</groupList></User>',
-            f'<User identifier="swak-ops" fingerprint="{fingerprint(CERTS / "ops.pem")}" '
-            f'role="ROLE_ANONYMOUS"><groupList>{FILTERED_GROUP}</groupList></User>',
             f'<User identifier="{ENROLL_USER}" password="{bcrypt_hash(ENROLL_PASSWORD)}" '
             'passwordHashed="true" role="ROLE_ANONYMOUS"><groupList>SwakTest</groupList></User>',
         ]
@@ -504,14 +521,14 @@ def prepare(run_dir, server, directory="openldap", federation="direct"):
     write_users(run_dir, server)
 
 
-def ca_group():
-    """Return the hub CA group of the test CA: its issuer DN and SHA-256 fingerprint."""
+def ca_group(name="ca"):
+    """Return the hub CA group of a CA certificate: its issuer DN and SHA-256 fingerprint."""
     issuer = run(
         [
             "openssl",
             "x509",
             "-in",
-            str(CERTS / "ca.pem"),
+            str(CERTS / f"{name}.pem"),
             "-noout",
             "-issuer",
             "-nameopt",
@@ -520,78 +537,85 @@ def ca_group():
         capture_output=True,
         text=True,
     ).stdout.strip()
-    digest = fingerprint(CERTS / "ca.pem").replace(":", "").lower()
+    digest = fingerprint(CERTS / f"{name}.pem").replace(":", "").lower()
     return issuer.split("=", 1)[1] + "-" + digest
 
 
 def hub_policy():
-    """Return the hub policy for the test CA group.
+    """Return the hub policy for the CA groups of server A and server B.
 
-    The group is not interconnected. One edge from the group to itself lets only the group
-    SwakTest through, so the hub drops events of the group Ops. The plugin entries enable the
-    SWAK test interceptor and sender for every federate.
+    The groups are not interconnected. The edge from A to B lets only SwakTest through, so the
+    hub drops Ops events from server A. The edge from B to A lets every group through. The
+    plugin entries enable the SWAK test interceptor and sender for every federate, and the
+    receiver for server A only.
     """
-    group = ca_group()
-    cells = [
-        {
+    groups = {"a": ca_group("ca-a"), "b": ca_group("ca-b")}
+
+    def group_cell(key):
+        return {
             "graphType": "GroupCell",
-            "id": "swak-test-ca",
+            "id": f"swak-ca-{key}",
             "type": "bpmn.Activity",
             "roger_federation": {
-                "name": group,
-                "description": "SWAK Test CA",
+                "name": groups[key],
+                "description": f"SWAK Test CA {key.upper()}",
                 "attributes": [],
                 "interconnected": False,
                 "groupFilters": [],
                 "type": "Group",
-                "stringId": "SWAK Test CA",
+                "stringId": f"SWAK Test CA {key.upper()}",
             },
-        },
-        {
+        }
+
+    def edge_cell(source, target, filter_type, allowed):
+        return {
             "graphType": "EdgeCell",
-            "id": "swak-test-filter",
+            "id": f"swak-edge-{source}-{target}",
             "type": "bpmn.Flow",
-            "source": {"id": "swak-test-ca"},
-            "target": {"id": "swak-test-ca"},
+            "source": {"id": f"swak-ca-{source}"},
+            "target": {"id": f"swak-ca-{target}"},
             "roger_federation": {
-                "name": "SWAK Test CA -> SWAK Test CA",
-                "groupsFilterType": "allowed",
-                "allowedGroups": [FEDERATION_GROUP],
+                "name": f"SWAK Test CA {source.upper()} -> {target.upper()}",
+                "groupsFilterType": filter_type,
+                "allowedGroups": allowed,
                 "disallowedGroups": [],
                 "edgeFilters": [],
                 "type": "Federate Policy",
             },
-        },
-    ]
+        }
 
-    def plugin(name, send, receive):
+    def plugin(name, send=False, receive=False, receive_from=()):
         # The hub fails on missing lists, so every list is present.
         return {
             "pluginName": name,
             "sendTo": [],
             "dontSend": [],
-            "receiveFrom": [],
+            "receiveFrom": list(receive_from),
             "dontReceive": [],
             "sendByDefault": send,
             "receiveByDefault": receive,
             "disabled": False,
         }
 
+    cells = [
+        group_cell("a"),
+        group_cell("b"),
+        edge_cell("a", "b", "allowed", [FEDERATION_GROUP]),
+        edge_cell("b", "a", "allGroups", []),
+    ]
     return {
         "name": "swak",
         "federate_edges": [
-            {
-                "source": group,
-                "destination": group,
-                "groupsFilterType": "allowed",
-            }
+            {"source": groups["a"], "destination": groups["b"], "groupsFilterType": "allowed"},
+            {"source": groups["b"], "destination": groups["a"], "groupsFilterType": "allGroups"},
         ],
-        "groups": [{"uid": group, "interconnected": False}],
+        "groups": [{"uid": group, "interconnected": False} for group in groups.values()],
         "additionalData": {"uiData": {"name": "swak", "description": "SWAK test", "cells": cells}},
         "pluginsData": {
             "plugins": [
-                plugin("swak-interceptor", False, True),
-                plugin("swak-sender", True, False),
+                plugin("swak-interceptor", receive=True),
+                plugin("swak-sender", send=True),
+                plugin("swak-receiver", receive_from=[groups["a"]]),
             ]
         },
     }
@@ -688,7 +712,7 @@ def federate(seconds):
     # Group mapping makes the servers send the group names of each event, which the hub
     # policy filters. Each server maps the received names to its local SwakTest.
     remote_groups = {
-        PORTS[8443]: [FEDERATION_GROUP],
+        PORTS[8443]: [FEDERATION_GROUP, FILTERED_GROUP],
         PORTS_B[8443]: [FEDERATION_GROUP, FILTERED_GROUP],
     }
     for port, federate in pending.items():
@@ -708,16 +732,14 @@ def federate(seconds):
                 f"/api/federategroupsmap/{urllib.parse.quote(federate_id, safe='')}?{query}",
                 {},
             )
-    # Server A also sends Ops. Without the hub filter, the server B user receives Ops events.
-    admin_request(
-        PORTS[8443],
-        "/api/federategroups",
-        {
-            "federateId": pending[PORTS[8443]]["id"],
-            "group": FILTERED_GROUP,
-            "direction": "OUTBOUND",
-        },
-    )
+    # Both servers also send Ops. Without a hub filter, the users of the other server receive
+    # Ops events. The hub policy drops them only from server A to server B.
+    for port, federate in pending.items():
+        admin_request(
+            port,
+            "/api/federategroups",
+            {"federateId": federate["id"], "group": FILTERED_GROUP, "direction": "OUTBOUND"},
+        )
     print("Server A and server B federate the group", FEDERATION_GROUP)
 
 
@@ -940,6 +962,13 @@ def profile(bridge, load=None, directory="openldap", federation="direct"):
         "right": client("right"),
         "admin": client("admin"),
         "ops": client("ops"),
+        # The same Ops user on server B. The hub lets its events through to server A.
+        "opsB": {
+            **client("ops"),
+            "host": host(SERVER_B),
+            "port": port(SERVER_B, 8089),
+            "apiPort": port(SERVER_B, 8443),
+        },
         "plain": {"protocol": "stcp", "host": host(SERVER), "port": port(SERVER, 8088)},
         "quic": client("left", "quic", 8090),
         "enrollment": {
@@ -955,6 +984,8 @@ def profile(bridge, load=None, directory="openldap", federation="direct"):
             "group": DIRECTORIES[directory]["group"],
             # Through the hub, the policy drops the Ops events and the test plugins run.
             "hub": federation == "hub",
+            # The receiver plugin writes the UIDs that it receives to this file.
+            "receiverLog": str(HUB_RUN / "logs" / RECEIVER_LOG),
             "enrollment": {
                 "port": port(SERVER_B, 8446),
                 "username": DIRECTORIES[directory]["user"],

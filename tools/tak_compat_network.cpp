@@ -101,7 +101,27 @@ const Event *find(const Store &store, const QString &uid)
 // Server A sends the groups SwakTest and Ops to its federate. Through the hub, the policy lets
 // only SwakTest through. In direct federation, server B also delivers Ops events, which shows
 // that the hub, not the servers, drops them.
+// Connects a client from a profile entry as server entry "test".
+QString connectClient(Servers &servers, const QJsonObject &client, const QString &name)
+{
+    auto entry = serverDefaults();
+    for (auto it = client.begin(); it != client.end(); ++it) {
+        entry.insert(it.key(), it.value());
+    }
+    entry.insert(QStringLiteral("name"), name);
+    entry.insert(QStringLiteral("enabled"), true);
+    auto error = servers.put(QStringLiteral("test"), entry);
+    if (error.isEmpty() && !QTest::qWaitFor(
+                               [&] {
+                                   return connected(servers, QStringLiteral("test"));
+                               },
+                               Wait)) {
+        error = servers.status(QStringLiteral("test"));
+    }
+    return error;
+}
 void groupFilterCheck(Servers &right,
+                      const Store &leftStore,
                       const Store &remote,
                       const Event &a,
                       const QJsonObject &profile,
@@ -117,18 +137,8 @@ void groupFilterCheck(Servers &right,
                          .toBool();
     Store opsStore;
     Servers ops(opsStore);
-    auto entry = serverDefaults();
-    for (auto it = opsProfile.begin(); it != opsProfile.end(); ++it) {
-        entry.insert(it.key(), it.value());
-    }
-    entry.insert(QStringLiteral("name"), QStringLiteral("Ops"));
-    entry.insert(QStringLiteral("enabled"), true);
-    const auto error = ops.put(QStringLiteral("test"), entry);
-    const bool ready = error.isEmpty() && QTest::qWaitFor(
-                                              [&] {
-                                                  return connected(ops, QStringLiteral("test"));
-                                              },
-                                              Wait);
+    const auto error = connectClient(ops, opsProfile, QStringLiteral("Ops"));
+    const bool ready = error.isEmpty();
     auto allowed = a;
     allowed.uid += QStringLiteral("-ALLOWED");
     allowed.callsign = QStringLiteral("SWAK TEST ALLOWED");
@@ -156,15 +166,50 @@ void groupFilterCheck(Servers &right,
                    .arg(hub ? QStringLiteral("hub policy") : QStringLiteral("direct, no filter"),
                         allowedArrived ? QStringLiteral("delivered") : QStringLiteral("missing"),
                         blockedArrived ? QStringLiteral("delivered") : QStringLiteral("dropped")) +
-               (ready ? QString{}
-                      : QStringLiteral("; ") + error + ops.status(QStringLiteral("test"))));
+               (ready ? QString{} : QStringLiteral("; ") + error));
+    // The hub policy has a separate edge from the CA group of server B to the CA group of
+    // server A, which lets every group through. Ops events from server B arrive.
+    const auto reverseProfile = profile.value(QStringLiteral("opsB")).toObject();
+    if (reverseProfile.isEmpty()) {
+        return;
+    }
+    Store reverseStore;
+    Servers reverse(reverseStore);
+    const auto reverseError = connectClient(reverse, reverseProfile, QStringLiteral("Ops B"));
+    auto reverseEvent = blocked;
+    reverseEvent.uid += QStringLiteral("-B");
+    const bool reverseArrived =
+        reverseError.isEmpty() && sendUntil(
+                                      reverse,
+                                      reverseEvent,
+                                      [&] {
+                                          return has(leftStore, reverseEvent.uid);
+                                      },
+                                      3 * Wait);
+    record(QStringLiteral("federationGroupReverse"),
+           reverseArrived,
+           reverseError.isEmpty()
+               ? (reverseArrived ? QStringLiteral("Ops event from server B delivered")
+                                 : QStringLiteral("Ops event from server B missing"))
+               : reverseError);
 }
 // The SWAK test plugins of the hub rename events with the suffix -PLUGIN and send their own
 // event to every federate.
+// The receiver plugin writes the UIDs that it receives to a file. Read a bounded part.
+QStringList receivedUids(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return {};
+    }
+    return QString::fromUtf8(file.read(1024 * 1024)).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+}
 void hubPluginChecks(Servers &left,
+                     Servers &remoteServers,
                      const Store &leftStore,
                      const Store &remote,
                      const Event &a,
+                     const QJsonObject &federation,
                      const Record &record)
 {
     auto marked = a;
@@ -195,6 +240,40 @@ void hubPluginChecks(Servers &left,
            QStringLiteral("server A %1, server B %2")
                .arg(has(leftStore, uid) ? QStringLiteral("received") : QStringLiteral("missing"),
                     has(remote, uid) ? QStringLiteral("received") : QStringLiteral("missing")));
+    // The receiver policy takes messages only from the CA group of server A. An event from
+    // server B passes the hub but does not reach the receiver.
+    const auto log = federation.value(QStringLiteral("receiverLog")).toString();
+    if (log.isEmpty()) {
+        return;
+    }
+    auto fromA = a;
+    fromA.uid += QStringLiteral("-RECEIVER-A");
+    auto fromB = a;
+    fromB.uid += QStringLiteral("-RECEIVER-B");
+    fromB.callsign = QStringLiteral("SWAK TEST RECEIVER B");
+    const bool receivedA = sendUntil(
+        left,
+        fromA,
+        [&] {
+            return has(remote, fromA.uid) && receivedUids(log).contains(fromA.uid);
+        },
+        3 * Wait);
+    const bool deliveredB = sendUntil(
+        remoteServers,
+        fromB,
+        [&] {
+            return has(leftStore, fromB.uid);
+        },
+        3 * Wait);
+    // Give the receiver the same time that the event from server A needed.
+    QTest::qWait(3000);
+    const bool receivedB = receivedUids(log).contains(fromB.uid);
+    record(QStringLiteral("hubPluginReceiver"),
+           receivedA && deliveredB && !receivedB,
+           QStringLiteral("server A event %1; server B event %2 and %3")
+               .arg(receivedA ? QStringLiteral("received") : QStringLiteral("not received"),
+                    deliveredB ? QStringLiteral("delivered") : QStringLiteral("not delivered"),
+                    receivedB ? QStringLiteral("received") : QStringLiteral("not received")));
 }
 } // namespace
 
@@ -360,9 +439,9 @@ void runNetworkChecks(Servers &left,
             record(QStringLiteral("federationOutbound"),
                    outbound,
                    outbound ? QString{} : QStringLiteral("server B did not deliver the event"));
-            groupFilterCheck(right, store, a, profile, record);
+            groupFilterCheck(right, leftStore, store, a, profile, record);
             if (federation.value(QStringLiteral("hub")).toBool()) {
-                hubPluginChecks(left, leftStore, store, a, record);
+                hubPluginChecks(left, remote, leftStore, store, a, federation, record);
             }
         }
     }

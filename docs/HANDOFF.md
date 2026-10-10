@@ -1683,3 +1683,9 @@ A Windows AD server, hub group filters, and hub plugins remain untested.
 The hub policy now has a group that is not interconnected and an edge that lets only `SwakTest` through. Both TAK Servers turn on federated group mapping, and server A also sends the group `Ops` from the new certificate user `swak-ops`. The probe check `federationGroupFilter` expects the hub to drop the `Ops` event and direct federation to deliver it. The hub also runs the plugin manager and the test plugin `tools/tak-server/hub/SwakHubPlugin.java` as an interceptor and a sender. `hubPluginIntercept` and `hubPluginSender` check their effects at the servers. `tak_server.py build` now also builds the plugin manager and the plugin SDK.
 
 Direct federation passes 49 checks, the hub 51, and loopback 46, also under the sanitizers. `docs/tak-compatibility.md` lists the hub behavior that the tests found, including SDK faults that the test policy avoids. Hub policies with several CA groups and receiver plugins remain untested.
+
+# 2026-10-10: Hub CA groups and receiver plugins
+
+`tak_server.py certs` now creates the intermediate CAs `ca-a` and `ca-b` under the test root. They sign the certificates of server A and server B, so the hub sees two CA groups. The hub policy has an edge from A to B that lets only `SwakTest` through, and an edge from B to A that lets every group through. `swak-ops` is now also a user on server B. The new check `federationGroupReverse` expects an `Ops` event from server B at server A. The test plugin has a third role, a receiver that takes messages only from the CA group of server A and writes their UIDs to a file. `hubPluginReceiver` expects the event from server A in the file and not the delivered event from server B.
+
+Direct federation passes 50 checks, the hub 53, and loopback 47. The hub run also passes under the sanitizers. Hub token authentication and mission federation through the hub remain untested.
