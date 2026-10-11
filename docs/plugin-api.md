@@ -449,7 +449,7 @@ Distance measurements stay inside ShapesTool and never enter UserObjects. The to
 
 MenuPlugin::rootActions returns true when a plugin contributes direct entries to Tools > Plugins. The host omits that plugin submenu and its editor toggle. ShapesPlugin uses this for Circle, Distance, and Line. Other plugins retain their pane actions.
 
-Shared menu ordering uses QCollator and ignores mnemonic markers. It sorts dropdown and popup menus and removes ordinary separators. Actions with a positive menuTailOrder follow the sorted entries. File uses this property for the separator and Quit action. The menu bar keeps File, Edit, View, Tools, Help in that order. Toolbar separators remain intact.
+Shared menu ordering uses QCollator and ignores mnemonic markers. It sorts dropdown and popup menus and removes ordinary separators. Actions with a positive menuTailOrder follow the sorted entries. File uses this property for the separator and Quit action. The menu bar keeps File, Edit, View, Tools, Help in that order. Toolbar separators remain intact. A menu with the `swakMenuKeepOrder` property set to true keeps its order. The Modern main menu uses it to keep the menu bar order.
 
 The shared addProviderToolbar helper adds a multi-select source menu with the existing management action. The host uses it for Servers and Data providers. Each toggle reads the latest source record before it updates its enabled field. Recoverable errors use the shared logger. These controls keep provider management in the host and use the existing source services.
 

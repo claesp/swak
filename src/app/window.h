@@ -9,7 +9,9 @@
 #include <QPointer>
 #include <QTimer>
 
+class QAction;
 class QLabel;
+class QMenu;
 class QToolBar;
 namespace swak {
 class DisplayStyle;
@@ -46,6 +48,7 @@ private:
     void restorePreferences();
     void setDisplayMode(DisplayMode mode);
     void applyDisplayLayout(DisplayMode mode);
+    void updateMenuBar();
     void fitWindowsToScreens();
     void openSettings();
     QList<SettingsPage> settingsPages();
@@ -72,6 +75,11 @@ private:
     QJsonObject settingsNavigation_;
     DisplayStyle *displayStyle_ = nullptr;
     QPointer<QToolBar> toolbar_;
+    // Modern hides the menu bar. This menu holds the menus of the menu bar, and the command dock
+    // and F10 open it.
+    QMenu *mainMenu_ = nullptr;
+    QAction *mainMenuSeparator_ = nullptr;
+    QAction *mainMenuShortcut_ = nullptr;
     // Window and pane layouts of the modes that are not active, by mode identifier.
     QHash<QString, std::pair<QByteArray, QByteArray>> modeLayouts_;
 };

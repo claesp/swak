@@ -24,7 +24,8 @@ enum class UiIcon
     Target,
     Route,
     RoutePlanning,
-    Emergency
+    Emergency,
+    Menu
 };
 QIcon uiIcon(UiIcon icon);
 QIcon collectionIcon(const CollectionSymbol &symbol, const QColor &color);

@@ -129,6 +129,10 @@ lines.extend(
         "        path.moveTo(12, 3); path.lineTo(22, 20); path.lineTo(2, 20); path.closeSubpath();",
         "        path.moveTo(12, 9); path.lineTo(12, 14); path.addEllipse(QPointF(12, 17), 0.5, 0.5);",
         "        break;",
+        "    case UiIcon::Menu:",
+        "        path.moveTo(4, 6); path.lineTo(20, 6); path.moveTo(4, 12); path.lineTo(20, 12);",
+        "        path.moveTo(4, 18); path.lineTo(20, 18);",
+        "        break;",
     ]
 )
 lines.extend(["    }", "    return path;", "}"])

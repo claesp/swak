@@ -34,6 +34,7 @@
 #include "core/toolbar.h"
 #include "core/track_history.h"
 #include "core/ui_behavior.h"
+#include "core/ui_icons.h"
 #include "core/user_objects.h"
 #include "core/video_sources.h"
 #include "swak/version.h"
@@ -58,6 +59,7 @@
 #include <QStatusBar>
 #include <QTabWidget>
 #include <QToolBar>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -677,6 +679,33 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
                            UiIcon::Data);
     }
     arrangeToolbarSections(*toolbar);
+    mainMenu_ = new QMenu(tr("Menu"), this);
+    mainMenu_->setObjectName(QStringLiteral("mainMenu"));
+    // The menus keep the order of the menu bar.
+    mainMenu_->setProperty(KeepOrderProperty, true);
+    auto *mainMenuAction = mainMenu_->menuAction();
+    mainMenuAction->setObjectName(QStringLiteral("mainMenuAction"));
+    mainMenuAction->setIcon(uiIcon(UiIcon::Menu));
+    mainMenuAction->setToolTip(tr("Menu (F10)"));
+    mainMenuSeparator_ = new QAction(this);
+    mainMenuSeparator_->setSeparator(true);
+    mainMenuShortcut_ = new QAction(tr("Open menu"), this);
+    mainMenuShortcut_->setObjectName(QStringLiteral("mainMenuShortcut"));
+    mainMenuShortcut_->setShortcut(Qt::Key_F10);
+    mainMenuShortcut_->setEnabled(false);
+    addAction(mainMenuShortcut_);
+    connect(mainMenuShortcut_, &QAction::triggered, this, [this] {
+        const auto *button =
+            toolbar_ ? toolbar_->widgetForAction(mainMenu_->menuAction()) : nullptr;
+        // The menu opens above the command dock, or at the top left of the map without it.
+        if (button && button->isVisible()) {
+            const auto size = mainMenu_->sizeHint();
+            mainMenu_->popup(button->mapToGlobal(QPoint(0, -size.height())));
+        } else {
+            mainMenu_->popup(panels_->mapToGlobal(QPoint(12, 12)));
+        }
+    });
+    connect(toolbar, &QToolBar::visibilityChanged, this, &Window::updateMenuBar);
     addPaneAction(*pluginsMenu, *findChild<QDockWidget *>(QStringLiteral("pluginsDock")));
     pluginsMenu->setEnabled(!pluginsMenu->isEmpty());
     installMenuOrder();
@@ -863,6 +892,10 @@ QList<QDockWidget *> Window::tabifiedDockWidgets(QDockWidget *dock) const
 Window::~Window()
 {
     saveTimer_.stop();
+    // The toolbar hides while its parent deletes it. This window must not react then.
+    if (toolbar_) {
+        toolbar_->disconnect(this);
+    }
     if (shown_ && !closing_) {
         savePreferences();
     }
@@ -907,7 +940,13 @@ void Window::applyDisplayLayout(DisplayMode mode)
 {
     const bool modern = mode == DisplayMode::Modern;
     panels_->setModern(modern);
+    // Modern shows the menus in the command dock instead of the menu bar.
+    mainMenu_->clear();
+    if (modern) {
+        mainMenu_->addActions(menuBar()->actions());
+    }
     if (!toolbar_) {
+        updateMenuBar();
         return;
     }
     // Modern moves the main toolbar into a command dock at the bottom of the map.
@@ -926,7 +965,34 @@ void Window::applyDisplayLayout(DisplayMode mode)
     // The dynamic property changes the style sheet rules.
     toolbar_->style()->unpolish(toolbar_);
     toolbar_->style()->polish(toolbar_);
+    // Only the command dock has the menu button, so the Standard toolbar does not change.
+    const bool hasMenu = toolbar_->actions().contains(mainMenu_->menuAction());
+    if (modern && !hasMenu) {
+        const auto first = toolbar_->actions().value(0);
+        toolbar_->insertAction(first, mainMenu_->menuAction());
+        toolbar_->insertAction(first, mainMenuSeparator_);
+        if (auto *button =
+                qobject_cast<QToolButton *>(toolbar_->widgetForAction(mainMenu_->menuAction()))) {
+            button->setObjectName(QStringLiteral("mainMenuButton"));
+            button->setPopupMode(QToolButton::InstantPopup);
+        }
+    } else if (!modern && hasMenu) {
+        toolbar_->removeAction(mainMenu_->menuAction());
+        toolbar_->removeAction(mainMenuSeparator_);
+    }
     toolbar_->setVisible(visible);
+    updateMenuBar();
+}
+void Window::updateMenuBar()
+{
+    if (!mainMenu_) {
+        return;
+    }
+    const bool modern = displayStyle_->mode() == DisplayMode::Modern;
+    // Without the command dock, the menu bar stays the way to the menus.
+    const bool dock = modern && toolbar_ && !toolbar_->isHidden();
+    menuBar()->setVisible(!dock);
+    mainMenuShortcut_->setEnabled(modern);
 }
 void Window::restorePreferences()
 {

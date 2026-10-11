@@ -57,6 +57,8 @@ inline void sortMenuActions(QMenu &menu)
         }
     }
 }
+// A menu with this property set to true keeps the order of its actions.
+inline constexpr auto KeepOrderProperty = "swakMenuKeepOrder";
 class MenuOrder final : public QObject
 {
 public:
@@ -72,7 +74,8 @@ protected:
         if (!sorting_ &&
             (event->type() == QEvent::ActionAdded || event->type() == QEvent::ActionChanged)) {
             sorting_ = true;
-            if (auto *menu = qobject_cast<QMenu *>(object)) {
+            auto *menu = qobject_cast<QMenu *>(object);
+            if (menu && !menu->property(KeepOrderProperty).toBool()) {
                 sortMenuActions(*menu);
             }
             sorting_ = false;

@@ -1795,3 +1795,7 @@ The user reported that panes did not return to normal after Modern and back. Thr
 
 Modern now floats the panes with a margin and rounded glass, and moves the main toolbar into a command dock at the bottom center of the map. The panels report the free map area, so the HUD and the credit avoid the dock. Pane content scrolls when it is taller than the space. The bottom corners of the pane overlay belong to the side panes, which keeps the earlier Standard arrangement. The coverage, quick, GUI, and analysis modes passed.
 
+
+# 2026-10-12: Modern hides the menu bar
+
+Modern hides the menu bar. A Menu button at the start of the command dock opens a menu with the menu bar menus, in the menu bar order. F10 opens the same menu in Modern only. The menu shortcuts stay active, because the hidden menus stay attached to the visible menu button. When the toolbar is hidden in Modern, the menu bar comes back, so the menus stay reachable. The menu order filter skips menus with the `swakMenuKeepOrder` property. `displayModeRoundTrip` checks the hidden menu bar, the button, F10, a menu shortcut, and the exact Standard restore.

@@ -2846,6 +2846,9 @@ private slots:
         window.resize(1400, 860);
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
+        // The shortcut checks need an active window, and the active colors differ.
+        window.activateWindow();
+        QVERIFY(QTest::qWaitForWindowActive(&window));
         QTest::qWait(300);
         struct Look
         {
@@ -2918,6 +2921,32 @@ private slots:
         // The free map area ends above the command dock.
         QVERIFY(map->property(swak::MapFreeAreaProperty).toRect().bottom() <
                 toolbar->geometry().top());
+        // Modern hides the menu bar. The command dock and F10 open its menus, and the menu
+        // shortcuts stay active.
+        QVERIFY(window.menuBar()->isHidden());
+        auto *mainMenu = window.findChild<QMenu *>(QStringLiteral("mainMenu"));
+        const QPointer<QToolButton> menuButton =
+            window.findChild<QToolButton *>(QStringLiteral("mainMenuButton"));
+        QVERIFY(mainMenu && menuButton && menuButton->isVisible());
+        QCOMPARE(mainMenu->actions(), window.menuBar()->actions());
+        QCOMPARE(menuButton->parentWidget(), toolbar);
+        auto *fileMenu = window.findChild<QMenu *>(QStringLiteral("fileMenu"));
+        auto *probe = fileMenu->addAction(QStringLiteral("Probe"));
+        probe->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_F12));
+        QSignalSpy probed(probe, &QAction::triggered);
+        QTest::keyClick(&window, Qt::Key_F12, Qt::ControlModifier | Qt::ShiftModifier);
+        QCOMPARE(probed.count(), 1);
+        delete probe;
+        QTest::keyClick(&window, Qt::Key_F10);
+        QTRY_VERIFY(mainMenu->isVisible());
+        QVERIFY(mainMenu->geometry().bottom() <= menuButton->mapToGlobal(QPoint(0, 0)).y());
+        mainMenu->close();
+        QTRY_VERIFY(!mainMenu->isVisible());
+        // Without the command dock, the menu bar comes back.
+        toolbar->toggleViewAction()->trigger();
+        QVERIFY(!window.menuBar()->isHidden());
+        toolbar->toggleViewAction()->trigger();
+        QVERIFY(window.menuBar()->isHidden());
         QVERIFY(window.grab().save(QStringLiteral("round-trip-modern.png")));
         // A pane change in Modern stays in Modern.
         editor->hide();
@@ -2931,14 +2960,24 @@ private slots:
         QVERIFY(after.save(QStringLiteral("round-trip-after.png")));
         QCOMPARE(after, image);
         QVERIFY(editor->isVisible());
+        QVERIFY(!window.menuBar()->isHidden());
+        // The Standard toolbar has no menu button.
+        QTRY_VERIFY(!menuButton);
+        QVERIFY(!toolbar->actions().contains(mainMenu->menuAction()));
+        QVERIFY(mainMenu->actions().isEmpty());
+        // F10 does not open the menu in Standard.
+        QTest::keyClick(&window, Qt::Key_F10);
+        QVERIFY(!mainMenu->isVisible());
         modern->trigger();
         QTest::qWait(300);
         QVERIFY(!editor->isVisible());
         // The hidden toolbar stays hidden in both places.
         toolbar->toggleViewAction()->trigger();
         QVERIFY(toolbar->isHidden());
+        QVERIFY(!window.menuBar()->isHidden());
         standard->trigger();
         QVERIFY(toolbar->isHidden());
+        QVERIFY(!window.menuBar()->isHidden());
         toolbar->toggleViewAction()->trigger();
         QVERIFY(!toolbar->isHidden());
         // The profile keeps the layout of the inactive mode.
