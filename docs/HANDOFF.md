@@ -1783,3 +1783,15 @@ The user asked for a new display mode, Modern, in the style of the God's Eye Vie
 
 The HUD text avoids the brand of the reference project and invented security markings. The shader failure path logs one warning and draws without the look. The tests do not force a shader failure, so that path is untested.
 
+# 2026-10-11: Modern panes, command dock, and exact restore
+
+The user reported that panes did not return to normal after Modern and back. Three causes:
+
+- Qt keeps fonts from a removed style sheet on some widgets. Modern now sets fonts on each widget and marks them. Standard clears exactly those fonts.
+- When Qt removes a style sheet, it gives each styled widget the palette from the time of styling, which was the Modern palette. Standard now gives unstyled widgets an empty palette. Read-only fields recompute their colors.
+- Larger Modern fonts widened the panes, and the panes kept the size. Each mode now keeps its own layout. A scroll area passes content size changes to the pane layout, and the window restores the layout again after the posted layout requests.
+
+`displayModeRoundTrip` checks that Standard after Modern has the same colors and fonts on every visible widget, and the same pixels for the whole window.
+
+Modern now floats the panes with a margin and rounded glass, and moves the main toolbar into a command dock at the bottom center of the map. The panels report the free map area, so the HUD and the credit avoid the dock. Pane content scrolls when it is taller than the space. The bottom corners of the pane overlay belong to the side panes, which keeps the earlier Standard arrangement. The coverage, quick, GUI, and analysis modes passed.
+

@@ -51,6 +51,8 @@
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QScreen>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QShowEvent>
 #include <QSizeGrip>
 #include <QStatusBar>
@@ -139,6 +141,44 @@ void addPaneAction(QMenu &menu, QDockWidget &dock, QAction *action = nullptr)
     });
 }
 constexpr int LayoutVersion = 1;
+// Pane content in a scroll area. Its size hint is the full content size, so default pane sizes
+// stay the same. Its small minimum height lets a tall pane scroll instead of covering others,
+// for example with the larger fonts of the Modern display mode.
+class PaneScroll final : public QScrollArea
+{
+public:
+    explicit PaneScroll(QWidget *parent) : QScrollArea(parent)
+    {
+        setObjectName(QStringLiteral("paneScroll"));
+        setFrameShape(QFrame::NoFrame);
+        setWidgetResizable(true);
+        setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    }
+    QSize sizeHint() const override
+    {
+        return widget() ? widget()->sizeHint() : QScrollArea::sizeHint();
+    }
+    QSize minimumSizeHint() const override
+    {
+        if (!widget()) {
+            return QScrollArea::minimumSizeHint();
+        }
+        const auto content = widget()->minimumSizeHint();
+        return {content.width(), std::min(content.height(), 120)};
+    }
+
+protected:
+    // The size hints follow the content, so a content layout change must reach the pane
+    // layout. A scroll area does not pass it on by itself.
+    bool eventFilter(QObject *object, QEvent *event) override
+    {
+        if (object == widget() && event->type() == QEvent::LayoutRequest) {
+            updateGeometry();
+        }
+        return QScrollArea::eventFilter(object, event);
+    }
+};
 QByteArray geometryBytes(const QJsonObject &values, const QString &key)
 {
     const QString encoded = preferenceText(values, key, {}, 128 * 1024);
@@ -311,8 +351,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         action->setChecked(mode == DisplayMode::Standard);
         displayModes->addAction(action);
         connect(action, &QAction::triggered, this, [this, mode] {
-            displayStyle_->setMode(mode);
-            savePreferences();
+            setDisplayMode(mode);
         });
     }
     connect(displayStyle_, &DisplayStyle::changed, displayMenu, [displayMenu](DisplayMode mode) {
@@ -337,7 +376,9 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
             auto *layout = new QVBoxLayout(container);
             layout->setContentsMargins(0, 0, 0, 0);
             layout->setSpacing(0);
-            layout->addWidget(content, 1);
+            auto *scroll = new PaneScroll(container);
+            scroll->setWidget(content);
+            layout->addWidget(scroll, 1);
             auto *grip = new QSizeGrip(container);
             grip->setAccessibleName(tr("Resize pane"));
             layout->addWidget(grip, 0, Qt::AlignRight);
@@ -565,6 +606,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     toolsMenu->addMenu(pluginsMenu);
     pluginsMenu->setObjectName(QStringLiteral("pluginsMenu"));
     auto *toolbar = new QToolBar(tr("Main toolbar"), this);
+    toolbar_ = toolbar;
     toolbar->setObjectName(QStringLiteral("mainToolbar"));
     toolbar->setMovable(false);
     toolbar->setToolButtonStyle(Qt::ToolButtonIconOnly);
@@ -745,6 +787,14 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     for (auto *menu : findChildren<QMenu *>()) {
         sortMenuActions(*menu);
     }
+    // The mode comes first, so that the saved layout of the mode meets the fonts of the mode.
+    connect(displayStyle_, &DisplayStyle::changed, this, &Window::applyDisplayLayout);
+    displayStyle_->setMode(displayModeFromId(preferences_.document()
+                                                 .value(QStringLiteral("application"))
+                                                 .toObject()
+                                                 .value(QStringLiteral("displayMode"))
+                                                 .toString())
+                               .value_or(DisplayMode::Standard));
     restorePreferences();
     connect(mapSources, &MapSources::changed, this, [this, mapSources] {
         savePreferences();
@@ -781,9 +831,6 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     dataManagerGeometry_ = geometryBytes(application, QStringLiteral("dataManagerGeometry"));
     markerManagerGeometry_ = geometryBytes(application, QStringLiteral("markerManagerGeometry"));
     settingsNavigation_ = application.value(QStringLiteral("settingsNavigation")).toObject();
-    displayStyle_->setMode(
-        displayModeFromId(application.value(QStringLiteral("displayMode")).toString())
-            .value_or(DisplayMode::Standard));
     connect(&saveTimer_, &QTimer::timeout, this, [this] {
         if (isVisible() && !closing_ && preferences_.writable() &&
             (!failedSave_.isValid() || failedSave_.elapsed() >= 30000)) {
@@ -826,6 +873,61 @@ Window::~Window()
     delete takeCentralWidget();
     delete findChild<Servers *>();
 }
+void Window::setDisplayMode(DisplayMode mode)
+{
+    const auto current = displayStyle_->mode();
+    if (mode == current) {
+        return;
+    }
+    // Each mode keeps its own layout, because the fonts of a mode change the pane sizes.
+    modeLayouts_.insert(displayModeId(current),
+                        {QMainWindow::saveState(LayoutVersion), panels_->saveState(LayoutVersion)});
+    displayStyle_->setMode(mode);
+    if (const auto saved = modeLayouts_.find(displayModeId(mode)); saved != modeLayouts_.end()) {
+        const auto layout = *saved;
+        modeLayouts_.erase(saved);
+        // The toolbar choice is shared by both modes. A Modern layout has no toolbar.
+        const bool toolbarVisible = toolbar_ && !toolbar_->isHidden();
+        const auto restore = [this, layout, toolbarVisible] {
+            QMainWindow::restoreState(layout.first, LayoutVersion);
+            panels_->restoreState(layout.second, LayoutVersion);
+            if (toolbar_) {
+                toolbar_->setVisible(toolbarVisible);
+            }
+        };
+        restore();
+        // The new fonts change minimum pane sizes through posted layout requests, which can
+        // limit the restored sizes. A second restore after these requests gives the exact
+        // sizes.
+        QTimer::singleShot(0, this, restore);
+    }
+    savePreferences();
+}
+void Window::applyDisplayLayout(DisplayMode mode)
+{
+    const bool modern = mode == DisplayMode::Modern;
+    panels_->setModern(modern);
+    if (!toolbar_) {
+        return;
+    }
+    // Modern moves the main toolbar into a command dock at the bottom of the map.
+    const bool visible = !toolbar_->isHidden();
+    const bool docked = panels_->commandDock() == toolbar_;
+    if (modern && !docked) {
+        removeToolBar(toolbar_);
+        toolbar_->setParent(panels_);
+        toolbar_->setProperty("commandDock", true);
+        panels_->setCommandDock(toolbar_);
+    } else if (!modern && docked) {
+        panels_->setCommandDock(nullptr);
+        toolbar_->setProperty("commandDock", false);
+        addToolBar(Qt::TopToolBarArea, toolbar_);
+    }
+    // The dynamic property changes the style sheet rules.
+    toolbar_->style()->unpolish(toolbar_);
+    toolbar_->style()->polish(toolbar_);
+    toolbar_->setVisible(visible);
+}
 void Window::restorePreferences()
 {
     const auto &document = preferences_.document();
@@ -837,6 +939,17 @@ void Window::restorePreferences()
     const auto layout = geometryBytes(window, QStringLiteral("layout"));
     if (!layout.isEmpty()) {
         QMainWindow::restoreState(layout, LayoutVersion);
+    }
+    // The layouts of the other display modes wait until the user selects that mode.
+    modeLayouts_.clear();
+    const auto others = window.value(QStringLiteral("modeLayouts")).toObject();
+    for (auto it = others.begin(); it != others.end(); ++it) {
+        if (displayModeFromId(it.key()) && it.key() != displayModeId(displayStyle_->mode())) {
+            const auto saved = it.value().toObject();
+            modeLayouts_.insert(it.key(),
+                                {geometryBytes(saved, QStringLiteral("layout")),
+                                 geometryBytes(saved, QStringLiteral("overlayLayout"))});
+        }
     }
     const auto overlayLayout = geometryBytes(window, QStringLiteral("overlayLayout"));
     const auto paneLayout = overlayLayout.isEmpty() ? layout : overlayLayout;
@@ -885,6 +998,15 @@ bool Window::savePreferences()
                   QString::fromLatin1(QMainWindow::saveState(LayoutVersion).toBase64()));
     window.insert(QStringLiteral("overlayLayout"),
                   QString::fromLatin1(panels_->saveState(LayoutVersion).toBase64()));
+    QJsonObject others;
+    for (auto it = modeLayouts_.cbegin(); it != modeLayouts_.cend(); ++it) {
+        others.insert(it.key(),
+                      QJsonObject{{QStringLiteral("layout"),
+                                   QString::fromLatin1(it.value().first.toBase64())},
+                                  {QStringLiteral("overlayLayout"),
+                                   QString::fromLatin1(it.value().second.toBase64())}});
+    }
+    window.insert(QStringLiteral("modeLayouts"), others);
     document.insert(QStringLiteral("window"), window);
     auto panes = document.value(QStringLiteral("panes")).toObject();
     for (auto *dock : findChildren<QDockWidget *>()) {

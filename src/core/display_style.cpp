@@ -3,9 +3,14 @@
 #include "core/map_label.h"
 
 #include <QApplication>
+#include <QDockWidget>
+#include <QEvent>
 #include <QFontDatabase>
+#include <QLayout>
+#include <QStatusBar>
 #include <QStyle>
 #include <QStyleFactory>
+#include <QTabBar>
 
 #include <algorithm>
 
@@ -67,100 +72,87 @@ QPalette modernPalette()
     }
     return palette;
 }
-QString modernStyleSheet(const DisplayFonts &fonts, double pointSize)
+QString modernStyleSheet()
 {
-    const auto line = color(modern::Accent, 70);
-    const auto glow = color(modern::Accent, 150);
-    const auto accent = color(modern::Accent);
-    const auto panel = color(modern::Panel);
-    const auto raised = color(modern::Raised);
-    const auto background = color(modern::Background);
-    const auto text = color(modern::Text);
-    const auto dim = color(modern::Dim);
-    const auto title =
-        fonts.title.isEmpty() ? QString{} : QStringLiteral("font-family: \"%1\";").arg(fonts.title);
-    const auto data =
-        fonts.data.isEmpty() ? QString{} : QStringLiteral("font-family: \"%1\";").arg(fonts.data);
-    // With an application style sheet, QApplication::setFont does not reach every widget.
-    // The base rule sets the interface face. More specific rules override it.
-    const auto base = fonts.interface.isEmpty()
-                          ? QString{}
-                          : QStringLiteral("QWidget { font-family: \"%1\"; font-weight: 600;"
-                                           " font-size: %2pt; }")
-                                .arg(fonts.interface)
-                                .arg(pointSize, 0, 'f', 1);
-    // Pane titles use the wide title face, as film interfaces do.
-    const auto paneTitle =
-        fonts.title.isEmpty()
-            ? QString{}
-            : QStringLiteral("QDockWidget { font-family: \"%1\"; font-weight: 400;"
-                             " font-size: %2pt; }")
-                  .arg(fonts.title)
-                  .arg(std::max(pointSize - 3, 7.0), 0, 'f', 1);
-    return base + paneTitle +
-           QStringLiteral(
-               "QMainWindow, QDialog { background: %1; }"
-               "QMainWindow::separator { background: %2; width: 1px; height: 1px; }"
-               "QDockWidget { color: %3; }"
-               "QDockWidget::title { background: %4; border-bottom: 1px solid %2;"
-               " padding: 5px 8px; text-align: left; }"
-               "QDockWidget QLabel#paneTitle, QDialog > QLabel#dialogTitle { %5 }"
-               "QMenuBar { background: %1; color: %3; border-bottom: 1px solid %2; }"
-               "QMenuBar::item { padding: 4px 10px; background: transparent; }"
-               "QMenuBar::item:selected { color: %6; background: %4; }"
-               "QMenu { background: %4; color: %3; border: 1px solid %2; padding: 4px; }"
-               "QMenu::item { padding: 4px 22px 4px 22px; }"
-               "QMenu::item:selected { background: %7; color: white; }"
-               "QMenu::separator { height: 1px; background: %2; margin: 4px 8px; }"
-               "QToolBar { background: %1; border: none; border-bottom: 1px solid %2;"
-               " spacing: 4px; padding: 2px; }"
-               "QToolButton { border: 1px solid transparent; border-radius: 6px; padding: 3px; }"
-               "QToolButton:hover { border-color: %8; background: %4; }"
-               "QToolButton:checked { border-color: %6; background: %7; }"
-               "QPushButton { background: %9; color: %3; border: 1px solid %2;"
-               " border-radius: 6px; padding: 4px 12px; }"
-               "QPushButton:hover { border-color: %8; }"
-               "QPushButton:pressed, QPushButton:checked { background: %7; border-color: %6; }"
-               "QPushButton:disabled { color: %10; border-color: %4; }"
-               "QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {"
-               " background: %1; color: %3; border: 1px solid %2; border-radius: 4px;"
-               " padding: 3px; selection-background-color: %7; }"
-               "QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QSpinBox:focus,"
-               " QDoubleSpinBox:focus, QComboBox:focus { border-color: %6; }"
-               "QComboBox QAbstractItemView { background: %4; border: 1px solid %2;"
-               " selection-background-color: %7; }"
-               "QTableView, QTreeView, QListView { background: %1; alternate-background-color:"
-               " %9; gridline-color: %2; border: 1px solid %2; selection-background-color: %7; }"
-               "QHeaderView::section { background: %4; color: %10; border: none;"
-               " border-bottom: 1px solid %2; padding: 4px; }"
-               "QTabWidget::pane { border: 1px solid %2; }"
-               "QTabBar::tab { background: %4; color: %10; padding: 5px 12px;"
-               " border: 1px solid %2; border-bottom: none; }"
-               "QTabBar::tab:selected { color: %6; border-top: 2px solid %6; }"
-               "QScrollBar:vertical { background: %1; width: 8px; margin: 0; }"
-               "QScrollBar:horizontal { background: %1; height: 8px; margin: 0; }"
-               "QScrollBar::handle { background: %2; border-radius: 4px; min-height: 24px;"
-               " min-width: 24px; }"
-               "QScrollBar::handle:hover { background: %8; }"
-               "QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }"
-               "QToolTip { background: %4; color: %3; border: 1px solid %6; padding: 4px; }"
-               "QStatusBar { background: %1; color: %10; border-top: 1px solid %2; }"
-               "QStatusBar QLabel { %11 }"
-               "QCheckBox::indicator, QRadioButton::indicator { width: 13px; height: 13px;"
-               " border: 1px solid %8; background: %1; }"
-               "QRadioButton::indicator { border-radius: 7px; }"
-               "QCheckBox::indicator:checked, QRadioButton::indicator:checked {"
-               " background: %6; }")
-               .arg(background,
-                    line,
-                    text,
-                    panel,
-                    title,
-                    accent,
-                    color(modern::Accent, 90),
-                    glow,
-                    raised)
-               .arg(dim, data);
+    // Named colors keep the rules readable. Fonts are not in the style sheet: Qt keeps fonts
+    // from a removed style sheet on some widgets, so DisplayStyle sets them on each widget.
+    QString sheet = QStringLiteral(
+        "QMainWindow, QDialog { background: @background; }"
+        "QMainWindow::separator { background: @line; width: 1px; height: 1px; }"
+        "QDockWidget { color: @text; }"
+        "QDockWidget::title { background: transparent; border-bottom: 1px solid @line;"
+        " padding: 6px 10px; text-align: left; }"
+        // Panes over the map are glass: the map panels paint the rounded background.
+        "QMainWindow#mapPanels QDockWidget > QWidget,"
+        " QMainWindow#mapPanels QScrollArea#paneScroll,"
+        " QMainWindow#mapPanels QScrollArea#paneScroll > QWidget > QWidget"
+        " { background: transparent; }"
+        "QMenuBar { background: @background; color: @text; border-bottom: 1px solid @line; }"
+        "QMenuBar::item { padding: 4px 10px; background: transparent; }"
+        "QMenuBar::item:selected { color: @accent; background: @panel; }"
+        "QMenu { background: @panel; color: @text; border: 1px solid @line; padding: 4px; }"
+        "QMenu::item { padding: 4px 22px 4px 22px; }"
+        "QMenu::item:selected { background: @selection; color: white; }"
+        "QMenu::separator { height: 1px; background: @line; margin: 4px 8px; }"
+        "QToolBar { background: @background; border: none; border-bottom: 1px solid @line;"
+        " spacing: 4px; padding: 2px; }"
+        // The command dock is the main toolbar at the bottom of the map.
+        "QToolBar#mainToolbar[commandDock=\"true\"] { background: @glass; border: 1px solid"
+        " @glow; border-radius: 14px; padding: 6px 10px; spacing: 6px; }"
+        "QToolButton { border: 1px solid transparent; border-radius: 6px; padding: 3px; }"
+        "QToolButton:hover { border-color: @glow; background: @panel; }"
+        "QToolButton:checked { border-color: @accent; background: @selection; }"
+        "QPushButton { background: @raised; color: @text; border: 1px solid @line;"
+        " border-radius: 6px; padding: 4px 12px; }"
+        "QPushButton:hover { border-color: @glow; }"
+        "QPushButton:pressed, QPushButton:checked { background: @selection;"
+        " border-color: @accent; }"
+        "QPushButton:disabled { color: @dim; border-color: @panel; }"
+        "QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {"
+        " background: @background; color: @text; border: 1px solid @line; border-radius: 4px;"
+        " padding: 3px; selection-background-color: @selection; }"
+        "QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QSpinBox:focus,"
+        " QDoubleSpinBox:focus, QComboBox:focus { border-color: @accent; }"
+        "QComboBox QAbstractItemView { background: @panel; border: 1px solid @line;"
+        " selection-background-color: @selection; }"
+        "QTableView, QTreeView, QListView { background: @background; alternate-background-color:"
+        " @raised; gridline-color: @line; border: 1px solid @line;"
+        " selection-background-color: @selection; }"
+        "QHeaderView::section { background: @panel; color: @dim; border: none;"
+        " border-bottom: 1px solid @line; padding: 4px; }"
+        "QTabWidget::pane { border: 1px solid @line; }"
+        "QTabBar::tab { background: @panel; color: @dim; padding: 5px 12px;"
+        " border: 1px solid @line; border-bottom: none; }"
+        "QTabBar::tab:selected { color: @accent; border-top: 2px solid @accent; }"
+        "QScrollBar:vertical { background: transparent; width: 8px; margin: 0; }"
+        "QScrollBar:horizontal { background: transparent; height: 8px; margin: 0; }"
+        "QScrollBar::handle { background: @line; border-radius: 4px; min-height: 24px;"
+        " min-width: 24px; }"
+        "QScrollBar::handle:hover { background: @glow; }"
+        "QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }"
+        "QToolTip { background: @panel; color: @text; border: 1px solid @accent;"
+        " padding: 4px; }"
+        "QStatusBar { background: @background; color: @dim; border-top: 1px solid @line; }"
+        "QCheckBox::indicator, QRadioButton::indicator { width: 13px; height: 13px;"
+        " border: 1px solid @glow; background: @background; }"
+        "QRadioButton::indicator { border-radius: 7px; }"
+        "QCheckBox::indicator:checked, QRadioButton::indicator:checked {"
+        " background: @accent; }");
+    // Replace longer names first, so that no name is a prefix of a replaced one.
+    for (const auto &[name, value] :
+         {std::pair{QStringLiteral("@background"), color(modern::Background)},
+          std::pair{QStringLiteral("@selection"), color(modern::Accent, 90)},
+          std::pair{QStringLiteral("@raised"), color(modern::Raised)},
+          std::pair{QStringLiteral("@accent"), color(modern::Accent)},
+          std::pair{QStringLiteral("@panel"), color(modern::Panel)},
+          std::pair{QStringLiteral("@glass"), color(modern::Panel, 215)},
+          std::pair{QStringLiteral("@line"), color(modern::Accent, 70)},
+          std::pair{QStringLiteral("@glow"), color(modern::Accent, 150)},
+          std::pair{QStringLiteral("@text"), color(modern::Text)},
+          std::pair{QStringLiteral("@dim"), color(modern::Dim)}}) {
+        sheet.replace(name, value);
+    }
+    return sheet;
 }
 } // namespace
 
@@ -243,14 +235,30 @@ void DisplayStyle::setMode(DisplayMode mode)
         QApplication::setPalette(modernPalette());
         // Rajdhani is small for its point size. A larger size keeps text readable.
         const double pointSize = std::max(font_.pointSizeF(), 9.0) + 2;
-        if (!fonts.interface.isEmpty()) {
-            QFont font(fonts.interface);
-            font.setPointSizeF(pointSize);
-            font.setWeight(QFont::DemiBold);
-            QApplication::setFont(font);
-        }
-        qApp->setStyleSheet(modernStyleSheet(fonts, pointSize));
+        interfaceFont_ = fonts.interface.isEmpty() ? font_ : QFont(fonts.interface);
+        interfaceFont_.setPointSizeF(pointSize);
+        interfaceFont_.setWeight(QFont::DemiBold);
+        paneFont_ = fonts.title.isEmpty() ? interfaceFont_ : QFont(fonts.title);
+        paneFont_.setPointSizeF(std::max(pointSize - 3, 7.0));
+        statusFont_ = fonts.data.isEmpty() ? QFontDatabase::systemFont(QFontDatabase::FixedFont)
+                                           : QFont(fonts.data);
+        statusFont_.setPointSizeF(std::max(pointSize - 2, 7.0));
+        QApplication::setFont(interfaceFont_);
+        qApp->setStyleSheet(modernStyleSheet());
         setMapLabelStyle(MapLabelStyle::Modern);
+        // Set the fonts on existing widgets, and on new widgets when Qt polishes them.
+        qApp->installEventFilter(this);
+        for (auto *widget : QApplication::allWidgets()) {
+            applyFont(widget);
+        }
+    }
+    // Layouts cache their minimum sizes. A font change does not always reach the layouts of
+    // the parent widgets, so recompute all of them.
+    for (auto *widget : QApplication::allWidgets()) {
+        if (auto *layout = widget->layout()) {
+            layout->invalidate();
+        }
+        widget->updateGeometry();
     }
     emit changed(mode_);
 }
@@ -261,11 +269,54 @@ void DisplayStyle::restore()
         return;
     }
     saved_ = false;
+    qApp->removeEventFilter(this);
     qApp->setStyleSheet(styleSheet_);
     if (auto *style = QStyleFactory::create(styleName_)) {
         QApplication::setStyle(style);
     }
     QApplication::setPalette(palette_);
     QApplication::setFont(font_);
+    for (auto *widget : QApplication::allWidgets()) {
+        // An empty font clears the font that Modern set, so the widget inherits again.
+        if (widget->property(FontProperty).toBool()) {
+            widget->setProperty(FontProperty, {});
+            widget->setFont(QFont());
+        }
+        // When Qt removes a style sheet, it gives each styled widget the palette that the widget
+        // had when Qt styled it, which is the Modern palette. An empty palette makes the widget
+        // inherit the application palette again. Widgets with their own palette keep it.
+        // Tab bars set the palettes of their scroll buttons themselves.
+        if (!widget->testAttribute(Qt::WA_SetPalette) &&
+            !qobject_cast<QTabBar *>(widget->parentWidget())) {
+            widget->setPalette(QPalette());
+        }
+    }
+}
+bool DisplayStyle::eventFilter(QObject *object, QEvent *event)
+{
+    if (event->type() == QEvent::Polish && object->isWidgetType()) {
+        applyFont(static_cast<QWidget *>(object));
+    }
+    return false;
+}
+void DisplayStyle::applyFont(QWidget *widget) const
+{
+    // Keep the fonts that the application chose on purpose, such as larger titles.
+    if (widget->property(FontProperty).toBool() || widget->testAttribute(Qt::WA_SetFont)) {
+        return;
+    }
+    const QFont *font = &interfaceFont_;
+    if (qobject_cast<QDockWidget *>(widget)) {
+        font = &paneFont_;
+    } else {
+        for (auto *parent = widget->parentWidget(); parent; parent = parent->parentWidget()) {
+            if (qobject_cast<QStatusBar *>(parent)) {
+                font = &statusFont_;
+                break;
+            }
+        }
+    }
+    widget->setFont(*font);
+    widget->setProperty(FontProperty, true);
 }
 } // namespace swak

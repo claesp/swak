@@ -2617,7 +2617,12 @@ private slots:
             QCOMPARE(changed.size(), 1);
             QVERIFY(modern->isChecked() && !standard->isChecked());
             QCOMPARE(QApplication::palette().color(QPalette::Window), QColor(swak::modern::Panel));
-            QVERIFY(qApp->styleSheet().contains(QStringLiteral("Rajdhani")));
+            QVERIFY(!qApp->styleSheet().isEmpty());
+            QCOMPARE(QApplication::font().family(), fonts.interface);
+            auto *callsign = window.findChild<QLineEdit *>(QStringLiteral("callsign"));
+            QVERIFY(callsign);
+            QCOMPARE(callsign->font().family(), fonts.interface);
+            QVERIFY(callsign->property(swak::DisplayStyle::FontProperty).toBool());
             QCOMPARE(swak::mapLabelStyle(), swak::MapLabelStyle::Modern);
             QVERIFY(window.grab().save(QStringLiteral("display-modern.png")));
             // The same mode again changes nothing.
@@ -2830,6 +2835,122 @@ private slots:
         QCOMPARE(frame().pixelColor(inside), standard.pixelColor(inside));
         QCOMPARE(mapSettings->savePreferences().value(QStringLiteral("sensor")).toString(),
                  QStringLiteral("night-vision"));
+    }
+    void displayModeRoundTrip()
+    {
+        // After Modern and back, Standard looks exactly as before: colors, fonts, pane
+        // geometry, and toolbar place. Each mode keeps its own layout.
+        QTemporaryDir directory;
+        const auto profile = directory.filePath(QStringLiteral("round-trip.json"));
+        swak::Window window(profile, QPluginLoader::staticInstances());
+        window.resize(1400, 860);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        QTest::qWait(300);
+        struct Look
+        {
+            QColor base, text, window;
+            QFont font;
+        };
+        const auto capture = [&] {
+            QHash<QWidget *, Look> looks;
+            for (auto *widget : window.findChildren<QWidget *>()) {
+                if (widget->isVisible()) {
+                    looks.insert(widget,
+                                 {widget->palette().color(QPalette::Base),
+                                  widget->palette().color(QPalette::WindowText),
+                                  widget->palette().color(QPalette::Window),
+                                  widget->font()});
+                }
+            }
+            return looks;
+        };
+        const auto differences = [&](const QHash<QWidget *, Look> &before) {
+            QStringList result;
+            const auto after = capture();
+            for (auto it = before.cbegin(); it != before.cend(); ++it) {
+                // Qt can replace tab bars and move inactive tabbed panes when it restores a
+                // layout, so the pixel comparison below checks positions.
+                if (!after.contains(it.key())) {
+                    continue;
+                }
+                const auto now = after.value(it.key());
+                if (now.base != it->base || now.text != it->text || now.window != it->window ||
+                    now.font != it->font) {
+                    result.append(QString::fromLatin1(it.key()->metaObject()->className()) +
+                                  QLatin1Char(' ') + it.key()->objectName());
+                }
+            }
+            return result;
+        };
+        auto *toolbar = window.findChild<QToolBar *>(QStringLiteral("mainToolbar"));
+        auto *panels = window.findChild<QMainWindow *>(QStringLiteral("mapPanels"));
+        auto *editor = window.findChild<QDockWidget *>(QStringLiteral("org.swak.editor.pane"));
+        QVERIFY(toolbar && panels && editor);
+        QCOMPARE(window.toolBarArea(toolbar), Qt::TopToolBarArea);
+        const auto before = capture();
+        const auto image = window.grab().toImage();
+        QVERIFY(image.save(QStringLiteral("round-trip-before.png")));
+        auto *modern = window.findChild<QAction *>(QStringLiteral("displayMode/modern"));
+        auto *standard = window.findChild<QAction *>(QStringLiteral("displayMode/standard"));
+        modern->trigger();
+        QTest::qWait(300);
+        // Modern moves the toolbar into the command dock at the bottom of the map.
+        QCOMPARE(toolbar->parentWidget(), panels);
+        QVERIFY(toolbar->isVisible());
+        QVERIFY(toolbar->property("commandDock").toBool());
+        const auto map = window.findChild<QOpenGLWidget *>();
+        // The dock sits at the bottom of the free map area, above any bottom pane.
+        const auto free = panels->centralWidget()->geometry();
+        QVERIFY(free.contains(toolbar->geometry()));
+        QVERIFY(free.bottom() - toolbar->geometry().bottom() <= 20);
+        QVERIFY(std::abs(toolbar->geometry().center().x() -
+                         panels->centralWidget()->geometry().center().x()) <= 2);
+        QVERIFY(map->property(swak::MapOcclusionProperty)
+                    .value<QRegion>()
+                    .contains(toolbar->geometry().center()));
+        // Panes float off the map edge. A tall pane scrolls instead of covering another pane.
+        QVERIFY(editor->geometry().right() < panels->width() - 8);
+        const auto *messages =
+            window.findChild<QDockWidget *>(QStringLiteral("org.swak.events.pane"));
+        QVERIFY(messages && messages->isVisible() && !messages->isFloating());
+        QVERIFY(!editor->geometry().intersects(messages->geometry()));
+        // The free map area ends above the command dock.
+        QVERIFY(map->property(swak::MapFreeAreaProperty).toRect().bottom() <
+                toolbar->geometry().top());
+        QVERIFY(window.grab().save(QStringLiteral("round-trip-modern.png")));
+        // A pane change in Modern stays in Modern.
+        editor->hide();
+        standard->trigger();
+        QTest::qWait(300);
+        QCOMPARE(window.toolBarArea(toolbar), Qt::TopToolBarArea);
+        QVERIFY(!toolbar->property("commandDock").toBool());
+        QVERIFY2(differences(before).isEmpty(),
+                 qPrintable(differences(before).join(QStringLiteral(", "))));
+        const auto after = window.grab().toImage();
+        QVERIFY(after.save(QStringLiteral("round-trip-after.png")));
+        QCOMPARE(after, image);
+        QVERIFY(editor->isVisible());
+        modern->trigger();
+        QTest::qWait(300);
+        QVERIFY(!editor->isVisible());
+        // The hidden toolbar stays hidden in both places.
+        toolbar->toggleViewAction()->trigger();
+        QVERIFY(toolbar->isHidden());
+        standard->trigger();
+        QVERIFY(toolbar->isHidden());
+        toolbar->toggleViewAction()->trigger();
+        QVERIFY(!toolbar->isHidden());
+        // The profile keeps the layout of the inactive mode.
+        QVERIFY(window.savePreferences());
+        QFile saved(profile);
+        QVERIFY(saved.open(QIODevice::ReadOnly));
+        const auto document = QJsonDocument::fromJson(saved.readAll()).object();
+        QVERIFY(document.value(QStringLiteral("window"))
+                    .toObject()
+                    .value(QStringLiteral("modeLayouts"))
+                    .toObject()
+                    .contains(QStringLiteral("modern")));
     }
     void reportsPaneServer()
     {
@@ -4864,8 +4985,8 @@ private slots:
         QVERIFY(!map->findChild<QLabel *>(QStringLiteral("mapCacheSize")));
         // The credit stays in the part of the map that panes leave free, 8 pixels above its
         // bottom.
-        const auto free = swak::visibleMapRect(
-            map->rect(), map->property(swak::MapOcclusionProperty).value<QRegion>());
+        const auto free = map->property(swak::MapFreeAreaProperty).toRect();
+        QVERIFY(!free.isEmpty());
         QCOMPARE(credit->geometry().bottom(), free.bottom() - 8);
         QVERIFY(free.contains(credit->geometry()));
         auto *zoom = window.statusBar()->findChild<QLabel *>(QStringLiteral("mapZoomStatus"));

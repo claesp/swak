@@ -4,12 +4,16 @@
 #include "core/store.h"
 
 #include <QElapsedTimer>
+#include <QHash>
 #include <QMainWindow>
+#include <QPointer>
 #include <QTimer>
 
 class QLabel;
+class QToolBar;
 namespace swak {
 class DisplayStyle;
+enum class DisplayMode;
 class MapPanels;
 class Window final : public QMainWindow
 {
@@ -40,6 +44,8 @@ protected:
 
 private:
     void restorePreferences();
+    void setDisplayMode(DisplayMode mode);
+    void applyDisplayLayout(DisplayMode mode);
     void fitWindowsToScreens();
     void openSettings();
     QList<SettingsPage> settingsPages();
@@ -65,5 +71,8 @@ private:
     QByteArray markerManagerGeometry_;
     QJsonObject settingsNavigation_;
     DisplayStyle *displayStyle_ = nullptr;
+    QPointer<QToolBar> toolbar_;
+    // Window and pane layouts of the modes that are not active, by mode identifier.
+    QHash<QString, std::pair<QByteArray, QByteArray>> modeLayouts_;
 };
 } // namespace swak

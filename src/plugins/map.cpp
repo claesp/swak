@@ -431,6 +431,16 @@ public:
     {
         return display_ && display_->mode() == DisplayMode::Modern;
     }
+    // The map area that panes leave free. The pane overlay reports it. Hosts without the
+    // overlay estimate it from the occluded region.
+    QRect freeArea() const
+    {
+        const auto reported = property(MapFreeAreaProperty).toRect() & rect();
+        if (reported.width() >= 200 && reported.height() >= 150) {
+            return reported;
+        }
+        return visibleMapRect(rect(), property(MapOcclusionProperty).value<QRegion>());
+    }
     void setMapTools(MapTools *tools)
     {
         tools_ = tools;
@@ -904,8 +914,7 @@ protected:
             paintContent(painter);
         }
         if (modern()) {
-            const auto area =
-                visibleMapRect(rect(), property(MapOcclusionProperty).value<QRegion>());
+            const auto area = freeArea();
             MapHudState hud;
             hud.center = view_.coordinate(QRectF(area).center());
             hud.zoom = view_.zoom;
@@ -1013,8 +1022,7 @@ protected:
             }
             // Providers require a visible credit, so the panel stays in the part of the map
             // that panes leave free.
-            const auto area =
-                visibleMapRect(rect(), property(MapOcclusionProperty).value<QRegion>());
+            const auto area = freeArea();
             const int panelWidth = std::min(area.width() - 24, naturalWidth + 16);
             const int panelHeight = attribution_->heightForWidth(panelWidth);
             attribution_->setGeometry(area.right() + 1 - 12 - panelWidth,

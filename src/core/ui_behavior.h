@@ -11,6 +11,18 @@ namespace swak {
 class UiBehavior final : public QObject
 {
 public:
+    // The colors of a read-only text field: the disabled text and base colors.
+    static QPalette muted(const QPalette &original)
+    {
+        auto result = original;
+        for (auto group : {QPalette::Active, QPalette::Inactive}) {
+            result.setColor(
+                group, QPalette::Text, original.color(QPalette::Disabled, QPalette::Text));
+            result.setColor(
+                group, QPalette::Base, original.color(QPalette::Disabled, QPalette::Base));
+        }
+        return result;
+    }
     explicit UiBehavior(QObject *parent) : QObject(parent)
     {
         setObjectName(QStringLiteral("swakUiBehavior"));
@@ -20,11 +32,21 @@ public:
 protected:
     bool eventFilter(QObject *object, QEvent *event) override
     {
-        if (event->type() != QEvent::Show && event->type() != QEvent::ReadOnlyChange) {
+        if (event->type() != QEvent::Show && event->type() != QEvent::ReadOnlyChange &&
+            event->type() != QEvent::ApplicationPaletteChange) {
             return false;
         }
         auto *widget = qobject_cast<QWidget *>(object);
         if (!widget) {
+            return false;
+        }
+        // A new application palette, such as from a display mode change, replaces the saved
+        // colors. Otherwise a read-only field keeps the colors of the old palette.
+        if (event->type() == QEvent::ApplicationPaletteChange) {
+            if (widget->property("swakEditablePalette").isValid()) {
+                widget->setProperty("swakEditablePalette", QApplication::palette(widget));
+                widget->setPalette(muted(QApplication::palette(widget)));
+            }
             return false;
         }
         bool readOnly = false, textField = false;
@@ -45,14 +67,7 @@ protected:
                 if (!saved.isValid()) {
                     widget->setProperty("swakEditablePalette", original);
                 }
-                auto muted = original;
-                for (auto group : {QPalette::Active, QPalette::Inactive}) {
-                    muted.setColor(
-                        group, QPalette::Text, original.color(QPalette::Disabled, QPalette::Text));
-                    muted.setColor(
-                        group, QPalette::Base, original.color(QPalette::Disabled, QPalette::Base));
-                }
-                widget->setPalette(muted);
+                widget->setPalette(muted(original));
             } else if (saved.isValid()) {
                 widget->setPalette(saved.value<QPalette>());
                 widget->setProperty("swakEditablePalette", {});

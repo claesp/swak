@@ -8,6 +8,9 @@
 class QPainter;
 namespace swak {
 inline constexpr auto MapOcclusionProperty = "swakMapOcclusion";
+// The map area that panes and the command dock leave free, as a QRect. The pane overlay sets
+// it. Without it, the map estimates the area from MapOcclusionProperty.
+inline constexpr auto MapFreeAreaProperty = "swakMapFreeArea";
 struct ScaleLegend
 {
     double pixels = 0;

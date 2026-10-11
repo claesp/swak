@@ -4,6 +4,7 @@
 #include <QPalette>
 #include <QRgb>
 #include <QString>
+#include <QWidget>
 
 #include <optional>
 
@@ -62,16 +63,25 @@ public:
     static QFont dataFont(int pixelSize);
     // A font of the title face at a pixel size with wide letter spacing.
     static QFont titleFont(int pixelSize);
+    // Marks widgets whose font Modern set. Standard resets exactly these widgets.
+    static constexpr const char *FontProperty = "swakDisplayFont";
 signals:
     void changed(swak::DisplayMode mode);
 
+protected:
+    bool eventFilter(QObject *object, QEvent *event) override;
+
 private:
     void restore();
+    void applyFont(QWidget *widget) const;
     DisplayMode mode_ = DisplayMode::Standard;
     bool saved_ = false;
     QString styleName_;
     QPalette palette_;
     QFont font_;
     QString styleSheet_;
+    QFont interfaceFont_;
+    QFont paneFont_;
+    QFont statusFont_;
 };
 } // namespace swak
