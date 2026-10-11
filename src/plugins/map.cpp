@@ -2,6 +2,7 @@
 #include "core/display_style.h"
 #include "core/grid_types.h"
 #include "core/interfaces.h"
+#include "core/logging.h"
 #include "core/map_decorations.h"
 #include "core/map_grid.h"
 #include "core/map_hud.h"
@@ -20,6 +21,7 @@
 #include "core/toolbar.h"
 #include "core/ui_icons.h"
 
+#include <QActionGroup>
 #include <QCollator>
 #include <QContextMenuEvent>
 #include <QDesktopServices>
@@ -36,7 +38,11 @@
 #include <QLocale>
 #include <QMenu>
 #include <QMouseEvent>
+#include <QOpenGLFramebufferObject>
 #include <QOpenGLFunctions>
+#include <QOpenGLPaintDevice>
+#include <QOpenGLShaderProgram>
+#include <QOpenGLVertexArrayObject>
 #include <QOpenGLWidget>
 #include <QPainter>
 #include <QPlainTextEdit>
@@ -49,6 +55,7 @@
 #include <QToolButton>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <QVector2D>
 #include <QWheelEvent>
 
 #include <algorithm>
@@ -59,6 +66,79 @@
 
 namespace swak {
 namespace {
+// Sensor looks of the Modern display mode. The shader receives the index.
+enum class Sensor
+{
+    Normal,
+    NightVision,
+    Thermal,
+    Crt,
+    Noir
+};
+struct SensorEntry
+{
+    Sensor sensor;
+    const char *id;
+    const char *name;
+};
+constexpr std::array<SensorEntry, 5> Sensors{{{Sensor::Normal, "normal", "Normal"},
+                                              {Sensor::NightVision, "night-vision", "Night Vision"},
+                                              {Sensor::Thermal, "thermal", "Thermal"},
+                                              {Sensor::Crt, "crt", "CRT"},
+                                              {Sensor::Noir, "noir", "Noir"}}};
+const SensorEntry &sensorEntry(Sensor sensor)
+{
+    return Sensors.at(static_cast<size_t>(sensor));
+}
+// A full-screen triangle without vertex buffers.
+constexpr auto SensorVertexShader = R"(#version 330 core
+out vec2 uv;
+void main()
+{
+    vec2 corner = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+    uv = corner;
+    gl_Position = vec4(corner * 2.0 - 1.0, 0.0, 1.0);
+}
+)";
+// Color grading of the map image. The looks imitate film sensor displays. They do not
+// measure temperature or light.
+constexpr auto SensorFragmentShader = R"(#version 330 core
+in vec2 uv;
+out vec4 color;
+uniform sampler2D scene;
+uniform int mode;
+uniform vec2 resolution;
+uniform float time;
+float hash(vec2 p)
+{
+    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+}
+void main()
+{
+    vec3 c = texture(scene, uv).rgb;
+    float l = dot(c, vec3(0.299, 0.587, 0.114));
+    vec2 pixel = uv * resolution;
+    float grain = hash(floor(pixel) + fract(time) * 97.0) - 0.5;
+    float vignette = smoothstep(1.2, 0.4, length(uv - 0.5) * 1.55);
+    vec3 o;
+    if (mode == 1) {
+        float g = pow(clamp(l * 1.35 + 0.04, 0.0, 1.0), 0.8);
+        o = vec3(0.12, 1.0, 0.35) * g * vignette + grain * 0.08;
+    } else if (mode == 2) {
+        float t = smoothstep(0.0, 1.0, clamp((l - 0.08) * 1.5, 0.0, 1.0));
+        o = vec3(t) + vec3(-0.02, 0.0, 0.03) + grain * 0.04;
+    } else if (mode == 3) {
+        float scan = 0.8 + 0.2 * sin(pixel.y * 3.14159);
+        float shift = 1.0 / resolution.x;
+        vec3 fringe = vec3(texture(scene, uv + vec2(shift, 0.0)).r, c.g,
+                           texture(scene, uv - vec2(shift, 0.0)).b);
+        o = fringe * scan * 1.08 * vignette + grain * 0.03;
+    } else {
+        o = vec3(smoothstep(0.05, 0.95, l)) * vignette + grain * 0.06;
+    }
+    color = vec4(clamp(o, 0.0, 1.0), 1.0);
+}
+)";
 const std::array<QString, 15> KeyPaths{QStringLiteral("panNorthKey"),
                                        QStringLiteral("panWestKey"),
                                        QStringLiteral("panSouthKey"),
@@ -164,6 +244,20 @@ public:
         scope_ = decorationAction(tr("Scope"), QStringLiteral("mapScopeAction"));
         scope_->setEnabled(false);
         scope_->setToolTip(tr("Modern display mode: darken the map outside a central circle"));
+        sensorMenu_ = new QMenu(tr("Sensor Look"), this);
+        sensorMenu_->setObjectName(QStringLiteral("mapSensorMenu"));
+        sensorMenu_->menuAction()->setEnabled(false);
+        auto *sensors = new QActionGroup(sensorMenu_);
+        for (const auto &entry : Sensors) {
+            auto *action = sensorMenu_->addAction(tr(entry.name));
+            action->setObjectName(QStringLiteral("mapSensor/") + QLatin1String(entry.id));
+            action->setCheckable(true);
+            action->setChecked(entry.sensor == Sensor::Normal);
+            sensors->addAction(action);
+            connect(action, &QAction::triggered, this, [this, sensor = entry.sensor] {
+                setSensor(sensor);
+            });
+        }
         // The HUD clock shows seconds, so Modern repaints once per second.
         hudClock_.setInterval(1000);
         connect(&hudClock_, &QTimer::timeout, this, qOverload<>(&MapWidget::update));
@@ -411,7 +505,7 @@ public:
 
     QList<QAction *> viewActions() const
     {
-        return {gridVisibility_, scaleLegend_, zoomIndicator_, scope_};
+        return {gridVisibility_, scaleLegend_, zoomIndicator_, scope_, sensorMenu_->menuAction()};
     }
     QAction *navigationLockAction() const
     {
@@ -515,6 +609,7 @@ public:
         values.insert(QStringLiteral("scaleLegend"), scaleLegend_->isChecked());
         values.insert(QStringLiteral("zoomIndicator"), zoomIndicator_->isChecked());
         values.insert(QStringLiteral("scope"), scope_->isChecked());
+        values.insert(QStringLiteral("sensor"), QLatin1String(sensorEntry(sensor_).id));
         for (size_t i = 0; i < KeyPaths.size(); ++i) {
             values.insert(KeyPaths[i], QKeySequence(keys_[i]).toString(QKeySequence::PortableText));
         }
@@ -557,6 +652,12 @@ public:
         scaleLegend_->setChecked(values.value(QStringLiteral("scaleLegend")).toBool(true));
         zoomIndicator_->setChecked(values.value(QStringLiteral("zoomIndicator")).toBool(true));
         scope_->setChecked(values.value(QStringLiteral("scope")).toBool(true));
+        const auto sensorId = values.value(QStringLiteral("sensor")).toString();
+        const auto sensor =
+            std::find_if(Sensors.cbegin(), Sensors.cend(), [&sensorId](const SensorEntry &entry) {
+                return sensorId == QLatin1String(entry.id);
+            });
+        setSensor(sensor == Sensors.cend() ? Sensor::Normal : sensor->sensor);
         if (overlay_) {
             overlay_->update();
         }
@@ -623,9 +724,19 @@ protected:
         clampCenter();
         update();
     }
+    void setSensor(Sensor sensor)
+    {
+        sensor_ = sensor;
+        const auto name = QStringLiteral("mapSensor/") + QLatin1String(sensorEntry(sensor).id);
+        for (auto *action : sensorMenu_->actions()) {
+            action->setChecked(action->objectName() == name);
+        }
+        update();
+    }
     void applyDisplayMode()
     {
         scope_->setEnabled(modern());
+        sensorMenu_->menuAction()->setEnabled(modern());
         tiles_.setBackground(modern() ? qRgb(16, 22, 30) : MapBackgroundRgb);
         if (modern()) {
             hudClock_.start();
@@ -638,16 +749,81 @@ protected:
     {
         initializeOpenGLFunctions();
     }
-    void paintGL() override
+    ~MapWidget() override
     {
-        const QRgb background = modern() ? modern::Background : MapBackgroundRgb;
-        glClearColor(static_cast<float>(qRed(background)) / 255,
-                     static_cast<float>(qGreen(background)) / 255,
-                     static_cast<float>(qBlue(background)) / 255,
-                     1.0F);
-        glClear(GL_COLOR_BUFFER_BIT);
-        view_.size = size();
-        QPainter painter(this);
+        // GL objects need their context when they are released.
+        makeCurrent();
+        sensorTarget_.reset();
+        sensorProgram_.reset();
+        if (sensorVertices_.isCreated()) {
+            sensorVertices_.destroy();
+        }
+        doneCurrent();
+    }
+    MapWidget(const MapWidget &) = delete;
+    MapWidget &operator=(const MapWidget &) = delete;
+    // Prepares the shader and the target of a sensor look. False without a usable shader, which
+    // draws the map without the look.
+    bool prepareSensor()
+    {
+        if (sensorFailed_) {
+            return false;
+        }
+        if (!sensorProgram_) {
+            auto program = std::make_unique<QOpenGLShaderProgram>();
+            if (!program->addShaderFromSourceCode(QOpenGLShader::Vertex, SensorVertexShader) ||
+                !program->addShaderFromSourceCode(QOpenGLShader::Fragment, SensorFragmentShader) ||
+                !program->link() || !sensorVertices_.create()) {
+                sensorFailed_ = true;
+                logMessage(
+                    Severity::Warning,
+                    Urgency::Attention,
+                    QStringLiteral("swak.map"),
+                    tr("The sensor look is not available: %1").arg(program->log().left(512)));
+                return false;
+            }
+            sensorProgram_ = std::move(program);
+            sensorClock_.start();
+        }
+        const QSize pixels = size() * devicePixelRatioF();
+        if (!sensorTarget_ || sensorTarget_->size() != pixels) {
+            QOpenGLFramebufferObjectFormat format;
+            format.setAttachment(QOpenGLFramebufferObject::CombinedDepthStencil);
+            sensorTarget_ = std::make_unique<QOpenGLFramebufferObject>(pixels, format);
+            if (!sensorTarget_->isValid()) {
+                sensorTarget_.reset();
+                return false;
+            }
+        }
+        return true;
+    }
+    void drawSensor()
+    {
+        glDisable(GL_BLEND);
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_STENCIL_TEST);
+        glDisable(GL_SCISSOR_TEST);
+        glViewport(0, 0, sensorTarget_->width(), sensorTarget_->height());
+        sensorProgram_->bind();
+        sensorVertices_.bind();
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, sensorTarget_->texture());
+        sensorProgram_->setUniformValue("scene", 0);
+        sensorProgram_->setUniformValue("mode", static_cast<int>(sensor_));
+        const QSizeF resolution(sensorTarget_->size());
+        sensorProgram_->setUniformValue("resolution",
+                                        QVector2D(static_cast<float>(resolution.width()),
+                                                  static_cast<float>(resolution.height())));
+        sensorProgram_->setUniformValue(
+            "time", static_cast<float>(sensorClock_.elapsed() % 100000) / 1000.0F);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        sensorVertices_.release();
+        sensorProgram_->release();
+    }
+    // Paints the map content: tiles, grid, data, layers, tools, and the selection.
+    void paintContent(QPainter &painter)
+    {
         painter.setRenderHint(QPainter::Antialiasing, antialias_);
         const auto paintBase = [&] {
             tiles_.paint(painter, view_, opacity_, smooth_, missingOpacity_);
@@ -693,6 +869,40 @@ protected:
                 selection_->paint(painter, view_);
             }
         }
+    }
+    void paintGL() override
+    {
+        const QRgb background = modern() ? modern::Background : MapBackgroundRgb;
+        const auto clear = [&] {
+            glClearColor(static_cast<float>(qRed(background)) / 255,
+                         static_cast<float>(qGreen(background)) / 255,
+                         static_cast<float>(qBlue(background)) / 255,
+                         1.0F);
+            glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+        };
+        clear();
+        view_.size = size();
+        // A sensor look paints the content into its own target, then grades it into the widget.
+        const bool sensor = modern() && sensor_ != Sensor::Normal && prepareSensor();
+        if (sensor) {
+            sensorTarget_->bind();
+            glViewport(0, 0, sensorTarget_->width(), sensorTarget_->height());
+            clear();
+            QOpenGLPaintDevice device(sensorTarget_->size());
+            device.setDevicePixelRatio(devicePixelRatioF());
+            {
+                QPainter content(&device);
+                paintContent(content);
+            }
+            sensorTarget_->release();
+            glBindFramebuffer(GL_FRAMEBUFFER, defaultFramebufferObject());
+            drawSensor();
+        }
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, antialias_);
+        if (!sensor) {
+            paintContent(painter);
+        }
         if (modern()) {
             const auto area =
                 visibleMapRect(rect(), property(MapOcclusionProperty).value<QRegion>());
@@ -702,6 +912,7 @@ protected:
             hud.source = activeSource_.value(QStringLiteral("name")).toString();
             hud.utc = QDateTime::currentDateTimeUtc();
             hud.tracks = static_cast<int>(store_.events().size());
+            hud.sensor = tr(sensorEntry(sensor_).name);
             hud.scope = scope_->isChecked();
             paintMapHud(painter, area, hud);
         }
@@ -1495,6 +1706,13 @@ private:
     QAction *scaleLegend_ = nullptr;
     QAction *zoomIndicator_ = nullptr;
     QAction *scope_ = nullptr;
+    QMenu *sensorMenu_ = nullptr;
+    Sensor sensor_ = Sensor::Normal;
+    std::unique_ptr<QOpenGLFramebufferObject> sensorTarget_;
+    std::unique_ptr<QOpenGLShaderProgram> sensorProgram_;
+    QOpenGLVertexArrayObject sensorVertices_;
+    bool sensorFailed_ = false;
+    QElapsedTimer sensorClock_;
     QPointer<DisplayStyle> display_;
     QTimer hudClock_;
     GridTypes *grids_ = nullptr;
