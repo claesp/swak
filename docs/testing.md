@@ -119,7 +119,7 @@ Paths that remain untested:
 - Archive entry names with `..` or backslashes. GDAL removes or changes these names before SWAK checks them, so the check is a second defense.
 - After a successful enrollment, a failed permission change of a written file, and an entry without a CA that receives the server CA. The second path needs a server certificate that the system trusts.
 - The status line after a completed enrollment in the server browser. The server tests cover the enrollment itself.
-- New markers that take their color from a collection symbol, and some context menu and release paths of the drawing tools.
+- Store errors after a marker, area, or shape move, and plugin fallbacks for a window without map tools or objects.
 
 # Image allocation faults
 
@@ -156,4 +156,12 @@ New tests:
 - `shapeLabelHits` selects a circle and a line by their labels, away from their geometry.
 - `objectEditorDetails` checks the description limit, property removal, and a marker collection change during editing.
 - `serverBrowserTable` checks the limit of 16 entries and an entry removed before its check box saves it.
+
+# Marker and drawing tool edges, October 11
+
+`markerToolEdges`, `polygonToolEdges`, and `shapeToolEdges` send events to `MapTools` with a fixed view. They cover invalid and legacy key settings, the right button and points outside the world during placement or drawing, context menus during drawing, interaction with other object types, stale menu commands, corners that a draft lost during a move, reselection after an update, symbol colors for new markers, markers with unknown symbols, two-corner area previews, the limit of 64 measurements, measurement fading, circle center moves, and deletion from the shape menu.
+
+The Information pane handles Escape before the map tools. The area tool therefore handled Escape during a corner move in two places with the same result. Its key handler now calls `dismiss`, as the shape tool does. `polygonToolEdges` sends Escape directly to the tools to cover a window without the Information pane.
+
+Remaining misses in these plugins are closing lines that gcov attributes to no statement, initializer lines, store errors after a move, and fallbacks for missing services.
 

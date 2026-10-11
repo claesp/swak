@@ -2068,6 +2068,522 @@ private slots:
         QCOMPARE(type->currentData(), chosenType);
         QVERIFY(editor.draft());
     }
+    void markerToolEdges()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("marker-edges.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *map = window.findChild<QOpenGLWidget *>();
+        auto *tools = window.findChild<swak::MapTools *>();
+        auto *objects = window.findChild<swak::UserObjects *>();
+        auto *collections = window.findChild<swak::MarkerCollections *>();
+        auto *editor = window.findChild<swak::ObjectEditor *>(QStringLiteral("objectEditor"));
+        auto *action = window.findChild<QAction *>(QStringLiteral("markerModeAction"));
+        auto *configuration = dynamic_cast<swak::SettingsParticipant *>(editor);
+        QVERIFY(map && tools && objects && collections && editor && action && configuration);
+        // A create key above 32 characters is invalid and restores the default. Profiles before
+        // the guide style change saved 0.6, which now means 0.5.
+        auto options = configuration->savePreferences();
+        options.insert(QStringLiteral("createKey"), QString(40, QLatin1Char('M')));
+        QVERIFY(!configuration->validateSettings(options).isEmpty());
+        options.remove(QStringLiteral("guideStyleVersion"));
+        options.insert(QStringLiteral("guideOpacity"), 0.6);
+        configuration->restorePreferences(options);
+        const auto restored = configuration->savePreferences();
+        QCOMPARE(restored.value(QStringLiteral("createKey")).toString(), QStringLiteral("Shift+M"));
+        QCOMPARE(restored.value(QStringLiteral("guideOpacity")).toDouble(), 0.5);
+        // The tools get events with a fixed view: zoom 3 at the world center.
+        const swak::Viewport view{QSizeF(800, 600), QPointF(0.5, 0.5), 3};
+        const auto release = [&](QPointF point, Qt::MouseButton button, const swak::Viewport &at) {
+            QMouseEvent event(QEvent::MouseButtonRelease,
+                              point,
+                              map->mapToGlobal(point),
+                              button,
+                              Qt::NoButton,
+                              Qt::NoModifier);
+            return tools->handle(event, at, *map);
+        };
+        // The action cancels placement when the tool is active.
+        action->trigger();
+        QVERIFY(!tools->statusText().isEmpty());
+        action->trigger();
+        QVERIFY(tools->statusText().isEmpty());
+        // During placement, the right button, points outside the world, a context menu, and
+        // deletion place nothing.
+        action->trigger();
+        QVERIFY(!release({400, 300}, Qt::RightButton, view));
+        const swak::Viewport edge{QSizeF(800, 600), QPointF(0, 0.5), 3};
+        QVERIFY(release({10, 300}, Qt::LeftButton, edge));
+        QVERIFY(!editor->draft());
+        QContextMenuEvent context(
+            QContextMenuEvent::Mouse, QPoint(400, 300), map->mapToGlobal(QPoint(400, 300)));
+        QVERIFY(tools->handle(context, view, *map));
+        QVERIFY(!tools->deleteSelection());
+        QVERIFY(objects->items().isEmpty());
+        // A chosen symbol gives its color to the next new marker.
+        QVERIFY(release({400, 300}, Qt::LeftButton, view));
+        QVERIFY(editor->draft());
+        auto *type = editor->findChild<QComboBox *>(QStringLiteral("objectType"));
+        auto *collection = editor->findChild<QComboBox *>(QStringLiteral("objectCollection"));
+        QVERIFY(type && collection);
+        // The core collection has only the generic marker. Use the next collection.
+        collection->setCurrentIndex(collection->findData(QStringLiteral("org.swak.milstd2525")));
+        QVERIFY(type->count() > 1);
+        type->setCurrentIndex(1);
+        const auto symbol = collections->symbol(collection->currentData().toString(),
+                                                type->currentData().toString());
+        QVERIFY(symbol);
+        QVERIFY(editor->cancel());
+        action->trigger();
+        QVERIFY(release({400, 300}, Qt::LeftButton, view));
+        QVERIFY(editor->draft());
+        QCOMPARE(editor->draft()->color, symbol->color.name());
+        QCOMPARE(editor->draft()->symbol, type->currentData().toString());
+        QVERIFY(editor->cancel());
+        // A marker with an unknown symbol draws the plain marker.
+        swak::UserObject plain;
+        plain.id = QStringLiteral("plain");
+        plain.type = QStringLiteral("circle");
+        plain.title = QStringLiteral("Plain");
+        plain.color = QStringLiteral("#ff0000");
+        plain.collection = QStringLiteral("missing.collection");
+        plain.symbol = QStringLiteral("missing");
+        plain.geometry = {{QStringLiteral("x"), 0.5}, {QStringLiteral("y"), 0.5}};
+        QVERIFY(objects->put(plain).isEmpty());
+        QImage image(800, 600, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        {
+            QPainter painter(&image);
+            tools->paint(painter, view);
+        }
+        QCOMPARE(image.pixelColor(400, 300).red(), 255);
+        QCOMPARE(image.pixelColor(400, 300).green(), 0);
+        // Interaction ignores other object types and events other than release and menus.
+        swak::UserObject area;
+        area.id = QStringLiteral("area");
+        area.type = QStringLiteral("polygon");
+        area.title = QStringLiteral("Area");
+        area.geometry =
+            swak::polygonGeometry({QPointF(0.4, 0.4), QPointF(0.45, 0.4), QPointF(0.45, 0.45)});
+        QVERIFY(objects->put(area).isEmpty());
+        swak::MapItem item;
+        item.owner = QStringLiteral("org.swak.markers");
+        item.id = area.id;
+        QMouseEvent click(QEvent::MouseButtonRelease,
+                          QPointF(400, 300),
+                          map->mapToGlobal(QPointF(400, 300)),
+                          Qt::LeftButton,
+                          Qt::NoButton,
+                          Qt::NoModifier);
+        QVERIFY(tools->interact(item, click, *map));
+        item.id = plain.id;
+        QMouseEvent move(QEvent::MouseMove,
+                         QPointF(400, 300),
+                         map->mapToGlobal(QPointF(400, 300)),
+                         Qt::NoButton,
+                         Qt::NoButton,
+                         Qt::NoModifier);
+        QVERIFY(!tools->interact(item, move, *map));
+        // The menu commands do nothing for a marker that is gone. A move ends when the marker
+        // is removed.
+        const auto menu = [&](const QString &name, bool removeFirst) {
+            QTimer::singleShot(0, map, [&, name, removeFirst] {
+                auto *popup = qobject_cast<QMenu *>(QApplication::activePopupWidget());
+                if (!popup) {
+                    return;
+                }
+                auto *entry = popup->findChild<QAction *>(name);
+                if (removeFirst) {
+                    objects->remove(plain.id);
+                }
+                popup->close();
+                if (entry) {
+                    entry->trigger();
+                }
+            });
+            QContextMenuEvent event(
+                QContextMenuEvent::Mouse, QPoint(400, 300), map->mapToGlobal(QPoint(400, 300)));
+            return tools->interact(item, event, *map);
+        };
+        QVERIFY(menu(QStringLiteral("moveMarker"), true));
+        QVERIFY(tools->statusText().isEmpty());
+        // A deleted marker cannot come back with its identifier, so use another one.
+        plain.id = QStringLiteral("plain-2");
+        item.id = plain.id;
+        QVERIFY(objects->put(plain).isEmpty());
+        QVERIFY(menu(QStringLiteral("moveMarker"), false));
+        QVERIFY(!tools->statusText().isEmpty());
+        objects->remove(plain.id);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return tools->statusText().isEmpty();
+            },
+            2000));
+    }
+    void polygonToolEdges()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("polygon-edges.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *map = window.findChild<QOpenGLWidget *>();
+        auto *tools = window.findChild<swak::MapTools *>();
+        auto *objects = window.findChild<swak::UserObjects *>();
+        auto *selection = window.findChild<swak::MapSelection *>();
+        auto *editor = window.findChild<swak::ObjectEditor *>(QStringLiteral("polygonEditor"));
+        auto *action = window.findChild<QAction *>(QStringLiteral("polygonModeAction"));
+        auto *configuration = dynamic_cast<swak::SettingsParticipant *>(editor);
+        QVERIFY(map && tools && objects && selection && editor && action && configuration);
+        // A create key with Ctrl is invalid and restores the default.
+        auto options = configuration->savePreferences();
+        options.insert(QStringLiteral("createKey"), QStringLiteral("Ctrl+B"));
+        QVERIFY(!configuration->validateSettings(options).isEmpty());
+        configuration->restorePreferences(options);
+        QCOMPARE(configuration->savePreferences().value(QStringLiteral("createKey")).toString(),
+                 QStringLiteral("Shift+A"));
+        // Only areas set the fill opacity. Routes have none.
+        int withoutFill = 0;
+        for (auto *tool : window.findChildren<swak::MapTool *>()) {
+            withoutFill += !tool->areaFillOpacity().has_value();
+        }
+        QVERIFY(withoutFill > 0);
+        const swak::Viewport view{QSizeF(800, 600), QPointF(0.5, 0.5), 3};
+        const auto mouse =
+            [&](QEvent::Type type,
+                QPointF point,
+                Qt::MouseButton button = Qt::LeftButton,
+                const swak::Viewport &at = {QSizeF(800, 600), QPointF(0.5, 0.5), 3}) {
+                QMouseEvent event(type,
+                                  point,
+                                  map->mapToGlobal(point),
+                                  button,
+                                  type == QEvent::MouseButtonRelease ? Qt::NoButton : button,
+                                  Qt::NoModifier);
+                return tools->handle(event, at, *map);
+            };
+        const auto context = [&](QPointF point) {
+            QContextMenuEvent event(
+                QContextMenuEvent::Mouse, point.toPoint(), map->mapToGlobal(point.toPoint()));
+            return tools->handle(event, view, *map);
+        };
+        // While drawing, the right button, a point outside the world, and a context menu add
+        // no corner. Two corners draw as a line.
+        action->trigger();
+        QVERIFY(mouse(QEvent::MouseButtonRelease, {300, 200}));
+        QVERIFY(!mouse(QEvent::MouseButtonRelease, {400, 200}, Qt::RightButton));
+        const swak::Viewport edge{QSizeF(800, 600), QPointF(0, 0.5), 3};
+        QVERIFY(mouse(QEvent::MouseButtonRelease, {10, 300}, Qt::LeftButton, edge));
+        QVERIFY(context({400, 200}));
+        QVERIFY(mouse(QEvent::MouseButtonRelease, {500, 200}));
+        QImage overlay(800, 600, QImage::Format_ARGB32_Premultiplied);
+        overlay.fill(Qt::transparent);
+        {
+            QPainter painter(&overlay);
+            tools->paintOverlay(painter, view, {500, 200});
+        }
+        QVERIFY(overlay.pixelColor(400, 200).alpha() > 0);
+        QVERIFY(mouse(QEvent::MouseButtonRelease, {500, 400}));
+        QVERIFY(mouse(QEvent::MouseButtonRelease, {300, 400}));
+        QVERIFY(mouse(QEvent::MouseButtonRelease, {300, 200}));
+        QVERIFY(editor->draft());
+        QCOMPARE(swak::polygonVertices(editor->draft()->geometry).size(), 4);
+        editor->findChild<QPushButton *>(QStringLiteral("applyObject"))->click();
+        QCOMPARE(objects->items().size(), 1);
+        const auto drawn = objects->items().firstKey();
+        // Edit opens the corners for changes.
+        const auto objectMenu = [&](const QString &id, const QString &name) {
+            bool seen = false;
+            QTimer::singleShot(0, map, [&, name] {
+                auto *popup = qobject_cast<QMenu *>(QApplication::activePopupWidget());
+                if (!popup) {
+                    return;
+                }
+                auto *entry = popup->findChild<QAction *>(name);
+                seen = entry != nullptr;
+                popup->close();
+                if (entry) {
+                    entry->trigger();
+                }
+            });
+            swak::MapItem target;
+            target.owner = QStringLiteral("org.swak.polygons");
+            target.id = id;
+            QContextMenuEvent event(
+                QContextMenuEvent::Mouse, QPoint(400, 300), map->mapToGlobal(QPoint(400, 300)));
+            tools->interact(target, event, *map);
+            return seen;
+        };
+        QVERIFY(objectMenu(drawn, QStringLiteral("editPolygon")));
+        QVERIFY(editor->draft());
+        const auto fourCorners = editor->draft()->geometry;
+        // A context menu away from the corners opens no corner menu.
+        bool opened = false;
+        QTimer::singleShot(0, map, [&] {
+            opened = QApplication::activePopupWidget() != nullptr;
+            if (auto *open = QApplication::activePopupWidget()) {
+                open->close();
+            }
+        });
+        QVERIFY(context({400, 300}));
+        // No menu loop ran, so run the check now.
+        QTest::qWait(0);
+        QVERIFY(!opened);
+        // A move of a corner that the draft no longer has ends without a change.
+        const auto vertexMenu = [&](QPointF point, const QString &name, bool shrink) {
+            bool seen = false;
+            QTimer::singleShot(0, map, [&, name, shrink] {
+                auto *popup = qobject_cast<QMenu *>(QApplication::activePopupWidget());
+                if (!popup) {
+                    return;
+                }
+                auto *entry = popup->findChild<QAction *>(name);
+                seen = entry != nullptr;
+                if (shrink) {
+                    auto points = swak::polygonVertices(editor->draft()->geometry);
+                    points.removeLast();
+                    editor->setGeometry(swak::polygonGeometry(points));
+                }
+                popup->close();
+                if (entry) {
+                    entry->trigger();
+                }
+            });
+            context(point);
+            return seen;
+        };
+        QVERIFY(vertexMenu({300, 400}, QStringLiteral("movePolygonVertex"), true));
+        QCOMPARE(swak::polygonVertices(editor->draft()->geometry).size(), 3);
+        const auto shrunk = editor->draft()->geometry;
+        QVERIFY(mouse(QEvent::MouseButtonRelease, {350, 450}));
+        QCOMPARE(editor->draft()->geometry, shrunk);
+        QVERIFY(editor->setGeometry(fourCorners));
+        QVERIFY(vertexMenu({300, 400}, QStringLiteral("movePolygonVertex"), false));
+        QVERIFY(editor->setGeometry(shrunk));
+        QVERIFY(mouse(QEvent::MouseButtonRelease, {350, 450}));
+        QCOMPARE(editor->draft()->geometry, shrunk);
+        // The move ended, so the next release changes nothing either.
+        QVERIFY(mouse(QEvent::MouseButtonRelease, {360, 460}));
+        QCOMPARE(editor->draft()->geometry, shrunk);
+        // Escape ends a corner move also in a window without the Information pane, which
+        // otherwise handles Escape first.
+        QVERIFY(editor->setGeometry(fourCorners));
+        QVERIFY(vertexMenu({300, 400}, QStringLiteral("movePolygonVertex"), false));
+        QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+        QVERIFY(tools->handle(escape, view, *map));
+        QVERIFY(mouse(QEvent::MouseButtonRelease, {350, 450}));
+        QCOMPARE(editor->draft()->geometry, fourCorners);
+        QVERIFY(editor->cancel());
+        objects->remove(drawn);
+        // Interaction ignores other object types and events other than release and menus.
+        // A changed area stays selected with its new title.
+        swak::UserObject area;
+        area.id = QStringLiteral("area");
+        area.type = QStringLiteral("polygon");
+        area.title = QStringLiteral("Area");
+        area.geometry =
+            swak::polygonGeometry({QPointF(0.45, 0.45), QPointF(0.55, 0.45), QPointF(0.55, 0.55)});
+        QVERIFY(objects->put(area).isEmpty());
+        swak::UserObject marker;
+        marker.id = QStringLiteral("marker");
+        marker.type = QStringLiteral("circle");
+        marker.title = QStringLiteral("Marker");
+        marker.geometry = {{QStringLiteral("x"), 0.5}, {QStringLiteral("y"), 0.5}};
+        QVERIFY(objects->put(marker).isEmpty());
+        swak::MapItem item;
+        item.owner = QStringLiteral("org.swak.polygons");
+        item.id = marker.id;
+        QMouseEvent release(QEvent::MouseButtonRelease,
+                            QPointF(400, 300),
+                            map->mapToGlobal(QPointF(400, 300)),
+                            Qt::LeftButton,
+                            Qt::NoButton,
+                            Qt::NoModifier);
+        QVERIFY(tools->interact(item, release, *map));
+        QVERIFY(!selection->item());
+        item.id = area.id;
+        QMouseEvent move(QEvent::MouseMove,
+                         QPointF(400, 300),
+                         map->mapToGlobal(QPointF(400, 300)),
+                         Qt::NoButton,
+                         Qt::NoButton,
+                         Qt::NoModifier);
+        QVERIFY(!tools->interact(item, move, *map));
+        QVERIFY(tools->interact(item, release, *map));
+        QVERIFY(selection->item());
+        area.title = QStringLiteral("Renamed area");
+        QVERIFY(objects->put(area).isEmpty());
+        QVERIFY(selection->item());
+        QCOMPARE(selection->item()->label, QStringLiteral("Renamed area"));
+    }
+    void shapeToolEdges()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("shape-edges.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *map = window.findChild<QOpenGLWidget *>();
+        auto *tools = window.findChild<swak::MapTools *>();
+        auto *objects = window.findChild<swak::UserObjects *>();
+        auto *selection = window.findChild<swak::MapSelection *>();
+        auto *circles = window.findChild<QWidget *>(QStringLiteral("shapesEditor"));
+        auto *lines = window.findChild<QWidget *>(QStringLiteral("linesEditor"));
+        auto *circleAction = window.findChild<QAction *>(QStringLiteral("shapeMode0"));
+        auto *distanceAction = window.findChild<QAction *>(QStringLiteral("shapeMode1"));
+        QVERIFY(map && tools && objects && selection && circles && lines && circleAction &&
+                distanceAction);
+        auto *circleSettings = dynamic_cast<swak::SettingsParticipant *>(circles);
+        auto *lineSettings = dynamic_cast<swak::SettingsParticipant *>(lines);
+        QVERIFY(circleSettings && lineSettings);
+        // Keys must differ. Profiles before version 1 used plain letters, which become Shift.
+        auto keys = lineSettings->savePreferences();
+        keys.insert(QStringLiteral("lineKey"), keys.value(QStringLiteral("distanceKey")));
+        QCOMPARE(lineSettings->validateSettings(keys),
+                 QStringLiteral("Use different letters, with optional Shift."));
+        circleSettings->restorePreferences(
+            {{QStringLiteral("shapeShortcutVersion"), 0}, {QStringLiteral("circleKey"), "C"}});
+        QCOMPARE(circleSettings->savePreferences().value(QStringLiteral("circleKey")).toString(),
+                 QStringLiteral("Shift+C"));
+        // Short measurements fade quickly.
+        auto timing = lineSettings->savePreferences();
+        timing.insert(QStringLiteral("holdSeconds"), 1);
+        timing.insert(QStringLiteral("fadeMs"), 400);
+        lineSettings->restorePreferences(timing);
+        const swak::Viewport view{QSizeF(800, 600), QPointF(0.5, 0.5), 3};
+        const auto release = [&](QPointF point, const swak::Viewport &at) {
+            QMouseEvent event(QEvent::MouseButtonRelease,
+                              point,
+                              map->mapToGlobal(point),
+                              Qt::LeftButton,
+                              Qt::NoButton,
+                              Qt::NoModifier);
+            return tools->handle(event, at, *map);
+        };
+        const auto status = [](QWidget *editor, const QString &text) {
+            const auto labels = editor->findChildren<QLabel *>();
+            return std::any_of(labels.cbegin(), labels.cend(), [&](const QLabel *label) {
+                return label->text().contains(text);
+            });
+        };
+        // While drawing, a point outside the world adds nothing, and two equal points fail.
+        distanceAction->trigger();
+        const swak::Viewport edge{QSizeF(800, 600), QPointF(0, 0.5), 3};
+        QVERIFY(release({10, 300}, edge));
+        QVERIFY(release({300, 300}, view));
+        QVERIFY(release({300, 300}, view));
+        QVERIFY(status(lines, QStringLiteral("Choose two different points.")));
+        // At most 64 measurements stay. Older ones go first.
+        for (int index = 0; index < 66; ++index) {
+            if (tools->statusText().isEmpty()) {
+                distanceAction->trigger();
+            }
+            QVERIFY(release({300, 300}, view));
+            QVERIFY(release(QPointF(320.0 + index, 330), view));
+        }
+        // After the hold time, the measurements fade and then go.
+        QTest::qWait(1100);
+        QImage image(800, 600, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        {
+            QPainter painter(&image);
+            tools->paint(painter, view);
+        }
+        int painted = 0;
+        for (int y = 290; y < 340; ++y) {
+            for (int x = 290; x < 400; ++x) {
+                painted += image.pixelColor(x, y).alpha() > 0;
+            }
+        }
+        QVERIFY(painted > 0);
+        static_cast<void>(tools->cancel());
+        // A circle drawn at the center becomes an object. A release selects it, other events
+        // do nothing, and an update keeps it selected.
+        circleAction->trigger();
+        QVERIFY(release({400, 300}, view));
+        QVERIFY(release({430, 300}, view));
+        circles->findChild<QPushButton *>(QStringLiteral("applyObject"))->click();
+        QCOMPARE(objects->items().size(), 1);
+        const auto id = objects->items().firstKey();
+        selection->clear();
+        swak::MapItem item;
+        item.owner = QStringLiteral("org.swak.shapes");
+        item.id = id;
+        QMouseEvent click(QEvent::MouseButtonRelease,
+                          QPointF(400, 300),
+                          map->mapToGlobal(QPointF(400, 300)),
+                          Qt::LeftButton,
+                          Qt::NoButton,
+                          Qt::NoModifier);
+        QVERIFY(tools->interact(item, click, *map));
+        QVERIFY(selection->item());
+        QMouseEvent move(QEvent::MouseMove,
+                         QPointF(400, 300),
+                         map->mapToGlobal(QPointF(400, 300)),
+                         Qt::NoButton,
+                         Qt::NoButton,
+                         Qt::NoModifier);
+        QVERIFY(!tools->interact(item, move, *map));
+        auto changed = *objects->find(id);
+        changed.title = QStringLiteral("Renamed circle");
+        QVERIFY(objects->put(changed).isEmpty());
+        QCOMPARE(selection->item()->label, QStringLiteral("Renamed circle"));
+        // Moving the center of a circle in the editor moves its edge too.
+        const auto menu = [&](const std::function<void(QContextMenuEvent &)> &send,
+                              const QString &name) {
+            bool seen = false;
+            QTimer::singleShot(0, map, [&, name] {
+                auto *popup = qobject_cast<QMenu *>(QApplication::activePopupWidget());
+                if (!popup) {
+                    return;
+                }
+                auto *entry = popup->findChild<QAction *>(name);
+                seen = entry != nullptr;
+                popup->close();
+                if (entry) {
+                    if (name == QStringLiteral("deleteShape")) {
+                        answerDeletion();
+                    }
+                    entry->trigger();
+                }
+            });
+            QContextMenuEvent event(
+                QContextMenuEvent::Mouse, QPoint(400, 300), map->mapToGlobal(QPoint(400, 300)));
+            send(event);
+            return seen;
+        };
+        QVERIFY(menu(
+            [&](QContextMenuEvent &event) {
+                tools->interact(item, event, *map);
+            },
+            QStringLiteral("editShape")));
+        auto *editor = dynamic_cast<swak::ObjectEditor *>(circles);
+        QVERIFY(editor && editor->draft());
+        const auto before = swak::polygonVertices(editor->draft()->geometry);
+        QVERIFY(menu(
+            [&](QContextMenuEvent &event) {
+                tools->handle(event, view, *map);
+            },
+            QStringLiteral("moveShapePoint")));
+        QVERIFY(release({410, 310}, view));
+        const auto after = swak::polygonVertices(editor->draft()->geometry);
+        const auto shift = after[0] - before[0];
+        QVERIFY(shift.manhattanLength() > 0);
+        QVERIFY(std::abs((after[1] - before[1] - shift).manhattanLength()) < 1e-12);
+        // A release during editing keeps the draft.
+        QVERIFY(release({600, 500}, view));
+        QCOMPARE(swak::polygonVertices(editor->draft()->geometry), after);
+        QVERIFY(editor->cancel());
+        // Delete in the menu deletes the circle after the confirmation.
+        QVERIFY(menu(
+            [&](QContextMenuEvent &event) {
+                tools->interact(item, event, *map);
+            },
+            QStringLiteral("deleteShape")));
+        QVERIFY(objects->items().isEmpty());
+    }
     void reportsPaneServer()
     {
         // The pane lists, sends with attachments, and updates reports of a server.

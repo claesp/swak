@@ -1767,3 +1767,7 @@ The coverage, quick, GUI, and analysis modes passed.
 
 New GUI tests cover legacy route preferences, route provider errors and settings, Escape during a polygon corner move, the route total label, shape label hits, the object editor, and the server limit. The Remove property button has the object name `removeObjectProperty` for tests. The coverage, quick, GUI, and analysis modes passed. Read the October 11 sections of `docs/testing.md` for the paths that remain untested.
 
+# 2026-10-11: Marker and drawing tool edges
+
+New GUI tests drive the marker, area, and shape tools through `MapTools` and cover their remaining reachable paths. The area tool now handles Escape through `dismiss`, which removes duplicated move cancellation code. The coverage, quick, GUI, and analysis modes passed with 133 GUI cases. Line coverage is 95.8 percent.
+

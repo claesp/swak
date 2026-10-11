@@ -310,14 +310,7 @@ public:
                 return false;
             }
             if (key.key() == Qt::Key_Escape) {
-                if (moving_ >= 0) {
-                    moving_ = -1;
-                    skipMoveRelease_ = false;
-                    map.unsetCursor();
-                    emit changed();
-                    return true;
-                }
-                return cancel();
+                return dismiss();
             }
             if (drawing_ && (key.key() == Qt::Key_Return || key.key() == Qt::Key_Enter)) {
                 if (!key.isAutoRepeat() && points_.size() >= 2) {
