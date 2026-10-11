@@ -1901,6 +1901,173 @@ private slots:
         QVERIFY(!editor->isFloating());
         QCOMPARE(window.dockWidgetArea(editor), Qt::BottomDockWidgetArea);
     }
+    void routePlannerDetails()
+    {
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("routes.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *routePane = window.findChild<QWidget *>(QStringLiteral("routePlanner"));
+        auto *settings = dynamic_cast<swak::SettingsParticipant *>(routePane);
+        auto *provider = dynamic_cast<swak::SettingsWidgetProvider *>(routePane);
+        auto *routes = window.findChild<swak::RouteSources *>();
+        auto *start = window.findChild<QComboBox *>(QStringLiteral("routeStart"));
+        auto *destination = window.findChild<QComboBox *>(QStringLiteral("routeDestination"));
+        auto *status = window.findChild<QLabel *>(QStringLiteral("routeStatus"));
+        QVERIFY(settings && provider && routes && start && destination && status);
+        // Earlier versions saved four numbers. A zero pair was the default and means no point.
+        settings->restorePreferences(
+            {{QStringLiteral("points"), QJsonArray{20.0, 19.5, 21.0, 20.5}}});
+        QCOMPARE(start->currentData().toString(), QStringLiteral("map"));
+        QCOMPARE(destination->currentData().toString(), QStringLiteral("map"));
+        const auto saved = settings->savePreferences();
+        QCOMPARE(saved.value(QStringLiteral("start")).toObject().value(QStringLiteral("latitude")),
+                 QJsonValue(20.0));
+        QCOMPARE(saved.value(QStringLiteral("destination"))
+                     .toObject()
+                     .value(QStringLiteral("longitude")),
+                 QJsonValue(20.5));
+        settings->restorePreferences(
+            {{QStringLiteral("points"), QJsonArray{0.0, 0.0, 21.0, 20.5}}});
+        QCOMPARE(start->currentIndex(), 0);
+        QCOMPARE(destination->currentData().toString(), QStringLiteral("map"));
+        // A provider error shows in the status line.
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        connect(&server, &QTcpServer::newConnection, &server, [&] {
+            auto *socket = server.nextPendingConnection();
+            connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+            connect(socket, &QTcpSocket::readyRead, socket, [socket] {
+                socket->readAll();
+                socket->write("HTTP/1.1 500 Server Error\r\nContent-Length: 0\r\n"
+                              "Connection: close\r\n\r\n");
+                socket->disconnectFromHost();
+            });
+        });
+        for (const auto &[id, name] : {std::pair{QStringLiteral("failing"), QStringLiteral("A")},
+                                       std::pair{QStringLiteral("other"), QStringLiteral("B")}}) {
+            QVERIFY(
+                routes
+                    ->put(id,
+                          {{"name", name},
+                           {"format", "org.swak.valhalla"},
+                           {"endpoint",
+                            QStringLiteral("http://127.0.0.1:%1/route").arg(server.serverPort())},
+                           {"attribution", "Test route"}})
+                    .isEmpty());
+        }
+        routes->select(QStringLiteral("failing"));
+        settings->restorePreferences(
+            {{QStringLiteral("points"), QJsonArray{20.0, 19.5, 21.0, 20.5}}});
+        QSignalSpy finished(routes, &swak::RouteSources::completed);
+        window.findChild<QPushButton *>(QStringLiteral("calculateRoute"))->click();
+        QVERIFY(finished.wait(5000));
+        QVERIFY(!routes->result().error.isEmpty());
+        QCOMPARE(status->text(), routes->result().error);
+        // The settings page selects the provider and sets the running speed.
+        std::unique_ptr<QWidget> page(provider->createSettingsWidget(nullptr));
+        page->show();
+        auto *speed = page->findChild<QDoubleSpinBox *>();
+        QVERIFY(speed);
+        speed->setValue(12.5);
+        QCOMPARE(settings->savePreferences().value(QStringLiteral("runningSpeed")).toDouble(),
+                 12.5);
+        auto *other = page->findChild<QAbstractButton *>(QStringLiteral("activeProvider/other"));
+        QVERIFY(other);
+        other->click();
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return routes->activeId() == QStringLiteral("other");
+            },
+            2000));
+    }
+    void shapeLabelHits()
+    {
+        // A click on a shape label selects the shape, also away from its geometry.
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("labels.json")),
+                            QPluginLoader::staticInstances());
+        auto *tools = window.findChild<swak::MapTools *>();
+        auto *objects = window.findChild<swak::UserObjects *>();
+        QVERIFY(tools && objects);
+        const swak::Viewport view{QSizeF(800, 600), QPointF(0.5, 0.5), 12};
+        const double pixel = 1 / view.scale();
+        swak::UserObject ring;
+        ring.id = QStringLiteral("ring");
+        ring.type = QStringLiteral("range-circle");
+        ring.title = QStringLiteral("A long circle title");
+        // The radius is two pixels, so the title reaches far beyond the circle.
+        ring.geometry = swak::polygonGeometry({QPointF(0.5, 0.5), QPointF(0.5 + 2 * pixel, 0.5)});
+        const auto ringError = objects->put(ring);
+        QVERIFY2(ringError.isEmpty(), qPrintable(ringError));
+        swak::UserObject line;
+        line.id = QStringLiteral("line");
+        line.type = QStringLiteral("line");
+        line.title = QStringLiteral("Line title");
+        line.geometry = swak::polygonGeometry({QPointF(0.5 - 100 * pixel, 0.5 + 100 * pixel),
+                                               QPointF(0.5 + 100 * pixel, 0.5 + 100 * pixel)});
+        const auto lineError = objects->put(line);
+        QVERIFY2(lineError.isEmpty(), qPrintable(lineError));
+        const auto ids = [&](QPointF position) {
+            QStringList result;
+            for (const auto &item : tools->itemsAt(view, position)) {
+                if (item.owner == QStringLiteral("org.swak.shapes")) {
+                    result.append(item.id);
+                }
+            }
+            return result;
+        };
+        // The circle is at (400, 300). Its title is centered there.
+        QCOMPARE(ids({420, 300}), QStringList{QStringLiteral("ring")});
+        // The line is at y = 400. Its label starts above the middle of the line.
+        QCOMPARE(ids({420, 386}), QStringList{QStringLiteral("line")});
+        QVERIFY(ids({400, 200}).isEmpty());
+        QVERIFY(ids({700, 386}).isEmpty());
+    }
+    void objectEditorDetails()
+    {
+        swak::UserObjects objects;
+        swak::MarkerCollections collections(QPluginLoader::staticInstances());
+        swak::ObjectEditor editor(objects, collections, nullptr);
+        editor.show();
+        swak::UserObject marker;
+        marker.id = QStringLiteral("m1");
+        marker.type = QStringLiteral("circle");
+        marker.title = QStringLiteral("Rally");
+        marker.collection = editor.newCollection();
+        marker.geometry = {{QStringLiteral("x"), 0.5}, {QStringLiteral("y"), 0.3}};
+        editor.edit(marker);
+        QVERIFY(editor.draft());
+        // The description keeps at most 2048 characters.
+        auto *description = editor.findChild<QPlainTextEdit *>(QStringLiteral("objectDescription"));
+        description->setPlainText(QString(3000, QLatin1Char('x')));
+        QCOMPARE(description->toPlainText().size(), 2048);
+        // Remove property removes the selected row, and nothing without a selection.
+        auto *properties = editor.findChild<QTableWidget *>(QStringLiteral("objectProperties"));
+        auto *add = editor.findChild<QPushButton *>(QStringLiteral("addObjectProperty"));
+        auto *remove = editor.findChild<QPushButton *>(QStringLiteral("removeObjectProperty"));
+        QVERIFY(properties && add && remove);
+        add->click();
+        add->click();
+        QCOMPARE(properties->rowCount(), 2);
+        properties->setCurrentCell(0, 1);
+        remove->click();
+        QCOMPARE(properties->rowCount(), 1);
+        properties->setCurrentCell(-1, -1);
+        remove->click();
+        QCOMPARE(properties->rowCount(), 1);
+        // A change of the marker collections keeps the chosen collection and symbol.
+        auto *collection = editor.findChild<QComboBox *>(QStringLiteral("objectCollection"));
+        auto *type = editor.findChild<QComboBox *>(QStringLiteral("objectType"));
+        QVERIFY(collection && type);
+        const auto chosenCollection = collection->currentData();
+        const auto chosenType = type->currentData();
+        emit collections.changed();
+        QCOMPARE(collection->currentData(), chosenCollection);
+        QCOMPARE(type->currentData(), chosenType);
+        QVERIFY(editor.draft());
+    }
     void reportsPaneServer()
     {
         // The pane lists, sends with attachments, and updates reports of a server.
@@ -6958,6 +7125,31 @@ private slots:
         QVERIFY(!editor->draft());
         click(b);
         click(c);
+        // While drawing, a route with three points shows its total length beside the last point.
+        const auto savedView = dynamic_cast<swak::PreferenceParticipant *>(map)->savePreferences();
+        const swak::Viewport view{map->size(),
+                                  {savedView.value(QStringLiteral("centerX")).toDouble(),
+                                   savedView.value(QStringLiteral("centerY")).toDouble()},
+                                  savedView.value(QStringLiteral("zoom")).toDouble()};
+        const auto labelPixels = [&] {
+            QImage overlay(map->size(), QImage::Format_ARGB32_Premultiplied);
+            overlay.fill(Qt::transparent);
+            {
+                QPainter painter(&overlay);
+                tools->paintOverlay(painter, view, c);
+            }
+            int white = 0;
+            const QRect region(c.x() + 8, c.y() + 4, 120, 16);
+            for (int y = region.top(); y <= region.bottom(); ++y) {
+                for (int x = region.left(); x <= region.right(); ++x) {
+                    const auto color = overlay.pixelColor(x, y);
+                    white += color.alpha() > 0 && color.red() > 240 && color.green() > 240 &&
+                             color.blue() > 240;
+                }
+            }
+            return white;
+        };
+        QVERIFY(labelPixels() > 0);
         QTest::keyClick(map, Qt::Key_Return);
         QVERIFY(editor->draft());
         QVERIFY(editor->isVisible());
@@ -7217,6 +7409,12 @@ private slots:
             click(a + QPoint(15, 15));
             QVERIFY(editor->draft()->geometry != original);
             QVERIFY(editor->setGeometry(original));
+            // Escape ends a corner move. The draft stays, and a later click moves nothing.
+            context(a, QStringLiteral("movePolygonVertex"));
+            motion(a + QPoint(30, 0));
+            QTest::keyClick(map, Qt::Key_Escape);
+            QVERIFY(editor->draft());
+            QCOMPARE(editor->draft()->geometry, original);
             context(a, QStringLiteral("movePolygonVertex"));
             QCOMPARE(tools->statusText(), QStringLiteral("A"));
             motion(b);
@@ -9793,6 +9991,24 @@ private slots:
         emit list->cellDoubleClicked(1, 1);
         QVERIFY(edited);
         emit list->cellDoubleClicked(1, 0);
+        QVERIFY(!visibleDialog(window, QStringLiteral("serverEditor")));
+        // An entry removed before the check box saves it stays removed.
+        auto *inputActive =
+            window.findChild<QAbstractButton *>(QStringLiteral("activeProvider/in"));
+        QVERIFY(inputActive);
+        inputActive->click();
+        servers->remove(QStringLiteral("in"));
+        QTest::qWait(50);
+        QVERIFY(!servers->sources().contains(QStringLiteral("in")));
+        // Add stops at 16 entries.
+        for (auto index = servers->sources().size(); index < 16; ++index) {
+            auto extra = output;
+            extra.insert(QStringLiteral("name"), QStringLiteral("Extra %1").arg(index));
+            QVERIFY(servers->put(QStringLiteral("extra%1").arg(index), extra).isEmpty());
+        }
+        window.findChild<QPushButton *>(QStringLiteral("addServer"))->click();
+        QCOMPARE(window.findChild<QPlainTextEdit *>(QStringLiteral("serverStatus"))->toPlainText(),
+                 QStringLiteral("The server limit is 16."));
         QVERIFY(!visibleDialog(window, QStringLiteral("serverEditor")));
     }
     void serverBrowserAndIdentity()

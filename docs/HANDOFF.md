@@ -1759,7 +1759,11 @@ The coverage, quick, GUI, and analysis modes passed.
 
 # 2026-10-11: OpenSSL faults and enrollment write failures
 
-`tests/test_openssl_faults.cpp` makes each OpenSSL allocation of the enrollment functions fail in turn, with a seeded random source, so successful runs must match the reference exactly. It found that key reading called a valid key too short when OpenSSL could not read its size. That is fixed. It also found an OpenSSL 3.5.7 abort after a failed allocation at `crypto/asn1/tasn_new.c:299` in `X509_REQ_sign`. The test keeps that allocation successful and reports it. `docs/dependencies.md` records the defect. Report it upstream if the user agrees.
+`tests/test_openssl_faults.cpp` makes each OpenSSL allocation of the enrollment functions fail in turn, with a seeded random source, so successful runs must match the reference exactly. It found that key reading called a valid key too short when OpenSSL could not read its size. That is fixed. It also found an OpenSSL 3.5.7 abort after a failed allocation at `crypto/asn1/tasn_new.c:299` in `X509_REQ_sign`. The test keeps that allocation successful and reports it. `docs/dependencies.md` records the defect. The user decided not to report it upstream.
 
 `enrollmentFailures` now covers refused subject fields, signing failures, blocked key and certificate files, and invalid certificate paths. The coverage, quick, GUI, and analysis modes passed.
+
+# 2026-10-11: Drawing tool and dialog tests
+
+New GUI tests cover legacy route preferences, route provider errors and settings, Escape during a polygon corner move, the route total label, shape label hits, the object editor, and the server limit. The Remove property button has the object name `removeObjectProperty` for tests. The coverage, quick, GUI, and analysis modes passed. Read the October 11 sections of `docs/testing.md` for the paths that remain untested.
 

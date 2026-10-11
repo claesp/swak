@@ -118,8 +118,8 @@ Paths that remain untested:
 - The default socket error text. Qt reports the errors that a local test can cause with named error codes.
 - Archive entry names with `..` or backslashes. GDAL removes or changes these names before SWAK checks them, so the check is a second defense.
 - After a successful enrollment, a failed permission change of a written file, and an entry without a CA that receives the server CA. The second path needs a server certificate that the system trusts.
-- LAN peer rows in the Local LAN pane. Only the namespace test makes LAN peers, and it runs without the GUI.
-- Some mouse paths of the drawing tools, and legacy route preferences with four coordinate fields.
+- The status line after a completed enrollment in the server browser. The server tests cover the enrollment itself.
+- New markers that take their color from a collection symbol, and some context menu and release paths of the drawing tools.
 
 # Image allocation faults
 
@@ -143,4 +143,17 @@ The sweeps cover key generation, key reading, certificate requests, and enrollme
 An allocation failure cannot cause the request encoding error, so a test sends a request above 64 KiB. The second encoding call now has a check too. No allocation failure reaches that check, so it stays untested.
 
 `enrollmentFailures` also checks a subject field that OpenSSL refuses, a refused or dropped signing request, a reply without a certificate, a directory in place of the key, certificate, or CA file, and a certificate path with a control character. The entry stays unchanged after each failure. The last run then enrolls in a usable folder.
+
+# Drawing tools and dialogs, October 11
+
+`lanPeers` already fills the Local LAN pane with peers inside the network namespace. The earlier gap came from a coverage run without `--lan`.
+
+New tests:
+
+- `routePlannerDetails` restores preferences with four coordinate fields, where a zero pair means no point. It also checks a route provider error, the running speed, and the provider choice in Settings.
+- `polygonWorkflow` presses Escape during a corner move. The draft stays, and its corners do not change.
+- `routeMarkerWorkflow` checks the total length label while a route with three points is drawn.
+- `shapeLabelHits` selects a circle and a line by their labels, away from their geometry.
+- `objectEditorDetails` checks the description limit, property removal, and a marker collection change during editing.
+- `serverBrowserTable` checks the limit of 16 entries and an entry removed before its check box saves it.
 

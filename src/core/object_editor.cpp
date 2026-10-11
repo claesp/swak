@@ -158,6 +158,7 @@ ObjectEditor::ObjectEditor(UserObjects &objects, MarkerCollections &collections,
     add->setObjectName(QStringLiteral("addObjectProperty"));
     actions->addWidget(add);
     auto *remove = new QPushButton(tr("Remove property"), this);
+    remove->setObjectName(QStringLiteral("removeObjectProperty"));
     actions->addWidget(remove);
     layout->addLayout(actions);
     connect(add, &QPushButton::clicked, this, [this] {
