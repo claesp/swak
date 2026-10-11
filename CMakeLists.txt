@@ -194,6 +194,8 @@ add_library(
     src/core/logging.h
     src/core/quit_signals.cpp
     src/core/quit_signals.h
+    src/core/image_allocation.cpp
+    src/core/image_allocation.h
 )
 # TAK Protocol version 1 uses SWAK's own schema and the Protobuf lite runtime. The generated code
 # builds in its own library without the SWAK warning flags. Its header is a system header.

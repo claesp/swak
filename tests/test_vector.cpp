@@ -2,6 +2,7 @@
 #include "core/maps.h"
 #include "core/tiles.h"
 #include "core/vector_tiles.h"
+#include "image_fault.h"
 #include "tile_server.h"
 #include "vector_fixture.h"
 
@@ -326,6 +327,51 @@ private slots:
             },
             5000));
         QVERIFY(renderer.featuresAt(QPointF(128, 128)).isEmpty());
+    }
+    void imageAllocationFailure()
+    {
+        // A vector tile whose image cannot be made fails with a status. The next source renders.
+        TileServer server;
+        server.body = vector_fixture::sample();
+        QVERIFY(server.load(QFINDTESTDATA("fixtures")));
+        QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+        auto source = provider_->defaults();
+        source.insert(
+            QStringLiteral("endpoint"),
+            QStringLiteral("https://localhost:%1/{z}/{x}/{y}.pbf").arg(server.serverPort()));
+        source.insert(QStringLiteral("ignoreTls"), true);
+        QImage canvas(512, 512, QImage::Format_RGB32);
+        TileRenderer renderer;
+        renderer.setPrefetchMargin(0);
+        const auto draw = [&] {
+            QPainter painter(&canvas);
+            renderer.paint(painter, {QSizeF(512, 512), QPointF(0.5, 0.5), 1}, 1, false);
+        };
+        const auto failsWith = [&](swak::ImageFault fault, const QString &text) {
+            const ImageFaultGuard guard(fault);
+            renderer.setSource(provider_, source);
+            return QTest::qWaitFor(
+                [&] {
+                    draw();
+                    return renderer.status().contains(text);
+                },
+                10000);
+        };
+        QVERIFY2(failsWith(swak::ImageFault::NullImage,
+                           QStringLiteral("Vector tile image allocation failed.")),
+                 qPrintable(renderer.status()));
+        QCOMPARE(renderer.coverage().rendered, 0);
+        QVERIFY2(
+            failsWith(swak::ImageFault::Throw, QStringLiteral("Vector tile preparation failed.")),
+            qPrintable(renderer.status()));
+        QCOMPARE(renderer.coverage().rendered, 0);
+        renderer.setSource(provider_, source);
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                draw();
+                return !renderer.featuresAt(QPointF(128, 128)).isEmpty();
+            },
+            10000));
     }
     void cachePressure()
     {

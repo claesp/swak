@@ -1753,3 +1753,7 @@ Fixes:
 
 The coverage, quick, GUI, and analysis modes passed.
 
+# 2026-10-11: Image allocation fault injection
+
+`allocateImage` in `core/image_allocation.*` now creates the vector and raster tile images. `setImageFaultForTests` makes it return a null image or throw `std::bad_alloc` on all threads. Like `setQuicHostLookupForTests`, the hook is part of every build, and only tests call it. Tests now cover both allocation failure messages, the raster worker exception handler, and recovery after each fault. The vector worker exception handler already had a test. The coverage, quick, GUI, and analysis modes passed.
+

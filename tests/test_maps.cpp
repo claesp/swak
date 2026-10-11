@@ -1,6 +1,7 @@
 #include "core/gdal_support.h"
 #include "core/maps.h"
 #include "core/tiles.h"
+#include "image_fault.h"
 #include "tile_server.h"
 
 #include <QGuiApplication>
@@ -863,6 +864,31 @@ private slots:
             10000));
         draw(renderer, canvas);
         QCOMPARE(canvas.pixelColor(128, 128), QColor(200, 30, 40));
+        // A tile whose image cannot be made fails. A thrown allocation failure stops only its
+        // worker. Afterwards the same dataset renders again.
+        {
+            const ImageFaultGuard fault(ImageFault::NullImage);
+            QCOMPARE(tile(QStringLiteral("rgb.tif"), 1, 0, 0).error,
+                     QStringLiteral("Map tile image allocation failed."));
+        }
+        for (const auto &[fault, text] :
+             {std::pair{ImageFault::NullImage, QStringLiteral("Map tile image allocation failed.")},
+              std::pair{ImageFault::Throw, QStringLiteral("Map tile rendering failed.")}}) {
+            const ImageFaultGuard guard(fault);
+            TileRenderer failing;
+            failing.setSource(raster, datasetSource(directory.filePath(QStringLiteral("rgb.tif"))));
+            QVERIFY2(QTest::qWaitFor(
+                         [&] {
+                             draw(failing, canvas);
+                             return failing.status().contains(text);
+                         },
+                         10000),
+                     qPrintable(failing.status()));
+            QCOMPARE(failing.coverage().rendered, 0);
+        }
+        const auto again = tile(QStringLiteral("rgb.tif"), 1, 1, 0);
+        QVERIFY2(again.error.isEmpty(), qPrintable(again.error));
+        QCOMPARE(again.image.pixelColor(128, 128), QColor(200, 30, 40));
         renderer.setSource(raster, datasetSource(directory.filePath(QStringLiteral("absent.tif"))));
         draw(renderer, canvas);
         QVERIFY(QTest::qWaitFor(

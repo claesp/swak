@@ -1,5 +1,6 @@
 #include "core/tiles.h"
 
+#include "core/image_allocation.h"
 #include "core/logging.h"
 #include "swak/version.h"
 
@@ -994,7 +995,7 @@ void TileRenderer::decodeVector(
                     return prepared;
                 }
                 // Two pixels per logical pixel keep ordinary high-DPI views sharp.
-                prepared.pixels = QImage(512, 512, QImage::Format_ARGB32_Premultiplied);
+                prepared.pixels = allocateImage(512, 512, QImage::Format_ARGB32_Premultiplied);
                 if (prepared.pixels.isNull()) {
                     prepared.vectors.error = tr("Vector tile image allocation failed.");
                     return prepared;

@@ -1,6 +1,7 @@
 #include "core/activity.h"
 #include "core/files.h"
 #include "core/graphics.h"
+#include "core/image_allocation.h"
 #include "core/interfaces.h"
 #include "core/map_decorations.h"
 #include "core/map_grid.h"
@@ -18,6 +19,7 @@
 #include "core/servers.h"
 #include "core/store.h"
 #include "core/user_objects.h"
+#include "image_fault.h"
 
 #include <QAbstractItemModelTester>
 #include <QFile>
@@ -1723,6 +1725,22 @@ private slots:
         const auto coordinate = view.coordinate(view.screen(59.3, 18.0));
         QVERIFY(std::abs(coordinate.x() - 18) < 1e-8);
         QVERIFY(std::abs(coordinate.y() - 59.3) < 1e-8);
+    }
+    void imageAllocation()
+    {
+        const auto normal = allocateImage(4, 3, QImage::Format_ARGB32);
+        QCOMPARE(normal.size(), QSize(4, 3));
+        QCOMPARE(normal.format(), QImage::Format_ARGB32);
+        {
+            const ImageFaultGuard fault(ImageFault::NullImage);
+            QVERIFY(allocateImage(4, 3, QImage::Format_ARGB32).isNull());
+        }
+        {
+            const ImageFaultGuard fault(ImageFault::Throw);
+            QVERIFY_THROWS_EXCEPTION(std::bad_alloc, allocateImage(4, 3, QImage::Format_ARGB32));
+        }
+        // The guard ends the fault.
+        QVERIFY(!allocateImage(4, 3, QImage::Format_ARGB32).isNull());
     }
     void quitSignals()
     {

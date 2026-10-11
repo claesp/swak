@@ -115,10 +115,19 @@ New tests:
 
 Paths that remain untested:
 
-- Allocation failures of tile and raster images, and exception handlers around workers. The tests cannot cause these failures without a fault injection hook.
 - The default socket error text. Qt reports the errors that a local test can cause with named error codes.
 - Archive entry names with `..` or backslashes. GDAL removes or changes these names before SWAK checks them, so the check is a second defense.
 - OpenSSL failures during key and request creation, and file write failures after a successful enrollment.
 - LAN peer rows in the Local LAN pane. Only the namespace test makes LAN peers, and it runs without the GUI.
 - Some mouse paths of the drawing tools, and legacy route preferences with four coordinate fields.
+
+# Image allocation faults
+
+`core/image_allocation.*` creates the vector and raster tile images. Tests call `setImageFaultForTests` to make it return a null image or throw `std::bad_alloc`. `tests/image_fault.h` ends the fault when the test scope ends, also after a failed check.
+
+- `imageAllocation` checks the hook itself.
+- `imageAllocationFailure` in the vector tests expects "Vector tile image allocation failed." and "Vector tile preparation failed.", and then a normal render.
+- `gdalRasterFiles` expects "Map tile image allocation failed." from the provider and the renderer, and "Map tile rendering failed." when the worker catches the exception. The same dataset then renders again, so the dataset pool and the GDAL options survive the exception.
+
+A check with the null image fault turned off made both renderer tests fail, so the tests depend on the fault.
 

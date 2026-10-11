@@ -1,4 +1,5 @@
 #include "core/gdal_support.h"
+#include "core/image_allocation.h"
 #include "core/interfaces.h"
 #include "core/maps.h"
 #include "swak/version.h"
@@ -391,7 +392,7 @@ RasterTile toImage(GDALDataset &dataset,
     const bool gray = roles[1] < 0 || roles[2] < 0;
     const bool scaled = dataset.GetRasterBand(1)->GetRasterDataType() != GDT_Byte;
     const double stretch = scaled ? 255 / (range.maximum - range.minimum) : 1;
-    QImage image(TileSize, TileSize, QImage::Format_ARGB32);
+    auto image = allocateImage(TileSize, TileSize, QImage::Format_ARGB32);
     if (image.isNull()) {
         result.error = QObject::tr("Map tile image allocation failed.");
         return result;
