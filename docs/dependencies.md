@@ -28,6 +28,16 @@ SWAK links OpenSSL `libcrypto` and `libssl` 3.2 or later directly. Enrollment us
 
 OpenSSL 3.5.7 has a defect on one allocation failure path. When the allocation at `crypto/asn1/tasn_new.c:299` fails during `X509_REQ_sign`, OpenSSL frees an embedded ASN.1 field, and the process aborts. SWAK cannot prevent this, because the failure happens inside OpenSSL. It needs an out-of-memory condition at that point of an enrollment. `tests/test_openssl_faults.cpp` records the site. Check it again after each OpenSSL update.
 
+# Display fonts
+
+The Modern display mode embeds three font families as Qt resources from `third_party/fonts`. Film interfaces use wide geometric faces in the Eurostile tradition for titles, condensed squared faces for controls, and monospace faces for telemetry. Qt and the system fonts give no such faces, so the user decided on October 11, 2026 to bundle these OFL fonts from the Google Fonts repository:
+
+- Michroma Regular, 64 KiB, for pane titles and the map HUD title. It follows the Microgramma and Eurostile style.
+- Rajdhani Medium and SemiBold, 375 KiB and 381 KiB, for interface text. The files also hold Devanagari, which explains their size.
+- JetBrains Mono, one variable font of 183 KiB, for coordinates, times, tags, and the status bar.
+
+All three use the SIL Open Font License 1.1. The license texts are installed under `fonts` in the documentation directory. Standard mode does not use these fonts. The files add about 1 MiB to the executable.
+
 # Protobuf
 
 SWAK uses the Protobuf lite runtime for TAK Protocol version 1. The user decided on October 7, 2026 to use the Protobuf library. The schema is SWAK's own file, `src/core/proto/tak_protocol.proto`, which matches the TAK wire format and copies no TAK file. The build runs `protoc` and compiles the generated code in a separate library without the SWAK warning flags. Install `libprotobuf-dev` and `protobuf-compiler` to build SWAK. The runtime package is `libprotobuf-lite32t64` on Debian 13. Protobuf uses a BSD 3-clause license.

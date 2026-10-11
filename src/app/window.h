@@ -9,6 +9,7 @@
 
 class QLabel;
 namespace swak {
+class DisplayStyle;
 class MapPanels;
 class Window final : public QMainWindow
 {
@@ -63,5 +64,6 @@ private:
     QByteArray dataManagerGeometry_;
     QByteArray markerManagerGeometry_;
     QJsonObject settingsNavigation_;
+    DisplayStyle *displayStyle_ = nullptr;
 };
 } // namespace swak

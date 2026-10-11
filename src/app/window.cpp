@@ -11,6 +11,7 @@
 #include "core/contacts.h"
 #include "core/credits.h"
 #include "core/delete_confirmation.h"
+#include "core/display_style.h"
 #include "core/excheck.h"
 #include "core/file_shares.h"
 #include "core/icon_cache.h"
@@ -38,6 +39,7 @@
 #include "swak/version.h"
 
 #include <QAction>
+#include <QActionGroup>
 #include <QCloseEvent>
 #include <QDockWidget>
 #include <QFrame>
@@ -195,6 +197,9 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
                             collections,
                             identity,
                             servers};
+    displayStyle_ = new DisplayStyle(this);
+    displayStyle_->setObjectName(QStringLiteral("displayStyle"));
+    services.display = displayStyle_;
     services.routes = new RouteSources(plugins, this);
     services.network = new NetworkClient(this);
     services.network->setObjectName(QStringLiteral("networkClient"));
@@ -295,6 +300,27 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     for (auto *action : services.viewActions) {
         viewMenu->addAction(action);
     }
+    auto *displayMenu = viewMenu->addMenu(tr("Display Mode"));
+    displayMenu->setObjectName(QStringLiteral("displayModeMenu"));
+    auto *displayModes = new QActionGroup(displayMenu);
+    for (const auto &[mode, title] : {std::pair{DisplayMode::Standard, tr("Standard")},
+                                      std::pair{DisplayMode::Modern, tr("Modern")}}) {
+        auto *action = displayMenu->addAction(title);
+        action->setObjectName(QStringLiteral("displayMode/") + displayModeId(mode));
+        action->setCheckable(true);
+        action->setChecked(mode == DisplayMode::Standard);
+        displayModes->addAction(action);
+        connect(action, &QAction::triggered, this, [this, mode] {
+            displayStyle_->setMode(mode);
+            savePreferences();
+        });
+    }
+    connect(displayStyle_, &DisplayStyle::changed, displayMenu, [displayMenu](DisplayMode mode) {
+        for (auto *action : displayMenu->actions()) {
+            action->setChecked(action->objectName() ==
+                               QStringLiteral("displayMode/") + displayModeId(mode));
+        }
+    });
     panels_ = new MapPanels(mainView);
     QHash<QObject *, QDockWidget *> pluginDocks;
     QHash<QObject *, QList<QDockWidget *>> additionalDocks;
@@ -755,6 +781,9 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     dataManagerGeometry_ = geometryBytes(application, QStringLiteral("dataManagerGeometry"));
     markerManagerGeometry_ = geometryBytes(application, QStringLiteral("markerManagerGeometry"));
     settingsNavigation_ = application.value(QStringLiteral("settingsNavigation")).toObject();
+    displayStyle_->setMode(
+        displayModeFromId(application.value(QStringLiteral("displayMode")).toString())
+            .value_or(DisplayMode::Standard));
     connect(&saveTimer_, &QTimer::timeout, this, [this] {
         if (isVisible() && !closing_ && preferences_.writable() &&
             (!failedSave_.isValid() || failedSave_.elapsed() >= 30000)) {
@@ -882,6 +911,7 @@ bool Window::savePreferences()
     document.insert(QStringLiteral("logging"), logging);
     auto application = document.value(QStringLiteral("application")).toObject();
     application.insert(QStringLiteral("saveInterval"), saveTimer_.interval());
+    application.insert(QStringLiteral("displayMode"), displayModeId(displayStyle_->mode()));
     application.insert(QStringLiteral("settingsGeometry"),
                        QString::fromLatin1(settingsGeometry_.toBase64()));
     application.insert(QStringLiteral("settingsNavigation"), settingsNavigation_);

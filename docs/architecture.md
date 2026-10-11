@@ -90,6 +90,8 @@ The logger serializes concurrent calls and limits message size and rate. A separ
 
 Create each tile image that a caller checks for allocation failure with `allocateImage` from `core/image_allocation.h`. Tests use it to cause null images and `std::bad_alloc`. Production code never sets the fault.
 
+`core/display_style.*` holds the display mode of a window. `DisplayStyle` sets the Fusion style, a dark palette, the bundled fonts, and an application style sheet for Modern, and it restores the earlier values for Standard and when it is destroyed. `setMapLabelStyle` in `core/map_label.h` changes every map label without changes to its callers. Plugins receive the service as `PluginServices::display`.
+
 `core/quit_signals.*` reports SIGTERM and SIGINT on the interface thread. Its signal handler only writes one byte to a pipe. `main` then closes all windows, which also ends an open dialog, and quits the event loop. The window saves its preferences while it closes. The destructor restores the previous signal handlers.
 
 This design adds no external dependency. The output adapter uses Linux descriptors and signal masks. It does not intercept arbitrary output from native libraries. Qt documents the supported handler in [Qt logging](https://doc.qt.io/qt-6.8/qtlogging.html).

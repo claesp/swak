@@ -10,6 +10,7 @@
 #include "core/cot_picker.h"
 #include "core/data.h"
 #include "core/delete_confirmation.h"
+#include "core/display_style.h"
 #include "core/emergency.h"
 #include "core/file_shares.h"
 #include "core/gdal_support.h"
@@ -2583,6 +2584,102 @@ private slots:
             },
             QStringLiteral("deleteShape")));
         QVERIFY(objects->items().isEmpty());
+    }
+    void displayModes()
+    {
+        // The bundled fonts load from the resources.
+        const auto &fonts = swak::displayFonts();
+        QCOMPARE(fonts.title, QStringLiteral("Michroma"));
+        QCOMPARE(fonts.interface, QStringLiteral("Rajdhani"));
+        QCOMPARE(fonts.data, QStringLiteral("JetBrains Mono"));
+        QCOMPARE(QFontInfo(swak::DisplayStyle::dataFont(12)).family(), fonts.data);
+        QVERIFY(swak::DisplayStyle::titleFont(12).letterSpacing() > 100);
+        QCOMPARE(swak::displayModeFromId(QStringLiteral("modern")), swak::DisplayMode::Modern);
+        QVERIFY(!swak::displayModeFromId(QStringLiteral("cinema")));
+        const auto originalSheet = qApp->styleSheet();
+        const auto originalWindow = QApplication::palette().color(QPalette::Window);
+        QTemporaryDir directory;
+        const auto profile = directory.filePath(QStringLiteral("display.json"));
+        {
+            swak::Window window(profile, QPluginLoader::staticInstances());
+            window.show();
+            QVERIFY(QTest::qWaitForWindowExposed(&window));
+            auto *style = window.findChild<swak::DisplayStyle *>(QStringLiteral("displayStyle"));
+            auto *modern = window.findChild<QAction *>(QStringLiteral("displayMode/modern"));
+            auto *standard = window.findChild<QAction *>(QStringLiteral("displayMode/standard"));
+            QVERIFY(style && modern && standard);
+            QCOMPARE(style->mode(), swak::DisplayMode::Standard);
+            QVERIFY(standard->isChecked());
+            QSignalSpy changed(style, &swak::DisplayStyle::changed);
+            modern->trigger();
+            QCOMPARE(style->mode(), swak::DisplayMode::Modern);
+            QCOMPARE(changed.size(), 1);
+            QVERIFY(modern->isChecked() && !standard->isChecked());
+            QCOMPARE(QApplication::palette().color(QPalette::Window), QColor(swak::modern::Panel));
+            QVERIFY(qApp->styleSheet().contains(QStringLiteral("Rajdhani")));
+            QCOMPARE(swak::mapLabelStyle(), swak::MapLabelStyle::Modern);
+            QVERIFY(window.grab().save(QStringLiteral("display-modern.png")));
+            // The same mode again changes nothing.
+            style->setMode(swak::DisplayMode::Modern);
+            QCOMPARE(changed.size(), 1);
+            QFile saved(profile);
+            QVERIFY(saved.open(QIODevice::ReadOnly));
+            QVERIFY(saved.readAll().contains("\"displayMode\": \"modern\""));
+        }
+        // Closing the window restores the application look.
+        QCOMPARE(qApp->styleSheet(), originalSheet);
+        QCOMPARE(QApplication::palette().color(QPalette::Window), originalWindow);
+        QCOMPARE(swak::mapLabelStyle(), swak::MapLabelStyle::Standard);
+        {
+            // The profile restores Modern. Standard restores the application look at once.
+            swak::Window window(profile, QPluginLoader::staticInstances());
+            auto *style = window.findChild<swak::DisplayStyle *>(QStringLiteral("displayStyle"));
+            QCOMPARE(style->mode(), swak::DisplayMode::Modern);
+            QVERIFY(window.findChild<QAction *>(QStringLiteral("displayMode/modern"))->isChecked());
+            window.findChild<QAction *>(QStringLiteral("displayMode/standard"))->trigger();
+            QCOMPARE(qApp->styleSheet(), originalSheet);
+            QCOMPARE(QApplication::palette().color(QPalette::Window), originalWindow);
+            QCOMPARE(swak::mapLabelStyle(), swak::MapLabelStyle::Standard);
+        }
+        // An unknown mode in a profile means Standard.
+        QFile edited(profile);
+        QVERIFY(edited.open(QIODevice::ReadOnly));
+        auto document = QJsonDocument::fromJson(edited.readAll()).object();
+        edited.close();
+        auto application = document.value(QStringLiteral("application")).toObject();
+        application.insert(QStringLiteral("displayMode"), QStringLiteral("cinema"));
+        document.insert(QStringLiteral("application"), application);
+        QVERIFY(edited.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        edited.write(QJsonDocument(document).toJson());
+        edited.close();
+        swak::Window window(profile, QPluginLoader::staticInstances());
+        QCOMPARE(window.findChild<swak::DisplayStyle *>(QStringLiteral("displayStyle"))->mode(),
+                 swak::DisplayMode::Standard);
+    }
+    void modernMapLabels()
+    {
+        // Modern labels have a cyan border and tick. Their bounds include the tick.
+        QImage image(200, 60, QImage::Format_ARGB32_Premultiplied);
+        const auto render = [&](swak::MapLabelStyle style, bool selected) {
+            swak::setMapLabelStyle(style);
+            image.fill(Qt::black);
+            QPainter painter(&image);
+            painter.setFont(swak::DisplayStyle::dataFont(12));
+            swak::paintMapLabel(painter, QPointF(20, 30), QStringLiteral("ALPHA 1"), selected);
+            return swak::mapLabelBounds(
+                painter.fontMetrics(), QPointF(20, 30), QStringLiteral("ALPHA 1"));
+        };
+        const auto standard = render(swak::MapLabelStyle::Standard, false);
+        const auto modern = render(swak::MapLabelStyle::Modern, false);
+        QVERIFY(modern.left() < standard.left());
+        const auto tick =
+            image.pixelColor(QPoint(int(modern.left()) + 1, int(modern.center().y())));
+        QVERIFY(tick.blue() > 200 && tick.red() < 60);
+        render(swak::MapLabelStyle::Modern, true);
+        const auto fill = image.pixelColor(QPoint(int(modern.right()) - 2, int(modern.top()) + 2));
+        QVERIFY(fill.green() > 150 && fill.blue() > 200);
+        swak::setMapLabelStyle(swak::MapLabelStyle::Standard);
+        QVERIFY(swak::mapLabelBounds(QFontMetrics(QFont()), {}, {}).isNull());
     }
     void reportsPaneServer()
     {
@@ -10913,7 +11010,9 @@ private slots:
         auto *fileMenu = window.findChild<QMenu *>(QStringLiteral("fileMenu"));
         auto *quit = window.findChild<QAction *>(QStringLiteral("quitAction"));
         QVERIFY(viewMenu && fileMenu && quit);
-        QCOMPARE(viewMenu->actions().size(), 6);
+        QCOMPARE(viewMenu->actions().size(), 7);
+        QVERIFY(viewMenu->actions().contains(
+            window.findChild<QMenu *>(QStringLiteral("displayModeMenu"))->menuAction()));
         QVERIFY(viewMenu->actions().contains(
             window.findChild<QToolBar *>(QStringLiteral("mainToolbar"))->toggleViewAction()));
         for (int repeat = 0; repeat < 5; ++repeat) {

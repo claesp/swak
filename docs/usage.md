@@ -34,6 +34,10 @@ With map focus, hold W, A, S, and D to pan north, west, south, and east. Diagona
 
 The map uses Web Mercator, a rectangular map projection. It clips positions near the poles to approximately 85.05 degrees. The event table retains the original coordinates, including polar positions.
 
+# Display mode
+
+View > Display Mode selects Standard or Modern. Standard follows the desktop style. Modern is a dark interface in the style of film user interfaces. It uses glass panels, cyan accents, the Rajdhani interface face, the wide Michroma face for pane titles, and JetBrains Mono for the status bar. Map labels become dark boxes with a cyan border. SWAK saves the mode in the profile. Other windows of the desktop keep their look.
+
 # Receive and save events
 
 Open Tools > Servers to add TLS or TCP stream connections. Enable each required connection with its Active checkbox. The application can receive from multiple servers at once. Read [CoT connections](servers.md) for certificates and optional serverless LAN peers.

@@ -34,6 +34,7 @@ class TrackHistory;
 class VideoSources;
 class ExCheck;
 class Citrap;
+class DisplayStyle;
 class ObjectSharing;
 // Per-window services for plugin factories and callbacks.
 //
@@ -112,6 +113,9 @@ struct PluginServices
     ExCheck *excheck = nullptr;
     // Window child. Lives until step 4. It reads tak and identity through guarded pointers.
     Citrap *citrap = nullptr;
+    // Window child. Lives until step 4. The display mode of the window. Plugins that draw a
+    // mode-specific look connect to its changed signal.
+    DisplayStyle *display = nullptr;
 };
 class Plugin
 {

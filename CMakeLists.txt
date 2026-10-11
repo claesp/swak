@@ -196,6 +196,8 @@ add_library(
     src/core/quit_signals.h
     src/core/image_allocation.cpp
     src/core/image_allocation.h
+    src/core/display_style.cpp
+    src/core/display_style.h
 )
 # TAK Protocol version 1 uses SWAK's own schema and the Protobuf lite runtime. The generated code
 # builds in its own library without the SWAK warning flags. Its header is a system header.
@@ -226,6 +228,20 @@ target_link_libraries(
     swak_core PUBLIC swak_build LibArchive::LibArchive Qt6::Widgets Qt6::Network Qt6::Concurrent
 )
 
+# The Modern display mode uses three OFL font families. Read docs/dependencies.md.
+qt_add_resources(
+    swak_core
+    "swak_fonts"
+    PREFIX
+    "/fonts"
+    BASE
+    third_party/fonts
+    FILES
+    third_party/fonts/Michroma-Regular.ttf
+    third_party/fonts/Rajdhani-Medium.ttf
+    third_party/fonts/Rajdhani-SemiBold.ttf
+    third_party/fonts/JetBrainsMono-Variable.ttf
+)
 target_include_directories(swak_core SYSTEM PRIVATE "${GEOGRAPHICLIB_INCLUDE_DIR}")
 target_link_libraries(swak_core PRIVATE GDAL::GDAL)
 # The HTTPS client needs CURLOPT_PROTOCOLS_STR, which libcurl 7.85 added.
@@ -602,4 +618,7 @@ endif()
 
 install(FILES third_party/lucide/LICENSE third_party/lucide/LICENSE.Feather
         DESTINATION ${CMAKE_INSTALL_DOCDIR}/lucide
+)
+install(FILES third_party/fonts/Michroma-OFL.txt third_party/fonts/Rajdhani-OFL.txt
+              third_party/fonts/JetBrainsMono-OFL.txt DESTINATION ${CMAKE_INSTALL_DOCDIR}/fonts
 )
