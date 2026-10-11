@@ -30,7 +30,7 @@ OpenSSL 3.5.7 has a defect on one allocation failure path. When the allocation a
 
 # Display fonts
 
-The Modern display mode embeds three font families as Qt resources from `third_party/fonts`. Film interfaces use wide geometric faces in the Eurostile tradition for titles, condensed squared faces for controls, and monospace faces for telemetry. Qt and the system fonts give no such faces, so the user decided on October 11, 2026 to bundle these OFL fonts from the Google Fonts repository:
+The Modern display mode embeds three font families as Qt resources from `third_party/fonts`. Film interfaces use wide geometric faces in the Eurostile tradition for titles, condensed squared faces for controls, and monospace faces for telemetry. Qt and the system fonts give no such faces. On October 11, 2026 the user asked for fonts that suit this style, and these OFL fonts from the Google Fonts repository were chosen:
 
 - Michroma Regular, 64 KiB, for pane titles and the map HUD title. It follows the Microgramma and Eurostile style.
 - Rajdhani Medium and SemiBold, 375 KiB and 381 KiB, for interface text. The files also hold Devanagari, which explains their size.

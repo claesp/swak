@@ -38,6 +38,8 @@ The map uses Web Mercator, a rectangular map projection. It clips positions near
 
 View > Display Mode selects Standard or Modern. Standard follows the desktop style. Modern is a dark interface in the style of film user interfaces. It uses glass panels, cyan accents, the Rajdhani interface face, the wide Michroma face for pane titles, and JetBrains Mono for the status bar. Map labels become dark boxes with a cyan border. SWAK saves the mode in the profile. Other windows of the desktop keep their look.
 
+In Modern, the map shows a HUD over the part of the map that panes leave free. A thin frame with corner brackets surrounds it. The upper left shows the title, the number of tracks, and the MGRS and DMS coordinates of the center. The upper right shows a recording mark with UTC time, the map source, and the sensor look. A fine crosshair marks the center. View > Scope darkens the map outside a central circle with bearing marks. The scale and the attribution keep their places at the bottom.
+
 # Receive and save events
 
 Open Tools > Servers to add TLS or TCP stream connections. Enable each required connection with its Active checkbox. The application can receive from multiple servers at once. Read [CoT connections](servers.md) for certificates and optional serverless LAN peers.

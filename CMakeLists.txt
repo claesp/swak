@@ -198,6 +198,8 @@ add_library(
     src/core/image_allocation.h
     src/core/display_style.cpp
     src/core/display_style.h
+    src/core/map_hud.cpp
+    src/core/map_hud.h
 )
 # TAK Protocol version 1 uses SWAK's own schema and the Protobuf lite runtime. The generated code
 # builds in its own library without the SWAK warning flags. Its header is a system header.

@@ -644,7 +644,7 @@ void TileRenderer::paint(
     painter.setRenderHint(QPainter::SmoothPixmapTransform, smooth);
     for (const auto &tile : visible_) {
         painter.setOpacity(1);
-        painter.fillRect(tile.rectangle, QColor(MapBackgroundRgb));
+        painter.fillRect(tile.rectangle, QColor(background_));
         if (const auto *image = fetching ? images_.object(tile.key) : nullptr) {
             painter.setOpacity(std::clamp(opacity, 0.0, 1.0));
             painter.drawImage(tile.rectangle, image->pixels);

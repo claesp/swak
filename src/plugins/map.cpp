@@ -1,8 +1,10 @@
 #include "core/data.h"
+#include "core/display_style.h"
 #include "core/grid_types.h"
 #include "core/interfaces.h"
 #include "core/map_decorations.h"
 #include "core/map_grid.h"
+#include "core/map_hud.h"
 #include "core/map_label.h"
 #include "core/map_selection.h"
 #include "core/map_tools.h"
@@ -158,6 +160,13 @@ public:
         });
         scaleLegend_ = decorationAction(tr("Scale"), QStringLiteral("mapScaleAction"));
         zoomIndicator_ = decorationAction(tr("Zoom Level"), QStringLiteral("mapZoomAction"));
+        // The scope darkens the map outside a central circle in the Modern display mode.
+        scope_ = decorationAction(tr("Scope"), QStringLiteral("mapScopeAction"));
+        scope_->setEnabled(false);
+        scope_->setToolTip(tr("Modern display mode: darken the map outside a central circle"));
+        // The HUD clock shows seconds, so Modern repaints once per second.
+        hudClock_.setInterval(1000);
+        connect(&hudClock_, &QTimer::timeout, this, qOverload<>(&MapWidget::update));
         navigationLock_ = new QAction(tr("Lock"), this);
         navigationLock_->setObjectName(QStringLiteral("mapNavigationLock"));
         navigationLock_->setCheckable(true);
@@ -316,6 +325,18 @@ public:
         connect(sources_, &MapSources::changed, this, apply);
         apply();
     }
+    void setDisplayStyle(DisplayStyle *display)
+    {
+        display_ = display;
+        if (display_) {
+            connect(display_, &DisplayStyle::changed, this, &MapWidget::applyDisplayMode);
+        }
+        applyDisplayMode();
+    }
+    bool modern() const
+    {
+        return display_ && display_->mode() == DisplayMode::Modern;
+    }
     void setMapTools(MapTools *tools)
     {
         tools_ = tools;
@@ -390,7 +411,7 @@ public:
 
     QList<QAction *> viewActions() const
     {
-        return {gridVisibility_, scaleLegend_, zoomIndicator_};
+        return {gridVisibility_, scaleLegend_, zoomIndicator_, scope_};
     }
     QAction *navigationLockAction() const
     {
@@ -493,6 +514,7 @@ public:
         values.insert(QStringLiteral("navigationKeysVersion"), 3);
         values.insert(QStringLiteral("scaleLegend"), scaleLegend_->isChecked());
         values.insert(QStringLiteral("zoomIndicator"), zoomIndicator_->isChecked());
+        values.insert(QStringLiteral("scope"), scope_->isChecked());
         for (size_t i = 0; i < KeyPaths.size(); ++i) {
             values.insert(KeyPaths[i], QKeySequence(keys_[i]).toString(QKeySequence::PortableText));
         }
@@ -534,6 +556,7 @@ public:
         grids_->migrate(values);
         scaleLegend_->setChecked(values.value(QStringLiteral("scaleLegend")).toBool(true));
         zoomIndicator_->setChecked(values.value(QStringLiteral("zoomIndicator")).toBool(true));
+        scope_->setChecked(values.value(QStringLiteral("scope")).toBool(true));
         if (overlay_) {
             overlay_->update();
         }
@@ -600,15 +623,27 @@ protected:
         clampCenter();
         update();
     }
+    void applyDisplayMode()
+    {
+        scope_->setEnabled(modern());
+        tiles_.setBackground(modern() ? qRgb(16, 22, 30) : MapBackgroundRgb);
+        if (modern()) {
+            hudClock_.start();
+        } else {
+            hudClock_.stop();
+        }
+        update();
+    }
     void initializeGL() override
     {
         initializeOpenGLFunctions();
     }
     void paintGL() override
     {
-        glClearColor(static_cast<float>(qRed(MapBackgroundRgb)) / 255,
-                     static_cast<float>(qGreen(MapBackgroundRgb)) / 255,
-                     static_cast<float>(qBlue(MapBackgroundRgb)) / 255,
+        const QRgb background = modern() ? modern::Background : MapBackgroundRgb;
+        glClearColor(static_cast<float>(qRed(background)) / 255,
+                     static_cast<float>(qGreen(background)) / 255,
+                     static_cast<float>(qBlue(background)) / 255,
                      1.0F);
         glClear(GL_COLOR_BUFFER_BIT);
         view_.size = size();
@@ -657,6 +692,18 @@ protected:
             } else {
                 selection_->paint(painter, view_);
             }
+        }
+        if (modern()) {
+            const auto area =
+                visibleMapRect(rect(), property(MapOcclusionProperty).value<QRegion>());
+            MapHudState hud;
+            hud.center = view_.coordinate(QRectF(area).center());
+            hud.zoom = view_.zoom;
+            hud.source = activeSource_.value(QStringLiteral("name")).toString();
+            hud.utc = QDateTime::currentDateTimeUtc();
+            hud.tracks = static_cast<int>(store_.events().size());
+            hud.scope = scope_->isChecked();
+            paintMapHud(painter, area, hud);
         }
         paintMapDecorations(painter,
                             view_,
@@ -1447,6 +1494,9 @@ private:
     QAction *gridVisibility_ = nullptr;
     QAction *scaleLegend_ = nullptr;
     QAction *zoomIndicator_ = nullptr;
+    QAction *scope_ = nullptr;
+    QPointer<DisplayStyle> display_;
+    QTimer hudClock_;
     GridTypes *grids_ = nullptr;
     Viewport view_;
     QPointF cursor_;
@@ -1475,6 +1525,7 @@ public:
         widget->setDataSources(services.data);
         widget->setSelection(services.selection);
         widget->setMapTools(services.mapTools);
+        widget->setDisplayStyle(services.display);
         return widget;
     }
     void populateToolbar(PluginServices &services, QToolBar &toolbar, QMenu *) override

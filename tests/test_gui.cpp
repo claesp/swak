@@ -22,6 +22,7 @@
 #include "core/logging.h"
 #include "core/map_decorations.h"
 #include "core/map_grid.h"
+#include "core/map_hud.h"
 #include "core/map_label.h"
 #include "core/map_selection.h"
 #include "core/map_tools.h"
@@ -2680,6 +2681,118 @@ private slots:
         QVERIFY(fill.green() > 150 && fill.blue() > 200);
         swak::setMapLabelStyle(swak::MapLabelStyle::Standard);
         QVERIFY(swak::mapLabelBounds(QFontMetrics(QFont()), {}, {}).isNull());
+    }
+    void mapHud()
+    {
+        QCOMPARE(swak::hudDms(59.33, 18.07), QStringLiteral("59°19'48.0\"N 018°04'12.0\"E"));
+        QCOMPARE(swak::hudDms(-33.999999, -70.5), QStringLiteral("34°00'00.0\"S 070°30'00.0\"W"));
+        QVERIFY(swak::hudDms(91, 0).isEmpty());
+        QVERIFY(swak::hudDms(std::nan(""), 0).isEmpty());
+        QCOMPARE(swak::hudMgrs(QStringLiteral("33VXG1234567890")),
+                 QStringLiteral("33V XG 12345 67890"));
+        QCOMPARE(swak::hudMgrs(QStringLiteral("4QFJ")), QStringLiteral("4Q FJ"));
+        QCOMPARE(swak::hudMgrs(QStringLiteral("33VXG123")), QStringLiteral("33VXG123"));
+        // Panes on the right and at the bottom shrink the visible area. Small leftovers give
+        // the whole map.
+        const QRect map(0, 0, 1000, 700);
+        QRegion panes(QRect(700, 0, 300, 700));
+        panes += QRect(0, 600, 700, 100);
+        panes += QRect(10, 10, 40, 20);
+        QCOMPARE(swak::visibleMapRect(map, panes), QRect(0, 0, 700, 600));
+        QRegion left(QRect(0, 0, 300, 700));
+        QCOMPARE(swak::visibleMapRect(map, left), QRect(300, 0, 700, 700));
+        QRegion top(QRect(0, 0, 1000, 80));
+        QCOMPARE(swak::visibleMapRect(map, top), QRect(0, 80, 1000, 620));
+        QCOMPARE(swak::visibleMapRect(map, QRegion(QRect(100, 0, 900, 700))), map);
+        // The HUD darkens the corners, draws cyan brackets, and shows the recording dot on even
+        // seconds.
+        QImage image(800, 600, QImage::Format_ARGB32_Premultiplied);
+        const auto render = [&](bool scope, int second) {
+            image.fill(QColor(200, 200, 200));
+            QPainter painter(&image);
+            swak::MapHudState state;
+            state.center = {18.07, 59.33};
+            state.zoom = 7;
+            state.source = QStringLiteral("Esri World Imagery");
+            state.sensor = QStringLiteral("thermal");
+            state.utc = QDateTime(QDate(2026, 10, 11), QTime(12, 0, second), QTimeZone::UTC);
+            state.tracks = 3;
+            state.scope = scope;
+            swak::paintMapHud(painter, image.rect(), state);
+        };
+        render(true, 2);
+        QVERIFY(image.pixelColor(30, 590).lightness() < 60);
+        QCOMPARE(image.pixelColor(400, 300), QColor(200, 200, 200));
+        const auto bracket = image.pixelColor(20, 40);
+        QVERIFY(bracket.blue() > bracket.red());
+        int red = 0;
+        for (int y = 20; y < 60; ++y) {
+            for (int x = 400; x < 800; ++x) {
+                const auto color = image.pixelColor(x, y);
+                red += color.red() > 200 && color.green() < 90 && color.blue() < 90;
+            }
+        }
+        QVERIFY(red > 0);
+        QVERIFY(image.save(QStringLiteral("map-hud.png")));
+        render(false, 3);
+        QCOMPARE(image.pixelColor(30, 590), QColor(200, 200, 200));
+        int blink = 0;
+        for (int y = 20; y < 60; ++y) {
+            for (int x = 400; x < 800; ++x) {
+                const auto color = image.pixelColor(x, y);
+                blink += color.red() > 200 && color.green() < 90 && color.blue() < 90;
+            }
+        }
+        QCOMPARE(blink, 0);
+        // An empty area paints nothing.
+        image.fill(Qt::white);
+        {
+            QPainter painter(&image);
+            swak::paintMapHud(painter, QRect(), swak::MapHudState{});
+        }
+        QCOMPARE(image.pixelColor(20, 40), QColor(Qt::white));
+    }
+    void modernMap()
+    {
+        // In Modern, the map shows the HUD, a dark background, and the Scope action.
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("modern-map.json")),
+                            QPluginLoader::staticInstances());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        for (auto *pane : window.findChildren<QDockWidget *>()) {
+            pane->hide();
+        }
+        auto *map = window.findChild<QOpenGLWidget *>();
+        auto *scope = window.findChild<QAction *>(QStringLiteral("mapScopeAction"));
+        QVERIFY(map && scope);
+        QVERIFY(!scope->isEnabled());
+        const auto frame = [&] {
+            QImage image;
+            // The caller checks the image, so the wait result does not matter.
+            static_cast<void>(QTest::qWaitFor(
+                [&] {
+                    map->update();
+                    image = map->grabFramebuffer();
+                    return !image.isNull();
+                },
+                2000));
+            return image;
+        };
+        const auto standard = frame();
+        window.findChild<QAction *>(QStringLiteral("displayMode/modern"))->trigger();
+        QVERIFY(scope->isEnabled() && scope->isChecked());
+        const auto modern = frame();
+        const QPoint corner(4, modern.height() / 2);
+        QVERIFY(modern.pixelColor(corner).lightness() < standard.pixelColor(corner).lightness());
+        QVERIFY(modern.save(QStringLiteral("modern-map.png")));
+        // The Scope setting is saved with the map.
+        scope->trigger();
+        QVERIFY(!scope->isChecked());
+        auto *settings = dynamic_cast<swak::SettingsParticipant *>(map);
+        QCOMPARE(settings->savePreferences().value(QStringLiteral("scope")).toBool(), false);
+        window.findChild<QAction *>(QStringLiteral("displayMode/standard"))->trigger();
+        QVERIFY(!scope->isEnabled());
     }
     void reportsPaneServer()
     {
@@ -11010,7 +11123,9 @@ private slots:
         auto *fileMenu = window.findChild<QMenu *>(QStringLiteral("fileMenu"));
         auto *quit = window.findChild<QAction *>(QStringLiteral("quitAction"));
         QVERIFY(viewMenu && fileMenu && quit);
-        QCOMPARE(viewMenu->actions().size(), 7);
+        QCOMPARE(viewMenu->actions().size(), 8);
+        QVERIFY(viewMenu->actions().contains(
+            window.findChild<QAction *>(QStringLiteral("mapScopeAction"))));
         QVERIFY(viewMenu->actions().contains(
             window.findChild<QMenu *>(QStringLiteral("displayModeMenu"))->menuAction()));
         QVERIFY(viewMenu->actions().contains(

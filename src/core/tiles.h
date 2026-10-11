@@ -58,6 +58,11 @@ public:
     void setMemoryLimit(int mebibytes);
     void setDiskLimit(int mebibytes);
     void setPrefetchMargin(int margin);
+    // The fill behind tiles and of missing tiles. The default is MapBackgroundRgb.
+    void setBackground(QRgb color)
+    {
+        background_ = color;
+    }
     qint64 diskCacheBytes() const
     {
         return diskBytes_;
@@ -82,6 +87,7 @@ signals:
     void changed();
 
 private:
+    QRgb background_ = MapBackgroundRgb;
     struct Image
     {
         QImage pixels;
