@@ -42,6 +42,8 @@ In Modern, the map shows a HUD over the part of the map that panes leave free. A
 
 View > Sensor Look gives the Modern map a film sensor look: Normal, Night Vision, Thermal, CRT, or Noir. The look grades the map image, the layers, and the selection. The HUD, the scale, and the zoom levels stay sharp above it. The looks only change colors. Thermal does not show temperatures, and Night Vision does not show light levels. Standard always draws the normal map, and keeps the choice for Modern.
 
+Esri World Imagery, NASA GIBS VIIRS True Color, and NASA GIBS Black Marble are map presets that suit Modern. Select them in Tools > Map Providers. In both display modes, the map credit stays in the part of the map that panes leave free. Providers require a visible credit.
+
 # Receive and save events
 
 Open Tools > Servers to add TLS or TCP stream connections. Enable each required connection with its Active checkbox. The application can receive from multiple servers at once. Read [CoT connections](servers.md) for certificates and optional serverless LAN peers.

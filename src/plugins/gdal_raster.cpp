@@ -631,6 +631,52 @@ public:
         wmts.insert(QStringLiteral("time"), QString{});
         wmts.insert(QStringLiteral("imageFormat"), QStringLiteral("image/jpeg"));
         result.insert(QStringLiteral("org.swak.wmts"), wmts);
+        // Satellite imagery and night lights that suit the Modern display mode.
+        auto esri = mapDefaults(
+            tr("Esri World Imagery"),
+            QStringLiteral("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/"
+                           "MapServer/tile/{z}/{y}/{x}"),
+            QStringLiteral("Powered by Esri | Source: Esri, Maxar, Earthstar Geographics, and the "
+                           "GIS User Community | "
+                           "https://www.esri.com/en-us/legal/terms/full-master-agreement"),
+            19);
+        xyz(QStringLiteral("org.swak.xyz.esri-world-imagery"), esri);
+        const auto gibs = [&](const QString &id,
+                              const QString &name,
+                              const QString &layer,
+                              const QString &matrixSet,
+                              const QString &format,
+                              const QString &time,
+                              int maxZoom) {
+            auto source = mapDefaults(
+                name,
+                QStringLiteral("https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/wmts.cgi"),
+                QStringLiteral("NASA EOSDIS GIBS | https://earthdata.nasa.gov/gibs"),
+                maxZoom);
+            source.insert(QStringLiteral("service"), QStringLiteral("wmts"));
+            source.insert(QStringLiteral("layer"), layer);
+            source.insert(QStringLiteral("matrixSet"), matrixSet);
+            source.insert(QStringLiteral("matrixPrefix"), QString{});
+            source.insert(QStringLiteral("style"), QStringLiteral("default"));
+            source.insert(QStringLiteral("time"), time);
+            source.insert(QStringLiteral("imageFormat"), format);
+            result.insert(id, source);
+        };
+        // Without a time, GIBS serves its default day, which is the newest one.
+        gibs(QStringLiteral("org.swak.wmts.gibs-viirs-true-color"),
+             tr("NASA GIBS VIIRS True Color (daily)"),
+             QStringLiteral("VIIRS_SNPP_CorrectedReflectance_TrueColor"),
+             QStringLiteral("GoogleMapsCompatible_Level9"),
+             QStringLiteral("image/jpeg"),
+             QString{},
+             9);
+        gibs(QStringLiteral("org.swak.wmts.gibs-black-marble"),
+             tr("NASA GIBS Black Marble (night lights)"),
+             QStringLiteral("VIIRS_Black_Marble"),
+             QStringLiteral("GoogleMapsCompatible_Level8"),
+             QStringLiteral("image/png"),
+             QStringLiteral("2016-01-01"),
+             8);
         return result;
     }
     QList<SettingField> fields() const override

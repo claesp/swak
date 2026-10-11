@@ -681,12 +681,35 @@ private slots:
                                      QStringLiteral("org.swak.xyz.thunderforest-outdoors"),
                                      QStringLiteral("org.swak.xyz.thunderforest-cycle"),
                                      QStringLiteral("org.swak.wms"),
-                                     QStringLiteral("org.swak.wmts")}) {
+                                     QStringLiteral("org.swak.wmts"),
+                                     QStringLiteral("org.swak.xyz.esri-world-imagery"),
+                                     QStringLiteral("org.swak.wmts.gibs-viirs-true-color"),
+                                     QStringLiteral("org.swak.wmts.gibs-black-marble")}) {
             const auto item = sources.sources().value(presetId).toObject();
             QVERIFY2(!item.isEmpty(), qPrintable(presetId));
             QCOMPARE(item.value(QStringLiteral("format")).toString(), raster->mapId());
             QVERIFY2(raster->validate(item).isEmpty(), qPrintable(raster->validate(item)));
         }
+        // Esri orders the row before the column. GIBS daily imagery uses the newest day, and
+        // the night lights use their only date.
+        const auto esri =
+            sources.sources().value(QStringLiteral("org.swak.xyz.esri-world-imagery")).toObject();
+        QVERIFY(esri.value(QStringLiteral("endpoint"))
+                    .toString()
+                    .endsWith(QStringLiteral("/tile/{z}/{y}/{x}")));
+        QVERIFY(esri.value(QStringLiteral("attribution"))
+                    .toString()
+                    .contains(QStringLiteral("Powered by Esri")));
+        const auto viirs = sources.sources()
+                               .value(QStringLiteral("org.swak.wmts.gibs-viirs-true-color"))
+                               .toObject();
+        QVERIFY(viirs.value(QStringLiteral("time")).toString().isEmpty());
+        QCOMPARE(viirs.value(QStringLiteral("maxZoom")).toInt(), 9);
+        const auto night =
+            sources.sources().value(QStringLiteral("org.swak.wmts.gibs-black-marble")).toObject();
+        QCOMPARE(night.value(QStringLiteral("time")).toString(), QStringLiteral("2016-01-01"));
+        QCOMPARE(night.value(QStringLiteral("imageFormat")).toString(),
+                 QStringLiteral("image/png"));
         QCOMPARE(sources.sources()
                      .value(QStringLiteral("org.swak.xyz.usgs-imagery-topo"))
                      .toObject()
@@ -917,6 +940,14 @@ private slots:
         auto tile = renderOnWorker(RasterRequest{source, {}, {}, 0, 2, 1, 3});
         QVERIFY2(tile.error.isEmpty(), qPrintable(tile.error));
         QCOMPARE(path(), QByteArray("/2/1/3.png"));
+        // A template can put the row before the column, as Esri does.
+        auto rowFirst = source;
+        rowFirst.insert(
+            QStringLiteral("endpoint"),
+            QStringLiteral("https://localhost:%1/tile/{z}/{y}/{x}").arg(server.serverPort()));
+        tile = renderOnWorker(RasterRequest{rowFirst, {}, {}, 0, 2, 1, 3});
+        QVERIFY2(tile.error.isEmpty(), qPrintable(tile.error));
+        QCOMPARE(path(), QByteArray("/tile/2/3/1"));
         QCOMPARE(tile.image.pixelColor(128, 128), QColor("#eb426a"));
         QVERIFY(server.requests.last().toLower().contains("user-agent: swak/"));
         source.insert(QStringLiteral("invertY"), true);

@@ -8,6 +8,14 @@ OpenStreetMap supplies 256-pixel PNG tiles through `https://tile.openstreetmap.o
 
 NASA GIBS supplies public WMTS and WMS imagery. The WMTS preset uses `BlueMarble_ShadedRelief_Bathymetry`, style `default`, JPEG images, and matrix set `GoogleMapsCompatible_Level8`. Its zoom range is 0 through 8. The live [Web Mercator capabilities](https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/1.0.0/WMTSCapabilities.xml) confirmed these identifiers during development. Other layers can require a time dimension. Read [GIBS access requirements](https://nasa-gibs.github.io/gibs-api-docs/access-basics/) and [NASA data-use guidance](https://www.earthdata.nasa.gov/engage/open-data-services-software/data-use-policy).
 
+Three presets suit the Modern display mode. The God's Eye View project, which inspired that mode, uses the same keyless imagery services.
+
+- Esri World Imagery uses the XYZ template `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}`. The row comes before the column. The service needs no key, and its zoom range is 0 through 19. Esri governs access through the [Esri Master Agreement](https://www.esri.com/en-us/legal/terms/full-master-agreement) and can change it. Keep the credit line "Powered by Esri | Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community" visible. Review the current ArcGIS Location Platform terms before use at scale.
+- NASA GIBS VIIRS True Color uses the WMTS layer `VIIRS_SNPP_CorrectedReflectance_TrueColor`, matrix set `GoogleMapsCompatible_Level9`, and JPEG images. It has no time, so GIBS serves its default day, which is the newest one. That day can still have gaps between satellite passes.
+- NASA GIBS Black Marble uses the WMTS layer `VIIRS_Black_Marble`, matrix set `GoogleMapsCompatible_Level8`, PNG images, and the time 2016-01-01. It shows city lights at night.
+
+The live Web Mercator capabilities confirmed these identifiers on October 11, 2026. The 3D sources of God's Eye View, which are Google photorealistic tiles, Cesium ion, and Re:Earth terrain, need a 3D globe. The SWAK map is flat, so it does not use them.
+
 The free terrestris service supplies OpenStreetMap through WMS. The preset uses `https://ows.terrestris.de/osm/service`, layer `OSM-WMS`, and PNG images. The service offers PNG and JPEG and has a paid service for higher availability. Keep OpenStreetMap and terrestris attribution visible. Read the [provider description and endpoint](https://terrestris.de/produkte/freier-osm-wms/).
 
 OpenTopoMap also documents XYZ raster tiles. A custom XYZ entry can use its endpoint when its current access and attribution rules permit the use. It is not a built-in preset because this session could not retrieve its current policy page reliably. Read the [OpenTopoMap description](https://wiki.opentopomap.org/about) before use.

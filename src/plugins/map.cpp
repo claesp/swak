@@ -1000,16 +1000,27 @@ protected:
             attribution_->setText(text);
             attribution_->setToolTip(tooltip);
             const auto style =
-                QStringLiteral(
-                    "QLabel { color: white; background-color: rgba(16,32,44,%1); padding: 4px; }")
-                    .arg(qRound(attributionOpacity_ * 255));
+                modern()
+                    ? QStringLiteral("QLabel { color: rgb(207,239,255); background-color: "
+                                     "rgba(6,10,16,%1); border: 1px solid rgba(0,212,255,90); "
+                                     "padding: 4px; }")
+                          .arg(qRound(std::max(attributionOpacity_, 0.7) * 255))
+                    : QStringLiteral("QLabel { color: white; background-color: rgba(16,32,44,%1);"
+                                     " padding: 4px; }")
+                          .arg(qRound(attributionOpacity_ * 255));
             if (attribution_->styleSheet() != style) {
                 attribution_->setStyleSheet(style);
             }
-            const int panelWidth = std::min(width() - 24, naturalWidth + 16);
+            // Providers require a visible credit, so the panel stays in the part of the map
+            // that panes leave free.
+            const auto area =
+                visibleMapRect(rect(), property(MapOcclusionProperty).value<QRegion>());
+            const int panelWidth = std::min(area.width() - 24, naturalWidth + 16);
             const int panelHeight = attribution_->heightForWidth(panelWidth);
-            attribution_->setGeometry(
-                width() - 12 - panelWidth, height() - 8 - panelHeight, panelWidth, panelHeight);
+            attribution_->setGeometry(area.right() + 1 - 12 - panelWidth,
+                                      area.bottom() + 1 - 8 - panelHeight,
+                                      panelWidth,
+                                      panelHeight);
         }
         if (hasFocus()) {
             painter.setPen(QPen(QColor("#5fd6ff"), 2));

@@ -1771,3 +1771,15 @@ New GUI tests cover legacy route preferences, route provider errors and settings
 
 New GUI tests drive the marker, area, and shape tools through `MapTools` and cover their remaining reachable paths. The area tool now handles Escape through `dismiss`, which removes duplicated move cancellation code. The coverage, quick, GUI, and analysis modes passed with 133 GUI cases. Line coverage is 95.8 percent.
 
+# 2026-10-11: Modern display mode
+
+The user asked for a new display mode, Modern, in the style of the God's Eye View project (https://github.com/bilawalsidhu/gods-eye-view, MIT). That project shows a dark film-style interface: glass panels, cyan accents, JetBrains Mono telemetry, wide title lettering, a circular scope, corner brackets, a recording time stamp, and sensor looks.
+
+- View > Display Mode selects Standard or Modern. `core/display_style.*` applies the Fusion style, a dark palette, a style sheet, and bundled OFL fonts: Michroma for titles, Rajdhani for interface text, and JetBrains Mono for data. `docs/dependencies.md` records the fonts. Map labels get cyan borders.
+- The Modern map shows a HUD (`core/map_hud.*`) in the part of the map that panes leave free: title, track count, MGRS and DMS of the center, zoom, a REC mark with UTC time, the source, and the sensor look. View > Scope darkens the map outside a central circle.
+- View > Sensor Look applies Night Vision, Thermal, CRT, or Noir through a GLSL pass over the map content. The HUD stays sharp.
+- New map presets: Esri World Imagery, NASA GIBS VIIRS True Color, and NASA GIBS Black Marble. The reference project also uses Google photorealistic 3D tiles, Cesium ion, and Re:Earth terrain, which need a 3D globe.
+- The map credit now stays in the visible map area in both modes. Before, a right pane could cover it.
+
+The HUD text avoids the brand of the reference project and invented security markings. The shader failure path logs one warning and draws without the look. The tests do not force a shader failure, so that path is untested.
+

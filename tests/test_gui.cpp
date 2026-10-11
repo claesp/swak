@@ -4862,7 +4862,12 @@ private slots:
         }));
         QVERIFY(cache->text().startsWith(QStringLiteral("Map cache:")));
         QVERIFY(!map->findChild<QLabel *>(QStringLiteral("mapCacheSize")));
-        QCOMPARE(credit->geometry().bottom(), map->height() - 9);
+        // The credit stays in the part of the map that panes leave free, 8 pixels above its
+        // bottom.
+        const auto free = swak::visibleMapRect(
+            map->rect(), map->property(swak::MapOcclusionProperty).value<QRegion>());
+        QCOMPARE(credit->geometry().bottom(), free.bottom() - 8);
+        QVERIFY(free.contains(credit->geometry()));
         auto *zoom = window.statusBar()->findChild<QLabel *>(QStringLiteral("mapZoomStatus"));
         auto *pointer = window.statusBar()->findChild<QLabel *>(QStringLiteral("mapPointerStatus"));
         auto *tls = window.statusBar()->findChild<QLabel *>(QStringLiteral("mapTlsStatus"));
