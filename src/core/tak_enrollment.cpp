@@ -168,11 +168,13 @@ EnrollmentKey generateEnrollmentKey(const QByteArray &password)
 EnrollmentKey readEnrollmentKey(const QByteArray &pem, const QByteArray &password)
 {
     const auto key = readKey(pem, password);
-    if (!key) {
+    // OpenSSL reports 0 bits when it cannot read the key size, for example without memory.
+    const int bits = key ? EVP_PKEY_get_bits(key.get()) : 0;
+    if (bits <= 0) {
         return {{},
                 tr("The private key cannot be read. Check the file and its password variable.")};
     }
-    if (EVP_PKEY_get_bits(key.get()) < 2048 && EVP_PKEY_get_base_id(key.get()) == EVP_PKEY_RSA) {
+    if (bits < 2048 && EVP_PKEY_get_base_id(key.get()) == EVP_PKEY_RSA) {
         return {{}, tr("Use an RSA key with at least 2048 bits, or an EC key.")};
     }
     return {pem, {}};
@@ -224,7 +226,9 @@ QByteArray enrollmentRequest(const QByteArray &keyPem,
     }
     QByteArray der(size, Qt::Uninitialized);
     auto *cursor = reinterpret_cast<unsigned char *>(der.data());
-    i2d_X509_REQ(request.get(), &cursor);
+    if (i2d_X509_REQ(request.get(), &cursor) != size) {
+        return fail(tr("The certificate request cannot be encoded."));
+    }
     return der.toBase64();
 }
 bool readCertificateConfig(const QByteArray &xml, QList<SubjectEntry> *entries)

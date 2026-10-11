@@ -117,7 +117,7 @@ Paths that remain untested:
 
 - The default socket error text. Qt reports the errors that a local test can cause with named error codes.
 - Archive entry names with `..` or backslashes. GDAL removes or changes these names before SWAK checks them, so the check is a second defense.
-- OpenSSL failures during key and request creation, and file write failures after a successful enrollment.
+- After a successful enrollment, a failed permission change of a written file, and an entry without a CA that receives the server CA. The second path needs a server certificate that the system trusts.
 - LAN peer rows in the Local LAN pane. Only the namespace test makes LAN peers, and it runs without the GUI.
 - Some mouse paths of the drawing tools, and legacy route preferences with four coordinate fields.
 
@@ -130,4 +130,17 @@ Paths that remain untested:
 - `gdalRasterFiles` expects "Map tile image allocation failed." from the provider and the renderer, and "Map tile rendering failed." when the worker catches the exception. The same dataset then renders again, so the dataset pool and the GDAL options survive the exception.
 
 A check with the null image fault turned off made both renderer tests fail, so the tests depend on the fault.
+
+# OpenSSL allocation faults
+
+`swak_openssl_fault_tests` replaces the OpenSSL memory functions before the first OpenSSL allocation, so it has its own executable. It makes allocation N fail and runs an enrollment function for each N until a run needs fewer allocations. It also replaces the random source with a seeded generator. Key generation and signatures then repeat exactly, so every successful run must give exactly the reference result. Key generation runs are long, so that sweep tests a sample of each phase.
+
+The sweeps cover key generation, key reading, certificate requests, and enrollment replies. Each failure must give one of the documented messages. A sanitizer build checks the failure paths for leaks when the test ends. The sweep found two faults:
+
+- Key reading reported "Use an RSA key with at least 2048 bits" for a valid key when OpenSSL could not read the key size. It now reports that the key cannot be read.
+- OpenSSL 3.5.7 aborts when the allocation at `crypto/asn1/tasn_new.c:299` fails during `X509_REQ_sign`. A sweep with one child process for each allocation located the crash. The test does not fail allocations at that line, and it reports how many it kept. Read [Dependencies](dependencies.md).
+
+An allocation failure cannot cause the request encoding error, so a test sends a request above 64 KiB. The second encoding call now has a check too. No allocation failure reaches that check, so it stays untested.
+
+`enrollmentFailures` also checks a subject field that OpenSSL refuses, a refused or dropped signing request, a reply without a certificate, a directory in place of the key, certificate, or CA file, and a certificate path with a control character. The entry stays unchanged after each failure. The last run then enrolls in a usable folder.
 

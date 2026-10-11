@@ -26,6 +26,8 @@ SWAK links libcurl directly for HTTPS requests to TAK Server. The user decided o
 
 SWAK links OpenSSL `libcrypto` and `libssl` 3.2 or later directly. Enrollment uses them for keys and certificate requests. QUIC streams use the OpenSSL QUIC client, which OpenSSL 3.2 added. The tests also use the QUIC server of OpenSSL 3.5. Qt cannot create key pairs or certificate requests. The user decided on October 7, 2026 to use OpenSSL for these tasks. The Qt TLS backend and libcurl already load OpenSSL, so the runtime adds no package. Install `libssl-dev` to build SWAK. OpenSSL 3 uses the Apache License 2.0.
 
+OpenSSL 3.5.7 has a defect on one allocation failure path. When the allocation at `crypto/asn1/tasn_new.c:299` fails during `X509_REQ_sign`, OpenSSL frees an embedded ASN.1 field, and the process aborts. SWAK cannot prevent this, because the failure happens inside OpenSSL. It needs an out-of-memory condition at that point of an enrollment. `tests/test_openssl_faults.cpp` records the site. Check it again after each OpenSSL update.
+
 # Protobuf
 
 SWAK uses the Protobuf lite runtime for TAK Protocol version 1. The user decided on October 7, 2026 to use the Protobuf library. The schema is SWAK's own file, `src/core/proto/tak_protocol.proto`, which matches the TAK wire format and copies no TAK file. The build runs `protoc` and compiles the generated code in a separate library without the SWAK warning flags. Install `libprotobuf-dev` and `protobuf-compiler` to build SWAK. The runtime package is `libprotobuf-lite32t64` on Debian 13. Protobuf uses a BSD 3-clause license.

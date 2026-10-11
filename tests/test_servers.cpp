@@ -1591,11 +1591,20 @@ private slots:
                             "</nameEntries></certificateConfig>";
         int configStatus = 200;
         int signStatus = 200;
+        QByteArray signBody;
+        bool dropSign = false;
         enroll.respond = [&](const QByteArray &request) {
             if (request.startsWith("GET /Marti/api/tls/config ")) {
                 return httpReply(configStatus, config);
             }
             if (request.startsWith("POST /Marti/api/tls/signClient/v2?")) {
+                if (dropSign) {
+                    // The server closes the connection without an answer.
+                    return QByteArray();
+                }
+                if (!signBody.isEmpty()) {
+                    return httpReply(200, signBody);
+                }
                 if (signStatus != 200) {
                     return httpReply(signStatus, {});
                 }
@@ -1657,12 +1666,57 @@ private slots:
         file.close();
         enrollment.setDirectory(blocker);
         QCOMPARE(result(), QStringLiteral("The certificate directory cannot be created."));
-        QVERIFY(servers.sources()
-                    .value(QStringLiteral("tak"))
-                    .toObject()
-                    .value(QStringLiteral("certificate"))
-                    .toString()
-                    .isEmpty());
+        const auto unchanged = [&] {
+            return servers.sources()
+                .value(QStringLiteral("tak"))
+                .toObject()
+                .value(QStringLiteral("certificate"))
+                .toString()
+                .isEmpty();
+        };
+        QVERIFY(unchanged());
+        enrollment.setDirectory(directory.path());
+        // OpenSSL refuses a subject field that the server asks for.
+        config = "<certificateConfig><nameEntries><nameEntry name=\"ZZ\" value=\"x\"/>"
+                 "</nameEntries></certificateConfig>";
+        QCOMPARE(
+            result(),
+            QStringLiteral("The certificate request cannot be signed. Check the subject entries."));
+        config = "<certificateConfig><nameEntries/></certificateConfig>";
+        // The signing step refuses the account, drops the connection, or answers without a
+        // certificate.
+        signStatus = 401;
+        QCOMPARE(result(), QStringLiteral("The server rejected the username or password."));
+        signStatus = 200;
+        dropSign = true;
+        const auto dropped = result();
+        QVERIFY(!dropped.isEmpty() && dropped != QStringLiteral("not finished"));
+        dropSign = false;
+        signBody = "{}";
+        QCOMPARE(result(), QStringLiteral("The server did not return a valid signed certificate."));
+        signBody.clear();
+        // A directory in place of each file stops the enrollment before the entry changes.
+        const auto blocked = [&](const QString &folder, const QString &name) {
+            const auto root = directory.filePath(folder);
+            QDir().mkpath(root + QStringLiteral("/tak/") + name);
+            enrollment.setDirectory(root);
+            return result();
+        };
+        QCOMPARE(blocked(QStringLiteral("key"), QStringLiteral("client.key")),
+                 QStringLiteral("The private key cannot be saved."));
+        QCOMPARE(blocked(QStringLiteral("certificate"), QStringLiteral("client.pem")),
+                 QStringLiteral("The certificates cannot be saved."));
+        QCOMPARE(blocked(QStringLiteral("authority"), QStringLiteral("ca.pem")),
+                 QStringLiteral("The certificates cannot be saved."));
+        QVERIFY(unchanged());
+        // The entry check refuses certificate paths with control characters. The entry stays.
+        enrollment.setDirectory(directory.filePath(QStringLiteral("bad\u0001folder")));
+        QCOMPARE(result(), QStringLiteral("A certificate path is invalid."));
+        QVERIFY(unchanged());
+        // The same enrollment then succeeds in a usable folder.
+        enrollment.setDirectory(directory.filePath(QStringLiteral("good")));
+        QCOMPARE(result(), QString());
+        QVERIFY(!unchanged());
     }
     void takChannels()
     {

@@ -468,6 +468,12 @@ if(BUILD_TESTING)
     )
     add_test(NAME core COMMAND swak_tests)
     set_tests_properties(core PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    # OpenSSL accepts replacement memory functions only before its first allocation, so the fault
+    # test needs its own process.
+    add_executable(swak_openssl_fault_tests tests/test_openssl_faults.cpp)
+    target_link_libraries(swak_openssl_fault_tests PRIVATE swak_core OpenSSL::Crypto Qt6::Test)
+    add_test(NAME openssl_faults COMMAND swak_openssl_fault_tests)
+    set_tests_properties(openssl_faults PROPERTIES TIMEOUT 60)
     add_executable(swak_activity_tests tests/test_activity.cpp)
     target_link_libraries(swak_activity_tests PRIVATE swak_core Qt6::Test)
     add_test(NAME activity COMMAND swak_activity_tests)
