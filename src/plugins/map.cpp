@@ -921,7 +921,6 @@ protected:
             hud.source = activeSource_.value(QStringLiteral("name")).toString();
             hud.utc = QDateTime::currentDateTimeUtc();
             hud.tracks = static_cast<int>(store_.events().size());
-            hud.sensor = tr(sensorEntry(sensor_).name);
             hud.scope = scope_->isChecked();
             paintMapHud(painter, area, hud);
         }

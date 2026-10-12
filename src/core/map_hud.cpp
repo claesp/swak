@@ -222,12 +222,7 @@ void paintMapHud(QPainter &painter, const QRect &area, const MapHudState &state)
                    QStringLiteral("SOURCE  ") +
                        metrics.elidedText(state.source.toUpper(), Qt::ElideRight, 260),
                    QColor(modern::Dim));
-        y += line;
     }
-    alignRight(y,
-               QStringLiteral("SENSOR  ") +
-                   (state.sensor.isEmpty() ? QStringLiteral("NORMAL") : state.sensor.toUpper()),
-               accent(230));
     painter.restore();
 }
 } // namespace swak

@@ -1803,3 +1803,9 @@ Modern hides the menu bar. A Menu button at the start of the command dock opens 
 # 2026-10-12: No recording mark in the HUD
 
 The Modern HUD showed REC and a blinking red dot, but SWAK does not record. The HUD now shows the UTC time with the label UTC and no dot. `mapHud` checks that no red mark shows on even or odd seconds.
+
+# 2026-10-12: No sensor line in the HUD
+
+The HUD named the sensor look, such as THERMAL, but the look only changes colors and no sensor exists. The HUD no longer shows the sensor line, and MapHudState has no sensor field. View > Sensor Look is unchanged. `mapHud` checks that no line shows below the source.
+
+The full GUI run showed an intermittent failure in `displayModeRoundTrip`. On the first change to Modern, no saved Modern layout exists. The editor pane grew to its larger Modern minimum width but kept its Standard position, so it went past the right margin. The window now fits the pane layout again after the posted layout requests.

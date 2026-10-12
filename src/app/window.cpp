@@ -933,6 +933,13 @@ void Window::setDisplayMode(DisplayMode mode)
         // limit the restored sizes. A second restore after these requests gives the exact
         // sizes.
         QTimer::singleShot(0, this, restore);
+    } else {
+        // Without a saved layout, the panes keep their sizes. The pane layout fits them to
+        // the new minimum sizes after the posted layout requests.
+        QTimer::singleShot(0, panels_, [panels = panels_] {
+            panels->layout()->invalidate();
+            panels->layout()->activate();
+        });
     }
     savePreferences();
 }

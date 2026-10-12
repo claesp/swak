@@ -2719,7 +2719,6 @@ private slots:
             state.center = {18.07, 59.33};
             state.zoom = 7;
             state.source = QStringLiteral("Esri World Imagery");
-            state.sensor = QStringLiteral("thermal");
             state.utc = QDateTime(QDate(2026, 10, 11), QTime(12, 0, second), QTimeZone::UTC);
             state.tracks = 3;
             state.scope = scope;
@@ -2744,6 +2743,15 @@ private slots:
         // The text has a dark halo. No red mark shows on even or odd seconds.
         QCOMPARE(timeBlock().first, 0);
         QVERIFY(timeBlock().second > 0);
+        // The source is the last line on the right. No sensor line shows below it.
+        int cyan = 0;
+        for (int y = 70; y < 90; ++y) {
+            for (int x = 560; x < 780; ++x) {
+                const auto color = image.pixelColor(x, y);
+                cyan += color.blue() > 150 && color.red() < 100;
+            }
+        }
+        QCOMPARE(cyan, 0);
         QVERIFY(image.save(QStringLiteral("map-hud.png")));
         render(false, 3);
         QCOMPARE(image.pixelColor(30, 590), QColor(200, 200, 200));
@@ -2913,6 +2921,7 @@ private slots:
                     .value<QRegion>()
                     .contains(toolbar->geometry().center()));
         // Panes float off the map edge. A tall pane scrolls instead of covering another pane.
+        // A pane that grows with the Modern fonts still keeps the margin.
         QVERIFY(editor->geometry().right() < panels->width() - 8);
         const auto *messages =
             window.findChild<QDockWidget *>(QStringLiteral("org.swak.events.pane"));
