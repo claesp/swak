@@ -206,7 +206,7 @@ void paintMapHud(QPainter &painter, const QRect &area, const MapHudState &state)
             QPointF(left, top),
             QStringLiteral("ZOOM  %1").arg(state.zoom, 0, 'f', 1),
             QColor(modern::Dim));
-    // Recording block, right aligned.
+    // Time block, right aligned.
     const auto metrics = painter.fontMetrics();
     const auto alignRight = [&](double y, const QString &text, const QColor &color) {
         hudText(painter, QPointF(right - metrics.horizontalAdvance(text), y), text, color);
@@ -215,17 +215,7 @@ void paintMapHud(QPainter &painter, const QRect &area, const MapHudState &state)
     const auto time = state.utc.isValid()
                           ? state.utc.toUTC().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss'Z'"))
                           : QStringLiteral("----------");
-    const auto record = QStringLiteral("REC  ") + time;
-    alignRight(y, record, QColor(modern::Text));
-    // The dot blinks with the seconds.
-    if (!state.utc.isValid() || state.utc.time().second() % 2 == 0) {
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(QColor(modern::Alert));
-        painter.drawEllipse(
-            QPointF(right - metrics.horizontalAdvance(record) - 10, y - metrics.ascent() / 2.5),
-            4,
-            4);
-    }
+    alignRight(y, QStringLiteral("UTC  ") + time, QColor(modern::Text));
     y += line * 1.6;
     if (!state.source.isEmpty()) {
         alignRight(y,

@@ -2709,8 +2709,8 @@ private slots:
         QRegion top(QRect(0, 0, 1000, 80));
         QCOMPARE(swak::visibleMapRect(map, top), QRect(0, 80, 1000, 620));
         QCOMPARE(swak::visibleMapRect(map, QRegion(QRect(100, 0, 900, 700))), map);
-        // The HUD darkens the corners, draws cyan brackets, and shows the recording dot on even
-        // seconds.
+        // The HUD darkens the corners, draws cyan brackets, and shows the UTC time without a
+        // recording mark.
         QImage image(800, 600, QImage::Format_ARGB32_Premultiplied);
         const auto render = [&](bool scope, int second) {
             image.fill(QColor(200, 200, 200));
@@ -2730,25 +2730,25 @@ private slots:
         QCOMPARE(image.pixelColor(400, 300), QColor(200, 200, 200));
         const auto bracket = image.pixelColor(20, 40);
         QVERIFY(bracket.blue() > bracket.red());
-        int red = 0;
-        for (int y = 20; y < 60; ++y) {
-            for (int x = 400; x < 800; ++x) {
-                const auto color = image.pixelColor(x, y);
-                red += color.red() > 200 && color.green() < 90 && color.blue() < 90;
+        const auto timeBlock = [&] {
+            int red = 0, dark = 0;
+            for (int y = 20; y < 50; ++y) {
+                for (int x = 400; x < 780; ++x) {
+                    const auto color = image.pixelColor(x, y);
+                    red += color.red() > 200 && color.green() < 90 && color.blue() < 90;
+                    dark += color.lightness() < 40;
+                }
             }
-        }
-        QVERIFY(red > 0);
+            return std::pair{red, dark};
+        };
+        // The text has a dark halo. No red mark shows on even or odd seconds.
+        QCOMPARE(timeBlock().first, 0);
+        QVERIFY(timeBlock().second > 0);
         QVERIFY(image.save(QStringLiteral("map-hud.png")));
         render(false, 3);
         QCOMPARE(image.pixelColor(30, 590), QColor(200, 200, 200));
-        int blink = 0;
-        for (int y = 20; y < 60; ++y) {
-            for (int x = 400; x < 800; ++x) {
-                const auto color = image.pixelColor(x, y);
-                blink += color.red() > 200 && color.green() < 90 && color.blue() < 90;
-            }
-        }
-        QCOMPARE(blink, 0);
+        QCOMPARE(timeBlock().first, 0);
+        QVERIFY(timeBlock().second > 0);
         // An empty area paints nothing.
         image.fill(Qt::white);
         {

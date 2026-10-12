@@ -1799,3 +1799,7 @@ Modern now floats the panes with a margin and rounded glass, and moves the main 
 # 2026-10-12: Modern hides the menu bar
 
 Modern hides the menu bar. A Menu button at the start of the command dock opens a menu with the menu bar menus, in the menu bar order. F10 opens the same menu in Modern only. The menu shortcuts stay active, because the hidden menus stay attached to the visible menu button. When the toolbar is hidden in Modern, the menu bar comes back, so the menus stay reachable. The menu order filter skips menus with the `swakMenuKeepOrder` property. `displayModeRoundTrip` checks the hidden menu bar, the button, F10, a menu shortcut, and the exact Standard restore.
+
+# 2026-10-12: No recording mark in the HUD
+
+The Modern HUD showed REC and a blinking red dot, but SWAK does not record. The HUD now shows the UTC time with the label UTC and no dot. `mapHud` checks that no red mark shows on even or odd seconds.
