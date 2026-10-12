@@ -1817,3 +1817,7 @@ The user asked to remove the COMMON OPERATIONAL PICTURE line. The line also held
 # 2026-10-12: No brackets or crosshair in the HUD
 
 The user asked to remove the corner brackets and the center crosshair. The HUD keeps the thin rounded frame. `mapHud` checks that the corners and the center have no HUD marks.
+
+# 2026-10-12: No bearing marks on the scope
+
+The user asked to remove the bearing marks and the N, E, S, and W letters around the scope. The scope keeps the dark surround, the faint grid, and the circle line. `mapHud` checks that no marks show at the old positions.

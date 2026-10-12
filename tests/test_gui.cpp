@@ -2730,6 +2730,15 @@ private slots:
              {QPoint(14, 30), QPoint(30, 14), QPoint(785, 30), QPoint(30, 585)}) {
             QVERIFY(image.pixelColor(point).blue() < 120);
         }
+        // The scope circle has no bearing marks or letters.
+        for (const auto &point : {QPoint(400, 48),
+                                  QPoint(652, 300),
+                                  QPoint(400, 30),
+                                  QPoint(670, 300),
+                                  QPoint(130, 300),
+                                  QPoint(400, 570)}) {
+            QVERIFY(image.pixelColor(point).blue() < 120);
+        }
         for (const auto &point :
              {QPoint(410, 300), QPoint(388, 300), QPoint(400, 312), QPoint(400, 290)}) {
             QCOMPARE(image.pixelColor(point), QColor(200, 200, 200));

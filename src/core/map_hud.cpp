@@ -68,27 +68,6 @@ void paintScope(QPainter &painter, const QRect &area)
     painter.setPen(QPen(accent(150), 1.5));
     painter.setBrush(Qt::NoBrush);
     painter.drawEllipse(center, radius, radius);
-    // Bearing ticks every 10 degrees, longer every 30 degrees.
-    for (int bearing = 0; bearing < 360; bearing += 10) {
-        const double angle = (bearing - 90) * M_PI / 180;
-        const QPointF direction(std::cos(angle), std::sin(angle));
-        const double length = bearing % 30 == 0 ? 12 : 6;
-        painter.setPen(QPen(accent(bearing % 30 == 0 ? 200 : 110), 1));
-        painter.drawLine(center + direction * radius, center + direction * (radius + length));
-    }
-    painter.setFont(DisplayStyle::dataFont(11));
-    const auto metrics = painter.fontMetrics();
-    for (const auto &[bearing, letter] : {std::pair{0, QStringLiteral("N")},
-                                          std::pair{90, QStringLiteral("E")},
-                                          std::pair{180, QStringLiteral("S")},
-                                          std::pair{270, QStringLiteral("W")}}) {
-        const double angle = (bearing - 90) * M_PI / 180;
-        const auto point = center + QPointF(std::cos(angle), std::sin(angle)) * (radius + 24);
-        hudText(painter,
-                point + QPointF(-metrics.horizontalAdvance(letter) / 2.0, metrics.ascent() / 2.0),
-                letter,
-                accent(220));
-    }
 }
 void paintFrame(QPainter &painter, const QRect &area)
 {
