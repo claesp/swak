@@ -1809,3 +1809,11 @@ The Modern HUD showed REC and a blinking red dot, but SWAK does not record. The 
 The HUD named the sensor look, such as THERMAL, but the look only changes colors and no sensor exists. The HUD no longer shows the sensor line, and MapHudState has no sensor field. View > Sensor Look is unchanged. `mapHud` checks that no line shows below the source.
 
 The full GUI run showed an intermittent failure in `displayModeRoundTrip`. On the first change to Modern, no saved Modern layout exists. The editor pane grew to its larger Modern minimum width but kept its Standard position, so it went past the right margin. The window now fits the pane layout again after the posted layout requests.
+
+# 2026-10-12: No subtitle in the HUD
+
+The user asked to remove the COMMON OPERATIONAL PICTURE line. The line also held the track count, so MapHudState has no track field now. The coordinates move up below the title. `mapHud` checks that no text shows between the title and the coordinates.
+
+# 2026-10-12: No brackets or crosshair in the HUD
+
+The user asked to remove the corner brackets and the center crosshair. The HUD keeps the thin rounded frame. `mapHud` checks that the corners and the center have no HUD marks.

@@ -2709,8 +2709,8 @@ private slots:
         QRegion top(QRect(0, 0, 1000, 80));
         QCOMPARE(swak::visibleMapRect(map, top), QRect(0, 80, 1000, 620));
         QCOMPARE(swak::visibleMapRect(map, QRegion(QRect(100, 0, 900, 700))), map);
-        // The HUD darkens the corners, draws cyan brackets, and shows the UTC time without a
-        // recording mark.
+        // The HUD darkens the corners and shows the UTC time without a recording mark. It has
+        // no corner brackets and no center crosshair.
         QImage image(800, 600, QImage::Format_ARGB32_Premultiplied);
         const auto render = [&](bool scope, int second) {
             image.fill(QColor(200, 200, 200));
@@ -2720,15 +2720,20 @@ private slots:
             state.zoom = 7;
             state.source = QStringLiteral("Esri World Imagery");
             state.utc = QDateTime(QDate(2026, 10, 11), QTime(12, 0, second), QTimeZone::UTC);
-            state.tracks = 3;
             state.scope = scope;
             swak::paintMapHud(painter, image.rect(), state);
         };
         render(true, 2);
         QVERIFY(image.pixelColor(30, 590).lightness() < 60);
         QCOMPARE(image.pixelColor(400, 300), QColor(200, 200, 200));
-        const auto bracket = image.pixelColor(20, 40);
-        QVERIFY(bracket.blue() > bracket.red());
+        for (const auto &point :
+             {QPoint(14, 30), QPoint(30, 14), QPoint(785, 30), QPoint(30, 585)}) {
+            QVERIFY(image.pixelColor(point).blue() < 120);
+        }
+        for (const auto &point :
+             {QPoint(410, 300), QPoint(388, 300), QPoint(400, 312), QPoint(400, 290)}) {
+            QCOMPARE(image.pixelColor(point), QColor(200, 200, 200));
+        }
         const auto timeBlock = [&] {
             int red = 0, dark = 0;
             for (int y = 20; y < 50; ++y) {
@@ -2752,6 +2757,14 @@ private slots:
             }
         }
         QCOMPARE(cyan, 0);
+        // No subtitle shows between the title and the coordinates.
+        int subtitle = 0;
+        for (int y = 46; y < 54; ++y) {
+            for (int x = 26; x < 300; ++x) {
+                subtitle += image.pixelColor(x, y).lightness() > 100;
+            }
+        }
+        QCOMPARE(subtitle, 0);
         QVERIFY(image.save(QStringLiteral("map-hud.png")));
         render(false, 3);
         QCOMPARE(image.pixelColor(30, 590), QColor(200, 200, 200));

@@ -96,23 +96,6 @@ void paintFrame(QPainter &painter, const QRect &area)
     painter.setPen(QPen(accent(55), 1));
     painter.setBrush(Qt::NoBrush);
     painter.drawRoundedRect(frame, 14, 14);
-    // Corner brackets.
-    painter.setPen(QPen(accent(210), 2));
-    const double length = 26;
-    const auto inner = frame.adjusted(6, 6, -6, -6);
-    for (const auto &[corner, dx, dy] : {std::tuple{inner.topLeft(), 1.0, 1.0},
-                                         std::tuple{inner.topRight(), -1.0, 1.0},
-                                         std::tuple{inner.bottomLeft(), 1.0, -1.0},
-                                         std::tuple{inner.bottomRight(), -1.0, -1.0}}) {
-        painter.drawLine(corner, corner + QPointF(dx * length, 0));
-        painter.drawLine(corner, corner + QPointF(0, dy * length));
-    }
-    // A fine crosshair at the center, with a gap for the target.
-    const QPointF center = QRectF(area).center();
-    painter.setPen(QPen(accent(170), 1));
-    for (const auto &direction : {QPointF(1, 0), QPointF(-1, 0), QPointF(0, 1), QPointF(0, -1)}) {
-        painter.drawLine(center + direction * 6, center + direction * 18);
-    }
 }
 } // namespace
 
@@ -186,11 +169,6 @@ void paintMapHud(QPainter &painter, const QRect &area, const MapHudState &state)
     hudText(painter, QPointF(left, top), QStringLiteral("SWAK"), QColor(modern::Text));
     painter.setFont(DisplayStyle::dataFont(11));
     const auto line = painter.fontMetrics().height() + 2;
-    top += line + 4;
-    hudText(painter,
-            QPointF(left, top),
-            QStringLiteral("COMMON OPERATIONAL PICTURE // %1 TRACKS").arg(state.tracks),
-            QColor(modern::Dim));
     top += line * 1.6;
     const auto latitude = state.center.y(), longitude = state.center.x();
     const auto mgrs = gridCoordinate(latitude, longitude, QStringLiteral("mgrs"), 5);

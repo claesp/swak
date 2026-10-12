@@ -16,7 +16,6 @@ struct MapHudState
     double zoom = 0;
     QString source;
     QDateTime utc;
-    int tracks = 0;
     // Darkens the map outside a central circle, as a sensor scope does.
     bool scope = true;
 };
