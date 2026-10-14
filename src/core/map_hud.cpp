@@ -52,19 +52,6 @@ void paintScope(QPainter &painter, const QRect &area)
     circle.addEllipse(center, radius, radius);
     outside = outside.subtracted(circle);
     painter.fillPath(outside, QColor(10, 10, 15, 232));
-    // A faint grid outside the scope, as on an analyst's light table.
-    painter.save();
-    painter.setClipPath(outside);
-    painter.setPen(QPen(accent(18), 1));
-    for (double x = area.left() + std::fmod(center.x() - area.left(), 48.0); x < area.right();
-         x += 48) {
-        painter.drawLine(QPointF(x, area.top()), QPointF(x, area.bottom()));
-    }
-    for (double y = area.top() + std::fmod(center.y() - area.top(), 48.0); y < area.bottom();
-         y += 48) {
-        painter.drawLine(QPointF(area.left(), y), QPointF(area.right(), y));
-    }
-    painter.restore();
     painter.setPen(QPen(accent(150), 1.5));
     painter.setBrush(Qt::NoBrush);
     painter.drawEllipse(center, radius, radius);

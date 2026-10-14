@@ -1821,3 +1821,7 @@ The user asked to remove the corner brackets and the center crosshair. The HUD k
 # 2026-10-12: No bearing marks on the scope
 
 The user asked to remove the bearing marks and the N, E, S, and W letters around the scope. The scope keeps the dark surround, the faint grid, and the circle line. `mapHud` checks that no marks show at the old positions.
+
+# 2026-10-14: No grid around the scope
+
+The user asked to remove the faint grid outside the scope. The scope keeps the even dark surround and the circle line. `mapHud` checks that the surround has one color.

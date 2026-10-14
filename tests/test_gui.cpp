@@ -2730,6 +2730,13 @@ private slots:
              {QPoint(14, 30), QPoint(30, 14), QPoint(785, 30), QPoint(30, 585)}) {
             QVERIFY(image.pixelColor(point).blue() < 120);
         }
+        // The dark surround is even, with no grid lines.
+        const auto surround = image.pixelColor(30, 200);
+        for (int y = 200; y < 400; ++y) {
+            for (int x = 30; x < 130; ++x) {
+                QCOMPARE(image.pixelColor(x, y), surround);
+            }
+        }
         // The scope circle has no bearing marks or letters.
         for (const auto &point : {QPoint(400, 48),
                                   QPoint(652, 300),
