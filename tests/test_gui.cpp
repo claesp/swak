@@ -2737,6 +2737,12 @@ private slots:
                 QCOMPARE(image.pixelColor(x, y), surround);
             }
         }
+        // The HUD has no frame.
+        for (const auto &point :
+             {QPoint(8, 300), QPoint(791, 300), QPoint(400, 8), QPoint(400, 591)}) {
+            const auto edge = image.pixelColor(point);
+            QVERIFY(edge.blue() - edge.red() < 20);
+        }
         // The scope edge has no line. Its pixels blend the map and the surround only.
         for (const auto &point :
              {QPoint(154, 300), QPoint(646, 300), QPoint(400, 54), QPoint(400, 546)}) {

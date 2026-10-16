@@ -1829,3 +1829,7 @@ The user asked to remove the faint grid outside the scope. The scope keeps the e
 # 2026-10-16: No line around the scope
 
 The user asked to remove the scope circle line. The scope now only darkens the map outside the circle. `mapHud` checks that the circle edge has no cyan line.
+
+# 2026-10-17: No HUD frame
+
+The user asked to remove the thin rounded frame. The HUD now shows only text and the optional scope. `mapHud` checks that the frame edges have no cyan line.

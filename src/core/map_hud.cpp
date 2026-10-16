@@ -53,13 +53,6 @@ void paintScope(QPainter &painter, const QRect &area)
     outside = outside.subtracted(circle);
     painter.fillPath(outside, QColor(10, 10, 15, 232));
 }
-void paintFrame(QPainter &painter, const QRect &area)
-{
-    const QRectF frame = QRectF(area).adjusted(8, 8, -8, -8);
-    painter.setPen(QPen(accent(55), 1));
-    painter.setBrush(Qt::NoBrush);
-    painter.drawRoundedRect(frame, 14, 14);
-}
 } // namespace
 
 QString hudDms(double latitude, double longitude)
@@ -124,7 +117,6 @@ void paintMapHud(QPainter &painter, const QRect &area, const MapHudState &state)
     if (state.scope) {
         paintScope(painter, area);
     }
-    paintFrame(painter, area);
     const double left = area.left() + 26.0, right = area.right() - 26.0;
     double top = area.top() + 40.0;
     // Title block.
