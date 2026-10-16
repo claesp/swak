@@ -1833,3 +1833,7 @@ The user asked to remove the scope circle line. The scope now only darkens the m
 # 2026-10-17: No HUD frame
 
 The user asked to remove the thin rounded frame. The HUD now shows only text and the optional scope. `mapHud` checks that the frame edges have no cyan line.
+
+# 2026-10-17: No scope
+
+The user asked to remove the scope. View > Scope, the `scope` map preference, `MapHudState::scope`, and `hudScopeRadius` are gone. A saved `scope` value in an older profile has no effect. The View menu has 8 entries. The Modern HUD now shows text only. `mapHud` checks that the HUD leaves the map unchanged below the text blocks.

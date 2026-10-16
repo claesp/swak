@@ -3,7 +3,6 @@
 #include "core/display_style.h"
 #include "core/grid_types.h"
 
-#include <QPainterPath>
 #include <QRegularExpression>
 
 #include <algorithm>
@@ -42,17 +41,6 @@ void hudText(QPainter &painter, QPointF baseline, const QString &text, const QCo
     painter.setPen(color);
     painter.drawText(baseline, text);
 }
-void paintScope(QPainter &painter, const QRect &area)
-{
-    const QPointF center = QRectF(area).center();
-    const double radius = hudScopeRadius(area.size());
-    QPainterPath outside;
-    outside.addRect(QRectF(area));
-    QPainterPath circle;
-    circle.addEllipse(center, radius, radius);
-    outside = outside.subtracted(circle);
-    painter.fillPath(outside, QColor(10, 10, 15, 232));
-}
 } // namespace
 
 QString hudDms(double latitude, double longitude)
@@ -79,10 +67,6 @@ QString hudMgrs(const QString &compact)
         result += QLatin1Char(' ') + digits.left(half) + QLatin1Char(' ') + digits.mid(half);
     }
     return result;
-}
-double hudScopeRadius(QSize size)
-{
-    return std::max(0.0, std::min(size.width(), size.height()) * 0.41);
 }
 QRect visibleMapRect(const QRect &bounds, const QRegion &occlusion)
 {
@@ -114,9 +98,6 @@ void paintMapHud(QPainter &painter, const QRect &area, const MapHudState &state)
     }
     painter.save();
     painter.setRenderHint(QPainter::Antialiasing, true);
-    if (state.scope) {
-        paintScope(painter, area);
-    }
     const double left = area.left() + 26.0, right = area.right() - 26.0;
     double top = area.top() + 40.0;
     // Title block.

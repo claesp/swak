@@ -240,10 +240,6 @@ public:
         });
         scaleLegend_ = decorationAction(tr("Scale"), QStringLiteral("mapScaleAction"));
         zoomIndicator_ = decorationAction(tr("Zoom Level"), QStringLiteral("mapZoomAction"));
-        // The scope darkens the map outside a central circle in the Modern display mode.
-        scope_ = decorationAction(tr("Scope"), QStringLiteral("mapScopeAction"));
-        scope_->setEnabled(false);
-        scope_->setToolTip(tr("Modern display mode: darken the map outside a central circle"));
         sensorMenu_ = new QMenu(tr("Sensor Look"), this);
         sensorMenu_->setObjectName(QStringLiteral("mapSensorMenu"));
         sensorMenu_->menuAction()->setEnabled(false);
@@ -515,7 +511,7 @@ public:
 
     QList<QAction *> viewActions() const
     {
-        return {gridVisibility_, scaleLegend_, zoomIndicator_, scope_, sensorMenu_->menuAction()};
+        return {gridVisibility_, scaleLegend_, zoomIndicator_, sensorMenu_->menuAction()};
     }
     QAction *navigationLockAction() const
     {
@@ -618,7 +614,6 @@ public:
         values.insert(QStringLiteral("navigationKeysVersion"), 3);
         values.insert(QStringLiteral("scaleLegend"), scaleLegend_->isChecked());
         values.insert(QStringLiteral("zoomIndicator"), zoomIndicator_->isChecked());
-        values.insert(QStringLiteral("scope"), scope_->isChecked());
         values.insert(QStringLiteral("sensor"), QLatin1String(sensorEntry(sensor_).id));
         for (size_t i = 0; i < KeyPaths.size(); ++i) {
             values.insert(KeyPaths[i], QKeySequence(keys_[i]).toString(QKeySequence::PortableText));
@@ -661,7 +656,6 @@ public:
         grids_->migrate(values);
         scaleLegend_->setChecked(values.value(QStringLiteral("scaleLegend")).toBool(true));
         zoomIndicator_->setChecked(values.value(QStringLiteral("zoomIndicator")).toBool(true));
-        scope_->setChecked(values.value(QStringLiteral("scope")).toBool(true));
         const auto sensorId = values.value(QStringLiteral("sensor")).toString();
         const auto sensor =
             std::find_if(Sensors.cbegin(), Sensors.cend(), [&sensorId](const SensorEntry &entry) {
@@ -745,7 +739,6 @@ protected:
     }
     void applyDisplayMode()
     {
-        scope_->setEnabled(modern());
         sensorMenu_->menuAction()->setEnabled(modern());
         tiles_.setBackground(modern() ? qRgb(16, 22, 30) : MapBackgroundRgb);
         if (modern()) {
@@ -920,7 +913,6 @@ protected:
             hud.zoom = view_.zoom;
             hud.source = activeSource_.value(QStringLiteral("name")).toString();
             hud.utc = QDateTime::currentDateTimeUtc();
-            hud.scope = scope_->isChecked();
             paintMapHud(painter, area, hud);
         }
         paintMapDecorations(painter,
@@ -1722,7 +1714,6 @@ private:
     QAction *gridVisibility_ = nullptr;
     QAction *scaleLegend_ = nullptr;
     QAction *zoomIndicator_ = nullptr;
-    QAction *scope_ = nullptr;
     QMenu *sensorMenu_ = nullptr;
     Sensor sensor_ = Sensor::Normal;
     std::unique_ptr<QOpenGLFramebufferObject> sensorTarget_;

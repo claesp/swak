@@ -2709,59 +2709,28 @@ private slots:
         QRegion top(QRect(0, 0, 1000, 80));
         QCOMPARE(swak::visibleMapRect(map, top), QRect(0, 80, 1000, 620));
         QCOMPARE(swak::visibleMapRect(map, QRegion(QRect(100, 0, 900, 700))), map);
-        // The HUD darkens the corners and shows the UTC time without a recording mark. It has
-        // no corner brackets and no center crosshair.
+        // The HUD shows text only: no scope, frame, brackets, crosshair, or recording mark.
         QImage image(800, 600, QImage::Format_ARGB32_Premultiplied);
-        const auto render = [&](bool scope, int second) {
-            image.fill(QColor(200, 200, 200));
+        const QColor mapColor(200, 200, 200);
+        const auto render = [&](int second) {
+            image.fill(mapColor);
             QPainter painter(&image);
             swak::MapHudState state;
             state.center = {18.07, 59.33};
             state.zoom = 7;
             state.source = QStringLiteral("Esri World Imagery");
             state.utc = QDateTime(QDate(2026, 10, 11), QTime(12, 0, second), QTimeZone::UTC);
-            state.scope = scope;
             swak::paintMapHud(painter, image.rect(), state);
         };
-        render(true, 2);
-        QVERIFY(image.pixelColor(30, 590).lightness() < 60);
-        QCOMPARE(image.pixelColor(400, 300), QColor(200, 200, 200));
-        for (const auto &point :
-             {QPoint(14, 30), QPoint(30, 14), QPoint(785, 30), QPoint(30, 585)}) {
-            QVERIFY(image.pixelColor(point).blue() < 120);
-        }
-        // The dark surround is even, with no grid lines.
-        const auto surround = image.pixelColor(30, 200);
-        for (int y = 200; y < 400; ++y) {
-            for (int x = 30; x < 130; ++x) {
-                QCOMPARE(image.pixelColor(x, y), surround);
+        render(2);
+        // Below the text blocks, the HUD leaves the map unchanged.
+        int changed = 0;
+        for (int y = 120; y < 600; ++y) {
+            for (int x = 0; x < 800; ++x) {
+                changed += image.pixelColor(x, y) != mapColor;
             }
         }
-        // The HUD has no frame.
-        for (const auto &point :
-             {QPoint(8, 300), QPoint(791, 300), QPoint(400, 8), QPoint(400, 591)}) {
-            const auto edge = image.pixelColor(point);
-            QVERIFY(edge.blue() - edge.red() < 20);
-        }
-        // The scope edge has no line. Its pixels blend the map and the surround only.
-        for (const auto &point :
-             {QPoint(154, 300), QPoint(646, 300), QPoint(400, 54), QPoint(400, 546)}) {
-            const auto edge = image.pixelColor(point);
-            QVERIFY(edge.blue() - edge.red() < 20);
-        }
-        // The scope circle has no bearing marks or letters.
-        for (const auto &point : {QPoint(400, 48),
-                                  QPoint(652, 300),
-                                  QPoint(400, 30),
-                                  QPoint(670, 300),
-                                  QPoint(130, 300),
-                                  QPoint(400, 570)}) {
-            QVERIFY(image.pixelColor(point).blue() < 120);
-        }
-        for (const auto &point :
-             {QPoint(410, 300), QPoint(388, 300), QPoint(400, 312), QPoint(400, 290)}) {
-            QCOMPARE(image.pixelColor(point), QColor(200, 200, 200));
-        }
+        QCOMPARE(changed, 0);
         const auto timeBlock = [&] {
             int red = 0, dark = 0;
             for (int y = 20; y < 50; ++y) {
@@ -2787,15 +2756,14 @@ private slots:
         QCOMPARE(cyan, 0);
         // No subtitle shows between the title and the coordinates.
         int subtitle = 0;
-        for (int y = 46; y < 54; ++y) {
+        for (int y = 44; y < 52; ++y) {
             for (int x = 26; x < 300; ++x) {
-                subtitle += image.pixelColor(x, y).lightness() > 100;
+                subtitle += image.pixelColor(x, y) != mapColor;
             }
         }
         QCOMPARE(subtitle, 0);
         QVERIFY(image.save(QStringLiteral("map-hud.png")));
-        render(false, 3);
-        QCOMPARE(image.pixelColor(30, 590), QColor(200, 200, 200));
+        render(3);
         QCOMPARE(timeBlock().first, 0);
         QVERIFY(timeBlock().second > 0);
         // An empty area paints nothing.
@@ -2808,7 +2776,7 @@ private slots:
     }
     void modernMap()
     {
-        // In Modern, the map shows the HUD, a dark background, and the Scope action.
+        // In Modern, the map shows the HUD and a dark background.
         QTemporaryDir directory;
         swak::Window window(directory.filePath(QStringLiteral("modern-map.json")),
                             QPluginLoader::staticInstances());
@@ -2818,15 +2786,14 @@ private slots:
             pane->hide();
         }
         auto *map = window.findChild<QOpenGLWidget *>();
-        auto *scope = window.findChild<QAction *>(QStringLiteral("mapScopeAction"));
-        QVERIFY(map && scope);
+        QVERIFY(map);
+        QVERIFY(!window.findChild<QAction *>(QStringLiteral("mapScopeAction")));
         // The panes report the free map area after a short delay.
         QVERIFY(QTest::qWaitFor(
             [&] {
                 return map->property(swak::MapOcclusionProperty).value<QRegion>().isEmpty();
             },
             2000));
-        QVERIFY(!scope->isEnabled());
         const auto frame = [&] {
             QImage image;
             // The caller checks the image, so the wait result does not matter.
@@ -2841,16 +2808,13 @@ private slots:
         };
         const auto standard = frame();
         window.findChild<QAction *>(QStringLiteral("displayMode/modern"))->trigger();
-        QVERIFY(scope->isEnabled() && scope->isChecked());
         const auto modern = frame();
         const QPoint corner(4, modern.height() / 2);
         QVERIFY(modern.pixelColor(corner).lightness() < standard.pixelColor(corner).lightness());
         QVERIFY(modern.save(QStringLiteral("modern-map.png")));
-        // The Scope setting is saved with the map. Without the scope, the looks show everywhere.
-        scope->trigger();
-        QVERIFY(!scope->isChecked());
+        // The map no longer saves a scope setting.
         auto *settings = dynamic_cast<swak::SettingsParticipant *>(map);
-        QCOMPARE(settings->savePreferences().value(QStringLiteral("scope")).toBool(), false);
+        QVERIFY(!settings->savePreferences().contains(QStringLiteral("scope")));
         // Sensor looks grade the map content. The HUD stays sharp above it.
         auto *sensorMenu = window.findChild<QMenu *>(QStringLiteral("mapSensorMenu"));
         QVERIFY(sensorMenu && sensorMenu->menuAction()->isEnabled());
@@ -2878,7 +2842,6 @@ private slots:
         QVERIFY(window.findChild<QAction *>(QStringLiteral("mapSensor/normal"))->isChecked());
         window.findChild<QAction *>(QStringLiteral("mapSensor/night-vision"))->trigger();
         window.findChild<QAction *>(QStringLiteral("displayMode/standard"))->trigger();
-        QVERIFY(!scope->isEnabled());
         QVERIFY(!sensorMenu->menuAction()->isEnabled());
         // Standard draws without the look, but keeps the choice for Modern.
         QCOMPARE(frame().pixelColor(inside), standard.pixelColor(inside));
@@ -11375,11 +11338,9 @@ private slots:
         auto *fileMenu = window.findChild<QMenu *>(QStringLiteral("fileMenu"));
         auto *quit = window.findChild<QAction *>(QStringLiteral("quitAction"));
         QVERIFY(viewMenu && fileMenu && quit);
-        QCOMPARE(viewMenu->actions().size(), 9);
+        QCOMPARE(viewMenu->actions().size(), 8);
         QVERIFY(viewMenu->actions().contains(
             window.findChild<QMenu *>(QStringLiteral("mapSensorMenu"))->menuAction()));
-        QVERIFY(viewMenu->actions().contains(
-            window.findChild<QAction *>(QStringLiteral("mapScopeAction"))));
         QVERIFY(viewMenu->actions().contains(
             window.findChild<QMenu *>(QStringLiteral("displayModeMenu"))->menuAction()));
         QVERIFY(viewMenu->actions().contains(
