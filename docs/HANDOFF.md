@@ -1825,3 +1825,7 @@ The user asked to remove the bearing marks and the N, E, S, and W letters around
 # 2026-10-14: No grid around the scope
 
 The user asked to remove the faint grid outside the scope. The scope keeps the even dark surround and the circle line. `mapHud` checks that the surround has one color.
+
+# 2026-10-16: No line around the scope
+
+The user asked to remove the scope circle line. The scope now only darkens the map outside the circle. `mapHud` checks that the circle edge has no cyan line.

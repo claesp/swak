@@ -52,9 +52,6 @@ void paintScope(QPainter &painter, const QRect &area)
     circle.addEllipse(center, radius, radius);
     outside = outside.subtracted(circle);
     painter.fillPath(outside, QColor(10, 10, 15, 232));
-    painter.setPen(QPen(accent(150), 1.5));
-    painter.setBrush(Qt::NoBrush);
-    painter.drawEllipse(center, radius, radius);
 }
 void paintFrame(QPainter &painter, const QRect &area)
 {
