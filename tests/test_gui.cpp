@@ -2812,41 +2812,16 @@ private slots:
         const QPoint corner(4, modern.height() / 2);
         QVERIFY(modern.pixelColor(corner).lightness() < standard.pixelColor(corner).lightness());
         QVERIFY(modern.save(QStringLiteral("modern-map.png")));
-        // The map no longer saves a scope setting.
+        // The map has no scope and no sensor looks, and saves neither setting.
+        QVERIFY(!window.findChild<QMenu *>(QStringLiteral("mapSensorMenu")));
         auto *settings = dynamic_cast<swak::SettingsParticipant *>(map);
-        QVERIFY(!settings->savePreferences().contains(QStringLiteral("scope")));
-        // Sensor looks grade the map content. The HUD stays sharp above it.
-        auto *sensorMenu = window.findChild<QMenu *>(QStringLiteral("mapSensorMenu"));
-        QVERIFY(sensorMenu && sensorMenu->menuAction()->isEnabled());
-        const QPoint inside(map->width() / 2 + 40, map->height() / 2 + 40);
-        const auto look = [&](const char *id) {
-            window.findChild<QAction *>(QStringLiteral("mapSensor/") + QLatin1String(id))
-                ->trigger();
-            return frame().pixelColor(inside);
-        };
-        const auto normal = look("normal");
-        const auto night = look("night-vision");
-        QVERIFY2(night.green() > night.red() * 2 && night.green() > night.blue(),
-                 qPrintable(night.name()));
-        const auto noir = look("noir");
-        QVERIFY(std::abs(noir.red() - noir.green()) <= 1 &&
-                std::abs(noir.green() - noir.blue()) <= 1);
-        QVERIFY(look("thermal") != normal);
-        QVERIFY(look("crt") != normal);
-        auto *mapSettings = dynamic_cast<swak::SettingsParticipant *>(map);
-        QCOMPARE(mapSettings->savePreferences().value(QStringLiteral("sensor")).toString(),
-                 QStringLiteral("crt"));
-        auto saved = mapSettings->savePreferences();
-        saved.insert(QStringLiteral("sensor"), QStringLiteral("x-ray"));
-        mapSettings->restorePreferences(saved);
-        QVERIFY(window.findChild<QAction *>(QStringLiteral("mapSensor/normal"))->isChecked());
-        window.findChild<QAction *>(QStringLiteral("mapSensor/night-vision"))->trigger();
+        const auto values = settings->savePreferences();
+        QVERIFY(!values.contains(QStringLiteral("scope")));
+        QVERIFY(!values.contains(QStringLiteral("sensor")));
+        // Standard draws the same map as before Modern.
         window.findChild<QAction *>(QStringLiteral("displayMode/standard"))->trigger();
-        QVERIFY(!sensorMenu->menuAction()->isEnabled());
-        // Standard draws without the look, but keeps the choice for Modern.
+        const QPoint inside(map->width() / 2 + 40, map->height() / 2 + 40);
         QCOMPARE(frame().pixelColor(inside), standard.pixelColor(inside));
-        QCOMPARE(mapSettings->savePreferences().value(QStringLiteral("sensor")).toString(),
-                 QStringLiteral("night-vision"));
     }
     void displayModeRoundTrip()
     {
@@ -11338,9 +11313,7 @@ private slots:
         auto *fileMenu = window.findChild<QMenu *>(QStringLiteral("fileMenu"));
         auto *quit = window.findChild<QAction *>(QStringLiteral("quitAction"));
         QVERIFY(viewMenu && fileMenu && quit);
-        QCOMPARE(viewMenu->actions().size(), 8);
-        QVERIFY(viewMenu->actions().contains(
-            window.findChild<QMenu *>(QStringLiteral("mapSensorMenu"))->menuAction()));
+        QCOMPARE(viewMenu->actions().size(), 7);
         QVERIFY(viewMenu->actions().contains(
             window.findChild<QMenu *>(QStringLiteral("displayModeMenu"))->menuAction()));
         QVERIFY(viewMenu->actions().contains(

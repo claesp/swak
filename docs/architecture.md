@@ -94,7 +94,7 @@ Create each tile image that a caller checks for allocation failure with `allocat
 
 `Window::setDisplayMode` keeps one window and pane layout for each mode, also in the profile under `window.modeLayouts`. It restores the layout of the new mode twice: at once and after the posted layout requests, because new fonts change minimum pane sizes later. `MapPanels::setModern` adds the pane margin and the rounded glass. `MapPanels::setCommandDock` places the main toolbar at the bottom center of the free area. The panels report that area as `MapFreeAreaProperty`. The map places the HUD and the credit in it. `PaneScroll` holds the content of each pane. Its size hint is the content size hint, and its small minimum height lets a pane scroll instead of covering others.
 
-`core/map_hud.*` paints the Modern map HUD as a function of a `MapHudState`, so tests can render it into an image. `visibleMapRect` finds the map area that overlay panes leave free. A sensor look paints the map content into an offscreen framebuffer through `QOpenGLPaintDevice`, then a full-screen GLSL 3.3 pass grades it into the widget framebuffer. The HUD and the decorations paint after that pass. If the shader cannot compile, the map logs one warning and draws without the look.
+`core/map_hud.*` paints the Modern map HUD as a function of a `MapHudState`, so tests can render it into an image. `visibleMapRect` finds the map area that overlay panes leave free.
 
 `core/quit_signals.*` reports SIGTERM and SIGINT on the interface thread. Its signal handler only writes one byte to a pipe. `main` then closes all windows, which also ends an open dialog, and quits the event loop. The window saves its preferences while it closes. The destructor restores the previous signal handlers.
 

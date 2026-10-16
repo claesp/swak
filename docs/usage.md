@@ -42,8 +42,6 @@ In Modern, panes float over the map with a margin, rounded corners, and a cyan b
 
 In Modern, the map shows a HUD over the part of the map that panes leave free. The upper left shows the title, the MGRS and DMS coordinates of the center, and the zoom. The upper right shows the UTC time and the map source. The scale and the attribution keep their places at the bottom.
 
-View > Sensor Look gives the Modern map a film sensor look: Normal, Night Vision, Thermal, CRT, or Noir. The look grades the map image, the layers, and the selection. The HUD, the scale, and the zoom levels stay sharp above it. The looks only change colors. Thermal does not show temperatures, and Night Vision does not show light levels. Standard always draws the normal map, and keeps the choice for Modern.
-
 Esri World Imagery, NASA GIBS VIIRS True Color, and NASA GIBS Black Marble are map presets that suit Modern. Select them in Tools > Map Providers. In both display modes, the map credit stays in the part of the map that panes leave free. Providers require a visible credit.
 
 # Receive and save events

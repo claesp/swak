@@ -1837,3 +1837,7 @@ The user asked to remove the thin rounded frame. The HUD now shows only text and
 # 2026-10-17: No scope
 
 The user asked to remove the scope. View > Scope, the `scope` map preference, `MapHudState::scope`, and `hudScopeRadius` are gone. A saved `scope` value in an older profile has no effect. The View menu has 8 entries. The Modern HUD now shows text only. `mapHud` checks that the HUD leaves the map unchanged below the text blocks.
+
+# 2026-10-17: No sensor looks
+
+The user asked to remove the sensor looks. View > Sensor Look, the `sensor` map preference, the offscreen framebuffer, and the GLSL grading pass are gone. The map paints its content directly into the widget again. A saved `sensor` value in an older profile has no effect. The View menu has 7 entries.
