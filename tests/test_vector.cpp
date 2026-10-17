@@ -330,7 +330,10 @@ private slots:
     }
     void imageAllocationFailure()
     {
-        // A vector tile whose image cannot be made fails with a status. The next source renders.
+        // A vector tile whose image cannot be made fails with a status. A new source renders.
+        // Each step clears the source first: the same source keeps its failed tiles, and these
+        // wait at least 30 seconds before the next try. Which tiles failed depends on the
+        // worker order, so a kept source would make the next step depend on timing.
         TileServer server;
         server.body = vector_fixture::sample();
         QVERIFY(server.load(QFINDTESTDATA("fixtures")));
@@ -347,9 +350,13 @@ private slots:
             QPainter painter(&canvas);
             renderer.paint(painter, {QSizeF(512, 512), QPointF(0.5, 0.5), 1}, 1, false);
         };
+        const auto restart = [&] {
+            renderer.setSource(nullptr, {});
+            renderer.setSource(provider_, source);
+        };
         const auto failsWith = [&](swak::ImageFault fault, const QString &text) {
             const ImageFaultGuard guard(fault);
-            renderer.setSource(provider_, source);
+            restart();
             return QTest::qWaitFor(
                 [&] {
                     draw();
@@ -365,7 +372,7 @@ private slots:
             failsWith(swak::ImageFault::Throw, QStringLiteral("Vector tile preparation failed.")),
             qPrintable(renderer.status()));
         QCOMPARE(renderer.coverage().rendered, 0);
-        renderer.setSource(provider_, source);
+        restart();
         QVERIFY(QTest::qWaitFor(
             [&] {
                 draw();

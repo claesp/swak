@@ -1845,3 +1845,7 @@ The user asked to remove the sensor looks. View > Sensor Look, the `sensor` map 
 # 2026-10-17: Move panes by drag
 
 The user asked to move panes between the edges. The user runs KDE on Wayland. There, Qt makes a dragged pane a separate window and cannot dock it again. `MapPanels` now handles drags on docked pane titles and on pane group tabs in the window. A drop indicator shows the target. A release near an edge (`DropEdge`, 48 pixels) or over the map docks the pane at the nearest edge. A release over another pane adds it to that pane's tab group. Esc cancels. A drag no longer detaches a pane. The float button and a double-click on the title still detach it. `paneDragging` covers edge, tab group, tab, cancel, click, and Modern cases. The test runs on X11 under Xvfb, so Wayland itself remains untested.
+
+# 2026-10-17: Flaky vector allocation test
+
+`VectorTest::imageAllocationFailure` failed once in a coverage run. The test called `setSource` with the same source for each step. The renderer ignores the same source, so it kept the failed tiles. A failed tile waits at least 30 seconds before the next try. The last step passed only when the tile under the test point did not fail in the earlier steps, which depends on the worker order. A test that kept the first fault until all tiles failed reproduced the timeout every time. Each step now clears the source first. The fixed test also passes in that worst case. The renderer behavior did not change.
