@@ -11299,6 +11299,117 @@ private slots:
         QVERIFY(file.open(QIODevice::ReadOnly));
         QCOMPARE(file.readAll(), invalid);
     }
+    void paneDragging()
+    {
+        // A drag on a pane title or a pane tab moves the pane inside the window. Qt does not
+        // make it a separate window, so the drop also works on Wayland.
+        QTemporaryDir directory;
+        swak::Window window(directory.filePath(QStringLiteral("drag.json")),
+                            QPluginLoader::staticInstances());
+        window.resize(1400, 860);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        window.activateWindow();
+        QVERIFY(QTest::qWaitForWindowActive(&window));
+        QTest::qWait(200);
+        auto *panels = window.findChild<QMainWindow *>(QStringLiteral("mapPanels"));
+        auto *events = window.findChild<QDockWidget *>(QStringLiteral("org.swak.events.pane"));
+        auto *editor = window.findChild<QDockWidget *>(QStringLiteral("org.swak.editor.pane"));
+        auto *indicator = panels->findChild<QWidget *>(QStringLiteral("paneDropIndicator"));
+        QVERIFY(panels && events && editor && indicator);
+        QCOMPARE(panels->dockWidgetArea(events), Qt::BottomDockWidgetArea);
+        const auto send = [](QWidget *widget,
+                             QEvent::Type type,
+                             QPoint global,
+                             Qt::MouseButton button,
+                             Qt::MouseButtons buttons) {
+            QMouseEvent event(type, widget->mapFromGlobal(global), global, button, buttons, {});
+            QApplication::sendEvent(widget, &event);
+        };
+        // Moves the mouse from a point on the source to a point on the panels.
+        const auto drag = [&](QWidget *source, QPoint start, QPoint target) {
+            const auto from = source->mapToGlobal(start);
+            const auto to = panels->mapToGlobal(target);
+            send(source, QEvent::MouseButtonPress, from, Qt::LeftButton, Qt::LeftButton);
+            for (int step = 1; step <= 10; ++step) {
+                send(source,
+                     QEvent::MouseMove,
+                     from + (to - from) * step / 10,
+                     Qt::NoButton,
+                     Qt::LeftButton);
+            }
+            return to;
+        };
+        const auto release = [&](QWidget *source, QPoint global) {
+            send(source, QEvent::MouseButtonRelease, global, Qt::LeftButton, Qt::NoButton);
+            QTest::qWait(50);
+        };
+        const QPoint title(events->width() / 2, 6);
+        // Bottom to the left edge. The drop place shows during the drag.
+        auto end = drag(events, title, QPoint(20, panels->height() / 2));
+        QVERIFY(indicator->isVisible());
+        QCOMPARE(indicator->geometry().left(), 0);
+        QVERIFY(indicator->geometry().height() > panels->height() / 2);
+        QVERIFY(!events->isFloating());
+        QTest::qWait(50);
+        QVERIFY(window.grab().save(QStringLiteral("pane-drop.png")));
+        release(events, end);
+        QVERIFY(!indicator->isVisible());
+        QCOMPARE(panels->dockWidgetArea(events), Qt::LeftDockWidgetArea);
+        QVERIFY(!events->isFloating());
+        QVERIFY(events->isVisible());
+        // Onto another pane: the panes share a tab group.
+        end = drag(events, QPoint(events->width() / 2, 6), editor->geometry().center());
+        QCOMPARE(indicator->geometry(), editor->geometry());
+        release(events, end);
+        QVERIFY(panels->tabifiedDockWidgets(editor).contains(events));
+        QVERIFY(events->isVisible());
+        // A pane tab drags the pane out of its group, here to the bottom edge.
+        QTabBar *tabs = nullptr;
+        int index = -1;
+        for (auto *bar : panels->findChildren<QTabBar *>(Qt::FindDirectChildrenOnly)) {
+            for (int i = 0; bar->isVisible() && i < bar->count(); ++i) {
+                if (bar->tabText(i) == events->windowTitle()) {
+                    tabs = bar;
+                    index = i;
+                }
+            }
+        }
+        QVERIFY(tabs);
+        end = drag(tabs,
+                   tabs->tabRect(index).center(),
+                   QPoint(panels->width() / 2, panels->height() - 10));
+        release(tabs, end);
+        QCOMPARE(panels->dockWidgetArea(events), Qt::BottomDockWidgetArea);
+        QVERIFY(panels->tabifiedDockWidgets(events).isEmpty());
+        // Escape ends a drag without a change.
+        end = drag(events, QPoint(events->width() / 2, 6), QPoint(panels->width() - 10, 300));
+        QVERIFY(indicator->isVisible());
+        QTest::keyClick(panels, Qt::Key_Escape);
+        QVERIFY(!indicator->isVisible());
+        release(events, end);
+        QCOMPARE(panels->dockWidgetArea(events), Qt::BottomDockWidgetArea);
+        // A click on the title without a drag changes nothing.
+        const auto before = events->geometry();
+        send(events,
+             QEvent::MouseButtonPress,
+             events->mapToGlobal(title),
+             Qt::LeftButton,
+             Qt::LeftButton);
+        release(events, events->mapToGlobal(title));
+        QCOMPARE(events->geometry(), before);
+        QVERIFY(!events->isFloating());
+        // In Modern, the drop place keeps the pane margin.
+        window.findChild<QAction *>(QStringLiteral("displayMode/modern"))->trigger();
+        QTest::qWait(200);
+        end = drag(events,
+                   QPoint(events->width() / 2, 6),
+                   QPoint(panels->width() - 20, panels->height() / 2));
+        QCOMPARE(indicator->geometry().right(), panels->width() - 13);
+        release(events, end);
+        QCOMPARE(panels->dockWidgetArea(events), Qt::RightDockWidgetArea);
+        window.findChild<QAction *>(QStringLiteral("displayMode/standard"))->trigger();
+    }
     void independentPanes()
     {
         QTemporaryDir preferences;

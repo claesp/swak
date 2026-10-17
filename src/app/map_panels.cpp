@@ -2,15 +2,43 @@
 
 #include "core/map_decorations.h"
 
+#include <QApplication>
 #include <QDockWidget>
 #include <QEvent>
+#include <QKeyEvent>
 #include <QLayout>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QTabBar>
 #include <QWheelEvent>
 
 #include <algorithm>
 namespace swak {
+namespace {
+// Shows where a dragged pane docks.
+class DropIndicator final : public QWidget
+{
+public:
+    explicit DropIndicator(QWidget *parent) : QWidget(parent)
+    {
+        setObjectName(QStringLiteral("paneDropIndicator"));
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        hide();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        auto color = palette().color(QPalette::Highlight);
+        painter.setPen(QPen(color, 2));
+        color.setAlpha(60);
+        painter.setBrush(color);
+        painter.drawRoundedRect(QRectF(rect()).adjusted(1, 1, -1, -1), 8, 8);
+    }
+};
+} // namespace
 MapPanels::MapPanels(QWidget *map) : QMainWindow(map, Qt::Widget)
 {
     setWindowFlags(Qt::Widget);
@@ -28,6 +56,7 @@ MapPanels::MapPanels(QWidget *map) : QMainWindow(map, Qt::Widget)
     connect(&maskTimer_, &QTimer::timeout, this, &MapPanels::updateMask);
     map->installEventFilter(this);
     setGeometry(map->rect());
+    dropIndicator_ = new DropIndicator(this);
     setMask(QRegion(-1, -1, 1, 1));
     show();
 }
@@ -105,6 +134,12 @@ void MapPanels::track(QDockWidget *pane)
 }
 bool MapPanels::event(QEvent *event)
 {
+    if (dragging_ && event->type() == QEvent::KeyPress &&
+        static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
+        finishDrag(false);
+        event->accept();
+        return true;
+    }
     if (event->type() == QEvent::Wheel || event->type() == QEvent::KeyPress ||
         event->type() == QEvent::KeyRelease) {
         event->accept();
@@ -118,6 +153,9 @@ bool MapPanels::event(QEvent *event)
 }
 bool MapPanels::eventFilter(QObject *object, QEvent *event)
 {
+    if (filterPaneDrag(object, event)) {
+        return true;
+    }
     if (object == parentWidget() && event->type() == QEvent::Wheel && isVisible() &&
         mask().contains(static_cast<QWheelEvent *>(event)->position().toPoint())) {
         event->accept();
@@ -144,6 +182,11 @@ void MapPanels::updateMask()
         if (tabs->isVisible()) {
             region += QRect(tabs->mapTo(this, QPoint{}), tabs->size());
         }
+        // Qt creates the tab bars of pane groups as needed. Their tabs also start a drag.
+        if (tabs->parentWidget() == this && !tabs->property("swakPaneDrag").toBool()) {
+            tabs->setProperty("swakPaneDrag", true);
+            tabs->installEventFilter(this);
+        }
     }
     placeCommandDock();
     if (commandDock_ && commandDock_->isVisible()) {
@@ -158,8 +201,153 @@ void MapPanels::updateMask()
     }
     parentWidget()->setProperty(MapFreeAreaProperty, free);
     parentWidget()->setProperty(MapOcclusionProperty, QVariant::fromValue(region));
+    // The drop place shows during a drag only. It does not cover the map for the HUD.
+    if (dropIndicator_->isVisible()) {
+        region += dropIndicator_->geometry();
+    }
     setMask(region.isEmpty() ? QRegion(-1, -1, 1, 1) : region);
     update();
     parentWidget()->update();
+}
+bool MapPanels::filterPaneDrag(QObject *object, QEvent *event)
+{
+    const auto type = event->type();
+    auto *source = qobject_cast<QWidget *>(object);
+    if (!source || (type != QEvent::MouseButtonPress && type != QEvent::MouseMove &&
+                    type != QEvent::MouseButtonRelease)) {
+        return false;
+    }
+    const auto *mouse = static_cast<QMouseEvent *>(event);
+    const auto position = mapFromGlobal(mouse->globalPosition().toPoint());
+    if (type == QEvent::MouseButtonPress) {
+        if (mouse->button() != Qt::LeftButton || dragging_) {
+            return false;
+        }
+        if (auto *pane = qobject_cast<QDockWidget *>(source)) {
+            const int titleBottom = pane->widget() ? pane->widget()->y() : pane->height();
+            if (pane->isFloating() || pane->parentWidget() != this ||
+                mouse->position().y() >= titleBottom) {
+                return false;
+            }
+            dragPane_ = pane;
+            dragSource_ = pane;
+            dragStart_ = position;
+            // Qt does not start its own drag. On Wayland, that drag cannot dock the pane again.
+            return true;
+        }
+        if (auto *tabs = qobject_cast<QTabBar *>(source); tabs && tabs->parentWidget() == this) {
+            dragPane_ = tabPane(*tabs, mouse->position().toPoint());
+            dragSource_ = dragPane_ ? tabs : nullptr;
+            dragStart_ = position;
+        }
+        return false;
+    }
+    if (source != dragSource_ || !dragPane_) {
+        return false;
+    }
+    if (type == QEvent::MouseMove) {
+        if (!(mouse->buttons() & Qt::LeftButton)) {
+            finishDrag(false);
+            return false;
+        }
+        if (!dragging_) {
+            if ((position - dragStart_).manhattanLength() < QApplication::startDragDistance()) {
+                return true;
+            }
+            dragging_ = true;
+            grabKeyboard();
+        }
+        updateDrop(position);
+        return true;
+    }
+    const bool dragged = dragging_;
+    finishDrag(dragged);
+    return dragged;
+}
+QDockWidget *MapPanels::tabPane(const QTabBar &tabs, QPoint position) const
+{
+    const int index = tabs.tabAt(position);
+    if (index < 0) {
+        return nullptr;
+    }
+    // A tab of a pane group shows the title of its pane.
+    const auto title = tabs.tabText(index);
+    for (auto *pane : findChildren<QDockWidget *>(Qt::FindDirectChildrenOnly)) {
+        if (!pane->isFloating() && pane->windowTitle() == title &&
+            !tabifiedDockWidgets(pane).isEmpty()) {
+            return pane;
+        }
+    }
+    return nullptr;
+}
+void MapPanels::updateDrop(QPoint position)
+{
+    dropPane_ = nullptr;
+    dropArea_ = Qt::NoDockWidgetArea;
+    const auto bounds = rect().marginsRemoved(contentsMargins());
+    const int left = position.x() - bounds.left(), right = bounds.right() - position.x(),
+              top = position.y() - bounds.top(), bottom = bounds.bottom() - position.y();
+    const int nearest = std::min({left, right, top, bottom});
+    QRect place;
+    // Inside the map, a drop on another pane adds the pane to its tab group.
+    if (nearest > DropEdge) {
+        for (auto *pane : findChildren<QDockWidget *>(Qt::FindDirectChildrenOnly)) {
+            if (pane != dragPane_ && pane->isVisible() && !pane->isFloating() &&
+                pane->geometry().contains(position)) {
+                dropPane_ = pane;
+                place = pane->geometry();
+                break;
+            }
+        }
+    }
+    // Elsewhere, the nearest edge takes the pane.
+    if (!dropPane_) {
+        const int width = std::clamp(bounds.width() / 4, 160, 360);
+        const int height = std::clamp(bounds.height() / 4, 120, 260);
+        if (nearest == left) {
+            dropArea_ = Qt::LeftDockWidgetArea;
+            place = QRect(bounds.left(), bounds.top(), width, bounds.height());
+        } else if (nearest == right) {
+            dropArea_ = Qt::RightDockWidgetArea;
+            place = QRect(bounds.right() - width + 1, bounds.top(), width, bounds.height());
+        } else if (nearest == top) {
+            dropArea_ = Qt::TopDockWidgetArea;
+            place = QRect(bounds.left(), bounds.top(), bounds.width(), height);
+        } else {
+            dropArea_ = Qt::BottomDockWidgetArea;
+            place = QRect(bounds.left(), bounds.bottom() - height + 1, bounds.width(), height);
+        }
+    }
+    dropIndicator_->setGeometry(place & bounds);
+    dropIndicator_->show();
+    dropIndicator_->raise();
+    maskTimer_.start(0);
+}
+void MapPanels::finishDrag(bool apply)
+{
+    const QPointer<QDockWidget> pane = dragPane_;
+    const QPointer<QDockWidget> target = dropPane_;
+    const auto area = dropArea_;
+    if (dragging_) {
+        releaseKeyboard();
+    }
+    dragging_ = false;
+    dragPane_ = nullptr;
+    dragSource_ = nullptr;
+    dropPane_ = nullptr;
+    dropArea_ = Qt::NoDockWidgetArea;
+    dropIndicator_->hide();
+    maskTimer_.start(0);
+    if (!apply || !pane) {
+        return;
+    }
+    if (target) {
+        tabifyDockWidget(target, pane);
+    } else if (area != Qt::NoDockWidgetArea &&
+               (dockWidgetArea(pane) != area || !tabifiedDockWidgets(pane).isEmpty())) {
+        addDockWidget(area, pane);
+    }
+    pane->show();
+    pane->raise();
 }
 } // namespace swak

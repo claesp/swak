@@ -1841,3 +1841,7 @@ The user asked to remove the scope. View > Scope, the `scope` map preference, `M
 # 2026-10-17: No sensor looks
 
 The user asked to remove the sensor looks. View > Sensor Look, the `sensor` map preference, the offscreen framebuffer, and the GLSL grading pass are gone. The map paints its content directly into the widget again. A saved `sensor` value in an older profile has no effect. The View menu has 7 entries.
+
+# 2026-10-17: Move panes by drag
+
+The user asked to move panes between the edges. The user runs KDE on Wayland. There, Qt makes a dragged pane a separate window and cannot dock it again. `MapPanels` now handles drags on docked pane titles and on pane group tabs in the window. A drop indicator shows the target. A release near an edge (`DropEdge`, 48 pixels) or over the map docks the pane at the nearest edge. A release over another pane adds it to that pane's tab group. Esc cancels. A drag no longer detaches a pane. The float button and a double-click on the title still detach it. `paneDragging` covers edge, tab group, tab, cancel, click, and Modern cases. The test runs on X11 under Xvfb, so Wayland itself remains untested.

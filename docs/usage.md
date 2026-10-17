@@ -4,7 +4,7 @@ A fresh profile starts with an empty map and no receiver socket. Later launches 
 
 Tools > Plugins restores hidden docks, which are movable containers for tool panes. Select a plugin checkbox to show or hide its pane. A checked box means that the pane is open. Hover over its name, or press Right, to open its command submenu. Return or Space also toggles the selected pane. Close the pane to hide it.
 
-CoT Messages, CoT Event Generator, Servers, and Plugins each have an independent dock. The three tool docks start as tabs beside the map. Drag a dock title or tab to detach that pane.
+CoT Messages, CoT Event Generator, Servers, and Plugins each have an independent dock. The three tool docks start as tabs beside the map. Drag a pane title or a pane tab to move the pane. A blue area shows where the pane goes: release near an edge to put the pane at that edge, or over another pane to add it to that pane's tabs. Press Esc during the drag to cancel it. To detach a pane, click the float button in its title, or double-click the title. This also works on Wayland.
 
 Each detached pane has a resize handle in its lower-right corner. Close a pane to hide it. Use File > Quit to close the application. SIGTERM and SIGINT, for example from a session logout or Ctrl+C in a terminal, also close it and save the preferences.
 
