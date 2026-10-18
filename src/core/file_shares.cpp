@@ -36,6 +36,11 @@ bool hashText(const QString &text)
     static const QRegularExpression pattern(QStringLiteral("\\A[0-9a-fA-F]{64}\\z"));
     return pattern.match(text).hasMatch();
 }
+QString httpError(const NetworkReply &reply)
+{
+    return takHttpError(
+        reply, QCoreApplication::translate("FileShares", "The server does not have this file."));
+}
 QString plain(const QString &text, qsizetype limit = 128)
 {
     return plainText(text, limit);
@@ -53,25 +58,6 @@ QString safeFileName(const QString &text)
         result.remove(0, 1);
     }
     return result.isEmpty() ? QStringLiteral("package") : result;
-}
-QString encoded(const QString &value)
-{
-    return QString::fromLatin1(QUrl::toPercentEncoding(value));
-}
-QString httpError(const NetworkReply &reply)
-{
-    if (!reply.error.isEmpty()) {
-        return reply.error;
-    }
-    if (reply.status == 401 || reply.status == 403) {
-        return QCoreApplication::translate("FileShares",
-                                           "The server does not allow this for your user.");
-    }
-    if (reply.status == 404) {
-        return QCoreApplication::translate("FileShares", "The server does not have this file.");
-    }
-    return QCoreApplication::translate("FileShares", "The server answered with HTTP %1.")
-        .arg(reply.status);
 }
 } // namespace
 
@@ -481,7 +467,7 @@ QString FileShares::send(const QString &serverId,
         serverId,
         "POST",
         QStringLiteral("/sync/missionupload?hash=%1&filename=%2&creatorUid=%3")
-            .arg(hash, encoded(fileName), encoded(from.uid)),
+            .arg(hash, percentEncoded(fileName), percentEncoded(from.uid)),
         body,
         "multipart/form-data; boundary=" + boundary,
         this,

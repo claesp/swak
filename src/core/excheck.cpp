@@ -8,7 +8,6 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegularExpression>
-#include <QUrl>
 #include <QXmlStreamReader>
 #include <QXmlStreamWriter>
 
@@ -21,20 +20,6 @@ constexpr int RequestTimeoutMs = 60000;
 QString plain(const QString &text, qsizetype limit = 512)
 {
     return plainText(text, limit, LineBreaks::Keep);
-}
-QString encoded(const QString &value)
-{
-    return QString::fromLatin1(QUrl::toPercentEncoding(value));
-}
-QString httpError(const NetworkReply &reply)
-{
-    if (!reply.error.isEmpty()) {
-        return reply.error;
-    }
-    if (reply.status == 401 || reply.status == 403) {
-        return ExCheck::tr("The server does not allow this for your user.");
-    }
-    return ExCheck::tr("The server answered with HTTP %1.").arg(reply.status);
 }
 // These task elements come after completeDTG in the schema sequence.
 bool afterCompleteTime(QStringView name)
@@ -305,13 +290,13 @@ void ExCheck::list(const QString &serverId)
     api_->martiRequest(
         serverId,
         "GET",
-        QStringLiteral("/api/excheck/checklist/active?clientUid=") + encoded(clientUid()),
+        QStringLiteral("/api/excheck/checklist/active?clientUid=") + percentEncoded(clientUid()),
         {},
         {},
         this,
         [state, finish](const NetworkReply &reply) {
             if (!reply.ok()) {
-                state->error = httpError(reply);
+                state->error = takHttpError(reply);
             } else if (!readChecklists(reply.body, &state->checklists)) {
                 state->error = tr("The checklist list is invalid.");
             }
@@ -348,14 +333,15 @@ void ExCheck::load(const QString &serverId, const QString &uid)
     api_->martiRequest(
         serverId,
         "GET",
-        QStringLiteral("/api/excheck/checklist/%1?clientUid=%2").arg(uid, encoded(clientUid())),
+        QStringLiteral("/api/excheck/checklist/%1?clientUid=%2")
+            .arg(uid, percentEncoded(clientUid())),
         {},
         {},
         this,
         [this, serverId, failed](const NetworkReply &reply) {
             QList<Checklist> list;
             if (!reply.ok()) {
-                emit loaded(serverId, failed, httpError(reply));
+                emit loaded(serverId, failed, takHttpError(reply));
             } else if (!readChecklists(reply.body, &list) || list.isEmpty() ||
                        list.first().uid != failed.uid) {
                 emit loaded(serverId, failed, tr("The checklist is invalid."));
@@ -387,16 +373,16 @@ QString ExCheck::start(const QString &serverId,
         QStringLiteral("/api/excheck/%1/start?name=%2&description=%3&callsign=%4&clientUid=%5"
                        "&startTime=%6")
             .arg(templateUid,
-                 encoded(title),
-                 encoded(plain(description)),
-                 encoded(callsign),
-                 encoded(uid),
-                 encoded(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs))),
+                 percentEncoded(title),
+                 percentEncoded(plain(description)),
+                 percentEncoded(callsign),
+                 percentEncoded(uid),
+                 percentEncoded(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs))),
         {},
         {},
         this,
         [this, serverId](const NetworkReply &reply) {
-            emit started(serverId, reply.ok() ? QString{} : httpError(reply));
+            emit started(serverId, reply.ok() ? QString{} : takHttpError(reply));
         },
         MaxReplyBytes,
         RequestTimeoutMs);
@@ -421,12 +407,12 @@ QString ExCheck::setStatus(const QString &serverId,
         serverId,
         "PUT",
         QStringLiteral("/api/excheck/checklist/%1/task/%2?clientUid=%3")
-            .arg(checklistUid, task.uid, encoded(clientUid())),
+            .arg(checklistUid, task.uid, percentEncoded(clientUid())),
         body,
         "application/xml",
         this,
         [this, serverId, checklistUid](const NetworkReply &reply) {
-            emit updated(serverId, checklistUid, reply.ok() ? QString{} : httpError(reply));
+            emit updated(serverId, checklistUid, reply.ok() ? QString{} : takHttpError(reply));
         },
         64 * 1024,
         RequestTimeoutMs);

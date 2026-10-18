@@ -7,6 +7,8 @@
 
 namespace swak {
 class NetworkClient;
+struct NetworkReply;
+struct NetworkRequest;
 class Servers;
 
 // One required subject entry, such as O=TAK, from /Marti/api/tls/config.
@@ -85,6 +87,11 @@ private:
     void store(const EnrollmentResult &result);
     void finish(const QString &error);
     QByteArray authorization() const;
+    // A request to the enrollment port of the selected entry, with its credentials and CA.
+    NetworkRequest serviceRequest(const QString &path) const;
+    // The error of an enrollment reply, or an empty string for HTTP 200. statusText names
+    // other statuses with %1.
+    static QString replyError(const NetworkReply &reply, const QString &statusText);
     Servers &servers_;
     NetworkClient &network_;
     Options options_;

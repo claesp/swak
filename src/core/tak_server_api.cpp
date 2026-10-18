@@ -7,6 +7,7 @@
 #include <QJsonDocument>
 #include <QRegularExpression>
 #include <QScopedValueRollback>
+#include <QUrl>
 
 namespace swak {
 namespace {
@@ -27,6 +28,27 @@ bool usesApi(const QJsonObject &source)
            apiPort(source) > 0;
 }
 } // namespace
+QString percentEncoded(const QString &value)
+{
+    return QString::fromLatin1(QUrl::toPercentEncoding(value));
+}
+QString takHttpError(const NetworkReply &reply, const QString &notFound, const QString &forbidden)
+{
+    if (!reply.error.isEmpty()) {
+        return reply.error;
+    }
+    if (reply.status == 401 || reply.status == 403) {
+        return forbidden.isEmpty()
+                   ? QCoreApplication::translate("TakServerApi",
+                                                 "The server does not allow this for your user.")
+                   : forbidden;
+    }
+    if (reply.status == 404 && !notFound.isEmpty()) {
+        return notFound;
+    }
+    return QCoreApplication::translate("TakServerApi", "The server answered with HTTP %1.")
+        .arg(reply.status);
+}
 TakServerInfo readTakServerConfig(const QByteArray &reply)
 {
     TakServerInfo info;
@@ -91,23 +113,18 @@ quint64 TakServerApi::request(const QString &serverId,
                               NetworkClient::Callback done,
                               qsizetype maxBytes)
 {
-    const auto source = servers_.sources().value(serverId).toObject();
-    NetworkRequest request;
-    request.url = apiUrl(source, path);
-    request.method = method;
-    request.body = body;
-    request.maxBytes = maxBytes;
-    request.expectedHost = source.value(QStringLiteral("host")).toString();
-    request.expectedPort = apiPort(source);
-    request.headers.append(qMakePair(QByteArray("Accept"), QByteArray("application/json")));
-    if (!body.isEmpty()) {
-        request.headers.append(
-            qMakePair(QByteArray("Content-Type"), QByteArray("application/json")));
-    }
-    if (request.url.isValid()) {
-        request.tls = readTlsFiles(source);
-    }
-    return network_.send(std::move(request), context, std::move(done));
+    // The REST API is the /api path below /Marti. A path without a leading slash stays
+    // invalid, as apiUrl requires.
+    return martiRequest(serverId,
+                        method,
+                        path.startsWith(QLatin1Char('/')) ? QStringLiteral("/api") + path : path,
+                        body,
+                        body.isEmpty() ? QByteArray{} : QByteArray("application/json"),
+                        context,
+                        std::move(done),
+                        maxBytes,
+                        NetworkRequest{}.timeoutMs,
+                        {{QByteArray("Accept"), QByteArray("application/json")}});
 }
 quint64 TakServerApi::martiRequest(const QString &serverId,
                                    const QByteArray &method,

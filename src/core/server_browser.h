@@ -14,6 +14,7 @@ class ProviderTable;
 class SingleLineLabel;
 class TakEnrollment;
 class TakChannels;
+class TakServerApi;
 struct TakGroup;
 class LocalLanStatus final : public QWidget
 {
@@ -42,6 +43,8 @@ private:
     void edit(bool adding);
     void enroll();
     void showEnrollStatus(const QString &text);
+    // The REST API for a server entry, or null with a status when the entry has none.
+    TakServerApi *apiFor(const QString &id);
     void loadChannels();
     void chooseChannels(const QString &id, const QList<TakGroup> &groups, const QString &error);
     void loadMapLayers();

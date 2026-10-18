@@ -290,17 +290,25 @@ void ServerBrowser::setMapSources(MapSources *maps)
 {
     maps_ = maps;
 }
+TakServerApi *ServerBrowser::apiFor(const QString &id)
+{
+    auto *api = servers_.findChild<TakServerApi *>();
+    if (!api || TakServerApi::apiUrl(servers_.sources().value(id).toObject(), QStringLiteral("/"))
+                    .isEmpty()) {
+        showEnrollStatus(tr("Select a TLS or QUIC entry with a TAK REST API port first."));
+        return nullptr;
+    }
+    return api;
+}
 void ServerBrowser::loadMapLayers()
 {
     const auto id = table_->selectedId();
-    auto *api = servers_.findChild<TakServerApi *>();
     if (!maps_) {
         showEnrollStatus(tr("This window has no map catalog."));
         return;
     }
-    if (!api || TakServerApi::apiUrl(servers_.sources().value(id).toObject(), QStringLiteral("/"))
-                    .isEmpty()) {
-        showEnrollStatus(tr("Select a TLS or QUIC entry with a TAK REST API port first."));
+    auto *api = apiFor(id);
+    if (!api) {
         return;
     }
     showEnrollStatus(tr("Reading the map layers of the server…"));
@@ -392,10 +400,8 @@ void ServerBrowser::chooseMapLayers(const QString &id, const QByteArray &json)
 void ServerBrowser::loadDataFeeds()
 {
     const auto id = table_->selectedId();
-    auto *api = servers_.findChild<TakServerApi *>();
-    if (!api || TakServerApi::apiUrl(servers_.sources().value(id).toObject(), QStringLiteral("/"))
-                    .isEmpty()) {
-        showEnrollStatus(tr("Select a TLS or QUIC entry with a TAK REST API port first."));
+    auto *api = apiFor(id);
+    if (!api) {
         return;
     }
     showEnrollStatus(tr("Reading the data feeds of the server…"));
@@ -513,10 +519,8 @@ void ServerBrowser::showDataFeeds(const QList<ServerFeed> &feeds,
 void ServerBrowser::loadChannels()
 {
     const auto id = table_->selectedId();
-    auto *api = servers_.findChild<TakServerApi *>();
-    if (!api || TakServerApi::apiUrl(servers_.sources().value(id).toObject(), QStringLiteral("/"))
-                    .isEmpty()) {
-        showEnrollStatus(tr("Select a TLS or QUIC entry with a TAK REST API port first."));
+    auto *api = apiFor(id);
+    if (!api) {
         return;
     }
     if (!channels_) {

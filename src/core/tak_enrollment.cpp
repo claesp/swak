@@ -363,27 +363,14 @@ QString TakEnrollment::start(Options options)
     options_ = std::move(options);
     running_ = true;
     emit progress(tr("Reading the certificate settings of the server…"));
-    NetworkRequest request;
-    const auto host = entry.value(QStringLiteral("host")).toString();
-    request.url.setScheme(QStringLiteral("https"));
-    request.url.setHost(host);
-    request.url.setPort(options_.port);
-    request.url.setPath(QStringLiteral("/Marti/api/tls/config"));
-    request.expectedHost = host;
-    request.expectedPort = options_.port;
-    request.maxBytes = MaxReplyBytes;
-    request.headers = {{"Authorization", authorization()}, {"Accept", "application/xml"}};
-    // The enrollment port needs no client certificate. It uses only the CA of the entry.
-    auto files = readTlsFiles(entry);
-    request.tls.ca = files.ca;
+    auto request = serviceRequest(QStringLiteral("/Marti/api/tls/config"));
+    request.headers.append(qMakePair(QByteArray("Accept"), QByteArray("application/xml")));
     request_ = network_.send(std::move(request), this, [this](const NetworkReply &reply) {
         request_ = 0;
-        if (!reply.error.isEmpty()) {
-            finish(reply.error);
-        } else if (reply.status == 401 || reply.status == 403) {
-            finish(tr("The server rejected the username or password."));
-        } else if (reply.status != 200) {
-            finish(tr("The enrollment service answered with HTTP status %1.").arg(reply.status));
+        if (const auto error =
+                replyError(reply, tr("The enrollment service answered with HTTP status %1."));
+            !error.isEmpty()) {
+            finish(error);
         } else {
             QList<SubjectEntry> entries;
             if (!readCertificateConfig(reply.body, &entries)) {
@@ -404,40 +391,54 @@ void TakEnrollment::requestCertificate(const QList<SubjectEntry> &entries)
         return;
     }
     emit progress(tr("Asking the server to sign the certificate…"));
-    const auto entry = servers_.sources().value(options_.serverId).toObject();
-    const auto host = entry.value(QStringLiteral("host")).toString();
-    NetworkRequest request;
-    request.url.setScheme(QStringLiteral("https"));
-    request.url.setHost(host);
-    request.url.setPort(options_.port);
-    request.url.setPath(QStringLiteral("/Marti/api/tls/signClient/v2"));
+    auto request = serviceRequest(QStringLiteral("/Marti/api/tls/signClient/v2"));
     QUrlQuery query;
     query.addQueryItem(QStringLiteral("clientUid"), options_.clientUid.left(128));
     query.addQueryItem(QStringLiteral("version"), QStringLiteral("SWAK " SWAK_VERSION));
     request.url.setQuery(query);
     request.method = "POST";
     request.body = csr;
-    request.expectedHost = host;
-    request.expectedPort = options_.port;
-    request.maxBytes = MaxReplyBytes;
-    request.headers = {{"Authorization", authorization()},
-                       {"Accept", "application/json"},
-                       {"Content-Type", "text/plain"}};
-    request.tls.ca = readTlsFiles(entry).ca;
+    request.headers.append(qMakePair(QByteArray("Accept"), QByteArray("application/json")));
+    request.headers.append(qMakePair(QByteArray("Content-Type"), QByteArray("text/plain")));
     request_ = network_.send(std::move(request), this, [this](const NetworkReply &reply) {
         request_ = 0;
-        if (!reply.error.isEmpty()) {
-            finish(reply.error);
-        } else if (reply.status == 401 || reply.status == 403) {
-            finish(tr("The server rejected the username or password."));
-        } else if (reply.status != 200) {
-            finish(tr("The server did not sign the certificate. HTTP status %1. Check the "
-                      "username and the required certificate subject.")
-                       .arg(reply.status));
+        if (const auto failure =
+                replyError(reply,
+                           tr("The server did not sign the certificate. HTTP status %1. Check the "
+                              "username and the required certificate subject."));
+            !failure.isEmpty()) {
+            finish(failure);
         } else {
             store(readEnrollmentReply(reply.body, keyPem_, keyPassword_));
         }
     });
+}
+NetworkRequest TakEnrollment::serviceRequest(const QString &path) const
+{
+    const auto entry = servers_.sources().value(options_.serverId).toObject();
+    const auto host = entry.value(QStringLiteral("host")).toString();
+    NetworkRequest request;
+    request.url.setScheme(QStringLiteral("https"));
+    request.url.setHost(host);
+    request.url.setPort(options_.port);
+    request.url.setPath(path);
+    request.expectedHost = host;
+    request.expectedPort = options_.port;
+    request.maxBytes = MaxReplyBytes;
+    request.headers = {{"Authorization", authorization()}};
+    // The enrollment port needs no client certificate. It uses only the CA of the entry.
+    request.tls.ca = readTlsFiles(entry).ca;
+    return request;
+}
+QString TakEnrollment::replyError(const NetworkReply &reply, const QString &statusText)
+{
+    if (!reply.error.isEmpty()) {
+        return reply.error;
+    }
+    if (reply.status == 401 || reply.status == 403) {
+        return tr("The server rejected the username or password.");
+    }
+    return reply.status == 200 ? QString{} : statusText.arg(reply.status);
 }
 void TakEnrollment::store(const EnrollmentResult &result)
 {

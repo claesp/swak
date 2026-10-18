@@ -29,6 +29,13 @@ struct TakServerInfo
 // the CoT stream. The default API port is 8443. Port 0 turns the API off for an entry.
 // After each new TLS connection, the class reads /version/config to learn the server
 // version. Plugins use request() for later TAK features.
+// Percent-encodes a path segment or a query value of a TAK Server URL.
+QString percentEncoded(const QString &value);
+// The text for a failed TAK Server reply: the network error, or a text for the HTTP status.
+// A non-empty notFound or forbidden replaces the general text for 404, or for 401 and 403.
+QString takHttpError(const NetworkReply &reply,
+                     const QString &notFound = {},
+                     const QString &forbidden = {});
 class TakServerApi final : public QObject
 {
     Q_OBJECT

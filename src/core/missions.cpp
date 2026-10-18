@@ -25,6 +25,13 @@ constexpr qsizetype MaxArchiveBytes = 64 * 1024 * 1024;
 constexpr int RequestTimeoutMs = 60000;
 constexpr int MissionLifetimeSeconds = 24 * 60 * 60;
 
+QString httpError(const NetworkReply &reply)
+{
+    return takHttpError(
+        reply,
+        Missions::tr("The server does not have this mission."),
+        Missions::tr("The server does not allow this for your user, or the password is wrong."));
+}
 QString plain(const QString &text, qsizetype limit = 128)
 {
     return plainText(text, limit);
@@ -41,28 +48,6 @@ QDateTime readTime(const QJsonValue &value)
         return QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(milliseconds), QTimeZone::UTC);
     }
     return QDateTime::fromString(value.toString(), Qt::ISODateWithMs);
-}
-QString segment(const QString &name)
-{
-    return QString::fromLatin1(QUrl::toPercentEncoding(name));
-}
-QString query(const QString &value)
-{
-    return QString::fromLatin1(QUrl::toPercentEncoding(value));
-}
-QString httpError(const NetworkReply &reply)
-{
-    if (!reply.error.isEmpty()) {
-        return reply.error;
-    }
-    if (reply.status == 401 || reply.status == 403) {
-        return Missions::tr(
-            "The server does not allow this for your user, or the password is wrong.");
-    }
-    if (reply.status == 404) {
-        return Missions::tr("The server does not have this mission.");
-    }
-    return Missions::tr("The server answered with HTTP %1.").arg(reply.status);
 }
 MissionSubscription::Role readRole(const QJsonValue &value)
 {
@@ -361,10 +346,10 @@ QString Missions::subscribe(const QString &serverId, const QString &name, const 
         subscriptions_.append(mission);
         emit changed();
     }
-    auto path =
-        QStringLiteral("/api/missions/%1/subscription?uid=%2").arg(segment(name), query(uid));
+    auto path = QStringLiteral("/api/missions/%1/subscription?uid=%2")
+                    .arg(percentEncoded(name), percentEncoded(uid));
     if (!password.isEmpty()) {
-        path += QStringLiteral("&password=") + query(password);
+        path += QStringLiteral("&password=") + percentEncoded(password);
     }
     api_->martiRequest(
         serverId,
@@ -410,7 +395,7 @@ void Missions::unsubscribe(const QString &serverId, const QString &name)
             serverId,
             "DELETE",
             QStringLiteral("/api/missions/%1/subscription?uid=%2")
-                .arg(segment(name), query(clientUid())),
+                .arg(percentEncoded(name), percentEncoded(clientUid())),
             {},
             {},
             this,
@@ -448,7 +433,7 @@ void Missions::reload(const QString &serverId, const QString &name)
         return;
     }
     const auto headers = authorization(*mission);
-    const auto base = QStringLiteral("/api/missions/") + segment(name);
+    const auto base = QStringLiteral("/api/missions/") + percentEncoded(name);
     api_->martiRequest(
         serverId,
         "GET",
@@ -593,7 +578,7 @@ QString Missions::removeObject(const QString &serverId, const QString &name, con
         serverId,
         "DELETE",
         QStringLiteral("/api/missions/%1/contents?uid=%2&creatorUid=%3")
-            .arg(segment(name), query(uid), query(clientUid())),
+            .arg(percentEncoded(name), percentEncoded(uid), percentEncoded(clientUid())),
         {},
         {},
         this,
@@ -662,7 +647,7 @@ QString Missions::exportArchive(const QString &serverId, const QString &name)
     api_->martiRequest(
         serverId,
         "GET",
-        QStringLiteral("/api/missions/%1/archive").arg(segment(name)),
+        QStringLiteral("/api/missions/%1/archive").arg(percentEncoded(name)),
         {},
         {},
         this,

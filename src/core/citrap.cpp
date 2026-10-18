@@ -10,7 +10,6 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegularExpression>
-#include <QUrl>
 #include <QUuid>
 #include <QXmlStreamReader>
 #include <QXmlStreamWriter>
@@ -25,20 +24,6 @@ constexpr int RequestTimeoutMs = 120000;
 QString plain(const QString &text, qsizetype limit = 256)
 {
     return plainText(text, limit, LineBreaks::Keep);
-}
-QString encoded(const QString &value)
-{
-    return QString::fromLatin1(QUrl::toPercentEncoding(value));
-}
-QString httpError(const NetworkReply &reply)
-{
-    if (!reply.error.isEmpty()) {
-        return reply.error;
-    }
-    if (reply.status == 401 || reply.status == 403) {
-        return Citrap::tr("The server does not allow this for your user.");
-    }
-    return Citrap::tr("The server answered with HTTP %1.").arg(reply.status);
 }
 // A file name without folders or characters that HTTP headers reject.
 QString safeFileName(const QString &text)
@@ -242,7 +227,7 @@ void Citrap::list(const QString &serverId)
         [this, serverId](const NetworkReply &reply) {
             QList<CitrapReport> reports;
             if (!reply.ok()) {
-                emit listed(serverId, {}, httpError(reply));
+                emit listed(serverId, {}, takHttpError(reply));
             } else if (!readCitrapReports(reply.body, &reports)) {
                 emit listed(serverId, {}, tr("The report list is invalid."));
             } else {
@@ -289,13 +274,13 @@ QString Citrap::create(const QString &serverId,
     api_->martiRequest(
         serverId,
         "POST",
-        QStringLiteral("/api/citrap?clientUid=") + encoded(clientUid()),
+        QStringLiteral("/api/citrap?clientUid=") + percentEncoded(clientUid()),
         package,
         "application/octet-stream",
         this,
         [this, serverId, id = report.id, attachments](const NetworkReply &reply) {
             if (!reply.ok()) {
-                emit created(serverId, {}, httpError(reply));
+                emit created(serverId, {}, takHttpError(reply));
                 return;
             }
             // TAK Server answers {"id":"..."}. Other servers answer the report or the plain id.
@@ -330,13 +315,14 @@ void Citrap::upload(const QString &serverId,
     api_->martiRequest(
         serverId,
         "POST",
-        QStringLiteral("/api/citrap/%1/attachment?clientUid=%2").arg(id, encoded(clientUid())),
+        QStringLiteral("/api/citrap/%1/attachment?clientUid=%2")
+            .arg(id, percentEncoded(clientUid())),
         attachment.bytes,
         "application/octet-stream",
         this,
         [this, serverId, id, attachments, errors, fileName](const NetworkReply &reply) mutable {
             if (!reply.ok()) {
-                errors.append(tr("%1: %2").arg(fileName, httpError(reply)));
+                errors.append(tr("%1: %2").arg(fileName, takHttpError(reply)));
             }
             upload(serverId, id, attachments, errors);
         },
@@ -357,12 +343,12 @@ QString Citrap::update(const QString &serverId, const CitrapReport &report)
     api_->martiRequest(
         serverId,
         "PUT",
-        QStringLiteral("/api/citrap/%1?clientUid=%2").arg(report.id, encoded(clientUid())),
+        QStringLiteral("/api/citrap/%1?clientUid=%2").arg(report.id, percentEncoded(clientUid())),
         citrapReportXml(report),
         "application/xml",
         this,
         [this, serverId, id = report.id](const NetworkReply &reply) {
-            emit updated(serverId, id, reply.ok() ? QString{} : httpError(reply));
+            emit updated(serverId, id, reply.ok() ? QString{} : takHttpError(reply));
         },
         64 * 1024,
         RequestTimeoutMs);
