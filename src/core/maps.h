@@ -2,9 +2,11 @@
 #include "core/settings.h"
 
 #include <QDateTime>
+#include <QHash>
 #include <QImage>
 #include <QNetworkRequest>
 #include <QObject>
+#include <QSet>
 #include <QUrl>
 
 #include <atomic>
@@ -196,6 +198,8 @@ private:
     QList<MapProvider *> providers_;
     QJsonObject values_;
     QHash<QString, QByteArray> credentials_;
+    // Invalid providers that the log already reported.
+    QSet<QString> reportedInvalid_;
 };
 
 } // namespace swak

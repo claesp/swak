@@ -137,6 +137,8 @@ private:
     };
     QCache<QString, Failure> failures_{256};
     QString status_;
+    // The last failure message that the log reported. Recovery and a new source clear it.
+    QString loggedFailure_;
     bool ready_ = false;
     bool antialias_ = false;
     bool contentVisible_ = false;

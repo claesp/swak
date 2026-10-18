@@ -1335,6 +1335,40 @@ private slots:
         xml.insert(QStringLiteral("takProtocol"), QStringLiteral("other"));
         QVERIFY(!validateServer(xml).isEmpty());
     }
+    void binaryStreamTimeout()
+    {
+        // The incomplete-message timeout measures one frame. A server that streams without a
+        // pause, so that each read ends inside the next frame, stays connected.
+        NegotiatingServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+        Store store;
+        Servers servers(store);
+        auto entry = source(server.serverPort());
+        entry.insert(QStringLiteral("timeoutSeconds"), 2);
+        QVERIFY(servers.put(QStringLiteral("tak"), entry).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return servers.status(QStringLiteral("tak"))
+                    .contains(QStringLiteral("TAK Protocol 1"));
+            },
+            5000));
+        QVERIFY(server.client);
+        QByteArray rest;
+        QElapsedTimer clock;
+        clock.start();
+        int sent = 0;
+        while (clock.elapsed() < 3500) {
+            auto event = sampleEvent();
+            event.uid = QStringLiteral("stream-%1").arg(sent++);
+            const auto frame = takStreamFrame(encodeTakMessage(event));
+            server.client->write(rest + frame.left(frame.size() / 2));
+            rest = frame.mid(frame.size() / 2);
+            QTest::qWait(250);
+        }
+        const auto status = servers.status(QStringLiteral("tak"));
+        QVERIFY2(status.contains(QStringLiteral("TAK Protocol 1")), qPrintable(status));
+        QVERIFY(store.rowCount() >= sent - 1);
+    }
     void takStreamLogin()
     {
         auto v = source(1);
@@ -4173,10 +4207,39 @@ private slots:
         sources.remove(QStringLiteral("rtsp://cam.example/live"));
         QCOMPARE(sources.sources().size(), 4);
         sources.remove(QStringLiteral("missing"));
-        for (int i = 0; sources.sources().size() < MaxVideoSources; ++i) {
-            QVERIFY(sources.add({}, QUrl(QStringLiteral("udp://@:%1").arg(6000 + i))).isEmpty());
+        // An event does not change a source that the user entered.
+        auto replace = sampleEvent(QStringLiteral("camera-9"));
+        replace.detail = QStringLiteral("<__video url=\"udp://@:5000\" alias=\"Remote\"/>");
+        QVERIFY(store.accept(replace).isEmpty());
+        const auto manual = std::find_if(
+            sources.sources().cbegin(), sources.sources().cend(), [](const VideoSource &item) {
+                return item.key == u"udp://:5000";
+            });
+        QVERIFY(manual != sources.sources().cend());
+        QCOMPARE(manual->name, QStringLiteral("udp://:5000"));
+        int port = 6000;
+        while (sources.sources().size() < MaxVideoSources) {
+            QVERIFY(sources.add({}, QUrl(QStringLiteral("udp://@:%1").arg(port++))).isEmpty());
         }
+        // A full list removes the oldest source from an event or a server to make room.
+        const auto automatic = std::count_if(
+            sources.sources().cbegin(), sources.sources().cend(), [](const VideoSource &item) {
+                return !item.origin.isEmpty();
+            });
+        QVERIFY(automatic > 0);
+        for (qsizetype i = 0; i < automatic; ++i) {
+            QVERIFY(sources.add({}, QUrl(QStringLiteral("udp://@:%1").arg(port++))).isEmpty());
+            QCOMPARE(sources.sources().size(), MaxVideoSources);
+        }
+        // Only manual sources remain. Neither the user nor an event can add more.
         QVERIFY(!sources.add({}, QUrl(QStringLiteral("udp://@:7999"))).isEmpty());
+        auto late = sampleEvent(QStringLiteral("camera-10"));
+        late.detail = QStringLiteral("<__video url=\"rtsp://late.example/live\"/>");
+        QVERIFY(store.accept(late).isEmpty());
+        QVERIFY(std::none_of(
+            sources.sources().cbegin(), sources.sources().cend(), [](const VideoSource &item) {
+                return item.key == u"rtsp://late.example/live";
+            }));
         VideoSources offline(store, nullptr, nullptr);
         QSignalSpy offlineRefreshed(&offline, &VideoSources::refreshed);
         offline.refresh();
@@ -4532,8 +4595,11 @@ private slots:
         excheck.load(QStringLiteral("tak"), QStringLiteral("empty"));
         QVERIFY(loaded.wait(10000));
         QVERIFY(!loaded.last().at(2).toString().isEmpty());
+        // A failed load names the checklist, so that a pane can ignore a stale reply.
+        QCOMPARE(loaded.last().at(1).value<Checklist>().uid, QStringLiteral("empty"));
         excheck.load(QStringLiteral("tak"), QStringLiteral("a/b"));
         QVERIFY(!loaded.last().at(2).toString().isEmpty());
+        QCOMPARE(loaded.last().at(1).value<Checklist>().uid, QStringLiteral("a/b"));
         QVERIFY(
             !excheck.start(QStringLiteral("tak"), QStringLiteral("tpl-1"), QStringLiteral("  "), {})
                  .isEmpty());

@@ -122,6 +122,17 @@ QString validateDataSource(const QJsonObject &source)
 struct DataSources::Feed
 {
     QJsonObject source;
+    // Drawing values from the source. The source of a feed never changes, so these are read
+    // once. Painting and hit tests must not read the preference object for each shape.
+    struct Style
+    {
+        QColor color;
+        double opacity = 1;
+        double lineWidth = 1;
+        double pointSize = 1;
+        double fillOpacity = 0;
+        bool labels = false;
+    } style;
     DataDocument document;
     QString status;
     QNetworkAccessManager *network = nullptr;
@@ -264,6 +275,13 @@ void DataSources::reconcile()
         }
         auto feed = std::make_shared<Feed>();
         feed->source = it.value().toObject();
+        const auto &source = feed->source;
+        feed->style = {QColor(source.value(QStringLiteral("color")).toString()),
+                       source.value(QStringLiteral("opacity")).toDouble(),
+                       source.value(QStringLiteral("lineWidth")).toDouble(),
+                       source.value(QStringLiteral("pointSize")).toDouble(),
+                       source.value(QStringLiteral("fillOpacity")).toDouble(),
+                       source.value(QStringLiteral("labels")).toBool()};
         feeds_.insert(it.key(), feed);
         if (!provider(feed->source)) {
             feed->status = tr("Plugin unavailable. Configuration is preserved.");
@@ -503,11 +521,11 @@ void DataSources::paint(QPainter &painter, const Viewport &view, const MapItem *
         if (feed->document.shapes.isEmpty()) {
             continue;
         }
-        const auto &source = feed->source;
-        QColor color(source.value(QStringLiteral("color")).toString());
+        const auto &style = feed->style;
+        const auto &color = style.color;
         painter.save();
-        painter.setOpacity(source.value(QStringLiteral("opacity")).toDouble());
-        QPen pen(color, source.value(QStringLiteral("lineWidth")).toDouble());
+        painter.setOpacity(style.opacity);
+        QPen pen(color, style.lineWidth);
         painter.setPen(pen);
         const QPointF origin(view.size.width() / 2, view.size.height() / 2);
         const double scale = view.scale();
@@ -517,8 +535,7 @@ void DataSources::paint(QPainter &painter, const Viewport &view, const MapItem *
                 const QPointF offset = origin - view.center * scale + QPointF(wrap * scale, 0);
                 const QPointF point = shape.point * scale + offset;
                 if (shape.kind == DataShape::Kind::Point) {
-                    const double radius =
-                        view.markerSize(source.value(QStringLiteral("pointSize")).toDouble());
+                    const double radius = view.markerSize(style.pointSize);
                     if (!screen.adjusted(-radius - 2, -radius - 2, radius + 2, radius + 2)
                              .contains(point)) {
                         continue;
@@ -537,21 +554,18 @@ void DataSources::paint(QPainter &painter, const Viewport &view, const MapItem *
                     mapping.translate(offset.x(), offset.y());
                     mapping.scale(scale, scale);
                     auto fill = color;
-                    fill.setAlphaF(
-                        static_cast<float>(source.value(QStringLiteral("fillOpacity")).toDouble()));
+                    fill.setAlphaF(static_cast<float>(style.fillOpacity));
                     painter.setBrush(shape.kind == DataShape::Kind::Polygon ? QBrush(fill)
                                                                             : Qt::NoBrush);
                     painter.drawPath(mapping.map(shape.path));
                     painter.restore();
                 }
-                if (source.value(QStringLiteral("labels")).toBool() && labels < 100 &&
-                    screen.contains(point) && !shape.name.isEmpty()) {
+                if (style.labels && labels < 100 && screen.contains(point) &&
+                    !shape.name.isEmpty()) {
                     paintMapLabel(
                         painter,
                         point + (shape.kind == DataShape::Kind::Point
-                                     ? view.markerOffset(
-                                           QPointF(8, -8),
-                                           source.value(QStringLiteral("pointSize")).toDouble())
+                                     ? view.markerOffset(QPointF(8, -8), style.pointSize)
                                      : QPointF(8, -8)),
                         shape.name,
                         selected && selected->owner == QStringLiteral("org.swak.data/") + id &&
@@ -582,7 +596,7 @@ QList<MapItem> DataSources::itemsAt(const Viewport &view, QPointF position) cons
     int labels = 0;
     for (const auto &id : ids) {
         const auto feed = feeds_.value(id);
-        if (!feed->source.value(QStringLiteral("labels")).toBool()) {
+        if (!feed->style.labels) {
             continue;
         }
         for (const auto &shape : feed->document.shapes) {
@@ -600,9 +614,7 @@ QList<MapItem> DataSources::itemsAt(const Viewport &view, QPointF position) cons
                 const auto bounds = mapLabelBounds(
                     metrics,
                     point + (shape.kind == DataShape::Kind::Point
-                                 ? view.markerOffset(
-                                       QPointF(8, -8),
-                                       feed->source.value(QStringLiteral("pointSize")).toDouble())
+                                 ? view.markerOffset(QPointF(8, -8), feed->style.pointSize)
                                  : QPointF(8, -8)),
                     shape.name);
                 labelBounds.insert(&shape, bounds);
@@ -613,11 +625,11 @@ QList<MapItem> DataSources::itemsAt(const Viewport &view, QPointF position) cons
     for (auto id = ids.crbegin(); id != ids.crend(); ++id) {
         const auto feed = feeds_.value(*id);
         const auto &source = feed->source;
-        if (source.value(QStringLiteral("opacity")).toDouble() <= 0) {
+        if (feed->style.opacity <= 0) {
             continue;
         }
-        const double radius = source.value(QStringLiteral("pointSize")).toDouble();
-        const double lineWidth = source.value(QStringLiteral("lineWidth")).toDouble();
+        const double radius = feed->style.pointSize;
+        const double lineWidth = feed->style.lineWidth;
         for (auto shape = feed->document.shapes.crbegin(); shape != feed->document.shapes.crend();
              ++shape) {
             for (int wrap = -1; wrap <= 1; ++wrap) {
@@ -667,7 +679,7 @@ QList<MapItem> DataSources::itemsAt(const Viewport &view, QPointF position) cons
                 item.properties.insert(tr("Data provider"), source.value(QStringLiteral("name")));
                 item.point = shape->point;
                 item.path = shape->path;
-                item.color = QColor(source.value(QStringLiteral("color")).toString());
+                item.color = feed->style.color;
                 item.radius = radius;
                 item.lineWidth = lineWidth;
                 result.append(std::move(item));

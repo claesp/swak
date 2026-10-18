@@ -240,6 +240,14 @@ void Store::removeEvents(const QStringList &uids)
     if (uids.contains(selected_)) {
         select({});
     }
+    // A batch records changed rows by number. A removal moves the rows after it, so report the
+    // changes first, while the numbers are still valid.
+    if (batching_ && lastChanged_ >= firstChanged_) {
+        emit dataChanged(QAbstractTableModel::index(firstChanged_, 0),
+                         QAbstractTableModel::index(lastChanged_, 4));
+        firstChanged_ = MaxEvents;
+        lastChanged_ = -1;
+    }
     // A set keeps a large removal linear, for example when a mission hides.
     const QSet<QString> remove(uids.cbegin(), uids.cend());
     removing_ = true;

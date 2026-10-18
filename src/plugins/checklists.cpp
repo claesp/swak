@@ -110,15 +110,27 @@ public:
                                    : error);
                 });
         connect(checklists_, &QListWidget::currentRowChanged, this, [this](int index) {
+            // The task table shows only the selected checklist. Clear it until its reply
+            // arrives, so that Complete and Pending cannot change another checklist.
+            current_ = {};
+            requestedServer_.clear();
+            requested_.clear();
+            showTasks();
             if (index >= 0 && index < list_.size()) {
+                requestedServer_ = serverId_;
+                requested_ = list_.at(index).uid;
                 showStatus(tr("Reading the tasks…"));
-                excheck_->load(serverId_, list_.at(index).uid);
+                excheck_->load(serverId_, requested_);
             }
         });
         connect(excheck_,
                 &ExCheck::loaded,
                 this,
-                [this](const QString &, const Checklist &checklist, const QString &error) {
+                [this](const QString &serverId, const Checklist &checklist, const QString &error) {
+                    // A reply for an earlier selection is stale.
+                    if (serverId != requestedServer_ || checklist.uid != requested_) {
+                        return;
+                    }
                     if (!error.isEmpty()) {
                         showStatus(error);
                         return;
@@ -302,6 +314,9 @@ private:
     QList<Checklist> list_;
     QList<ChecklistTemplate> templates_;
     Checklist current_;
+    // The server and checklist of the last load request.
+    QString requestedServer_;
+    QString requested_;
 };
 } // namespace
 class ChecklistsPlugin final : public QObject, public Plugin, public PanePlugin

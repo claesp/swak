@@ -401,6 +401,7 @@ bool TileRenderer::startSession(const MapServiceProvider &service)
         sessionStarted_ = now;
         failures_.remove(QStringLiteral("session"));
         status_.clear();
+        loggedFailure_.clear();
         // The attribution of the current view can now use the session.
         attributionKey_.clear();
         emit changed();
@@ -531,6 +532,7 @@ void TileRenderer::setSource(MapProvider *provider,
     source_ = source;
     credential_ = credential;
     status_.clear();
+    loggedFailure_.clear();
     retryAt_ = {};
     if (!provider_ || !provider_->validate(source_).isEmpty()) {
         provider_ = nullptr;
@@ -686,7 +688,12 @@ void TileRenderer::fail(const QString &key,
     if (providerWide) {
         retryAt_ = retry;
     }
-    logMessage(Severity::Warning, Urgency::Attention, QStringLiteral("swak.maps"), message);
+    // Without a network, hundreds of tiles fail with the same message at each retry step. Log
+    // a failure when it changes, not for every tile.
+    if (message != loggedFailure_) {
+        loggedFailure_ = message;
+        logMessage(Severity::Warning, Urgency::Attention, QStringLiteral("swak.maps"), message);
+    }
     emit changed();
 }
 void TileRenderer::pump()
@@ -875,6 +882,7 @@ void TileRenderer::pump()
                     }
                     if (failures_.isEmpty()) {
                         status_.clear();
+                        loggedFailure_.clear();
                     }
                     emit changed();
                 }
@@ -975,6 +983,7 @@ void TileRenderer::decodeVector(
                             cost);
                         if (failures_.isEmpty()) {
                             status_.clear();
+                            loggedFailure_.clear();
                         }
                         emit changed();
                     }
@@ -1074,6 +1083,7 @@ void TileRenderer::renderRaster(const TilePlacement &tile)
                     }
                     if (failures_.isEmpty()) {
                         status_.clear();
+                        loggedFailure_.clear();
                     }
                     emit changed();
                 }

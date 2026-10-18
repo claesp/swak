@@ -13,6 +13,7 @@
 #include "core/delete_confirmation.h"
 #include "core/display_style.h"
 #include "core/emergency.h"
+#include "core/excheck.h"
 #include "core/file_shares.h"
 #include "core/gdal_support.h"
 #include "core/graphics.h"
@@ -3234,6 +3235,13 @@ private slots:
         QCOMPARE(tasks->item(0, 0)->text(), QStringLiteral("Radio check"));
         QCOMPARE(tasks->item(1, 1)->text(), QStringLiteral("Complete"));
         QVERIFY(label->isHidden());
+        // A reply for another checklist is stale. The tasks of the selection stay.
+        auto *service = window.findChild<swak::ExCheck *>();
+        QVERIFY(service);
+        swak::Checklist other;
+        other.uid = QStringLiteral("other");
+        emit service->loaded(QStringLiteral("tak"), other, {});
+        QCOMPARE(tasks->rowCount(), 2);
         // A task update reads the checklist again.
         tasks->selectRow(0);
         click(QStringLiteral("completeTask"));

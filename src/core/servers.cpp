@@ -1131,7 +1131,13 @@ private:
     }
     bool consumeBinary(Session &s, const QByteArray &bytes)
     {
-        for (const auto &payload : s.proto.feed(bytes)) {
+        const auto payloads = s.proto.feed(bytes);
+        // The timeout measures the age of the frame that is still open. A complete frame
+        // starts a new count, as in XML mode.
+        if (!payloads.isEmpty()) {
+            s.partial = 0;
+        }
+        for (const auto &payload : payloads) {
             decodeBinary(s, payload);
         }
         if (s.proto.failed()) {

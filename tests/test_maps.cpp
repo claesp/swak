@@ -1,3 +1,4 @@
+#include "core/activity.h"
 #include "core/gdal_support.h"
 #include "core/maps.h"
 #include "core/tiles.h"
@@ -1207,6 +1208,35 @@ private slots:
         dataset.insert(QStringLiteral("service"), QStringLiteral("unknown"));
         QVERIFY(!raster->validate(dataset).isEmpty());
     }
+    void invalidProviderReportedOnce()
+    {
+        // put() restores the document again. An invalid provider is reported once, not again
+        // for each later provider change.
+        ActivityModel activity;
+        activity.clear();
+        MapSources sources(QPluginLoader::staticInstances());
+        auto values = sources.savePreferences();
+        auto entries = values.value(QStringLiteral("sources")).toObject();
+        auto bad = format(QStringLiteral("org.swak.gdal.raster"))->defaults();
+        bad.insert(QStringLiteral("format"), QStringLiteral("org.swak.gdal.raster"));
+        bad.insert(QStringLiteral("service"), QStringLiteral("unknown"));
+        entries.insert(QStringLiteral("bad.raster"), bad);
+        values.insert(QStringLiteral("sources"), entries);
+        sources.restorePreferences(values);
+        const auto valid =
+            sources.sources().value(QStringLiteral("org.swak.gdal.raster")).toObject();
+        QVERIFY(sources.put(QStringLiteral("custom.one"), valid).isEmpty());
+        QVERIFY(sources.put(QStringLiteral("custom.two"), valid).isEmpty());
+        QTest::qWait(300);
+        int reports = 0;
+        for (int row = 0; row < activity.rowCount(); ++row) {
+            reports += activity.index(row, ActivityModel::MessageColumn)
+                           .data()
+                           .toString()
+                           .startsWith(QStringLiteral("An invalid map provider"));
+        }
+        QCOMPARE(reports, 1);
+    }
     void portableProviders()
     {
         MapSources sources(QPluginLoader::staticInstances());
@@ -1285,6 +1315,8 @@ private slots:
         QVERIFY(server.load(QFINDTESTDATA("fixtures")));
         QVERIFY(server.listen(QHostAddress::LocalHost, 0));
         server.failFirst = 4;
+        ActivityModel activity;
+        activity.clear();
         auto *xyz = &urlTiles_;
         TileRenderer renderer;
         renderer.setSource(xyz, localSource(xyz, server, true));
@@ -1302,6 +1334,16 @@ private slots:
             return renderer.pendingCount() == 0;
         }));
         QVERIFY(!renderer.status().isEmpty());
+        // Four tiles fail with the same message. The internal events show it once.
+        QTest::qWait(300);
+        int reports = 0;
+        for (int row = 0; row < activity.rowCount(); ++row) {
+            reports += activity.index(row, ActivityModel::MessageColumn)
+                           .data()
+                           .toString()
+                           .startsWith(QStringLiteral("Map tile failed."));
+        }
+        QCOMPARE(reports, 1);
         QSet<QByteArray> paths;
         for (const auto &request : server.requests) {
             paths.insert(request.split(' ').at(1));

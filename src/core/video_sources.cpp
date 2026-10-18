@@ -214,7 +214,13 @@ QString VideoSources::add(const QString &name, const QUrl &url, const QString &o
     const auto found = std::find_if(sources_.begin(), sources_.end(), [&key](const auto &source) {
         return source.key == key;
     });
+    const bool manual = origin.isEmpty();
     if (found != sources_.end()) {
+        // Events and server lists do not change a source that the user entered, so that a peer
+        // cannot replace its URL or credentials.
+        if (!manual && found->origin.isEmpty()) {
+            return {};
+        }
         if (found->name != title || found->url != url) {
             found->name = title;
             found->url = url;
@@ -223,7 +229,15 @@ QString VideoSources::add(const QString &name, const QUrl &url, const QString &o
         return {};
     }
     if (sources_.size() >= MaxVideoSources) {
-        return tr("The video list holds at most %1 sources.").arg(MaxVideoSources);
+        // Sources from events and servers come back with the next event or refresh. The oldest
+        // of them makes room, so that remote events cannot fill the list for the session.
+        const auto oldest = std::find_if(sources_.begin(), sources_.end(), [](const auto &item) {
+            return !item.origin.isEmpty();
+        });
+        if (oldest == sources_.end()) {
+            return tr("The video list holds at most %1 sources.").arg(MaxVideoSources);
+        }
+        sources_.erase(oldest);
     }
     sources_.append({key, title, url, protocol, plain(origin)});
     emit changed();

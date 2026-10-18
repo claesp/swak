@@ -307,15 +307,24 @@ void MapSources::restorePreferences(const QJsonObject &values)
     values_.insert(QStringLiteral("knownProviders"), known);
     values_.insert(QStringLiteral("knownPresets"), knownPresets);
     addNewPresets();
-    for (const auto &entry : sources()) {
-        const auto source = entry.toObject();
+    // put() restores the document again, so report each invalid provider once until it is
+    // valid again. Otherwise every layer change repeats the warnings.
+    QSet<QString> invalid;
+    const auto current = sources();
+    for (auto it = current.begin(); it != current.end(); ++it) {
+        const auto source = it.value().toObject();
         if (const auto *format = provider(source); format && !format->validate(source).isEmpty()) {
-            logMessage(Severity::Warning,
-                       Urgency::Attention,
-                       QStringLiteral("swak.maps"),
-                       tr("An invalid map provider is disabled. Its configuration is preserved."));
+            invalid.insert(it.key());
+            if (!reportedInvalid_.contains(it.key())) {
+                logMessage(
+                    Severity::Warning,
+                    Urgency::Attention,
+                    QStringLiteral("swak.maps"),
+                    tr("An invalid map provider is disabled. Its configuration is preserved."));
+            }
         }
     }
+    reportedInvalid_ = std::move(invalid);
     emit changed();
 }
 QString MapSources::put(const QString &id, const QJsonObject &source)

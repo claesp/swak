@@ -338,8 +338,11 @@ void ExCheck::list(const QString &serverId)
 }
 void ExCheck::load(const QString &serverId, const QString &uid)
 {
+    // A failed load still names the checklist, so that a pane can ignore a stale reply.
+    Checklist failed;
+    failed.uid = uid;
     if (!api_ || !validChecklistId(uid)) {
-        emit loaded(serverId, {}, tr("The checklist cannot be read."));
+        emit loaded(serverId, failed, tr("The checklist cannot be read."));
         return;
     }
     api_->martiRequest(
@@ -349,12 +352,13 @@ void ExCheck::load(const QString &serverId, const QString &uid)
         {},
         {},
         this,
-        [this, serverId](const NetworkReply &reply) {
+        [this, serverId, failed](const NetworkReply &reply) {
             QList<Checklist> list;
             if (!reply.ok()) {
-                emit loaded(serverId, {}, httpError(reply));
-            } else if (!readChecklists(reply.body, &list) || list.isEmpty()) {
-                emit loaded(serverId, {}, tr("The checklist is invalid."));
+                emit loaded(serverId, failed, httpError(reply));
+            } else if (!readChecklists(reply.body, &list) || list.isEmpty() ||
+                       list.first().uid != failed.uid) {
+                emit loaded(serverId, failed, tr("The checklist is invalid."));
             } else {
                 emit loaded(serverId, list.first(), {});
             }

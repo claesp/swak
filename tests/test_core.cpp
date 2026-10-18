@@ -1730,6 +1730,38 @@ private slots:
         event.stale = now.addSecs(500);
         QVERIFY(!store.accept(event, now).isEmpty());
     }
+    void storeBatchWithDeletes()
+    {
+        // A batch that updates a row and deletes an earlier row reports valid rows. The model
+        // tester fails on a change signal for a row that no longer exists.
+        Store store;
+        QAbstractItemModelTester tester(&store,
+                                        QAbstractItemModelTester::FailureReportingMode::QtTest);
+        QList<Event> first;
+        for (const auto *uid : {"a", "b", "c"}) {
+            auto event = sample();
+            event.uid = QString::fromLatin1(uid);
+            first.append(event);
+        }
+        store.acceptBatch(first);
+        QCOMPARE(store.rowCount(), 3);
+        auto update = first.last();
+        update.time = update.time.addMSecs(1);
+        update.callsign = QStringLiteral("Updated");
+        auto remove = sample();
+        remove.uid = QStringLiteral("delete-a");
+        remove.type = QStringLiteral("t-x-d-d");
+        remove.detail = QStringLiteral("<link uid=\"a\" relation=\"none\" type=\"a-f-G\"/>");
+        QSignalSpy changed(&store, &QAbstractItemModel::dataChanged);
+        store.acceptBatch({update, remove});
+        QCOMPARE(store.rowCount(), 2);
+        QVERIFY(!changed.isEmpty());
+        for (const auto &arguments : changed) {
+            QVERIFY(arguments.at(0).toModelIndex().isValid());
+            QVERIFY(arguments.at(1).toModelIndex().isValid());
+        }
+        QCOMPARE(store.events().last().callsign, QStringLiteral("Updated"));
+    }
     void storageLimit()
     {
         Store store;
