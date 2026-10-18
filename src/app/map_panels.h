@@ -45,7 +45,9 @@ private:
     void cancelDrag();
     QTimer maskTimer_;
     // The pane under a drag, the widget that receives its mouse events, and the drop place.
-    QPointer<QDockWidget> dragPane_;
+    // A QWidget pointer: Qt sends events to a pane while its QWidget destructor runs. A
+    // QDockWidget pointer would then downcast an object that is no longer a QDockWidget.
+    QPointer<QWidget> dragPane_;
     QPointer<QWidget> dragSource_;
     QPoint dragStart_;
     bool dragging_ = false;

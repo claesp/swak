@@ -352,13 +352,13 @@ void MapPanels::updateDrop(QPoint position)
 }
 void MapPanels::finishDrag(bool apply)
 {
-    const QPointer<QDockWidget> pane = dragPane_;
+    const QPointer<QDockWidget> pane = qobject_cast<QDockWidget *>(dragPane_.data());
     const QPointer<QDockWidget> target = dropPane_;
     const auto area = dropArea_;
     if (dragging_) {
         releaseKeyboard();
     }
-    for (QObject *watched :
+    for (const QObject *watched :
          {static_cast<QObject *>(dragPane_), static_cast<QObject *>(dragSource_)}) {
         if (watched) {
             disconnect(watched, &QObject::destroyed, this, &MapPanels::cancelDrag);
