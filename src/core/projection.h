@@ -13,6 +13,10 @@ struct Viewport
     QPointF markerOffset(QPointF offset, double radius) const;
     QPointF screen(double latitude, double longitude) const;
     QPointF coordinate(QPointF screenPoint) const;
+    // Converts between normalized world coordinates, where the world is the unit square, and
+    // screen pixels of this view.
+    QPointF toScreen(QPointF world) const;
+    QPointF toWorld(QPointF screenPoint) const;
     double scale() const;
 };
 QPointF project(double latitude, double longitude);

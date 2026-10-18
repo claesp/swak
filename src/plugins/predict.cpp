@@ -168,8 +168,7 @@ public:
         }
         const auto ends = endpoints();
         const auto scale = view.scale();
-        const auto origin =
-            QPointF(view.size.width() / 2, view.size.height() / 2) - view.center * scale;
+        const auto origin = view.toScreen({0, 0});
         const auto now = QDateTime::currentDateTimeUtc();
         for (const auto &source : store_.motion().snapshot()) {
             if (!records_.contains(source.event.uid) || source.event.start > now ||
@@ -206,8 +205,7 @@ public:
         painter.save();
         painter.setClipRect(QRectF(QPointF{}, view.size));
         const auto scale = view.scale();
-        const auto origin =
-            QPointF(view.size.width() / 2, view.size.height() / 2) - view.center * scale;
+        const auto origin = view.toScreen({0, 0});
         const auto now = QDateTime::currentDateTimeUtc();
         for (const auto &source : store_.motion().snapshot()) {
             if (!records_.contains(source.event.uid) || source.event.start > now) {

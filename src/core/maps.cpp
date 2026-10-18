@@ -1,6 +1,7 @@
 #include "core/maps.h"
 
 #include "core/logging.h"
+#include "core/text.h"
 
 #include <QRegularExpression>
 
@@ -51,20 +52,10 @@ QJsonObject mapDefaults(const QString &name,
 }
 QString validateMapText(const QJsonObject &source)
 {
-    for (const auto &key :
-         {QStringLiteral("name"), QStringLiteral("attribution"), QStringLiteral("endpoint")}) {
-        const auto value = source.value(key).toString();
-        const int limit = key == QStringLiteral("endpoint") ? 2048
-                          : key == QStringLiteral("name")   ? 100
-                                                            : 300;
-        if (value.trimmed().isEmpty() || value.size() > limit) {
-            return QObject::tr("Enter a bounded name, URL, and attribution.");
-        }
-        if (std::any_of(value.begin(), value.end(), [](QChar ch) {
-                return !ch.isPrint();
-            })) {
-            return QObject::tr("Do not use control characters.");
-        }
+    if (auto error =
+            validateSourceText(source, QObject::tr("Enter a bounded name, URL, and attribution."));
+        !error.isEmpty()) {
+        return error;
     }
     for (const auto &key : {QStringLiteral("minZoom"), QStringLiteral("maxZoom")}) {
         const double value = source.value(key).toDouble(-1);

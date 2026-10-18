@@ -27,11 +27,6 @@
 
 namespace swak {
 namespace {
-QPointF screenPoint(const Viewport &view, QPointF world)
-{
-    return (world - view.center) * view.scale() +
-           QPointF(view.size.width() / 2, view.size.height() / 2);
-}
 QPainterPath headingCone(QPointF point, double heading, double radius, double angle)
 {
     QPainterPath path;
@@ -116,7 +111,7 @@ public:
                 event.stale <= now) {
                 continue;
             }
-            if (headingCone(screenPoint(view, visual.world),
+            if (headingCone(view.toScreen(visual.world),
                             *visual.kinematics.heading,
                             view.markerSize(cone.length),
                             cone.angle)
@@ -338,7 +333,7 @@ public:
             if (event.start > now || takDrawingType(event.type)) {
                 continue;
             }
-            const QPointF point = screenPoint(view, visual.world);
+            const QPointF point = view.toScreen(visual.world);
             if (!visible
                      .adjusted(-view.markerSize(12),
                                -view.markerSize(12),

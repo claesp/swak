@@ -11,6 +11,7 @@
 #include "core/tak_channels.h"
 #include "core/tak_enrollment.h"
 #include "core/tak_server_api.h"
+#include "core/text.h"
 
 #include <QCollator>
 #include <QComboBox>
@@ -234,13 +235,7 @@ void ServerBrowser::refresh()
     const QSignalBlocker blocker(table_);
     table_->clearProviders();
     const auto sources = servers_.sources();
-    auto ids = sources.keys();
-    const QCollator collator;
-    std::sort(ids.begin(), ids.end(), [&](const auto &a, const auto &b) {
-        return collator.compare(
-                   sources.value(a).toObject().value(QStringLiteral("name")).toString(),
-                   sources.value(b).toObject().value(QStringLiteral("name")).toString()) < 0;
-    });
+    const auto ids = idsByName(sources);
     for (const auto &id : ids) {
         const auto source = sources.value(id).toObject();
         auto *active = table_->append(

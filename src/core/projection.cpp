@@ -43,6 +43,14 @@ QPointF Viewport::screen(double latitude, double longitude) const
     return (project(latitude, longitude) - center) * scale() +
            QPointF(size.width() / 2, size.height() / 2);
 }
+QPointF Viewport::toScreen(QPointF world) const
+{
+    return (world - center) * scale() + QPointF(size.width() / 2, size.height() / 2);
+}
+QPointF Viewport::toWorld(QPointF screenPoint) const
+{
+    return center + (screenPoint - QPointF(size.width() / 2, size.height() / 2)) / scale();
+}
 QPointF Viewport::coordinate(QPointF screenPoint) const
 {
     return unproject((screenPoint - QPointF(size.width() / 2, size.height() / 2)) / scale() +

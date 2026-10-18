@@ -36,11 +36,6 @@ void setLocation(UserObject &item, QPointF point)
 {
     item.geometry = {{QStringLiteral("x"), point.x()}, {QStringLiteral("y"), point.y()}};
 }
-QPointF screen(QPointF point, const Viewport &view)
-{
-    return (point - view.center) * view.scale() +
-           QPointF(view.size.width() / 2, view.size.height() / 2);
-}
 class MarkerEditor final : public ObjectEditor, public SettingsParticipant
 {
 public:
@@ -123,20 +118,12 @@ private:
     static int readKey(const QJsonObject &values)
     {
         auto text = values.value(QStringLiteral("createKey")).toString(QStringLiteral("Shift+M"));
-        if (text.size() > 32) {
-            return 0;
-        }
         // Earlier profiles used M. Shift+M is the new default, as Shift+A and Shift+R are.
         if (values.value(QStringLiteral("markerShortcutVersion")).toInt() < 2 &&
             text == QStringLiteral("M")) {
             text = QStringLiteral("Shift+M");
         }
-        const auto key = QKeySequence::fromString(text, QKeySequence::PortableText);
-        if (key.count() != 1 || (key[0].keyboardModifiers() != Qt::NoModifier &&
-                                 key[0].keyboardModifiers() != Qt::ShiftModifier)) {
-            return 0;
-        }
-        return key[0].key() >= Qt::Key_A && key[0].key() <= Qt::Key_Z ? key[0].toCombined() : 0;
+        return letterShortcut(text);
     }
     static constexpr int DefaultKey = QKeyCombination(Qt::ShiftModifier, Qt::Key_M).toCombined();
     int key_ = DefaultKey;
@@ -286,10 +273,7 @@ public:
                 return false;
             }
             if (mode_ != Mode::Idle) {
-                const auto point =
-                    view.center +
-                    (mouse.position() - QPointF(view.size.width() / 2, view.size.height() / 2)) /
-                        view.scale();
+                const auto point = view.toWorld(mouse.position());
                 if (!QRectF(0, 0, 1, 1).contains(point)) {
                     return true;
                 }
@@ -410,10 +394,10 @@ public:
             if (record.type != QStringLiteral("circle")) {
                 continue;
             }
-            if (QLineF(screen(location(record), view), pointer).length() >
+            if (QLineF(view.toScreen(location(record)), pointer).length() >
                     std::max(8.0, view.markerSize(editor_.radius()) + 5) &&
                 !mapLabelBounds(QFontMetrics(QGuiApplication::font()),
-                                screen(location(record), view) +
+                                view.toScreen(location(record)) +
                                     view.markerOffset(QPointF(16, -8), editor_.radius()),
                                 record.title)
                      .contains(pointer)) {
@@ -442,11 +426,11 @@ public:
                 continue;
             }
             painter.setBrush(QColor(item.color));
-            paint(painter, item, screen(location(item), view), view);
+            paint(painter, item, view.toScreen(location(item)), view);
         }
         if (editor_.draft() && !objects_.find(editor_.draft()->id)) {
             painter.setBrush(QColor(editor_.draft()->color));
-            paint(painter, *editor_.draft(), screen(location(*editor_.draft()), view), view);
+            paint(painter, *editor_.draft(), view.toScreen(location(*editor_.draft())), view);
         }
     }
     void paintOverlay(QPainter &painter, const Viewport &view, QPointF pointer) const override
@@ -458,10 +442,7 @@ public:
                 painter.setBrush(QColor(moving_.color));
                 paint(painter, moving_, pointer, view);
             }
-            painter.setRenderHint(QPainter::Antialiasing, false);
-            painter.setPen(QPen(QColor(0, 0, 0, qRound(editor_.guideOpacity() * 255)), 1));
-            painter.drawLine(QPointF(0, pointer.y()), QPointF(view.size.width(), pointer.y()));
-            painter.drawLine(QPointF(pointer.x(), 0), QPointF(pointer.x(), view.size.height()));
+            paintGuides(painter, view, pointer, editor_.guideOpacity());
         }
     }
     bool deleteSelection() override

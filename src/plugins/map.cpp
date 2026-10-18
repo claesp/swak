@@ -14,6 +14,7 @@
 #include "core/projection.h"
 #include "core/single_line_label.h"
 #include "core/store.h"
+#include "core/text.h"
 #include "core/tiles.h"
 #include "core/toolbar.h"
 #include "core/ui_icons.h"
@@ -1566,14 +1567,7 @@ public:
         connect(mapMenu, &QMenu::aboutToShow, mapMenu, [mapMenu, mapSources] {
             mapMenu->clear();
             const auto sources = mapSources->sources();
-            auto ids = sources.keys();
-            const QCollator collator;
-            std::sort(ids.begin(), ids.end(), [&](const auto &a, const auto &b) {
-                return collator.compare(
-                           sources.value(a).toObject().value(QStringLiteral("name")).toString(),
-                           sources.value(b).toObject().value(QStringLiteral("name")).toString()) <
-                       0;
-            });
+            const auto ids = idsByName(sources);
             for (const auto &id : ids) {
                 const auto source = sources.value(id).toObject();
                 const auto *provider = mapSources->provider(source);

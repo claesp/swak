@@ -51,16 +51,6 @@ QPointF lineEnd(QPointF first, QPointF second)
     second.setX(second.x() - std::round(second.x() - first.x()));
     return second;
 }
-QPointF screen(QPointF point, const Viewport &view)
-{
-    return (point - view.center) * view.scale() +
-           QPointF(view.size.width() / 2, view.size.height() / 2);
-}
-QPointF world(QPointF point, const Viewport &view)
-{
-    return view.center +
-           (point - QPointF(view.size.width() / 2, view.size.height() / 2)) / view.scale();
-}
 class ShapesEditor final : public ObjectEditor, public SettingsParticipant
 {
 public:
@@ -128,16 +118,11 @@ public:
             if (circles != (name == QStringLiteral("circleKey"))) {
                 continue;
             }
-            const auto sequence =
-                QKeySequence::fromString(values.value(name).toString(), QKeySequence::PortableText);
-            if (sequence.count() != 1 ||
-                (sequence[0].keyboardModifiers() != Qt::NoModifier &&
-                 sequence[0].keyboardModifiers() != Qt::ShiftModifier) ||
-                sequence[0].key() < Qt::Key_A || sequence[0].key() > Qt::Key_Z ||
-                used.contains(sequence[0].toCombined())) {
+            const int key = letterShortcut(values.value(name).toString());
+            if (!key || used.contains(key)) {
                 return tr("Use different letters, with optional Shift.");
             }
-            used.insert(sequence[0].toCombined());
+            used.insert(key);
         }
         return {};
     }
@@ -351,7 +336,7 @@ public:
         }
         if (event.type() == QEvent::MouseButtonRelease &&
             static_cast<QMouseEvent &>(event).button() == Qt::LeftButton) {
-            const auto point = world(static_cast<QMouseEvent &>(event).position(), view);
+            const auto point = view.toWorld(static_cast<QMouseEvent &>(event).position());
             if (drawing_) {
                 if (!QRectF(0, 0, 1, 1).contains(point)) {
                     return true;
@@ -429,13 +414,13 @@ public:
                 const auto points = polygonVertices(item.geometry);
                 bool hit = false;
                 if (item.type == QStringLiteral("range-circle")) {
-                    hit = QLineF(screen(points[0], view), pointer).length() <=
+                    hit = QLineF(view.toScreen(points[0]), pointer).length() <=
                           QLineF(points[0], points[1]).length() * view.scale();
                 } else {
                     for (int wrap = -1; wrap <= 1; ++wrap) {
                         const auto offset = QPointF(wrap * view.scale(), 0);
-                        const auto a = screen(points[0], view) + offset,
-                                   b = screen(lineEnd(points[0], points[1]), view) + offset,
+                        const auto a = view.toScreen(points[0]) + offset,
+                                   b = view.toScreen(lineEnd(points[0], points[1])) + offset,
                                    d = b - a;
                         const auto length = QPointF::dotProduct(d, d);
                         const auto t =
@@ -446,7 +431,7 @@ public:
                     }
                 }
                 const QFontMetrics metrics(QGuiApplication::font());
-                const auto a = screen(points[0], view);
+                const auto a = view.toScreen(points[0]);
                 if (item.type == QStringLiteral("range-circle")) {
                     const auto title = metrics.elidedText(item.title, Qt::ElideRight, 240);
                     hit = hit || mapLabelBounds(metrics,
@@ -457,7 +442,7 @@ public:
                 } else {
                     for (int wrap = -1; wrap <= 1; ++wrap) {
                         const auto baseline =
-                            (a + screen(lineEnd(points[0], points[1]), view)) / 2 +
+                            (a + view.toScreen(lineEnd(points[0], points[1]))) / 2 +
                             QPointF(wrap * view.scale() + 4, -8);
                         hit =
                             hit || mapLabelBounds(metrics, baseline, lineLabel(points, item.title))
@@ -513,7 +498,7 @@ public:
         });
         connect(move, &QAction::triggered, this, [this, id = item.id, context] {
             moving_ = objects_.find(id);
-            anchor_ = world(map_->mapFromGlobal(context), view_);
+            anchor_ = view_.toWorld(map_->mapFromGlobal(context));
             if (moving_) {
                 mode_ = moving_->type == QStringLiteral("range-circle") ? ShapeMode::Circle
                                                                         : ShapeMode::Line;
@@ -569,14 +554,14 @@ public:
     }
     void paintOverlay(QPainter &painter, const Viewport &view, QPointF pointer) const override
     {
-        const auto point = world(pointer, view);
+        const auto point = view.toWorld(pointer);
         if (drawing_ && first_) {
             const QPolygonF points{*first_, point};
             draw(painter, points, shapeType(mode_), QColor("#1e88e5"), {}, view);
             dots(painter, points, QColor("#1e88e5"), view);
             if (mode_ == ShapeMode::Circle) {
                 paintMapLabel(painter,
-                              (screen(*first_, view) + screen(point, view)) / 2 + QPointF(4, -8),
+                              (view.toScreen(*first_) + view.toScreen(point)) / 2 + QPointF(4, -8),
                               tr("Radius: %1").arg(formatDistance(groundDistance(*first_, point))));
             }
         }
@@ -606,9 +591,7 @@ public:
             dots(painter, points, QColor(editor_.draft()->color), view);
         }
         if (guidesActive()) {
-            painter.setPen(QPen(QColor(0, 0, 0, 128), 1));
-            painter.drawLine(QPointF(0, pointer.y()), QPointF(view.size.width(), pointer.y()));
-            painter.drawLine(QPointF(pointer.x(), 0), QPointF(pointer.x(), view.size.height()));
+            paintGuides(painter, view, pointer, 0.5);
         }
     }
 
@@ -663,7 +646,7 @@ private:
         painter.setPen(Qt::NoPen);
         painter.setBrush(color);
         for (const auto &point : points) {
-            painter.drawEllipse(screen(point, view), editor_.radius, editor_.radius);
+            painter.drawEllipse(view.toScreen(point), editor_.radius, editor_.radius);
         }
     }
     static QString lineLabel(const QPolygonF &points, const QString &title)
@@ -683,7 +666,7 @@ private:
         if (points.size() != 2) {
             return;
         }
-        const auto a = screen(points[0], view), b = screen(points[1], view);
+        const auto a = view.toScreen(points[0]), b = view.toScreen(points[1]);
         painter.setPen(QPen(color, editor_.width));
         painter.setBrush(Qt::NoBrush);
         if (type == QStringLiteral("range-circle")) {
@@ -706,7 +689,7 @@ private:
         } else {
             for (int wrap = -1; wrap <= 1; ++wrap) {
                 const auto offset = QPointF(wrap * view.scale(), 0);
-                const auto end = screen(lineEnd(points[0], points[1]), view);
+                const auto end = view.toScreen(lineEnd(points[0], points[1]));
                 painter.drawLine(a + offset, end + offset);
                 paintMapLabel(painter,
                               (a + end) / 2 + offset + QPointF(4, -8),
@@ -759,7 +742,7 @@ private:
     {
         const auto points = polygonVertices(editor_.draft()->geometry);
         for (int i = 0; i < 2; ++i) {
-            if (QLineF(screen(points[i], view), event.pos()).length() <= editor_.radius + 5) {
+            if (QLineF(view.toScreen(points[i]), event.pos()).length() <= editor_.radius + 5) {
                 Modal<QMenu> menu(&map);
                 auto *move = menu->addAction(uiIcon(UiIcon::Move), tr("Move"));
                 move->setObjectName(QStringLiteral("moveShapePoint"));

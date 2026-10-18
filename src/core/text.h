@@ -1,5 +1,9 @@
 #pragma once
+#include <QCollator>
+#include <QJsonObject>
+#include <QObject>
 #include <QString>
+#include <QStringList>
 
 #include <algorithm>
 
@@ -77,5 +81,40 @@ inline QString plainToolTip(const QString &text)
     auto escaped = text.toHtmlEscaped();
     escaped.replace(QLatin1Char('\n'), QStringLiteral("<br>"));
     return QStringLiteral("<qt>") + escaped + QStringLiteral("</qt>");
+}
+// The keys of records, such as providers or collections, sorted by their "name" field with the
+// locale order.
+inline QStringList idsByName(const QJsonObject &records)
+{
+    auto ids = records.keys();
+    const QCollator collator;
+    std::sort(ids.begin(), ids.end(), [&records, &collator](const auto &a, const auto &b) {
+        return collator.compare(
+                   records.value(a).toObject().value(QStringLiteral("name")).toString(),
+                   records.value(b).toObject().value(QStringLiteral("name")).toString()) < 0;
+    });
+    return ids;
+}
+// Checks the name, endpoint, and attribution of a map or data source: not empty, at most 100,
+// 2048, and 300 characters, and only printable characters. boundsError names a missing or long
+// value.
+inline QString validateSourceText(const QJsonObject &source, const QString &boundsError)
+{
+    for (const auto &key :
+         {QStringLiteral("name"), QStringLiteral("endpoint"), QStringLiteral("attribution")}) {
+        const auto value = source.value(key).toString();
+        const int limit = key == QStringLiteral("endpoint") ? 2048
+                          : key == QStringLiteral("name")   ? 100
+                                                            : 300;
+        if (value.trimmed().isEmpty() || value.size() > limit) {
+            return boundsError;
+        }
+        if (std::any_of(value.begin(), value.end(), [](QChar ch) {
+                return !ch.isPrint();
+            })) {
+            return QObject::tr("Do not use control characters.");
+        }
+    }
+    return {};
 }
 } // namespace swak

@@ -9,6 +9,7 @@
 #include "core/provider_table.h"
 #include "core/routing.h"
 #include "core/settings_dialog.h"
+#include "core/text.h"
 #include "core/toolbar.h"
 #include "core/ui_icons.h"
 #include "core/user_objects.h"
@@ -355,12 +356,7 @@ public:
             const auto selected = table->selectedId();
             table->clearProviders();
             const auto entries = sources.sources();
-            auto ids = entries.keys();
-            const QCollator collator;
-            std::sort(ids.begin(), ids.end(), [&](const auto &a, const auto &b) {
-                return collator.compare(entries[a].toObject().value("name").toString(),
-                                        entries[b].toObject().value("name").toString()) < 0;
-            });
+            const auto ids = idsByName(entries);
             for (const auto &id : ids) {
                 const auto source = entries[id].toObject();
                 const auto *provider = sources.provider(source);

@@ -323,6 +323,22 @@ struct QtDialogs
     QtDialogs &operator=(const QtDialogs &) = delete;
     bool native = QApplication::testAttribute(Qt::AA_DontUseNativeDialogs);
 };
+// A disabled TLS server entry named Test TAK with a REST API port. With testCa, it trusts the
+// test certificate of the local HTTPS harness.
+static QJsonObject testTakEntry(int apiPort, bool testCa)
+{
+    auto entry = swak::serverDefaults();
+    entry.insert(QStringLiteral("name"), QStringLiteral("Test TAK"));
+    entry.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
+    entry.insert(QStringLiteral("port"), 9);
+    entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+    entry.insert(QStringLiteral("enabled"), false);
+    if (testCa) {
+        entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
+    }
+    entry.insert(QStringLiteral("apiPort"), apiPort);
+    return entry;
+}
 class GuiTest final : public QObject
 {
     Q_OBJECT
@@ -1623,13 +1639,7 @@ private slots:
         QCOMPARE(status->text(), QStringLiteral("Select a report."));
         click(QStringLiteral("reopenReport"));
         QCOMPARE(status->text(), QStringLiteral("Select a report."));
-        auto entry = swak::serverDefaults();
-        entry.insert(QStringLiteral("name"), QStringLiteral("Test TAK"));
-        entry.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
-        entry.insert(QStringLiteral("port"), 9);
-        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
-        entry.insert(QStringLiteral("enabled"), false);
-        entry.insert(QStringLiteral("apiPort"), 9);
+        auto entry = testTakEntry(9, false);
         QVERIFY(servers->put(QStringLiteral("tak"), entry).isEmpty());
         // New Report needs a title. A sent report waits for the server.
         const auto fill = [&](const QString &title) {
@@ -3028,14 +3038,7 @@ private slots:
                 },
                 15000);
         };
-        auto entry = swak::serverDefaults();
-        entry.insert(QStringLiteral("name"), QStringLiteral("Test TAK"));
-        entry.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
-        entry.insert(QStringLiteral("port"), 9);
-        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
-        entry.insert(QStringLiteral("enabled"), false);
-        entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
-        entry.insert(QStringLiteral("apiPort"), api.serverPort());
+        auto entry = testTakEntry(api.serverPort(), true);
         QVERIFY(servers->put(QStringLiteral("tak"), entry).isEmpty());
         click(QStringLiteral("listReports"));
         QVERIFY(waitFor(QStringLiteral("2 reports.")));
@@ -3144,13 +3147,7 @@ private slots:
         QVERIFY(status->text().startsWith(QStringLiteral("Refresh first")));
         click(QStringLiteral("checklistMission"));
         QCOMPARE(status->text(), QStringLiteral("Select a checklist."));
-        auto entry = swak::serverDefaults();
-        entry.insert(QStringLiteral("name"), QStringLiteral("Test TAK"));
-        entry.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
-        entry.insert(QStringLiteral("port"), 9);
-        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
-        entry.insert(QStringLiteral("enabled"), false);
-        entry.insert(QStringLiteral("apiPort"), 9);
+        auto entry = testTakEntry(9, false);
         QVERIFY(servers->put(QStringLiteral("tak"), entry).isEmpty());
         QCOMPARE(serverChoice->count(), 1);
         click(QStringLiteral("listChecklists"));
@@ -3215,14 +3212,7 @@ private slots:
                 },
                 15000);
         };
-        auto entry = swak::serverDefaults();
-        entry.insert(QStringLiteral("name"), QStringLiteral("Test TAK"));
-        entry.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
-        entry.insert(QStringLiteral("port"), 9);
-        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
-        entry.insert(QStringLiteral("enabled"), false);
-        entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
-        entry.insert(QStringLiteral("apiPort"), api.serverPort());
+        auto entry = testTakEntry(api.serverPort(), true);
         QVERIFY(servers->put(QStringLiteral("tak"), entry).isEmpty());
         click(QStringLiteral("listChecklists"));
         QVERIFY(waitFor(QStringLiteral("1 checklists.")));
@@ -3556,13 +3546,7 @@ private slots:
         auto *trace = dynamic_cast<swak::PreferenceParticipant *>(
             window.findChild<QObject *>(QStringLiteral("traceTool")));
         QVERIFY(historyLayer && points && history && icons && tools && servers && trace);
-        auto entry = swak::serverDefaults();
-        entry.insert(QStringLiteral("name"), QStringLiteral("Test TAK"));
-        entry.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
-        entry.insert(QStringLiteral("port"), 9);
-        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
-        entry.insert(QStringLiteral("enabled"), false);
-        entry.insert(QStringLiteral("apiPort"), 9);
+        auto entry = testTakEntry(9, false);
         QVERIFY(servers->put(QStringLiteral("tak"), entry).isEmpty());
         swak::Event user;
         user.uid = QStringLiteral("ANDROID-9");
@@ -3669,13 +3653,7 @@ private slots:
         };
         click(QStringLiteral("listMissions"));
         QVERIFY(status->text().contains(QStringLiteral("REST API")));
-        auto entry = swak::serverDefaults();
-        entry.insert(QStringLiteral("name"), QStringLiteral("Test TAK"));
-        entry.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
-        entry.insert(QStringLiteral("port"), 9);
-        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
-        entry.insert(QStringLiteral("enabled"), false);
-        entry.insert(QStringLiteral("apiPort"), 9);
+        auto entry = testTakEntry(9, false);
         QVERIFY(servers->put(QStringLiteral("tak"), entry).isEmpty());
         QCOMPARE(serverChoice->count(), 1);
         click(QStringLiteral("listMissions"));
@@ -3845,14 +3823,7 @@ private slots:
             }
             return -1;
         };
-        auto entry = swak::serverDefaults();
-        entry.insert(QStringLiteral("name"), QStringLiteral("Test TAK"));
-        entry.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
-        entry.insert(QStringLiteral("port"), 9);
-        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
-        entry.insert(QStringLiteral("enabled"), false);
-        entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
-        entry.insert(QStringLiteral("apiPort"), api.serverPort());
+        auto entry = testTakEntry(api.serverPort(), true);
         QVERIFY(servers->put(QStringLiteral("tak"), entry).isEmpty());
         click(QStringLiteral("listMissions"));
         QVERIFY(waitFor(QStringLiteral("3 missions.")));
@@ -4037,13 +4008,7 @@ private slots:
                      .toString(),
                  QStringLiteral("Patrol: roads.kml"));
         // A server entry with a REST API lists offers and files.
-        auto entry = swak::serverDefaults();
-        entry.insert(QStringLiteral("name"), QStringLiteral("Test TAK"));
-        entry.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
-        entry.insert(QStringLiteral("port"), 9);
-        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
-        entry.insert(QStringLiteral("enabled"), false);
-        entry.insert(QStringLiteral("apiPort"), 9);
+        auto entry = testTakEntry(9, false);
         QVERIFY(servers->put(QStringLiteral("tak"), entry).isEmpty());
         QCOMPARE(serverChoice->count(), 1);
         QCOMPARE(serverChoice->currentText(), QStringLiteral("Test TAK"));
@@ -4205,14 +4170,7 @@ private slots:
                 box->reject();
             });
         };
-        auto entry = swak::serverDefaults();
-        entry.insert(QStringLiteral("name"), QStringLiteral("Test TAK"));
-        entry.insert(QStringLiteral("host"), QStringLiteral("127.0.0.1"));
-        entry.insert(QStringLiteral("port"), 9);
-        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
-        entry.insert(QStringLiteral("enabled"), false);
-        entry.insert(QStringLiteral("ca"), QFINDTESTDATA("fixtures/map-test-cert.pem"));
-        entry.insert(QStringLiteral("apiPort"), api.serverPort());
+        auto entry = testTakEntry(api.serverPort(), true);
         QVERIFY(servers->put(QStringLiteral("tak"), entry).isEmpty());
         tabs->setCurrentIndex(1);
         click(QStringLiteral("searchServerFiles"));

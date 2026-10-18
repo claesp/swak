@@ -6,8 +6,8 @@
 #include "core/provider_table.h"
 #include "core/settings_dialog.h"
 #include "core/single_line_label.h"
+#include "core/text.h"
 
-#include <QCollator>
 #include <QLabel>
 #include <QPushButton>
 #include <QTimer>
@@ -234,13 +234,8 @@ QWidget *GridTypes::createSettingsWidget(QWidget *parent)
     const auto refresh = [this, table, widget] {
         const auto selectedRow = table->selectedId();
         table->clearProviders();
-        const QCollator collator;
         const auto &records = entries();
-        auto ids = records.keys();
-        std::sort(ids.begin(), ids.end(), [&](const auto &a, const auto &b) {
-            return collator.compare(records.value(a).toObject().value("name").toString(),
-                                    records.value(b).toObject().value("name").toString()) < 0;
-        });
+        const auto ids = idsByName(records);
         for (const auto &id : ids) {
             const auto value = entries_.value(id).toObject();
             auto *button = table->append(id,

@@ -187,8 +187,7 @@ public:
             return result;
         }
         const auto scale = view.scale();
-        const auto origin =
-            QPointF(view.size.width() / 2, view.size.height() / 2) - view.center * scale;
+        const auto origin = view.toScreen({0, 0});
         const auto &display = store_.motion().paused() ? frozen_ : records_;
         for (const auto &record : display) {
             if (record.points.size() < 2) {
@@ -233,8 +232,7 @@ public:
         }
         painter.setClipRect(QRectF(QPointF{}, view.size));
         const auto scale = view.scale();
-        const auto origin =
-            QPointF(view.size.width() / 2, view.size.height() / 2) - view.center * scale;
+        const auto origin = view.toScreen({0, 0});
         const auto &display = store_.motion().paused() ? frozen_ : records_;
         for (const auto &record : display) {
             for (qsizetype i = 1; i < record.points.size(); ++i) {

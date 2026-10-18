@@ -6,6 +6,13 @@
 #include <algorithm>
 #include <limits>
 namespace swak {
+void paintGuides(QPainter &painter, const Viewport &view, QPointF pointer, double opacity)
+{
+    painter.setRenderHint(QPainter::Antialiasing, false);
+    painter.setPen(QPen(QColor(0, 0, 0, qRound(opacity * 255)), 1));
+    painter.drawLine(QPointF(0, pointer.y()), QPointF(view.size.width(), pointer.y()));
+    painter.drawLine(QPointF(pointer.x(), 0), QPointF(pointer.x(), view.size.height()));
+}
 double lineDistance(const QPolygonF &line, QPointF point)
 {
     double nearest = std::numeric_limits<double>::infinity();

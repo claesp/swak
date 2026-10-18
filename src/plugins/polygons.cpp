@@ -38,21 +38,11 @@ enum class Outline
     Area,
     Route
 };
-QPointF screenPoint(QPointF point, const Viewport &view)
-{
-    return (point - view.center) * view.scale() +
-           QPointF(view.size.width() / 2, view.size.height() / 2);
-}
-QPointF worldPoint(QPointF point, const Viewport &view)
-{
-    return view.center +
-           (point - QPointF(view.size.width() / 2, view.size.height() / 2)) / view.scale();
-}
 QPolygonF screenPolygon(const QPolygonF &points, const Viewport &view)
 {
     QPolygonF result;
     for (const auto &point : points) {
-        result.append(screenPoint(point, view));
+        result.append(view.toScreen(point));
     }
     return result;
 }
@@ -164,12 +154,7 @@ private:
                 text = QStringLiteral("Shift+A");
             }
         }
-        const auto key = QKeySequence::fromString(text, QKeySequence::PortableText);
-        if (key.count() != 1 || (key[0].keyboardModifiers() != Qt::NoModifier &&
-                                 key[0].keyboardModifiers() != Qt::ShiftModifier)) {
-            return 0;
-        }
-        return key[0].key() >= Qt::Key_A && key[0].key() <= Qt::Key_Z ? key[0].toCombined() : 0;
+        return letterShortcut(text);
     }
     int key_ = 0;
 };
@@ -314,7 +299,7 @@ public:
                 if (!key.isAutoRepeat() && points_.size() >= 2) {
                     auto candidate = points_;
                     if (!editor_.route() && candidate.size() == 2) {
-                        candidate.append(worldPoint(pointer_, view));
+                        candidate.append(view.toWorld(pointer_));
                     }
                     complete(candidate);
                 }
@@ -330,7 +315,7 @@ public:
             if (mouse.button() == Qt::LeftButton) {
                 const auto points = vertices(editor_.draft()->geometry);
                 for (qsizetype i = 0; i < points.size(); ++i) {
-                    if (near(screenPoint(points.at(i), view), mouse.position())) {
+                    if (near(view.toScreen(points.at(i)), mouse.position())) {
                         moving_ = static_cast<int>(i);
                         skipMoveRelease_ = true;
                         pointer_ = mouse.position();
@@ -370,7 +355,7 @@ public:
             }
             if (movingObject_) {
                 auto item = *movingObject_;
-                item.geometry = polygonGeometry(movedPoints(worldPoint(pointer_, view)));
+                item.geometry = polygonGeometry(movedPoints(view.toWorld(pointer_)));
                 const auto problem = objects_.put(item);
                 if (problem.isEmpty()) {
                     resetPointer();
@@ -387,7 +372,7 @@ public:
                     dismiss();
                     return true;
                 }
-                candidate[moving_] = worldPoint(pointer_, view);
+                candidate[moving_] = view.toWorld(pointer_);
                 if (editor_.setGeometry(polygonGeometry(candidate))) {
                     moving_ = -1;
                     skipMoveRelease_ = false;
@@ -468,7 +453,7 @@ public:
                 emit changed();
             }
         });
-        const auto anchor = worldPoint(QPointF(context.pos()), view_);
+        const auto anchor = view_.toWorld(QPointF(context.pos()));
         connect(move, &QAction::triggered, this, [this, id, anchor] {
             movingObject_ = objects_.find(id);
             if (movingObject_ && map_) {
@@ -505,7 +490,7 @@ public:
                     hit = lineDistance(line, pointer) <= editor_.lineWidth / 2 + 5;
                 }
             } else {
-                hit = hit || points.containsPoint(worldPoint(pointer, view), Qt::OddEvenFill);
+                hit = hit || points.containsPoint(view.toWorld(pointer), Qt::OddEvenFill);
             }
             if (!hit) {
                 continue;
@@ -548,13 +533,13 @@ public:
     {
         if (drawing_) {
             auto measured = points_;
-            measured.append(worldPoint(pointer, view));
+            measured.append(view.toWorld(pointer));
             draw(painter, measured, view, QColor("#1e88e5"));
             dots(painter, screenPolygon(points_, view), QColor("#1e88e5"));
             lengthLabels(painter, measured, view);
         } else if (movingObject_) {
             draw(painter,
-                 movedPoints(worldPoint(pointer, view)),
+                 movedPoints(view.toWorld(pointer)),
                  view,
                  QColor(movingObject_->color),
                  movingObject_->restricted);
@@ -563,7 +548,7 @@ public:
             // The draft can change while a point moves. Check the index on each use.
             const bool movable = moving_ >= 0 && moving_ < measured.size();
             if (movable) {
-                measured[moving_] = worldPoint(pointer, view);
+                measured[moving_] = view.toWorld(pointer);
                 draw(painter,
                      measured,
                      view,
@@ -574,10 +559,7 @@ public:
             lengthLabels(painter, measured, view);
         }
         if (guidesActive()) {
-            painter.setRenderHint(QPainter::Antialiasing, false);
-            painter.setPen(QPen(QColor(0, 0, 0, qRound(editor_.guideOpacity * 255)), 1));
-            painter.drawLine(QPointF(0, pointer.y()), QPointF(view.size.width(), pointer.y()));
-            painter.drawLine(QPointF(pointer.x(), 0), QPointF(pointer.x(), view.size.height()));
+            paintGuides(painter, view, pointer, editor_.guideOpacity);
         }
     }
 
@@ -620,10 +602,10 @@ private:
         if (editor_.route()) {
             const auto line = unwrappedRoute(points);
             return line.isEmpty() ? QPointF{}
-                                  : screenPoint(line.at(line.size() / 2), view) + QPointF(6, -8);
+                                  : view.toScreen(line.at(line.size() / 2)) + QPointF(6, -8);
         }
         const auto shown = metrics.elidedText(text, Qt::ElideRight, 240);
-        return screenPoint(polygonLabelPoint(points), view) +
+        return view.toScreen(polygonLabelPoint(points)) +
                QPointF(-metrics.horizontalAdvance(shown) / 2.0, metrics.ascent() / 2.0);
     }
     void lengthLabels(QPainter &painter, const QPolygonF &points, const Viewport &view) const
@@ -636,7 +618,7 @@ private:
         const auto segments = editor_.route() || count == 2 ? count - 1 : count;
         for (qsizetype i = 0; i < segments; ++i) {
             const auto &a = line[i], &b = line[(i + 1) % count];
-            const auto start = screenPoint(a, view), end = screenPoint(b, view);
+            const auto start = view.toScreen(a), end = view.toScreen(b);
             if (QLineF(start, end).length() < 1) {
                 continue;
             }
@@ -645,7 +627,7 @@ private:
         }
         if (editor_.route() && count > 2) {
             paintMapLabel(painter,
-                          screenPoint(line.last(), view) + QPointF(8, 16),
+                          view.toScreen(line.last()) + QPointF(8, 16),
                           tr("Total: %1").arg(formatDistance(routeLength(points))));
         }
     }
@@ -678,11 +660,11 @@ private:
     {
         map.setCursor(Qt::CrossCursor);
         if (!editor_.route() && points_.size() >= 3 &&
-            near(screenPoint(points_.first(), view), pointer_)) {
+            near(view.toScreen(points_.first()), pointer_)) {
             complete(points_);
             return;
         }
-        auto point = worldPoint(pointer_, view);
+        auto point = view.toWorld(pointer_);
         if (editor_.route()) {
             point.rx() -= std::floor(point.x());
         }
@@ -775,7 +757,7 @@ private:
         const auto points = vertices(editor_.draft()->geometry);
         int index = -1;
         for (qsizetype i = 0; i < points.size(); ++i) {
-            if (near(screenPoint(points.at(i), view), context.pos())) {
+            if (near(view.toScreen(points.at(i)), context.pos())) {
                 index = static_cast<int>(i);
                 break;
             }

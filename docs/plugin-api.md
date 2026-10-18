@@ -465,7 +465,7 @@ The plugin catalog exposes pluginManifest for accepted built-in instances. It re
 
 # Marker scaling and Predict
 
-Viewport carries markerScalePercent with a default of 100. Its markerSize helper accepts the six supported percentages and otherwise uses 100%. Marker layers must use that helper for symbol radii and hit targets. markerOffset adjusts a label anchor by the changed radius. Label fonts and line widths remain in logical screen pixels.
+Viewport carries markerScalePercent with a default of 100. Its markerSize helper accepts the six supported percentages and otherwise uses 100%. Marker layers must use that helper for symbol radii and hit targets. markerOffset adjusts a label anchor by the changed radius. Label fonts and line widths remain in logical screen pixels. `toScreen` and `toWorld` convert between normalized world coordinates and screen pixels. Plugins use them instead of their own formula. `paintGuides` in `core/map_tools.h` paints the pointer guide lines of a drawing tool, and `letterShortcut` in `core/settings.h` reads a one-letter tool shortcut.
 
 MapItem.radius stores the unscaled symbol radius. MapSelection applies the viewport scale when MapItem.scaleIcon is true. Basemap features set scaleIcon to false because their symbols belong to the tile renderer. Geographic geometry does not use the icon scale. These additions retain API version 2 because all static plugins rebuild together.
 

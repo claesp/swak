@@ -2,6 +2,7 @@
 
 #include "core/logging.h"
 #include "core/map_label.h"
+#include "core/text.h"
 
 #include <QColor>
 #include <QDateTime>
@@ -75,20 +76,10 @@ QList<SettingField> dataFields()
 }
 QString validateDataSource(const QJsonObject &source)
 {
-    for (const auto &key :
-         {QStringLiteral("name"), QStringLiteral("endpoint"), QStringLiteral("attribution")}) {
-        const auto value = source.value(key).toString();
-        const int limit = key == QStringLiteral("endpoint") ? 2048
-                          : key == QStringLiteral("name")   ? 100
-                                                            : 300;
-        if (value.trimmed().isEmpty() || value.size() > limit) {
-            return QObject::tr("Enter a name, location, and attribution within their limits.");
-        }
-        if (std::any_of(value.begin(), value.end(), [](QChar ch) {
-                return !ch.isPrint();
-            })) {
-            return QObject::tr("Do not use control characters.");
-        }
+    if (auto error = validateSourceText(
+            source, QObject::tr("Enter a name, location, and attribution within their limits."));
+        !error.isEmpty()) {
+        return error;
     }
     const auto endpoint = source.value(QStringLiteral("endpoint")).toString();
     if (localDataEndpoint(endpoint)) {
@@ -513,8 +504,7 @@ void DataSources::paint(QPainter &painter, const Viewport &view, const MapItem *
     auto ids = feeds_.keys();
     ids.sort();
     const double worldSize = view.scale();
-    const QPointF worldOrigin =
-        QPointF(view.size.width() / 2, view.size.height() / 2) - view.center * worldSize;
+    const QPointF worldOrigin = view.toScreen({0, 0});
     painter.save();
     painter.setClipRect(QRectF(worldOrigin, QSizeF(worldSize, worldSize)), Qt::IntersectClip);
     int labels = 0;
@@ -585,8 +575,7 @@ QList<MapItem> DataSources::itemsAt(const Viewport &view, QPointF position) cons
 {
     QList<MapItem> result;
     const double scale = view.scale();
-    const QPointF origin =
-        QPointF(view.size.width() / 2, view.size.height() / 2) - view.center * scale;
+    const QPointF origin = view.toScreen({0, 0});
     if (!QRectF(origin, QSizeF(scale, scale)).contains(position)) {
         return {};
     }

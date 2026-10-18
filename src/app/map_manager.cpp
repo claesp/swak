@@ -6,8 +6,8 @@
 #include "core/provider_table.h"
 #include "core/settings_dialog.h"
 #include "core/single_line_label.h"
+#include "core/text.h"
 
-#include <QCollator>
 #include <QDialogButtonBox>
 #include <QLabel>
 #include <QLineEdit>
@@ -157,11 +157,7 @@ MapManager::MapManager(MapSources &sources,
             true);
         dialog->setWindowTitle(tr("Add provider"));
         if (dialog->exec() == QDialog::Accepted) {
-            for (int i = 0; i < list_->rowCount(); ++i) {
-                if (list_->item(i, 1)->data(Qt::UserRole).toString() == id) {
-                    list_->setCurrentCell(i, 1);
-                }
-            }
+            list_->selectId(id);
         }
     });
     connect(editButton, &QPushButton::clicked, this, &MapManager::edit);
@@ -194,13 +190,7 @@ void MapManager::refresh()
         !list_->selectedId().isEmpty() ? list_->selectedId() : sources_.activeId();
     list_->clearProviders();
     const auto entries = sources_.sources();
-    QStringList ids = entries.keys();
-    const QCollator collator;
-    std::sort(ids.begin(), ids.end(), [&](const auto &a, const auto &b) {
-        return collator.compare(
-                   entries.value(a).toObject().value(QStringLiteral("name")).toString(),
-                   entries.value(b).toObject().value(QStringLiteral("name")).toString()) < 0;
-    });
+    const auto ids = idsByName(entries);
     for (const auto &id : ids) {
         const auto source = entries.value(id).toObject();
         const auto *provider = sources_.provider(source);

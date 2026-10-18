@@ -3,11 +3,26 @@
 #include "core/preferences.h"
 
 #include <QJsonArray>
+#include <QKeySequence>
 #include <QStringList>
 #include <QtPlugin>
 
 class QWidget;
 namespace swak {
+// The combined key of a one-letter tool shortcut: A to Z, with or without Shift. Other text,
+// such as Ctrl+M or two keys, gives 0.
+inline int letterShortcut(const QString &text)
+{
+    if (text.size() > 32) {
+        return 0;
+    }
+    const auto key = QKeySequence::fromString(text, QKeySequence::PortableText);
+    if (key.count() != 1 || (key[0].keyboardModifiers() != Qt::NoModifier &&
+                             key[0].keyboardModifiers() != Qt::ShiftModifier)) {
+        return 0;
+    }
+    return key[0].key() >= Qt::Key_A && key[0].key() <= Qt::Key_Z ? key[0].toCombined() : 0;
+}
 struct SettingField
 {
     enum class Kind

@@ -5,8 +5,8 @@
 #include "core/modal.h"
 #include "core/provider_table.h"
 #include "core/settings_dialog.h"
+#include "core/text.h"
 
-#include <QCollator>
 #include <QDialogButtonBox>
 #include <QLabel>
 #include <QPushButton>
@@ -117,12 +117,7 @@ void DataManager::refresh()
     const QSignalBlocker blocked(list_);
     list_->clearProviders();
     const auto entries = sources_.sources();
-    auto ids = entries.keys();
-    const QCollator collator;
-    std::sort(ids.begin(), ids.end(), [&](const auto &a, const auto &b) {
-        return collator.compare(entries[a].toObject().value(QStringLiteral("name")).toString(),
-                                entries[b].toObject().value(QStringLiteral("name")).toString()) < 0;
-    });
+    const auto ids = idsByName(entries);
     for (const auto &id : ids) {
         const auto source = entries[id].toObject();
         const auto *provider = sources_.provider(source);
@@ -214,11 +209,7 @@ void DataManager::edit(bool adding)
         adding);
     dialog->setWindowTitle(adding ? tr("Add data provider") : tr("Edit data provider"));
     if (dialog->exec() == QDialog::Accepted) {
-        for (int i = 0; i < list_->rowCount(); ++i) {
-            if (list_->item(i, 1)->data(Qt::UserRole).toString() == id) {
-                list_->setCurrentCell(i, 1);
-            }
-        }
+        list_->selectId(id);
     }
 }
 } // namespace swak

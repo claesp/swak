@@ -9,6 +9,8 @@
 #include <QPointer>
 #include <QTimer>
 
+#include <functional>
+
 class QAction;
 class QLabel;
 class QMenu;
@@ -49,6 +51,12 @@ private:
     void setDisplayMode(DisplayMode mode);
     void applyDisplayLayout(DisplayMode mode);
     void updateMenuBar();
+    // Saves the preferences for a dialog and returns the error text, or an empty text.
+    std::function<QString()> saveCallback();
+    // Shows the manager window of a service, or raises the open one. geometry keeps its size
+    // and place between openings.
+    template <typename Manager, typename Service>
+    void openManager(Service &service, QByteArray &geometry);
     void fitWindowsToScreens();
     void openSettings();
     QList<SettingsPage> settingsPages();

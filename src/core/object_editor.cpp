@@ -3,6 +3,7 @@
 #include "core/marker_collections.h"
 #include "core/marker_symbols.h"
 #include "core/single_line_label.h"
+#include "core/text.h"
 
 #include <QButtonGroup>
 #include <QCheckBox>
@@ -296,13 +297,7 @@ void ObjectEditor::refreshCollections(const QString &selected)
     const QSignalBlocker block(collection_);
     collection_->clear();
     const auto entries = collections_.collections();
-    auto ids = entries.keys();
-    const QCollator order;
-    std::sort(ids.begin(), ids.end(), [&entries, &order](const auto &a, const auto &b) {
-        return order.compare(entries.value(a).toObject().value(QStringLiteral("name")).toString(),
-                             entries.value(b).toObject().value(QStringLiteral("name")).toString()) <
-               0;
-    });
+    const auto ids = idsByName(entries);
     for (const auto &id : ids) {
         const auto value = entries.value(id).toObject();
         const bool enabled = value.value(QStringLiteral("enabled")).toBool() &&

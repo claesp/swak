@@ -13,6 +13,8 @@ class QMenu;
 namespace swak {
 // Returns the shortest distance from a point to an open polyline, or infinity without a segment.
 double lineDistance(const QPolygonF &line, QPointF point);
+// Paints the black horizontal and vertical guide lines through the pointer of a drawing tool.
+void paintGuides(QPainter &painter, const Viewport &view, QPointF pointer, double opacity);
 class MapTool : public QObject
 {
     Q_OBJECT

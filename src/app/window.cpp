@@ -291,22 +291,19 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     auto *identityAction = fileMenu->addAction(tr("Identity"));
     identityAction->setObjectName(QStringLiteral("identityAction"));
     connect(identityAction, &QAction::triggered, this, [this, identity] {
-        Modal<SettingsDialog> dialog(
-            QList<SettingsPage>{{identity->preferenceId(),
-                                 identity->settingsTitle(),
-                                 identity->settingsFields(),
-                                 identity->savePreferences(),
-                                 [identity](const QJsonObject &v) {
-                                     return identity->validateSettings(v);
-                                 },
-                                 [identity](const QJsonObject &v) {
-                                     identity->restorePreferences(v);
-                                 }}},
-            [this] {
-                return savePreferences() ? QString{} : preferences_.error();
-            },
-            this,
-            true);
+        Modal<SettingsDialog> dialog(QList<SettingsPage>{{identity->preferenceId(),
+                                                          identity->settingsTitle(),
+                                                          identity->settingsFields(),
+                                                          identity->savePreferences(),
+                                                          [identity](const QJsonObject &v) {
+                                                              return identity->validateSettings(v);
+                                                          },
+                                                          [identity](const QJsonObject &v) {
+                                                              identity->restorePreferences(v);
+                                                          }}},
+                                     saveCallback(),
+                                     this,
+                                     true);
         dialog->setObjectName(QStringLiteral("identityDialog"));
         dialog->setWindowTitle(tr("Identity"));
         if (!identityGeometry_.isEmpty()) {
@@ -517,9 +514,7 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
                                      [servers](QWidget *owner) {
                                          return servers->createSettingsWidget(owner);
                                      }}},
-                [this] {
-                    return savePreferences() ? QString{} : preferences_.error();
-                },
+                saveCallback(),
                 this,
                 true);
             dialog->setWindowTitle(tr("Servers"));
@@ -542,66 +537,18 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
     auto *manageMaps = toolsMenu->addAction(tr("Map Providers"));
     manageMaps->setObjectName(QStringLiteral("mapProvidersAction"));
     connect(manageMaps, &QAction::triggered, this, [this, mapSources] {
-        if (auto *existing = findChild<MapManager *>()) {
-            existing->show();
-            existing->raise();
-            return;
-        }
-        auto *dialog = new MapManager(*mapSources, this, [this] {
-            return savePreferences() ? QString{} : preferences_.error();
-        });
-        dialog->setAttribute(Qt::WA_DeleteOnClose);
-        if (!mapManagerGeometry_.isEmpty()) {
-            dialog->restoreGeometry(mapManagerGeometry_);
-        }
-        connect(dialog, &QDialog::finished, this, [this, dialog] {
-            mapManagerGeometry_ = dialog->saveGeometry();
-            savePreferences();
-        });
-        dialog->show();
+        openManager<MapManager>(*mapSources, mapManagerGeometry_);
     });
     connect(mapSources, &MapSources::managementRequested, manageMaps, &QAction::trigger);
     auto *manageData = toolsMenu->addAction(tr("Data Providers"));
     manageData->setObjectName(QStringLiteral("dataProvidersAction"));
     connect(manageData, &QAction::triggered, this, [this, dataSources] {
-        if (auto *existing = findChild<DataManager *>()) {
-            existing->show();
-            existing->raise();
-            return;
-        }
-        auto *dialog = new DataManager(*dataSources, this, [this] {
-            return savePreferences() ? QString{} : preferences_.error();
-        });
-        dialog->setAttribute(Qt::WA_DeleteOnClose);
-        if (!dataManagerGeometry_.isEmpty()) {
-            dialog->restoreGeometry(dataManagerGeometry_);
-        }
-        connect(dialog, &QDialog::finished, this, [this, dialog] {
-            dataManagerGeometry_ = dialog->saveGeometry();
-            savePreferences();
-        });
-        dialog->show();
+        openManager<DataManager>(*dataSources, dataManagerGeometry_);
     });
     auto *manageMarkers = toolsMenu->addAction(tr("Marker Collections"));
     manageMarkers->setObjectName(QStringLiteral("markerCollectionsAction"));
     connect(manageMarkers, &QAction::triggered, this, [this, collections] {
-        if (auto *existing = findChild<MarkerManager *>(); existing && existing->isWindow()) {
-            existing->show();
-            existing->raise();
-            return;
-        }
-        auto *dialog = new MarkerManager(*collections, this, [this] {
-            return savePreferences() ? QString{} : preferences_.error();
-        });
-        dialog->setAttribute(Qt::WA_DeleteOnClose);
-        if (!markerManagerGeometry_.isEmpty()) {
-            dialog->restoreGeometry(markerManagerGeometry_);
-        }
-        connect(dialog, &QDialog::finished, this, [this, dialog] {
-            markerManagerGeometry_ = dialog->saveGeometry();
-            savePreferences();
-        });
-        dialog->show();
+        openManager<MarkerManager>(*collections, markerManagerGeometry_);
     });
     auto *pluginsMenu = new PluginMenu(tr("&Plugins"), toolsMenu);
     toolsMenu->addMenu(pluginsMenu);
@@ -866,6 +813,32 @@ Window::Window(const QString &preferencesPath, const QList<QObject *> &plugins, 
         }
     });
 }
+std::function<QString()> Window::saveCallback()
+{
+    return [this] {
+        return savePreferences() ? QString{} : preferences_.error();
+    };
+}
+template <typename Manager, typename Service>
+void Window::openManager(Service &service, QByteArray &geometry)
+{
+    // A Settings page embeds the same manager type. Only a separate window is reused.
+    if (auto *existing = findChild<Manager *>(); existing && existing->isWindow()) {
+        existing->show();
+        existing->raise();
+        return;
+    }
+    auto *dialog = new Manager(service, this, saveCallback());
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    if (!geometry.isEmpty()) {
+        dialog->restoreGeometry(geometry);
+    }
+    connect(dialog, &QDialog::finished, this, [this, dialog, &geometry] {
+        geometry = dialog->saveGeometry();
+        savePreferences();
+    });
+    dialog->show();
+}
 void Window::addDockWidget(Qt::DockWidgetArea area, QDockWidget *dock)
 {
     panels_->addDockWidget(area, dock);
@@ -1113,6 +1086,9 @@ bool Window::savePreferences()
                        QString::fromLatin1(identityGeometry_.toBase64()));
     application.insert(QStringLiteral("serversGeometry"),
                        QString::fromLatin1(serversGeometry_.toBase64()));
+    if (auto *dialog = findChild<MapManager *>(); dialog && dialog->isWindow()) {
+        mapManagerGeometry_ = dialog->saveGeometry();
+    }
     application.insert(QStringLiteral("mapManagerGeometry"),
                        QString::fromLatin1(mapManagerGeometry_.toBase64()));
     if (auto *dialog = findChild<DataManager *>(); dialog && dialog->isWindow()) {
@@ -1228,13 +1204,7 @@ QList<SettingsPage> Window::settingsPages()
                           {},
                           false,
                           [this, maps](QWidget *parent) {
-                              return new MapManager(
-                                  *maps,
-                                  parent,
-                                  [this] {
-                                      return savePreferences() ? QString{} : preferences_.error();
-                                  },
-                                  true);
+                              return new MapManager(*maps, parent, saveCallback(), true);
                           }});
         } else if (auto *feeds = dynamic_cast<DataSources *>(participant)) {
             pages.append({feeds->preferenceId(),
@@ -1245,13 +1215,7 @@ QList<SettingsPage> Window::settingsPages()
                           {},
                           false,
                           [this, feeds](QWidget *parent) {
-                              return new DataManager(
-                                  *feeds,
-                                  parent,
-                                  [this] {
-                                      return savePreferences() ? QString{} : preferences_.error();
-                                  },
-                                  true);
+                              return new DataManager(*feeds, parent, saveCallback(), true);
                           }});
         } else if (auto *collections = dynamic_cast<MarkerCollections *>(participant)) {
             pages.append({collections->preferenceId(),
@@ -1262,13 +1226,7 @@ QList<SettingsPage> Window::settingsPages()
                           {},
                           false,
                           [this, collections](QWidget *parent) {
-                              return new MarkerManager(
-                                  *collections,
-                                  parent,
-                                  [this] {
-                                      return savePreferences() ? QString{} : preferences_.error();
-                                  },
-                                  true);
+                              return new MarkerManager(*collections, parent, saveCallback(), true);
                           }});
         } else if (auto *custom = dynamic_cast<SettingsWidgetProvider *>(participant)) {
             auto *provider = dynamic_cast<SettingsParticipant *>(participant);
@@ -1366,12 +1324,7 @@ QList<SettingsPage> Window::settingsPages()
 }
 void Window::openSettings()
 {
-    Modal<SettingsDialog> dialog(
-        settingsPages(),
-        [this] {
-            return savePreferences() ? QString{} : preferences_.error();
-        },
-        this);
+    Modal<SettingsDialog> dialog(settingsPages(), saveCallback(), this);
     dialog->restoreNavigation(settingsNavigation_);
     if (!settingsGeometry_.isEmpty()) {
         dialog->restoreGeometry(settingsGeometry_);
