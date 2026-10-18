@@ -1,5 +1,6 @@
 #include "app/data_manager.h"
 #include "app/map_manager.h"
+#include "app/map_panels.h"
 #include "app/marker_manager.h"
 #include "app/plugin_panel.h"
 #include "app/window.h"
@@ -11404,6 +11405,63 @@ private slots:
         release(events, events->mapToGlobal(title));
         QCOMPARE(events->geometry(), before);
         QVERIFY(!events->isFloating());
+        const auto edgeDrag = [&](QDockWidget *pane) {
+            return drag(pane, QPoint(pane->width() / 2, 6), QPoint(20, panels->height() / 2));
+        };
+        const auto ended = [&] {
+            return !indicator->isVisible() && !QWidget::keyboardGrabber();
+        };
+        // A pane that hides during a drag stays hidden. The drag ends and frees the keyboard.
+        end = edgeDrag(events);
+        QVERIFY(indicator->isVisible());
+        QCOMPARE(QWidget::keyboardGrabber(), panels);
+        events->hide();
+        QVERIFY(ended());
+        release(events, end);
+        QVERIFY(events->isHidden());
+        QCOMPARE(panels->dockWidgetArea(events), Qt::BottomDockWidgetArea);
+        events->show();
+        // A right click ends a drag without a change.
+        end = edgeDrag(events);
+        send(events,
+             QEvent::MouseButtonPress,
+             end,
+             Qt::RightButton,
+             Qt::LeftButton | Qt::RightButton);
+        QVERIFY(ended());
+        release(events, end);
+        QCOMPARE(panels->dockWidgetArea(events), Qt::BottomDockWidgetArea);
+        // Another active window ends a drag.
+        end = edgeDrag(events);
+        QEvent deactivate(QEvent::WindowDeactivate);
+        QApplication::sendEvent(panels, &deactivate);
+        QVERIFY(ended());
+        release(events, end);
+        QCOMPARE(panels->dockWidgetArea(events), Qt::BottomDockWidgetArea);
+        // A pane deleted during a drag ends it.
+        auto *temporary = new QDockWidget(QStringLiteral("Temporary"), panels);
+        temporary->setObjectName(QStringLiteral("temporaryPane"));
+        temporary->setWidget(new QLabel(QStringLiteral("Content"), temporary));
+        panels->addDockWidget(Qt::RightDockWidgetArea, temporary);
+        static_cast<swak::MapPanels *>(panels)->track(temporary);
+        QTest::qWait(50);
+        end = edgeDrag(temporary);
+        QVERIFY(indicator->isVisible());
+        delete temporary;
+        QVERIFY(ended());
+        // Tab bars inside a floating pane do not cover the map.
+        auto *map = window.findChild<QOpenGLWidget *>();
+        QTest::qWait(50);
+        const auto covered = map->property(swak::MapOcclusionProperty).value<QRegion>();
+        auto *files = window.findChild<QDockWidget *>(QStringLiteral("org.swak.files.pane"));
+        QVERIFY(files && files->findChild<QTabBar *>());
+        files->setFloating(true);
+        files->show();
+        QVERIFY(QTest::qWaitForWindowExposed(files));
+        QTest::qWait(100);
+        QCOMPARE(map->property(swak::MapOcclusionProperty).value<QRegion>(), covered);
+        files->hide();
+        files->setFloating(false);
         // In Modern, the drop place keeps the pane margin.
         window.findChild<QAction *>(QStringLiteral("displayMode/modern"))->trigger();
         QTest::qWait(200);

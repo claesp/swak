@@ -72,7 +72,7 @@ void MapPanels::paintEvent(QPaintEvent *)
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setPen(QPen(QColor(0, 212, 255, 70), 1));
     painter.setBrush(QColor(12, 12, 20, 222));
-    for (auto *pane : findChildren<QDockWidget *>()) {
+    for (auto *pane : findChildren<QDockWidget *>(Qt::FindDirectChildrenOnly)) {
         if (pane->isVisible() && !pane->isFloating()) {
             painter.drawRoundedRect(QRectF(QRect(pane->mapTo(this, QPoint{}), pane->size()))
                                         .adjusted(0.5, 0.5, -0.5, -0.5),
@@ -80,7 +80,9 @@ void MapPanels::paintEvent(QPaintEvent *)
                                     12);
         }
     }
-    for (auto *tabs : findChildren<QTabBar *>()) {
+    // Only the tab bars of pane groups belong to the overlay. Tab bars inside pane content, also
+    // in floating panes, would add rectangles over the map.
+    for (auto *tabs : findChildren<QTabBar *>(Qt::FindDirectChildrenOnly)) {
         if (tabs->isVisible()) {
             painter.drawRoundedRect(QRectF(QRect(tabs->mapTo(this, QPoint{}), tabs->size())), 6, 6);
         }
@@ -140,6 +142,10 @@ bool MapPanels::event(QEvent *event)
         event->accept();
         return true;
     }
+    // Another window, a dialog, or a hidden map ends the drag. The keyboard grab must not stay.
+    if (dragPane_ && (event->type() == QEvent::WindowDeactivate || event->type() == QEvent::Hide)) {
+        finishDrag(false);
+    }
     if (event->type() == QEvent::Wheel || event->type() == QEvent::KeyPress ||
         event->type() == QEvent::KeyRelease) {
         event->accept();
@@ -173,12 +179,14 @@ bool MapPanels::eventFilter(QObject *object, QEvent *event)
 void MapPanels::updateMask()
 {
     QRegion region;
-    for (auto *pane : findChildren<QDockWidget *>()) {
+    for (auto *pane : findChildren<QDockWidget *>(Qt::FindDirectChildrenOnly)) {
         if (pane->isVisible() && !pane->isFloating()) {
             region += QRect(pane->mapTo(this, QPoint{}), pane->size()).adjusted(-4, -4, 4, 4);
         }
     }
-    for (auto *tabs : findChildren<QTabBar *>()) {
+    // Only the tab bars of pane groups belong to the overlay. Tab bars inside pane content, also
+    // in floating panes, would add rectangles over the map.
+    for (auto *tabs : findChildren<QTabBar *>(Qt::FindDirectChildrenOnly)) {
         if (tabs->isVisible()) {
             region += QRect(tabs->mapTo(this, QPoint{}), tabs->size());
         }
@@ -213,6 +221,12 @@ bool MapPanels::filterPaneDrag(QObject *object, QEvent *event)
 {
     const auto type = event->type();
     auto *source = qobject_cast<QWidget *>(object);
+    // A pane that hides during a drag, for example Information when its selection clears,
+    // stays hidden. A drop must not show it again.
+    if (dragPane_ && object == dragPane_ && type == QEvent::Hide) {
+        finishDrag(false);
+        return false;
+    }
     if (!source || (type != QEvent::MouseButtonPress && type != QEvent::MouseMove &&
                     type != QEvent::MouseButtonRelease)) {
         return false;
@@ -220,7 +234,12 @@ bool MapPanels::filterPaneDrag(QObject *object, QEvent *event)
     const auto *mouse = static_cast<QMouseEvent *>(event);
     const auto position = mapFromGlobal(mouse->globalPosition().toPoint());
     if (type == QEvent::MouseButtonPress) {
-        if (mouse->button() != Qt::LeftButton || dragging_) {
+        // A second press, such as a right click, ends a drag without a change.
+        if (dragging_) {
+            finishDrag(false);
+            return true;
+        }
+        if (mouse->button() != Qt::LeftButton) {
             return false;
         }
         if (auto *pane = qobject_cast<QDockWidget *>(source)) {
@@ -256,6 +275,14 @@ bool MapPanels::filterPaneDrag(QObject *object, QEvent *event)
             }
             dragging_ = true;
             grabKeyboard();
+            // A deleted pane or tab bar ends the drag at once.
+            connect(
+                dragPane_, &QObject::destroyed, this, &MapPanels::cancelDrag, Qt::UniqueConnection);
+            connect(dragSource_,
+                    &QObject::destroyed,
+                    this,
+                    &MapPanels::cancelDrag,
+                    Qt::UniqueConnection);
         }
         updateDrop(position);
         return true;
@@ -331,6 +358,12 @@ void MapPanels::finishDrag(bool apply)
     if (dragging_) {
         releaseKeyboard();
     }
+    for (QObject *watched :
+         {static_cast<QObject *>(dragPane_), static_cast<QObject *>(dragSource_)}) {
+        if (watched) {
+            disconnect(watched, &QObject::destroyed, this, &MapPanels::cancelDrag);
+        }
+    }
     dragging_ = false;
     dragPane_ = nullptr;
     dragSource_ = nullptr;
@@ -338,7 +371,8 @@ void MapPanels::finishDrag(bool apply)
     dropArea_ = Qt::NoDockWidgetArea;
     dropIndicator_->hide();
     maskTimer_.start(0);
-    if (!apply || !pane) {
+    // Only a visible pane moves. The drop never changes whether a pane shows.
+    if (!apply || !pane || pane->isHidden()) {
         return;
     }
     if (target) {
@@ -347,7 +381,11 @@ void MapPanels::finishDrag(bool apply)
                (dockWidgetArea(pane) != area || !tabifiedDockWidgets(pane).isEmpty())) {
         addDockWidget(area, pane);
     }
-    pane->show();
+    // In a tab group, raise selects the tab of the moved pane.
     pane->raise();
+}
+void MapPanels::cancelDrag()
+{
+    finishDrag(false);
 }
 } // namespace swak

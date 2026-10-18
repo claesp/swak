@@ -41,6 +41,8 @@ private:
     QDockWidget *tabPane(const QTabBar &tabs, QPoint position) const;
     void updateDrop(QPoint position);
     void finishDrag(bool apply);
+    // Ends a drag without a change and releases the keyboard.
+    void cancelDrag();
     QTimer maskTimer_;
     // The pane under a drag, the widget that receives its mouse events, and the drop place.
     QPointer<QDockWidget> dragPane_;
