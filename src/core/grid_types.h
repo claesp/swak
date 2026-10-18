@@ -53,5 +53,4 @@ private:
     std::optional<GridStyle> selectedStyle_;
     void refreshStyle();
 };
-QString gridCoordinate(double latitude, double longitude, const QString &system, int precision = 3);
 } // namespace swak

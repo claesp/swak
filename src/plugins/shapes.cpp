@@ -102,14 +102,14 @@ public:
         const QStringList names{
             QStringLiteral("circleKey"), QStringLiteral("distanceKey"), QStringLiteral("lineKey")};
         for (int i = 0; i < 3; ++i) {
-            values.insert(names[i], QKeySequence(keys[i]).toString(QKeySequence::PortableText));
+            values.insert(names[i], QKeySequence(keys_[i]).toString(QKeySequence::PortableText));
         }
         values.insert(QStringLiteral("shapeShortcutVersion"), 1);
-        values.insert(QStringLiteral("holdSeconds"), holdSeconds);
-        values.insert(QStringLiteral("fadeMs"), fadeMs);
-        values.insert(QStringLiteral("lineWidth"), width);
-        values.insert(QStringLiteral("radius"), radius);
-        values.insert(QStringLiteral("guideOpacity"), guideOpacity);
+        values.insert(QStringLiteral("holdSeconds"), holdSeconds_);
+        values.insert(QStringLiteral("fadeMs"), fadeMs_);
+        values.insert(QStringLiteral("lineWidth"), width_);
+        values.insert(QStringLiteral("radius"), radius_);
+        values.insert(QStringLiteral("guideOpacity"), guideOpacity_);
         return values;
     }
     QString validateSettings(const QJsonObject &values) const override
@@ -152,25 +152,52 @@ public:
                                     QStringLiteral("distanceKey"),
                                     QStringLiteral("lineKey")};
             for (int i = 0; i < 3; ++i) {
-                keys[i] = QKeySequence::fromString(merged.value(names[i]).toString(),
-                                                   QKeySequence::PortableText)[0]
-                              .toCombined();
+                keys_[i] = QKeySequence::fromString(merged.value(names[i]).toString(),
+                                                    QKeySequence::PortableText)[0]
+                               .toCombined();
             }
         }
-        holdSeconds = preferenceInteger(values, QStringLiteral("holdSeconds"), 10, 1, 60);
-        fadeMs = preferenceInteger(values, QStringLiteral("fadeMs"), 1000, 100, 5000);
-        width = preferenceNumber(values, QStringLiteral("lineWidth"), 2, 1, 6);
-        radius = preferenceNumber(values, QStringLiteral("radius"), 3, 1, 6);
-        guideOpacity = preferenceNumber(values, QStringLiteral("guideOpacity"), 0.5, 0, 1);
+        holdSeconds_ = preferenceInteger(values, QStringLiteral("holdSeconds"), 10, 1, 60);
+        fadeMs_ = preferenceInteger(values, QStringLiteral("fadeMs"), 1000, 100, 5000);
+        width_ = preferenceNumber(values, QStringLiteral("lineWidth"), 2, 1, 6);
+        radius_ = preferenceNumber(values, QStringLiteral("radius"), 3, 1, 6);
+        guideOpacity_ = preferenceNumber(values, QStringLiteral("guideOpacity"), 0.5, 0, 1);
         restoreEditorState(values);
         emit configurationChanged();
     }
+    // The creation key of a shape mode: 0 circle, 1 distance, 2 line.
+    int key(int mode) const
+    {
+        return keys_.at(static_cast<size_t>(mode));
+    }
+    int holdSeconds() const
+    {
+        return holdSeconds_;
+    }
+    int fadeMs() const
+    {
+        return fadeMs_;
+    }
+    double lineWidth() const
+    {
+        return width_;
+    }
+    double radius() const
+    {
+        return radius_;
+    }
+    double guideOpacity() const
+    {
+        return guideOpacity_;
+    }
     const bool circles;
-    std::array<int, 3> keys{QKeyCombination(Qt::ShiftModifier, Qt::Key_C).toCombined(),
-                            QKeyCombination(Qt::ShiftModifier, Qt::Key_D).toCombined(),
-                            QKeyCombination(Qt::ShiftModifier, Qt::Key_L).toCombined()};
-    int holdSeconds = 10, fadeMs = 1000;
-    double width = 2, radius = 3, guideOpacity = 0.5;
+
+private:
+    std::array<int, 3> keys_{QKeyCombination(Qt::ShiftModifier, Qt::Key_C).toCombined(),
+                             QKeyCombination(Qt::ShiftModifier, Qt::Key_D).toCombined(),
+                             QKeyCombination(Qt::ShiftModifier, Qt::Key_L).toCombined()};
+    int holdSeconds_ = 10, fadeMs_ = 1000;
+    double width_ = 2, radius_ = 3, guideOpacity_ = 0.5;
 };
 class ShapesTool final : public MapTool
 {
@@ -186,7 +213,7 @@ public:
         connect(&timer_, &QTimer::timeout, this, [this] {
             const auto now = clock_.elapsed();
             measurements_.removeIf([&](const Measurement &m) {
-                return now - m.time >= editor_.holdSeconds * 1000 + editor_.fadeMs;
+                return now - m.time >= editor_.holdSeconds() * 1000 + editor_.fadeMs();
             });
             if (measurements_.isEmpty()) {
                 timer_.stop();
@@ -264,7 +291,7 @@ public:
     }
     QString statusText() const override
     {
-        return guidesActive() ? QKeySequence(editor_.keys[static_cast<size_t>(mode_)])
+        return guidesActive() ? QKeySequence(editor_.key(static_cast<int>(mode_)))
                                     .toString(QKeySequence::NativeText)
                               : QString{};
     }
@@ -308,9 +335,9 @@ public:
         map_ = &map;
         if (event.type() == QEvent::KeyPress) {
             auto &key = static_cast<QKeyEvent &>(event);
-            for (size_t i = 0; i < 3; ++i) {
+            for (int i = 0; i < 3; ++i) {
                 if ((editor_.circles == (i == 0)) &&
-                    key.keyCombination().toCombined() == editor_.keys[i]) {
+                    key.keyCombination().toCombined() == editor_.key(i)) {
                     if (!key.isAutoRepeat()) {
                         request(static_cast<ShapeMode>(i));
                     }
@@ -548,8 +575,8 @@ public:
         for (const auto &measurement : measurements_) {
             painter.save();
             painter.setOpacity(std::clamp(
-                1.0 - static_cast<double>(now - measurement.time - editor_.holdSeconds * 1000) /
-                          editor_.fadeMs,
+                1.0 - static_cast<double>(now - measurement.time - editor_.holdSeconds() * 1000) /
+                          editor_.fadeMs(),
                 0.0,
                 1.0));
             draw(painter, measurement.points, QStringLiteral("line"), QColor("#1e88e5"), {}, view);
@@ -595,7 +622,7 @@ public:
             dots(painter, points, QColor(editor_.draft()->color), view);
         }
         if (guidesActive()) {
-            paintGuides(painter, view, pointer, editor_.guideOpacity);
+            paintGuides(painter, view, pointer, editor_.guideOpacity());
         }
     }
 
@@ -650,7 +677,7 @@ private:
         painter.setPen(Qt::NoPen);
         painter.setBrush(color);
         for (const auto &point : points) {
-            painter.drawEllipse(view.toScreen(point), editor_.radius, editor_.radius);
+            painter.drawEllipse(view.toScreen(point), editor_.radius(), editor_.radius());
         }
     }
     static QString lineLabel(const QPolygonF &points, const QString &title)
@@ -671,7 +698,7 @@ private:
             return;
         }
         const auto a = view.toScreen(points[0]), b = view.toScreen(points[1]);
-        painter.setPen(QPen(color, editor_.width));
+        painter.setPen(QPen(color, editor_.lineWidth()));
         painter.setBrush(Qt::NoBrush);
         if (type == QStringLiteral("range-circle")) {
             auto fill = color;
@@ -711,7 +738,7 @@ private:
         item.label = record.title;
         item.description = record.description;
         item.color = QColor(record.color);
-        item.lineWidth = editor_.width;
+        item.lineWidth = editor_.lineWidth();
         item.outlineStyle = Qt::SolidLine;
         item.properties = record.properties;
         item.properties.insert(QStringLiteral("ID"), record.id);
@@ -746,7 +773,7 @@ private:
     {
         const auto points = polygonVertices(editor_.draft()->geometry);
         for (int i = 0; i < 2; ++i) {
-            if (QLineF(view.toScreen(points[i]), event.pos()).length() <= editor_.radius + 5) {
+            if (QLineF(view.toScreen(points[i]), event.pos()).length() <= editor_.radius() + 5) {
                 Modal<QMenu> menu(&map);
                 auto *move = menu->addAction(uiIcon(UiIcon::Move), tr("Move"));
                 move->setObjectName(QStringLiteral("moveShapePoint"));
@@ -860,8 +887,8 @@ public:
                 action->setChecked(tool->activeMode(mode));
                 action->setToolTip(
                     shapeName(mode) +
-                    QStringLiteral(" (%1)").arg(QKeySequence(editor->keys[static_cast<size_t>(i)])
-                                                    .toString(QKeySequence::NativeText)));
+                    QStringLiteral(" (%1)").arg(
+                        QKeySequence(editor->key(i)).toString(QKeySequence::NativeText)));
             };
             connect(tool, &MapTool::changed, action, sync);
             connect(editor, &ObjectEditor::configurationChanged, action, sync);

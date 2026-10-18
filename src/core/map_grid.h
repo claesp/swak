@@ -20,6 +20,9 @@ struct GridStyle
 };
 // Reads a grid type record. Returns no value when GridTypes::validate rejects it.
 std::optional<GridStyle> gridStyle(const QJsonObject &type);
+// Formats a position as a UTM or MGRS reference, for system "utm" or "mgrs". Invalid input
+// gives an empty string. precision is the number of digits for each axis in MGRS.
+QString gridCoordinate(double latitude, double longitude, const QString &system, int precision = 3);
 void paintMapGrid(QPainter &painter,
                   const Viewport &view,
                   double opacity,

@@ -41,45 +41,60 @@ class RouteTool final : public MapTool
 {
 public:
     explicit RouteTool(QObject *parent) : MapTool(parent) {}
-    std::function<void(QPointF)> picked;
-    bool picking = false;
-    QPointer<QWidget> map;
+    void setObjects(UserObjects *objects)
+    {
+        objects_ = objects;
+    }
+    // Runs with the map coordinate of the next picked point.
+    void setPicked(std::function<void(QPointF)> picked)
+    {
+        picked_ = std::move(picked);
+    }
     // The provider attribution stays visible while the last planned route exists.
-    QString attribution;
-    QString routeId;
-    QPointer<UserObjects> objects;
+    void setAttribution(const QString &attribution)
+    {
+        attribution_ = attribution;
+    }
+    const QString &attribution() const
+    {
+        return attribution_;
+    }
+    void setRouteId(const QString &routeId)
+    {
+        routeId_ = routeId;
+    }
     void activate(QWidget &target) override
     {
-        picking = true;
+        picking_ = true;
         // The cross hair shows that the next map click sets a route point, as in Marker mode.
-        map = &target;
+        map_ = &target;
         target.setCursor(Qt::CrossCursor);
         target.setFocus(Qt::OtherFocusReason);
         emit overlayChanged();
     }
     bool guidesActive() const override
     {
-        return picking;
+        return picking_;
     }
     bool interactionActive() const override
     {
-        return picking;
+        return picking_;
     }
     bool cancel() override
     {
-        if (!picking) {
+        if (!picking_) {
             return false;
         }
-        picking = false;
-        if (map) {
-            map->unsetCursor();
+        picking_ = false;
+        if (map_) {
+            map_->unsetCursor();
         }
         emit overlayChanged();
         return true;
     }
     bool handle(QEvent &event, const Viewport &view, QWidget &) override
     {
-        if (!picking) {
+        if (!picking_) {
             return false;
         }
         if (event.type() == QEvent::KeyPress &&
@@ -95,8 +110,8 @@ public:
             const auto point = view.coordinate(static_cast<QMouseEvent &>(event).position());
             if (std::abs(point.x()) <= 180 && std::abs(point.y()) <= 85.051129) {
                 cancel();
-                if (picked) {
-                    picked(point);
+                if (picked_) {
+                    picked_(point);
                 }
             }
             return true;
@@ -105,12 +120,22 @@ public:
     }
     QStringList attributions() const override
     {
-        if (attribution.isEmpty() || routeId.isEmpty() || !objects || !objects->find(routeId)) {
+        if (attribution_.isEmpty() || routeId_.isEmpty() || !objects_ ||
+            !objects_->find(routeId_)) {
             return {};
         }
-        return {attribution};
+        return {attribution_};
     }
+
+private:
+    std::function<void(QPointF)> picked_;
+    bool picking_ = false;
+    QPointer<QWidget> map_;
+    QString attribution_;
+    QString routeId_;
+    QPointer<UserObjects> objects_;
 };
+
 class RoutePane final : public PaneContent,
                         public SettingsParticipant,
                         public SettingsWidgetProvider
@@ -121,7 +146,7 @@ public:
           tool_(new RouteTool(this))
     {
         setObjectName(QStringLiteral("routePlanner"));
-        tool_->objects = objects_;
+        tool_->setObjects(objects_);
         if (services.mapTools) {
             services.mapTools->add(tool_);
         }
@@ -167,13 +192,13 @@ public:
                 invalidate();
             });
             connect(endpoint.pick, &QToolButton::clicked, this, [this, i] {
-                tool_->picked = [this, i](QPointF point) {
+                tool_->setPicked([this, i](QPointF point) {
                     endpoints_[i].mapPoint = point;
                     refreshEndpoints();
                     endpoints_[i].choice->setCurrentIndex(
                         endpoints_[i].choice->findData(QStringLiteral("map")));
                     invalidate();
-                };
+                });
                 emit tool_->activationRequested();
             });
         }
@@ -537,7 +562,7 @@ private:
         }
         const auto error = objects_->put(item);
         if (error.isEmpty()) {
-            tool_->routeId = item.id;
+            tool_->setRouteId(item.id);
             emit tool_->changed();
         }
         return error;
@@ -619,8 +644,8 @@ private:
     void refreshAttribution()
     {
         const auto source = sources_.sources().value(sources_.activeId()).toObject();
-        tool_->attribution = source.value("attribution").toString();
-        attribution_->setText(tool_->attribution);
+        tool_->setAttribution(source.value("attribution").toString());
+        attribution_->setText(tool_->attribution());
         emit tool_->changed();
     }
     RouteSources &sources_;

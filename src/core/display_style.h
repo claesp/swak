@@ -1,4 +1,6 @@
 #pragma once
+#include "core/modern_colors.h"
+
 #include <QFont>
 #include <QObject>
 #include <QPalette>
@@ -31,17 +33,6 @@ struct DisplayFonts
 };
 // Loads the bundled fonts on the first call. Call it on the interface thread.
 const DisplayFonts &displayFonts();
-
-// Modern colors.
-namespace modern {
-inline constexpr QRgb Background = 0xff0a0a0f;
-inline constexpr QRgb Panel = 0xff12121c;
-inline constexpr QRgb Raised = 0xff1b1b28;
-inline constexpr QRgb Accent = 0xff00d4ff;
-inline constexpr QRgb Text = 0xffe8eaed;
-inline constexpr QRgb Dim = 0xff7d838c;
-inline constexpr QRgb Alert = 0xffff3b3b;
-} // namespace modern
 
 // Applies the display mode to the application: style, palette, font, and style sheet. Standard
 // restores the values from before the first change. The destructor also restores them, so a

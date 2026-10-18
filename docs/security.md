@@ -151,7 +151,7 @@ Area calculations use bounded numerical integration on a sphere. They do not pro
 
 # CoT servers and LAN peers
 
-One worker thread owns the CoT network sockets and parsers. It accepts at most 16 configured servers and 16 LAN peers. Each stream holds at most 64 KiB in the Qt receive buffer and 16 KiB in its XML frame reader. Each receive operation reads at most 16 KiB.
+One worker thread owns the CoT network sockets and parsers. It accepts at most 16 configured servers and 16 LAN peers. Each stream holds at most 64 KiB in the Qt receive buffer and 64 KiB in its XML frame reader. Each receive operation reads at most 64 KiB.
 
 Each processing pass stops after four milliseconds before it starts more receive work. A bounded receive operation can finish after that deadline. Each UDP operation handles at most 32 datagrams.
 

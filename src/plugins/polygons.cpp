@@ -94,11 +94,11 @@ public:
                      QKeySequence(key_).toString(QKeySequence::PortableText));
         if (!route()) {
             state.insert(QStringLiteral("areaShortcutVersion"), 3);
-            state.insert(QStringLiteral("fillOpacity"), fillOpacity);
+            state.insert(QStringLiteral("fillOpacity"), fillOpacity_);
         }
-        state.insert(QStringLiteral("vertexRadius"), radius);
-        state.insert(QStringLiteral("lineWidth"), lineWidth);
-        state.insert(QStringLiteral("guideOpacity"), guideOpacity);
+        state.insert(QStringLiteral("vertexRadius"), radius_);
+        state.insert(QStringLiteral("lineWidth"), lineWidth_);
+        state.insert(QStringLiteral("guideOpacity"), guideOpacity_);
         return state;
     }
     QString validateSettings(const QJsonObject &values) const override
@@ -115,10 +115,10 @@ public:
         if (!key_) {
             key_ = defaultKey();
         }
-        radius = preferenceNumber(values, QStringLiteral("vertexRadius"), 3, 1, 6);
-        lineWidth = preferenceNumber(values, QStringLiteral("lineWidth"), route() ? 3 : 2, 1, 6);
-        fillOpacity = preferenceNumber(values, QStringLiteral("fillOpacity"), 0.3, 0, 1);
-        guideOpacity = preferenceNumber(values, QStringLiteral("guideOpacity"), 0.5, 0, 1);
+        radius_ = preferenceNumber(values, QStringLiteral("vertexRadius"), 3, 1, 6);
+        lineWidth_ = preferenceNumber(values, QStringLiteral("lineWidth"), route() ? 3 : 2, 1, 6);
+        fillOpacity_ = preferenceNumber(values, QStringLiteral("fillOpacity"), 0.3, 0, 1);
+        guideOpacity_ = preferenceNumber(values, QStringLiteral("guideOpacity"), 0.5, 0, 1);
         restoreEditorState(values);
         emit configurationChanged();
     }
@@ -130,10 +130,27 @@ public:
     {
         return outline == Outline::Route;
     }
+    // Drawing values in logical pixels and opacities from 0 to 1.
+    double radius() const
+    {
+        return radius_;
+    }
+    double lineWidth() const
+    {
+        return lineWidth_;
+    }
+    double fillOpacity() const
+    {
+        return fillOpacity_;
+    }
+    double guideOpacity() const
+    {
+        return guideOpacity_;
+    }
     const Outline outline;
-    double radius = 3, lineWidth = 2, fillOpacity = 0.3, guideOpacity = 0.5;
 
 private:
+    double radius_ = 3, lineWidth_ = 2, fillOpacity_ = 0.3, guideOpacity_ = 0.5;
     int defaultKey() const
     {
         return QKeyCombination(Qt::ShiftModifier, route() ? Qt::Key_R : Qt::Key_A).toCombined();
@@ -226,7 +243,7 @@ public:
         if (editor_.route()) {
             return std::nullopt;
         }
-        return editor_.fillOpacity;
+        return editor_.fillOpacity();
     }
     bool guidesActive() const override
     {
@@ -487,7 +504,7 @@ public:
                 for (int wrap = -1; wrap <= 1 && !hit; ++wrap) {
                     auto line = screenPolygon(unwrappedRoute(points), view);
                     line.translate(wrap * view.scale(), 0);
-                    hit = lineDistance(line, pointer) <= editor_.lineWidth / 2 + 5;
+                    hit = lineDistance(line, pointer) <= editor_.lineWidth() / 2 + 5;
                 }
             } else {
                 hit = hit || points.containsPoint(view.toWorld(pointer), Qt::OddEvenFill);
@@ -559,7 +576,7 @@ public:
             lengthLabels(painter, measured, view);
         }
         if (guidesActive()) {
-            paintGuides(painter, view, pointer, editor_.guideOpacity);
+            paintGuides(painter, view, pointer, editor_.guideOpacity());
         }
     }
 
@@ -633,7 +650,7 @@ private:
     }
     bool near(QPointF a, QPointF b) const
     {
-        return std::hypot(a.x() - b.x(), a.y() - b.y()) <= editor_.radius + 5;
+        return std::hypot(a.x() - b.x(), a.y() - b.y()) <= editor_.radius() + 5;
     }
     void resetPointer()
     {
@@ -720,7 +737,8 @@ private:
               const QColor &color,
               bool restricted = false) const
     {
-        painter.setPen(QPen(color, editor_.lineWidth, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        painter.setPen(
+            QPen(color, editor_.lineWidth(), Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
         if (editor_.route()) {
             painter.setBrush(Qt::NoBrush);
             const auto line = screenPolygon(unwrappedRoute(points), view);
@@ -731,7 +749,7 @@ private:
         }
         const auto polygon = screenPolygon(points, view);
         auto fill = color;
-        fill.setAlpha(qRound(editor_.fillOpacity * 255));
+        fill.setAlpha(qRound(editor_.fillOpacity() * 255));
         painter.setBrush(polygon.size() >= 3 ? QBrush(fill) : Qt::NoBrush);
         if (polygon.size() >= 3) {
             painter.drawPolygon(polygon);
@@ -749,7 +767,7 @@ private:
         painter.setPen(Qt::NoPen);
         painter.setBrush(color);
         for (const auto &point : points) {
-            painter.drawEllipse(point, editor_.radius, editor_.radius);
+            painter.drawEllipse(point, editor_.radius(), editor_.radius());
         }
     }
     void vertexMenu(QContextMenuEvent &context, const Viewport &view, QWidget &map)
@@ -811,7 +829,7 @@ private:
         item.icon = uiIcon(editor_.route() ? UiIcon::Route : UiIcon::Area);
         item.description = record->description;
         item.color = QColor(record->color);
-        item.lineWidth = editor_.lineWidth;
+        item.lineWidth = editor_.lineWidth();
         item.outlineStyle = Qt::SolidLine;
         if (editor_.route()) {
             item.path.addPolygon(unwrappedRoute(points));

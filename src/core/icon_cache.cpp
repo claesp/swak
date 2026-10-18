@@ -17,6 +17,7 @@ bool serverIconPath(const QString &path)
     return pattern.match(path).hasMatch() && !path.startsWith(QStringLiteral("COT_MAPPING_")) &&
            !path.contains(QStringLiteral(".."));
 }
+namespace {
 // TAK Server lets every user read /api/icon/{uid}/{group}/{name}. The /api/iconimage
 // request needs the administrator role.
 QString iconRequestPath(const QString &path)
@@ -27,6 +28,7 @@ QString iconRequestPath(const QString &path)
     }
     return result;
 }
+} // namespace
 QImage decodeIcon(const QByteArray &bytes)
 {
     if (bytes.isEmpty() || bytes.size() > IconCache::MaxIconBytes) {

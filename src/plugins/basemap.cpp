@@ -21,7 +21,9 @@ public:
     }
     void paint(QPainter &painter, const Viewport &view, const Store &) const override
     {
-        painter.fillRect(QRectF(QPointF{}, view.size), QColor(MapBackgroundRgb));
+        // The map sets the background of its display mode in the view.
+        painter.fillRect(QRectF(QPointF{}, view.size),
+                         QColor(view.background ? view.background : MapBackgroundRgb));
     }
 };
 } // namespace swak

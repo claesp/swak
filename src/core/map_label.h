@@ -1,4 +1,6 @@
 #pragma once
+#include "core/modern_colors.h"
+
 #include <QPainter>
 
 #include <atomic>
@@ -46,8 +48,10 @@ paintMapLabel(QPainter &painter, QPointF baseline, const QString &text, bool sel
     const auto label = painter.fontMetrics().elidedText(text, Qt::ElideRight, 240);
     const auto bounds = mapLabelBounds(painter.fontMetrics(), baseline, text);
     if (mapLabelStyle() == MapLabelStyle::Modern) {
-        const QColor accent(0, 212, 255);
-        painter.setPen(QPen(QColor(0, 212, 255, selected ? 255 : 150), 1));
+        const QColor accent(modern::Accent);
+        auto border = accent;
+        border.setAlpha(selected ? 255 : 150);
+        painter.setPen(QPen(border, 1));
         painter.setBrush(selected ? accent : QColor(6, 10, 16, 200));
         painter.drawRect(bounds.adjusted(0.5, 0.5, -0.5, -0.5));
         if (!selected) {

@@ -1,7 +1,7 @@
 #include "core/map_hud.h"
 
 #include "core/display_style.h"
-#include "core/grid_types.h"
+#include "core/map_grid.h"
 
 #include <QRegularExpression>
 

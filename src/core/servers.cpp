@@ -1301,7 +1301,12 @@ private:
             }
         }
         for (int i = 0; i < MaxPeers && lan.listener->hasPendingConnections(); ++i) {
+            // The listener parents a pending socket. Take it from the listener before the
+            // unique_ptr owns it, so that only one owner remains.
             std::unique_ptr<QTcpSocket> socket(lan.listener->nextPendingConnection());
+            if (socket) {
+                socket->setParent(nullptr);
+            }
             if (!socket || !onLink(lan, socket->peerAddress())) {
                 continue;
             }

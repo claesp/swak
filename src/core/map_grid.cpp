@@ -125,9 +125,6 @@ void paintMapGrid(QPainter &painter,
     }
     painter.restore();
 }
-} // namespace swak
-
-namespace swak {
 QString gridCoordinate(double latitude, double longitude, const QString &system, int precision)
 {
     if (!std::isfinite(latitude) || !std::isfinite(longitude) || std::abs(latitude) > 90 ||

@@ -1856,4 +1856,4 @@ A GUI test that shows the OpenGL map, such as `modernMap` or `paneDragging`, pas
 
 # 2026-10-18: Full code review
 
-[Code review, October 18](review-2026-10-18.md) records a review of all first-party code at `58ceccf`. It has 2 P1, 20 P2, and many P3 findings, and a list of helpers that remove repeated code. The status section of the review lists the fix commits. All P1 and P2 findings, the dead code, and most repeated code are fixed. The review lists the P3 items that remain open.
+[Code review, October 18](review-2026-10-18.md) records a review of all first-party code at `58ceccf`. It has 2 P1, 20 P2, and many P3 findings, and a list of helpers that remove repeated code. The status section of the review lists the fix commits. All findings, the dead code, and most repeated code are fixed. The review lists the few notes that remain.

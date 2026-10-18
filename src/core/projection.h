@@ -1,5 +1,6 @@
 #pragma once
 #include <QPointF>
+#include <QRgb>
 #include <QSizeF>
 
 namespace swak {
@@ -9,6 +10,8 @@ struct Viewport
     QPointF center{0.5, 0.5};
     double zoom = 1;
     int markerScalePercent = 100;
+    // The map background of the current display mode. Zero means the Standard background.
+    QRgb background = 0;
     double markerSize(double baseSize) const;
     QPointF markerOffset(QPointF offset, double radius) const;
     QPointF screen(double latitude, double longitude) const;

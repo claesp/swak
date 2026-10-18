@@ -37,7 +37,7 @@ private:
     QList<SettingsPage> pages_;
     QList<QList<QWidget *>> editors_;
     std::function<QString()> save_;
-    QLabel *status_;
+    QLabel *status_ = nullptr;
     bool newProvider_ = false;
     QComboBox *providerChoice_ = nullptr;
 };

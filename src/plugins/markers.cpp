@@ -66,7 +66,7 @@ public:
         state.insert(QStringLiteral("createKey"),
                      QKeySequence(key_).toString(QKeySequence::PortableText));
         state.insert(QStringLiteral("radius"), radius_);
-        state.insert(QStringLiteral("color"), color_.name());
+        state.insert(QStringLiteral("color"), markerColor_.name());
         state.insert(QStringLiteral("guideOpacity"), guideOpacity_);
         return state;
     }
@@ -93,7 +93,7 @@ public:
         }
         const auto color =
             preferenceText(values, QStringLiteral("color"), QStringLiteral("#ffc857"), 7);
-        color_ = QColor::isValidColorName(color) ? QColor(color) : QColor("#ffc857");
+        markerColor_ = QColor::isValidColorName(color) ? QColor(color) : QColor("#ffc857");
         restoreEditorState(values);
         emit configurationChanged();
     }
@@ -103,7 +103,7 @@ public:
     }
     QColor color() const
     {
-        return color_;
+        return markerColor_;
     }
     double guideOpacity() const
     {
@@ -128,7 +128,7 @@ private:
     static constexpr int DefaultKey = QKeyCombination(Qt::ShiftModifier, Qt::Key_M).toCombined();
     int key_ = DefaultKey;
     double radius_ = 7;
-    QColor color_{"#ffc857"};
+    QColor markerColor_{"#ffc857"};
     double guideOpacity_ = 0.5;
 };
 class MarkerTool final : public MapTool

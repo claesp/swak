@@ -626,7 +626,7 @@ protected:
     }
     void applyDisplayMode()
     {
-        tiles_.setBackground(modern() ? qRgb(16, 22, 30) : MapBackgroundRgb);
+        tiles_.setBackground(modern() ? modern::MissingTile : MapBackgroundRgb);
         if (modern()) {
             hudClock_.start();
         } else {
@@ -702,6 +702,7 @@ protected:
                      1.0F);
         glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
         view_.size = size();
+        view_.background = background;
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, antialias_);
         paintContent(painter);
@@ -813,9 +814,12 @@ protected:
             const auto style =
                 modern()
                     ? QStringLiteral("QLabel { color: rgb(207,239,255); background-color: "
-                                     "rgba(6,10,16,%1); border: 1px solid rgba(0,212,255,90); "
+                                     "rgba(6,10,16,%1); border: 1px solid rgba(%2,%3,%4,90); "
                                      "padding: 4px; }")
                           .arg(qRound(std::max(attributionOpacity_, 0.7) * 255))
+                          .arg(qRed(modern::Accent))
+                          .arg(qGreen(modern::Accent))
+                          .arg(qBlue(modern::Accent))
                     : QStringLiteral("QLabel { color: white; background-color: rgba(16,32,44,%1);"
                                      " padding: 4px; }")
                           .arg(qRound(attributionOpacity_ * 255));

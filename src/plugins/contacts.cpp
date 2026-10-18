@@ -73,7 +73,7 @@ public:
                                              : error);
         });
         connect(table_, &QAbstractItemView::doubleClicked, this, [this](const QModelIndex &index) {
-            show(index.data(Qt::UserRole).toString());
+            showContact(index.data(Qt::UserRole).toString());
         });
         connect(table_, &QWidget::customContextMenuRequested, this, [this](QPoint position) {
             // A keyboard request has no row under the position. Use the current row then.
@@ -89,9 +89,9 @@ public:
             menu->setObjectName(QStringLiteral("contactMenu"));
             auto *show = menu->addAction(tr("Show on map"));
             show->setObjectName(QStringLiteral("showContact"));
-            show->setEnabled(position_(uid).has_value());
+            show->setEnabled(contactPosition(uid).has_value());
             connect(show, &QAction::triggered, this, [this, uid] {
-                this->show(uid);
+                showContact(uid);
             });
             if (chat_) {
                 auto *talk = menu->addAction(tr("Chat with"));
@@ -124,7 +124,7 @@ public:
     }
 
 private:
-    std::optional<QPointF> position_(const QString &uid) const
+    std::optional<QPointF> contactPosition(const QString &uid) const
     {
         const auto &events = store_.events();
         const auto found = std::find_if(events.cbegin(), events.cend(), [&uid](const Event &event) {
@@ -136,9 +136,9 @@ private:
         return project(found->latitude, found->longitude);
     }
     // Centers the map on a contact with a current position and selects it.
-    void show(const QString &uid)
+    void showContact(const QString &uid)
     {
-        const auto world = position_(uid);
+        const auto world = contactPosition(uid);
         if (!world) {
             status_->setText(tr("This contact has no current position."));
             return;
