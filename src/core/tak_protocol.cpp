@@ -11,7 +11,6 @@
 #include <algorithm>
 #include <cmath>
 #include <initializer_list>
-#include <limits>
 #include <tak_protocol.pb.h>
 
 namespace swak {

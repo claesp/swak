@@ -1,7 +1,6 @@
 #include "core/activity.h"
 
 #include <QAbstractItemModelTester>
-#include <QSignalSpy>
 #include <QSortFilterProxyModel>
 #include <QTest>
 
@@ -19,7 +18,6 @@ private slots:
                                         QAbstractItemModelTester::FailureReportingMode::QtTest);
         model.clear();
         model.restorePreferences({{QStringLiteral("capacity"), 3}});
-        QSignalSpy latest(&model, &ActivityModel::latest);
         configureLogging({});
         for (int i = 0; i < 10; ++i) {
             logMessage(
@@ -32,7 +30,6 @@ private slots:
                  QStringLiteral("7"));
         QCOMPARE(model.index(2, ActivityModel::MessageColumn).data().toString(),
                  QStringLiteral("9"));
-        QCOMPARE(latest.last().first().toString(), QStringLiteral("9"));
         QVERIFY(!loggingConfiguration().value(QStringLiteral("enabled")).toBool());
         logMessage(
             Severity::Info, Urgency::Routine, QStringLiteral("swak.test"), QStringLiteral("10"));

@@ -512,3 +512,5 @@ public:
 };
 } // namespace swak
 #include "missions.moc"
+
+#include <algorithm>

@@ -6,8 +6,6 @@
 
 #include <QCryptographicHash>
 #include <QDir>
-#include <QFileInfo>
-#include <QUrlQuery>
 
 #include <algorithm>
 #include <array>

@@ -12,7 +12,7 @@
 #include <QPointer>
 #include <QTransform>
 
-#include <cmath>
+#include <algorithm>
 
 namespace swak {
 namespace {
@@ -28,8 +28,8 @@ QTransform screenTransform(const Viewport &view)
     transform.translate(-view.center.x(), -view.center.y());
     return transform;
 }
-// Keeps the parsed drawings of one window. It parses an event only when the event changes,
-// so frames read the cache and never parse detail XML.
+// Keeps the parsed drawings of one window. It parses an event only when the event changes, so
+// a frame parses only the events that changed since the last frame.
 class DrawingTool final : public MapTool, public SettingsParticipant
 {
 public:

@@ -1,6 +1,5 @@
 #include "core/marker_symbols.h"
 
-#include <QObject>
 #include <QPainter>
 
 #include <algorithm>

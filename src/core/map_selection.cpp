@@ -4,7 +4,6 @@
 #include "core/marker_symbols.h"
 
 #include <QPainter>
-#include <QTextDocument>
 #include <QTextDocumentFragment>
 
 #include <algorithm>

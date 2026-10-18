@@ -14,7 +14,6 @@
 #include "core/ui_icons.h"
 
 #include <QContextMenuEvent>
-#include <QCursor>
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QKeySequence>
@@ -24,7 +23,7 @@
 #include <QTimer>
 #include <QUuid>
 
-#include <cmath>
+#include <algorithm>
 #include <utility>
 namespace swak {
 namespace {
@@ -208,7 +207,6 @@ public:
         mode_ = Mode::Placing;
         selection_.clear();
         store_.select({});
-        pointer_ = map.mapFromGlobal(QCursor::pos());
         map.setCursor(Qt::CrossCursor);
         emit changed();
     }
@@ -270,7 +268,6 @@ public:
             }
         }
         if (event.type() == QEvent::MouseMove) {
-            pointer_ = static_cast<QMouseEvent &>(event).position();
             if (mode_ != Mode::Idle) {
                 emit overlayChanged();
                 return true;
@@ -288,11 +285,11 @@ public:
             if (mouse.button() != Qt::LeftButton) {
                 return false;
             }
-            pointer_ = mouse.position();
             if (mode_ != Mode::Idle) {
-                const auto point = view.center + (pointer_ - QPointF(view.size.width() / 2,
-                                                                     view.size.height() / 2)) /
-                                                     view.scale();
+                const auto point =
+                    view.center +
+                    (mouse.position() - QPointF(view.size.width() / 2, view.size.height() / 2)) /
+                        view.scale();
                 if (!QRectF(0, 0, 1, 1).contains(point)) {
                     return true;
                 }
@@ -545,7 +542,6 @@ private:
     };
     Mode mode_ = Mode::Idle;
     UserObject moving_;
-    QPointF pointer_;
     QPointer<QWidget> map_;
     UserObjects &objects_;
     MapSelection &selection_;

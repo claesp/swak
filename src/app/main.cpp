@@ -11,7 +11,6 @@
 #include <QMessageBox>
 #include <QOffscreenSurface>
 #include <QOpenGLContext>
-#include <QPluginLoader>
 #include <QSurfaceFormat>
 
 #include <exception>

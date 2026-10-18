@@ -2,7 +2,6 @@
 #include "core/gdal_support.h"
 #include "core/interfaces.h"
 
-#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 

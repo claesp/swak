@@ -145,7 +145,7 @@ bool TakServerApi::validPluginName(const QString &name)
     static const QRegularExpression pattern(QStringLiteral("\\A[A-Za-z0-9._-]{1,64}\\z"));
     return pattern.match(name).hasMatch() && name != u"." && name != u"..";
 }
-// SWAK plugins call this API. The server tests cover it.
+// Plugin API in docs/plugin-api.md. No built-in plugin calls it yet. The server tests cover it.
 // cppcheck-suppress unusedFunction
 quint64 TakServerApi::submitPluginData(const QString &serverId,
                                        const QString &plugin,
@@ -169,7 +169,7 @@ quint64 TakServerApi::submitPluginData(const QString &serverId,
                         MaxPluginDataBytes,
                         60000);
 }
-// SWAK plugins call this API. The server tests cover it.
+// Plugin API in docs/plugin-api.md. No built-in plugin calls it yet. The server tests cover it.
 // cppcheck-suppress unusedFunction
 quint64 TakServerApi::requestPluginData(const QString &serverId,
                                         const QString &plugin,
@@ -185,7 +185,7 @@ void TakServerApi::cancel(quint64 id)
 {
     network_.cancel(id);
 }
-// TAK feature plugins and the server tests read the check result.
+// Plugin API in docs/plugin-api.md. No built-in plugin reads it yet. The server tests do.
 // cppcheck-suppress unusedFunction
 TakServerInfo TakServerApi::info(const QString &serverId) const
 {

@@ -298,3 +298,5 @@ public:
 };
 } // namespace swak
 #include "video.moc"
+
+#include <algorithm>

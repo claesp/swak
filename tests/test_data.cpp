@@ -9,6 +9,7 @@
 #include <QTcpServer>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QTimer>
 
 #include <algorithm>
 #include <archive.h>

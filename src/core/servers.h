@@ -60,7 +60,6 @@ public:
 signals:
     void changed();
     void statusChanged();
-    void managementRequested();
 
 private:
     void configure();

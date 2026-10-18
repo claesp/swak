@@ -15,7 +15,6 @@
 
 #include <QCollator>
 #include <QComboBox>
-#include <QDialogButtonBox>
 #include <QDockWidget>
 #include <QDoubleSpinBox>
 #include <QFormLayout>

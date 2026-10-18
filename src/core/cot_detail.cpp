@@ -144,8 +144,6 @@ bool writeDetail(QXmlStreamWriter &xml, const std::vector<CotElement> &elements)
     }
     return valid;
 }
-// Later TAK phases use this reader. The server tests cover it now.
-// cppcheck-suppress unusedFunction
 QString detailText(const std::vector<CotElement> &elements)
 {
     QString output;
@@ -204,7 +202,7 @@ QList<CotLink> links(const Event &event)
     }
     return result;
 }
-// Later TAK phases use this reader. The server tests cover it now.
+// Only the tests read destinations. They check the marti element that SWAK builds.
 // cppcheck-suppress unusedFunction
 QList<CotDestination> destinations(const Event &event)
 {
@@ -224,8 +222,6 @@ QList<CotDestination> destinations(const Event &event)
     }
     return result;
 }
-// Later TAK phases use this reader. The server tests cover it now.
-// cppcheck-suppress unusedFunction
 std::optional<CotEmergency> emergency(const Event &event)
 {
     const auto element = detailElement(event, u"emergency");
@@ -236,8 +232,6 @@ std::optional<CotEmergency> emergency(const Event &event)
                         element->text.left(256),
                         element->attribute(u"cancel").compare(u"true", Qt::CaseInsensitive) == 0};
 }
-// Later TAK phases use this reader. The server tests cover it now.
-// cppcheck-suppress unusedFunction
 std::optional<CotFileShare> fileShare(const Event &event)
 {
     const auto element = detailElement(event, u"fileshare");
@@ -260,8 +254,6 @@ std::optional<CotFileShare> fileShare(const Event &event)
     }
     return result;
 }
-// Later TAK phases use this reader. The server tests cover it now.
-// cppcheck-suppress unusedFunction
 std::optional<CotChat> chat(const Event &event)
 {
     const auto element = detailElement(event, u"__chat");
@@ -302,8 +294,6 @@ QString iconsetPath(const Event &event)
 {
     return attributeOf(detailElement(event, u"usericon"), u"iconsetpath").left(512);
 }
-// Later TAK phases use this reader. The server tests cover it now.
-// cppcheck-suppress unusedFunction
 std::optional<QColor> detailColor(const Event &event, QStringView name)
 {
     const auto element = detailElement(event, name);

@@ -15,6 +15,8 @@
 #include <algorithm>
 namespace swak {
 namespace {
+// Edge band in pixels where a drop adds the pane to that edge instead of a tab group.
+constexpr int DropEdge = 48;
 // Shows where a dragged pane docks.
 class DropIndicator final : public QWidget
 {

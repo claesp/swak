@@ -13,6 +13,7 @@
 #include <QPointer>
 #include <QSet>
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 namespace swak {

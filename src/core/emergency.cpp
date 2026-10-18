@@ -2,8 +2,6 @@
 
 #include "core/cot_detail.h"
 
-#include <QCoreApplication>
-
 #include <algorithm>
 
 namespace swak {

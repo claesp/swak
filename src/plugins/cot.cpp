@@ -3,11 +3,6 @@
 #include "core/interfaces.h"
 
 #include <QObject>
-#include <QRegularExpression>
-#include <QXmlStreamReader>
-#include <QXmlStreamWriter>
-
-#include <cmath>
 
 namespace swak {
 class CotPlugin final : public QObject, public Plugin, public Codec

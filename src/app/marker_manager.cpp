@@ -9,7 +9,6 @@
 #include <QCollator>
 #include <QComboBox>
 #include <QDialogButtonBox>
-#include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>

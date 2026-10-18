@@ -9,7 +9,6 @@
 #include <QDirIterator>
 #include <QFutureWatcher>
 #include <QImageReader>
-#include <QJsonArray>
 #include <QLineF>
 #include <QNetworkCacheMetaData>
 #include <QPainter>
@@ -549,7 +548,8 @@ void TileRenderer::setSource(MapProvider *provider,
         return;
     }
     if (dynamic_cast<RasterTileProvider *>(provider_)) {
-        // GDAL waits for network replies on the workers. It keeps its own disk cache. Each window keeps a separate directory.
+        // GDAL waits for network replies on the workers. It keeps its own disk cache under
+        // maps/gdal. All windows share that folder, without a lock between them.
         rasterCache_ = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) +
                        QStringLiteral("/maps/gdal");
         if (!QDir().mkpath(rasterCache_)) {

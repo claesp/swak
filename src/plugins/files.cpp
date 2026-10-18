@@ -219,9 +219,7 @@ private:
         offers_->setRowCount(static_cast<int>(offers.size()));
         for (int row = 0; row < offers.size(); ++row) {
             const auto &offer = offers.at(row);
-            auto *name = cell(offer.name);
-            name->setData(Qt::UserRole, row);
-            offers_->setItem(row, 0, name);
+            offers_->setItem(row, 0, cell(offer.name));
             offers_->setItem(row, 1, cell(offer.senderCallsign));
             offers_->setItem(row, 2, cell(sizeText(offer.size)));
             const auto state = offer.state == FileOffer::State::Offered

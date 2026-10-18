@@ -25,7 +25,6 @@
 #include <QToolBar>
 #include <QUuid>
 
-#include <algorithm>
 #include <array>
 #include <cmath>
 #include <functional>
@@ -57,7 +56,6 @@ QPolygonF screenPolygon(const QPolygonF &points, const Viewport &view)
     }
     return result;
 }
-// Distance from a point to the nearest segment of a screen polyline.
 class PolygonEditor final : public ObjectEditor, public SettingsParticipant
 {
 public:

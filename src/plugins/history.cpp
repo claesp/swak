@@ -199,3 +199,5 @@ private:
 };
 } // namespace swak
 #include "history.moc"
+
+#include <algorithm>

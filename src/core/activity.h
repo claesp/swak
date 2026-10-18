@@ -47,8 +47,6 @@ public:
     QJsonObject savePreferences() const override;
     void restorePreferences(const QJsonObject &values) override;
     void clear();
-signals:
-    void latest(const QString &message, bool error);
 
 private:
     void collect();

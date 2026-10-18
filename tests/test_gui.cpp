@@ -2929,10 +2929,14 @@ private slots:
         QCOMPARE(probed.count(), 1);
         delete probe;
         QTest::keyClick(&window, Qt::Key_F10);
-        QTRY_VERIFY(mainMenu->isVisible());
+        QVERIFY(QTest::qWaitFor([&] {
+            return mainMenu->isVisible();
+        }));
         QVERIFY(mainMenu->geometry().bottom() <= menuButton->mapToGlobal(QPoint(0, 0)).y());
         mainMenu->close();
-        QTRY_VERIFY(!mainMenu->isVisible());
+        QVERIFY(QTest::qWaitFor([&] {
+            return !mainMenu->isVisible();
+        }));
         // Without the command dock, the menu bar comes back.
         toolbar->toggleViewAction()->trigger();
         QVERIFY(!window.menuBar()->isHidden());
@@ -2953,7 +2957,9 @@ private slots:
         QVERIFY(editor->isVisible());
         QVERIFY(!window.menuBar()->isHidden());
         // The Standard toolbar has no menu button.
-        QTRY_VERIFY(!menuButton);
+        QVERIFY(QTest::qWaitFor([&] {
+            return !menuButton;
+        }));
         QVERIFY(!toolbar->actions().contains(mainMenu->menuAction()));
         QVERIFY(mainMenu->actions().isEmpty());
         // F10 does not open the menu in Standard.

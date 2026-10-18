@@ -53,7 +53,6 @@
 #include <QMouseEvent>
 #include <QScreen>
 #include <QScrollArea>
-#include <QScrollBar>
 #include <QShowEvent>
 #include <QSizeGrip>
 #include <QStatusBar>

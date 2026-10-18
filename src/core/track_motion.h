@@ -8,6 +8,8 @@
 #include <QPointF>
 #include <QSet>
 #include <QTimer>
+
+#include <optional>
 namespace swak {
 struct TrackKinematics
 {

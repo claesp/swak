@@ -3,10 +3,8 @@
 #include "core/projection.h"
 #include "core/settings.h"
 
-#include <QColor>
 #include <QPainterPath>
 #include <QThreadPool>
-#include <QTimer>
 
 #include <atomic>
 #include <memory>

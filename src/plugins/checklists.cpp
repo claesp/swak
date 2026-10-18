@@ -336,3 +336,5 @@ public:
 };
 } // namespace swak
 #include "checklists.moc"
+
+#include <algorithm>

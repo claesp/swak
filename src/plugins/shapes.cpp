@@ -339,7 +339,6 @@ public:
             }
         }
         if (event.type() == QEvent::MouseMove) {
-            pointer_ = static_cast<QMouseEvent &>(event).position();
             if (guidesActive()) {
                 emit overlayChanged();
                 return true;
@@ -352,8 +351,7 @@ public:
         }
         if (event.type() == QEvent::MouseButtonRelease &&
             static_cast<QMouseEvent &>(event).button() == Qt::LeftButton) {
-            pointer_ = static_cast<QMouseEvent &>(event).position();
-            const auto point = world(pointer_, view);
+            const auto point = world(static_cast<QMouseEvent &>(event).position(), view);
             if (drawing_) {
                 if (!QRectF(0, 0, 1, 1).contains(point)) {
                     return true;
@@ -789,7 +787,7 @@ private:
     std::optional<QPointF> first_;
     std::optional<UserObject> moving_;
     int movingPoint_ = -1;
-    QPointF pointer_, anchor_;
+    QPointF anchor_;
     Viewport view_;
     QPointer<QWidget> map_;
     QList<Measurement> measurements_;

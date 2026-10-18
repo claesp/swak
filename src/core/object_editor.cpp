@@ -101,7 +101,6 @@ ObjectEditor::ObjectEditor(UserObjects &objects, MarkerCollections &collections,
     layout->addLayout(colorLayout_);
     connect(collection_, &QComboBox::currentIndexChanged, this, [this] {
         refreshTypes({});
-        refreshColors();
         if (const auto symbol = collections_.symbol(collection_->currentData().toString(),
                                                     type_->currentData().toString())) {
             color_ = symbol->color.name();

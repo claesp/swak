@@ -13,14 +13,8 @@ class MapPanels final : public QMainWindow
 public:
     explicit MapPanels(QWidget *map);
     void track(QDockWidget *pane);
-    // Edge band in pixels where a drop adds the pane to that edge instead of a tab group.
-    static constexpr int DropEdge = 48;
     // Modern panes float with a margin over the map and paint rounded glass behind them.
     void setModern(bool modern);
-    bool modern() const
-    {
-        return modern_;
-    }
     // A widget that floats at the bottom center of the free map area, such as the main
     // toolbar in Modern. Null removes it. The panels do not own it.
     void setCommandDock(QWidget *dock);

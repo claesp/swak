@@ -3,9 +3,10 @@
 #include "core/logging.h"
 #include "core/map_label.h"
 
+#include <QColor>
 #include <QDateTime>
 #include <QDir>
-#include <QFontMetricsF>
+#include <QFontMetrics>
 #include <QFutureWatcher>
 #include <QGuiApplication>
 #include <QJsonArray>
@@ -16,6 +17,7 @@
 #include <QPainterPathStroker>
 #include <QPointer>
 #include <QRegularExpression>
+#include <QTimer>
 #include <QtConcurrentRun>
 
 #include <algorithm>

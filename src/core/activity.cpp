@@ -183,6 +183,5 @@ void ActivityModel::collect()
     beginInsertRows({}, rowCount(), rowCount() + static_cast<int>(received.size()) - 1);
     events_.append(received);
     endInsertRows();
-    emit latest(received.last().message, received.last().severity >= Severity::Error);
 }
 } // namespace swak

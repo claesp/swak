@@ -56,7 +56,7 @@ public:
     // Sends a delete to the receivers and stops sending the object.
     void stopSharing(const QString &id);
     // The error of the last failed send. Empty after a successful send.
-    // Tests and later status displays read it.
+    // Only the tests read it. The plugin shows the error that share() returns.
     // cppcheck-suppress unusedFunction
     const QString &lastError() const
     {

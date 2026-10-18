@@ -52,7 +52,7 @@ public:
     QString create(const QString &serverId,
                    CitrapReport report,
                    const QList<CitrapAttachment> &attachments);
-    // Sends a changed report, for example a new status. changed reports the result.
+    // Sends a changed report, for example a new status. updated reports the result.
     QString update(const QString &serverId, const CitrapReport &report);
 signals:
     void

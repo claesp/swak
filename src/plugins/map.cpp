@@ -3,12 +3,10 @@
 #include "core/grid_types.h"
 #include "core/interfaces.h"
 #include "core/map_decorations.h"
-#include "core/map_grid.h"
 #include "core/map_hud.h"
 #include "core/map_label.h"
 #include "core/map_selection.h"
 #include "core/map_tools.h"
-#include "core/marker_symbols.h"
 #include "core/measure.h"
 #include "core/menu_order.h"
 #include "core/modal.h"
@@ -29,7 +27,6 @@
 #include <QFocusEvent>
 #include <QFrame>
 #include <QHideEvent>
-#include <QJsonDocument>
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <QLabel>
@@ -44,7 +41,6 @@
 #include <QRegularExpression>
 #include <QResizeEvent>
 #include <QSet>
-#include <QStyle>
 #include <QToolBar>
 #include <QToolButton>
 #include <QUrl>

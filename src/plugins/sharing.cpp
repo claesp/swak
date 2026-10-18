@@ -227,3 +227,5 @@ public:
 };
 } // namespace swak
 #include "sharing.moc"
+
+#include <algorithm>

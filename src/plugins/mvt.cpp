@@ -3,9 +3,7 @@
 #include "core/maps.h"
 #include "core/vector_tiles.h"
 
-#include <QJsonArray>
 #include <QRegularExpression>
-#include <QSet>
 
 #include <algorithm>
 #include <cmath>
