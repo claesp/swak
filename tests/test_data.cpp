@@ -6,6 +6,7 @@
 #include <QPainter>
 #include <QPluginLoader>
 #include <QSignalSpy>
+#include <QTcpServer>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -270,6 +271,37 @@ private slots:
         }
         cancelled = true;
         QVERIFY(!format()->decode(point, cancelled).error.isEmpty());
+    }
+    void documentUrlsStayOffline()
+    {
+        // GML schema locations and GeoJSON CRS links name URLs. GDAL must not fetch them.
+        QTcpServer listener;
+        QVERIFY(listener.listen(QHostAddress::LocalHost, 0));
+        const auto base =
+            QByteArray("http://127.0.0.1:") + QByteArray::number(listener.serverPort());
+        const QByteArray gml =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+            "<wfs:FeatureCollection xmlns:wfs=\"http://www.opengis.net/wfs\" "
+            "xmlns:gml=\"http://www.opengis.net/gml\" "
+            "xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" "
+            "xmlns:t=\"http://example.com/t\" xsi:schemaLocation=\"http://example.com/t " +
+            base +
+            "/wfs?SERVICE=WFS&amp;VERSION=1.1.0&amp;REQUEST=DescribeFeatureType&amp;"
+            "TYPENAME=t:site\"><gml:featureMember><t:site><t:name>A</t:name><t:geom>"
+            "<gml:Point><gml:pos>59 18</gml:pos></gml:Point></t:geom></t:site>"
+            "</gml:featureMember></wfs:FeatureCollection>";
+        const QByteArray geojson =
+            "{\"type\":\"FeatureCollection\",\"crs\":{\"type\":\"link\",\"properties\":"
+            "{\"href\":\"" +
+            base +
+            "/crs\",\"type\":\"proj4\"}},\"features\":[{\"type\":\"Feature\","
+            "\"properties\":{\"name\":\"A\"},\"geometry\":{\"type\":\"Point\","
+            "\"coordinates\":[18,59]}}]}";
+        std::atomic_bool cancelled = false;
+        for (const auto &document : {gml, geojson}) {
+            static_cast<void>(format()->decode(document, cancelled));
+            QVERIFY2(!listener.waitForNewConnection(100), document.left(60));
+        }
     }
     void metadataAndSelection()
     {

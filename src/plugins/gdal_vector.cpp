@@ -388,6 +388,8 @@ DataDocument readDataset(const QString &path, const std::atomic_bool &cancelled)
     }
     initializeGdal();
     CPLErrorReset();
+    // The block outlives the dataset, which can fetch while it reads or closes.
+    const GdalNetworkBlock network;
     GdalDataset dataset(GDALDataset::FromHandle(GDALOpenEx(path.toUtf8().constData(),
                                                            GDAL_OF_VECTOR | GDAL_OF_READONLY,
                                                            gdalVectorDrivers().data(),

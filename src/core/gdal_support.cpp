@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cpl_conv.h>
 #include <cpl_error.h>
+#include <cpl_http.h>
 #include <cpl_vsi.h>
 #include <cstring>
 #include <gdal.h>
@@ -50,6 +51,8 @@ void initializeGdal()
         CPLSetConfigOption("GDAL_HTTP_MAX_RETRY", "1");
         CPLSetConfigOption("GDAL_HTTP_USERAGENT", "SWAK/0.1 GDAL client");
         CPLSetConfigOption("CPL_VSIL_CURL_CACHE_SIZE", "16777216");
+        // GML would otherwise download the WFS schema that a document names.
+        CPLSetConfigOption("GML_DOWNLOAD_WFS_SCHEMA", "NO");
         // These drivers run programs, open database connections, or fetch any URL.
         CPLSetConfigOption("GDAL_SKIP",
                            "GPSBabel HTTP PG PostGISRaster MySQL ODBC PGeo MSSQLSpatial OGDI "
@@ -58,6 +61,25 @@ void initializeGdal()
         CPLSetErrorHandler(routeGdalError);
         GDALAllRegister();
     });
+}
+namespace {
+CPLHTTPResult *refuseFetch(
+    const char *, CSLConstList, GDALProgressFunc, void *, CPLHTTPFetchWriteFunc, void *, void *)
+{
+    auto *result = static_cast<CPLHTTPResult *>(CPLCalloc(1, sizeof(CPLHTTPResult)));
+    result->nStatus = 1;
+    result->pszErrBuf = CPLStrdup("SWAK does not fetch URLs from data documents.");
+    return result;
+}
+} // namespace
+GdalNetworkBlock::GdalNetworkBlock() : pushed_(CPLHTTPPushFetchCallback(refuseFetch, nullptr) != 0)
+{
+}
+GdalNetworkBlock::~GdalNetworkBlock()
+{
+    if (pushed_) {
+        CPLHTTPPopFetchCallback();
+    }
 }
 namespace {
 std::mutex shutdownMutex;

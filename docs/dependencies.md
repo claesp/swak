@@ -9,6 +9,7 @@ GDAL runs in the application process. The user selected this design. docs/qualit
 SWAK limits what GDAL can reach. `initializeGdal` in src/core/gdal_support.cpp sets these limits once:
 
 - Removed drivers: drivers that run programs, open database connections, or fetch any URL. GPSBabel, HTTP, PostgreSQL, MySQL, ODBC, and the cloud service drivers are examples.
+- Vector reads: a thread-local `CPLHTTPPushFetchCallback` refuses every GDAL HTTP request while SWAK opens and reads vector data. Remote raster sources still use GDAL HTTP.
 - Allowed drivers: each open call names a fixed list of file format drivers. The vector list excludes VRT, which can open other files.
 - Files: GDAL writes no `.aux.xml` sidecar files and does not scan directories on open.
 - Memory: the raster block cache is 64 MiB. One GeoJSON object can use at most 16 MiB.

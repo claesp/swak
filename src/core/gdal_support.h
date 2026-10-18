@@ -31,6 +31,20 @@ struct GdalShutdownGuard final
     GdalShutdownGuard(const GdalShutdownGuard &) = delete;
     GdalShutdownGuard &operator=(const GdalShutdownGuard &) = delete;
 };
+// Refuses every HTTP request that GDAL makes on this thread while the object exists. Vector
+// documents can name URLs, for example a GML schema or a GeoJSON CRS link, and the allowed
+// drivers would fetch them. Create one around each vector open and read.
+class GdalNetworkBlock final
+{
+public:
+    GdalNetworkBlock();
+    ~GdalNetworkBlock();
+    GdalNetworkBlock(const GdalNetworkBlock &) = delete;
+    GdalNetworkBlock &operator=(const GdalNetworkBlock &) = delete;
+
+private:
+    bool pushed_ = false;
+};
 // Drivers that may read downloaded or user-selected files. The list excludes drivers that
 // open other files, run programs, or contact servers on their own.
 const std::vector<const char *> &gdalVectorDrivers();

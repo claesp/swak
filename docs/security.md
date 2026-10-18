@@ -83,7 +83,7 @@ Each built-in plugin declares its API, roles, requirements, and permissions in a
 
 Data Providers adds HTTPS feeds, local files, and archives. GDAL decodes them in the application process. Read [Data providers](data-providers.md) for request isolation, cancellation, archive limits, and supported content. Feed descriptions and linked resources never execute or load automatically.
 
-GDAL is a large native boundary. A memory fault in a GDAL driver can stop SWAK. The user accepted this risk on October 5, 2026. SWAK removes drivers that run programs, contact databases, or fetch any URL. Each open call names a fixed list of file format drivers. Read `docs/dependencies.md` for the full list of GDAL limits.
+GDAL is a large native boundary. A memory fault in a GDAL driver can stop SWAK. The user accepted this risk on October 5, 2026. SWAK removes drivers that run programs, contact databases, or fetch any URL. Each open call names a fixed list of file format drivers. The allowed drivers can still fetch URLs that a document names, such as a GML schema location or a GeoJSON CRS link. SWAK refuses every GDAL HTTP request on the reading thread while it opens and reads vector data. It also sets `GML_DOWNLOAD_WFS_SCHEMA=NO`. Read `docs/dependencies.md` for the full list of GDAL limits.
 
 SWAK checks input before GDAL reads it. It rejects XML document type declarations, unsafe archive paths, and archives with more than one dataset. After GDAL reads the data, SWAK limits features, coordinates, properties, and retained metadata. It also rejects coordinates outside the valid longitude and latitude ranges.
 
