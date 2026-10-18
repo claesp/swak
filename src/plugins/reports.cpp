@@ -16,19 +16,42 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
+#include <QFutureWatcher>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPlainTextEdit>
+#include <QPointer>
 #include <QPushButton>
 #include <QTableWidget>
 #include <QVBoxLayout>
+#include <QtConcurrentRun>
 
 namespace swak {
 namespace {
 static_assert(MaxCitrapAttachmentBytes <= MaxRegularFileBytes,
               "readRegularFile must accept the attachment limit.");
+struct AttachmentFiles
+{
+    QList<CitrapAttachment> attachments;
+    QString error;
+};
+// Reads report attachments. It uses only its argument, so a worker thread can run it.
+AttachmentFiles readAttachments(const QStringList &paths)
+{
+    AttachmentFiles result;
+    for (const auto &path : paths) {
+        const auto file = readRegularFile(path, MaxCitrapAttachmentBytes);
+        if (!file.error.isEmpty()) {
+            result.error = file.error;
+            result.attachments.clear();
+            return result;
+        }
+        result.attachments.append({QFileInfo(path).fileName(), file.bytes});
+    }
+    return result;
+}
 class ReportsPane final : public QWidget, public PreferenceParticipant
 {
 public:
@@ -225,7 +248,12 @@ private:
         auto *addFile = new QPushButton(tr("Add File ..."), dialog.get());
         addFile->setObjectName(QStringLiteral("addReportFile"));
         connect(addFile, &QPushButton::clicked, dialog.get(), [files, &dialog] {
+            // The file dialog runs the event loop, so the report dialog can be deleted in it.
+            const QPointer<QListWidget> list(files);
             const auto paths = QFileDialog::getOpenFileNames(dialog.get(), tr("Attachments"));
+            if (!list) {
+                return;
+            }
             for (const auto &path : paths) {
                 if (files->count() < MaxCitrapAttachments) {
                     files->addItem(path);
@@ -243,15 +271,9 @@ private:
         if (dialog->exec() != QDialog::Accepted || !dialog || !citrap_) {
             return;
         }
-        QList<CitrapAttachment> attachments;
+        QStringList paths;
         for (int row = 0; row < files->count(); ++row) {
-            const auto path = files->item(row)->text();
-            const auto file = readRegularFile(path, MaxCitrapAttachmentBytes);
-            if (!file.error.isEmpty()) {
-                showStatus(file.error);
-                return;
-            }
-            attachments.append({QFileInfo(path).fileName(), file.bytes});
+            paths.append(files->item(row)->text());
         }
         CitrapReport report;
         report.title = title->text();
@@ -261,6 +283,31 @@ private:
         report.latitude = latitude->value();
         report.longitude = longitude->value();
         report.time = QDateTime::currentDateTimeUtc();
+        if (paths.isEmpty()) {
+            send(serverId, report, {});
+            return;
+        }
+        // Up to eight attachments of 16 MiB read on a worker. The report is sent after that.
+        showStatus(tr("Reading the attachments…"));
+        auto *watcher = new QFutureWatcher<AttachmentFiles>(this);
+        connect(watcher, &QFutureWatcherBase::finished, this, [this, watcher, serverId, report] {
+            watcher->deleteLater();
+            const auto read = watcher->result();
+            if (!read.error.isEmpty()) {
+                showStatus(read.error);
+                return;
+            }
+            send(serverId, report, read.attachments);
+        });
+        watcher->setFuture(QtConcurrent::run(readAttachments, paths));
+    }
+    void send(const QString &serverId,
+              const CitrapReport &report,
+              const QList<CitrapAttachment> &attachments)
+    {
+        if (!citrap_) {
+            return;
+        }
         const auto error = citrap_->create(serverId, report, attachments);
         showStatus(error.isEmpty() ? tr("Sending the report…") : error);
     }

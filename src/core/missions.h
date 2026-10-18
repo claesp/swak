@@ -64,6 +64,8 @@ struct MissionSubscription
     int objects = 0;
     QDateTime updated;
     QString status;
+    // Counts reloads. A reply from an older reload is stale and changes nothing.
+    quint64 generation = 0;
     bool editable() const
     {
         return role != Role::ReadOnly;
@@ -161,7 +163,7 @@ private:
     QList<std::pair<QByteArray, QByteArray>>
     authorization(const MissionSubscription &mission) const;
     void receiveChange(const QString &serverId, const QString &name);
-    void loadEvents(const QString &serverId, const QString &name, const QByteArray &xml);
+    void loadEvents(const QString &serverId, const QString &name, QList<Event> events);
     void showEvents(const MissionSubscription &mission);
     void hideEvents(const MissionSubscription &mission);
     QString clientUid() const;

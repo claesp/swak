@@ -667,8 +667,11 @@ void ServerBrowser::enroll()
     options.port = port->value();
     options.keyFile = keyChoice->currentIndex() == 1 ? keyFile->text().trimmed() : QString{};
     options.clientUid = servers_.senderUid();
-    const auto error = enrollment_->start(std::move(options));
-    showEnrollStatus(error);
+    // start reports progress at once. Show its result only for an error, so that the first
+    // progress message stays visible.
+    if (const auto error = enrollment_->start(std::move(options)); !error.isEmpty()) {
+        showEnrollStatus(error);
+    }
     enroll_->setEnabled(!enrollment_->running());
 }
 void ServerBrowser::status()

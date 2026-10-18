@@ -7,6 +7,7 @@
 #include "swak/version.h"
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -150,6 +151,20 @@ bool writePrivateFile(const QString &path, const QByteArray &bytes)
         return false;
     }
     return QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+}
+// The certificate folder of a server entry. A profile can hold any server identifier, so
+// only a plain identifier names the folder. Others, such as "..", use a hash.
+QString enrollmentFolder(const QString &serverId)
+{
+    static const QRegularExpression plain(QStringLiteral("\\A[A-Za-z0-9_-]{1,64}\\z"));
+    if (plain.match(serverId).hasMatch()) {
+        return serverId;
+    }
+    return QStringLiteral("server-") +
+           QString::fromLatin1(
+               QCryptographicHash::hash(serverId.toUtf8(), QCryptographicHash::Sha256)
+                   .toHex()
+                   .left(32));
 }
 } // namespace
 
@@ -426,8 +441,9 @@ NetworkRequest TakEnrollment::serviceRequest(const QString &path) const
     request.expectedPort = options_.port;
     request.maxBytes = MaxReplyBytes;
     request.headers = {{"Authorization", authorization()}};
-    // The enrollment port needs no client certificate. It uses only the CA of the entry.
-    request.tls.ca = readTlsFiles(entry).ca;
+    // The enrollment port needs no client certificate. It uses only the CA of the entry. An
+    // unreadable CA file fails the request with its own error.
+    request.tls = readTlsAuthority(entry);
     return request;
 }
 QString TakEnrollment::replyError(const NetworkReply &reply, const QString &statusText)
@@ -447,7 +463,7 @@ void TakEnrollment::store(const EnrollmentResult &result)
         return;
     }
     // A private directory protects the files while they are written.
-    const auto folder = QDir(directory_).filePath(QString(options_.serverId).replace('/', '_'));
+    const auto folder = QDir(directory_).filePath(enrollmentFolder(options_.serverId));
     if (!QDir().mkpath(folder) ||
         !QFile::setPermissions(
             folder, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner)) {

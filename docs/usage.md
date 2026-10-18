@@ -381,7 +381,7 @@ Right-click a saved circle or line to select Edit, Move, or Delete. During editi
 
 Esc cancels a pending move. Delete and Backspace delete the selected saved object. Ctrl+Z restores a deleted object.
 
-The toolbar and Tools > Plugins provide the same creation actions. File > Settings > Keybindings configures C, D, and L. The Circle and line tools section controls line width, control-point size, measurement duration, and fade time.
+The toolbar and Tools > Plugins provide the same creation actions. File > Settings > Keybindings configures C, D, and L. The Circle and line tools section controls line width, control-point size, guide opacity, measurement duration, and fade time.
 
 Circles remain circular on the projected map. Their area estimate integrates a 128-point boundary over a spherical Earth. Distance uses the shortest spherical surface distance and ignores elevation. Lines wrap across the date line, but their straight map segment approximates the surface path. These values are estimates for map work. Circles must remain inside the projected world.
 

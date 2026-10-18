@@ -28,4 +28,7 @@ struct TlsFiles
 // Reads the ca, certificate, key, and passwordEnv fields of a server entry. Each file is a
 // regular file of at most 64 KiB. The password never enters the profile.
 TlsFiles readTlsFiles(const QJsonObject &source);
+// Reads only the CA file of an entry, for a connection without a client certificate, such as
+// enrollment. An unreadable CA file sets error.
+TlsFiles readTlsAuthority(const QJsonObject &source);
 } // namespace swak

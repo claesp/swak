@@ -665,8 +665,14 @@ protected:
         if (!tilesPainted) {
             paintBase();
         }
-        if (overlay_) {
-            overlay_->update();
+        // The overlay follows the view only while a tool draws on it. One more update clears it
+        // after the tool ends.
+        if (overlay_ && tools_) {
+            const bool active = tools_->overlayActive();
+            if (active || overlayActive_) {
+                overlay_->update();
+            }
+            overlayActive_ = active;
         }
         if (tools_) {
             tools_->paint(painter, view_);
@@ -731,6 +737,19 @@ protected:
         if (tools_) {
             credits.append(tools_->attributions());
         }
+        // Rebuilding the label parses links and lays out text. Do it only when an input changes.
+        const AttributionInputs inputs{credits, freeArea(), modern(), attributionOpacity_};
+        if (inputs != attributionInputs_) {
+            attributionInputs_ = inputs;
+            updateAttribution(credits);
+        }
+        if (hasFocus()) {
+            painter.setPen(QPen(QColor("#5fd6ff"), 2));
+            painter.drawRect(rect().adjusted(1, 1, -2, -2));
+        }
+    }
+    void updateAttribution(const QStringList &credits)
+    {
         attribution_->setVisible(!credits.isEmpty());
         if (!credits.isEmpty()) {
             QString text;
@@ -812,10 +831,6 @@ protected:
                                       area.bottom() + 1 - 8 - panelHeight,
                                       panelWidth,
                                       panelHeight);
-        }
-        if (hasFocus()) {
-            painter.setPen(QPen(QColor("#5fd6ff"), 2));
-            painter.drawRect(rect().adjusted(1, 1, -2, -2));
         }
     }
     void mousePressEvent(QMouseEvent *event) override
@@ -1485,6 +1500,21 @@ private:
     QPointer<QDialog> information_;
     QByteArray informationGeometry_;
     ToolOverlay *overlay_ = nullptr;
+    bool overlayActive_ = false;
+    // The inputs of the last attribution label.
+    struct AttributionInputs
+    {
+        QStringList credits;
+        QRect area;
+        bool modern = false;
+        double opacity = -1;
+        bool operator==(const AttributionInputs &other) const
+        {
+            return credits == other.credits && area == other.area && modern == other.modern &&
+                   opacity == other.opacity;
+        }
+    };
+    AttributionInputs attributionInputs_;
     MapTools *tools_ = nullptr;
     MapSources *sources_ = nullptr;
     QJsonObject activeSource_;

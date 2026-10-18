@@ -24,6 +24,7 @@
 #include <QListWidget>
 #include <QLocale>
 #include <QMenu>
+#include <QPointer>
 #include <QPushButton>
 #include <QSaveFile>
 #include <QSplitter>
@@ -273,11 +274,13 @@ public:
                         showStatus(error);
                         return;
                     }
+                    // The file dialog runs the event loop, so the pane can be deleted in it.
+                    const QPointer self(this);
                     const auto path = QFileDialog::getSaveFileName(this,
                                                                    tr("Export Mission"),
                                                                    name + QStringLiteral(".zip"),
                                                                    tr("Zip archives (*.zip)"));
-                    if (path.isEmpty()) {
+                    if (!self || path.isEmpty()) {
                         return;
                     }
                     QSaveFile file(path);

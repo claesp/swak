@@ -13,6 +13,7 @@
 #include <QJsonObject>
 
 #include <algorithm>
+#include <limits>
 #include <memory>
 
 namespace swak {
@@ -79,6 +80,13 @@ QVariant Contacts::data(const QModelIndex &index, int role) const
         return plainToolTip(QStringList{contact.uid, contact.endpoint, contact.device}
                                 .join(QLatin1Char('\n'))
                                 .trimmed());
+    }
+    if (role == SortRole) {
+        if (index.column() == ReportColumn) {
+            return contact.lastReport.isValid() ? contact.lastReport.toMSecsSinceEpoch()
+                                                : std::numeric_limits<qint64>::min();
+        }
+        return data(index, Qt::DisplayRole);
     }
     if (role != Qt::DisplayRole) {
         return {};

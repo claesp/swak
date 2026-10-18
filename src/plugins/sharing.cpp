@@ -13,6 +13,7 @@
 #include <QListWidget>
 #include <QMenu>
 #include <QMessageBox>
+#include <QPointer>
 #include <QPushButton>
 #include <QVBoxLayout>
 
@@ -160,11 +161,15 @@ public:
                             return;
                         }
                         auto recipients = sharing_->recipients(id);
-                        // The modal dialog runs the event loop, so the service can die in it.
-                        // cppcheck-suppress knownConditionTrueFalse
-                        if (chooseRecipients(parent, contacts_, title, &recipients) && sharing_) {
-                            showError(parent, sharing_->share(id, recipients));
+                        // The modal dialog runs the event loop. This tool, its service, and the
+                        // parent can be deleted in it.
+                        const QPointer self(this);
+                        const QPointer<QWidget> owner(parent);
+                        const bool chosen = chooseRecipients(parent, contacts_, title, &recipients);
+                        if (!chosen || !self || !sharing_) {
+                            return;
                         }
+                        showError(owner, sharing_->share(id, recipients));
                     },
                     Qt::QueuedConnection);
             });

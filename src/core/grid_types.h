@@ -1,4 +1,5 @@
 #pragma once
+#include "core/map_grid.h"
 #include "core/projection.h"
 #include "core/settings.h"
 
@@ -49,6 +50,8 @@ private:
     QString selected_ = QStringLiteral("geographic");
     QString lastSelected_ = QStringLiteral("geographic");
     bool restored_ = false;
+    std::optional<GridStyle> selectedStyle_;
+    void refreshStyle();
 };
 QString gridCoordinate(double latitude, double longitude, const QString &system, int precision = 3);
 } // namespace swak

@@ -10,6 +10,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QSaveFile>
+#include <QSet>
 
 namespace swak {
 namespace {
@@ -100,6 +101,7 @@ PackageImportResult importDataPackage(const DataPackage &package,
         return folderReady;
     };
     // Write every file first, so the parts of a shapefile exist before its feed starts.
+    QSet<QString> unwritten;
     for (const auto &entry : package.entries) {
         const auto suffix = QFileInfo(entry.path).suffix().toLower();
         if (cotFile(entry, suffix)) {
@@ -116,6 +118,7 @@ PackageImportResult importDataPackage(const DataPackage &package,
         }
         if (const auto error = writeFile(folder, entry); !error.isEmpty()) {
             result.errors.append(error);
+            unwritten.insert(entry.path);
         }
     }
     int index = 0;
@@ -125,6 +128,10 @@ PackageImportResult importDataPackage(const DataPackage &package,
         const auto name =
             QStringLiteral("%1: %2").arg(title, QFileInfo(entry.path).fileName()).left(100);
         const auto path = QFileInfo(QDir(folder).filePath(entry.path)).absoluteFilePath();
+        // A file that failed to write has no feed or map. Its error is in the result already.
+        if (unwritten.contains(entry.path)) {
+            continue;
+        }
         if (cotFile(entry, suffix)) {
             const auto decoded = decodeCot(entry.bytes);
             const auto item = decoded.event ? localObjectFromCot(*decoded.event) : std::nullopt;

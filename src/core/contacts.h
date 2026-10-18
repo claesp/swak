@@ -47,6 +47,8 @@ public:
         ReportColumn,
         ColumnCount
     };
+    // Sorts the report column by time, not by its local text. Other columns sort by text.
+    static constexpr int SortRole = Qt::UserRole + 1;
     Contacts(Store &store, Servers *servers, TakServerApi *api, QObject *parent = nullptr);
     int rowCount(const QModelIndex &parent = {}) const override;
     int columnCount(const QModelIndex &parent = {}) const override;

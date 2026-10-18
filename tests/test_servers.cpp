@@ -4,6 +4,7 @@
 #include "core/cot.h"
 #include "core/cot_detail.h"
 #include "core/cot_stream.h"
+#include "core/data.h"
 #include "core/data_feeds.h"
 #include "core/data_package.h"
 #include "core/emergency.h"
@@ -651,6 +652,26 @@ private slots:
             },
             5000));
         server.hold = false;
+        QTest::qWait(300);
+        QVERIFY(!called);
+        // A reply that the worker already queued does not run its callback after cancel. A
+        // closed port fails at once in the worker. The test blocks the event loop meanwhile.
+        quint16 closedPort = 0;
+        {
+            QTcpServer probe;
+            QVERIFY(probe.listen(QHostAddress::LocalHost, 0));
+            closedPort = probe.serverPort();
+        }
+        auto refused = localRequest(server, QStringLiteral("/refused"));
+        refused.url.setPort(closedPort);
+        refused.expectedPort = closedPort;
+        QObject requester;
+        const auto queued = client.send(refused, &requester, [&called](const NetworkReply &) {
+            called = true;
+        });
+        QVERIFY(queued);
+        QTest::qSleep(1000);
+        client.cancel(queued);
         QTest::qWait(300);
         QVERIFY(!called);
         // Destruction with a pending request joins the worker without a callback.
@@ -1561,6 +1582,13 @@ private slots:
         QVERIFY(enrollment.start(options).isEmpty());
         QVERIFY(finished.wait(10000));
         QVERIFY(finished.last().first().toString().contains(QStringLiteral("TLS")));
+        // An unreadable CA file reports itself, not a TLS failure.
+        v.insert(QStringLiteral("ca"), directory.filePath(QStringLiteral("missing-ca.pem")));
+        QVERIFY(servers.put(QStringLiteral("tak/1"), v).isEmpty());
+        QVERIFY(enrollment.start(options).isEmpty());
+        QVERIFY(finished.wait(10000));
+        QVERIFY2(finished.last().first().toString().contains(QStringLiteral("CA file")),
+                 qPrintable(finished.last().first().toString()));
         v.insert(QStringLiteral("ca"), cert.fileName());
         QVERIFY(servers.put(QStringLiteral("tak/1"), v).isEmpty());
         QVERIFY(enrollment.start(options).isEmpty());
@@ -1581,6 +1609,10 @@ private slots:
         const auto keyPath = updated.value(QStringLiteral("key")).toString();
         const auto certPath = updated.value(QStringLiteral("certificate")).toString();
         QVERIFY(keyPath.startsWith(directory.path()));
+        // An identifier with a slash names the folder through a hash.
+        QCOMPARE(QFileInfo(QFileInfo(keyPath).path()).path(), directory.path());
+        QVERIFY(
+            QFileInfo(QFileInfo(keyPath).path()).fileName().startsWith(QStringLiteral("server-")));
         QCOMPARE(updated.value(QStringLiteral("ca")).toString(), cert.fileName());
         QCOMPARE(QFile::permissions(keyPath) & 0x0077, QFileDevice::Permissions{});
         QCOMPARE(QFile::permissions(QFileInfo(keyPath).path()),
@@ -1617,6 +1649,22 @@ private slots:
         enrollment.cancel();
         QCOMPARE(finished.last().first().toString(), QStringLiteral("Enrollment cancelled."));
         QVERIFY(!enrollment.running());
+        // A crafted identifier, such as "..", cannot put the files outside the folder.
+        enroll.hold = false;
+        QVERIFY(servers.put(QStringLiteral(".."), v).isEmpty());
+        auto parent = options;
+        parent.serverId = QStringLiteral("..");
+        parent.keyFile.clear();
+        QVERIFY(enrollment.start(parent).isEmpty());
+        QVERIFY(finished.wait(20000));
+        QVERIFY2(finished.last().first().toString().isEmpty(),
+                 qPrintable(finished.last().first().toString()));
+        const auto crafted = servers.sources()
+                                 .value(QStringLiteral(".."))
+                                 .toObject()
+                                 .value(QStringLiteral("key"))
+                                 .toString();
+        QCOMPARE(QFileInfo(QFileInfo(crafted).path()).path(), directory.path());
         options.username = QStringLiteral("a:b");
         QVERIFY(!enrollment.start(options).isEmpty());
         options.username = QStringLiteral("alice");
@@ -1908,6 +1956,11 @@ private slots:
                  QStringLiteral("Test"));
         QCOMPARE(contacts.index(1, Contacts::ReportColumn).data().toString(),
                  QStringLiteral("No current position"));
+        // The report column sorts by time. A contact without a report sorts first.
+        QCOMPARE(contacts.index(1, Contacts::ReportColumn).data(Contacts::SortRole).toLongLong(),
+                 std::numeric_limits<qint64>::min());
+        QCOMPARE(contacts.index(0, Contacts::CallsignColumn).data(Contacts::SortRole).toString(),
+                 QStringLiteral("Alpha"));
         // Contact details from the server show as plain text.
         QVERIFY(contacts.index(0, 0)
                     .data(Qt::ToolTipRole)
@@ -3016,6 +3069,28 @@ private slots:
                                    nullptr,
                                    nullptr);
         QCOMPARE(result.errors.size(), 1);
+        // A file that cannot be written gets no feed. Its folder is blocked by a file here.
+        DataSources feeds({});
+        QVERIFY(QDir().mkpath(folder.filePath(QStringLiteral("pkg3"))));
+        QFile layer(folder.filePath(QStringLiteral("pkg3/layer")));
+        QVERIFY(layer.open(QIODevice::WriteOnly));
+        layer.close();
+        package.entries = {{QStringLiteral("layer/roads.kml"), "<kml/>"},
+                           {QStringLiteral("ok.kml"), "<kml/>"}};
+        result = importDataPackage(package,
+                                   QStringLiteral("k"),
+                                   folder.filePath(QStringLiteral("pkg3")),
+                                   &objects,
+                                   &feeds,
+                                   nullptr);
+        QCOMPARE(result.errors.size(), 1);
+        QCOMPARE(result.feeds.size(), 1);
+        QVERIFY(feeds.sources()
+                    .value(result.feeds.first())
+                    .toObject()
+                    .value(QStringLiteral("endpoint"))
+                    .toString()
+                    .endsWith(QStringLiteral("ok.kml")));
     }
     void fileTransfers()
     {
@@ -3543,6 +3618,38 @@ private slots:
         change.type = QStringLiteral("t-x-m-c");
         change.origin = QStringLiteral("tak");
         change.detail = QStringLiteral("<mission type=\"CHANGE\" name=\"Ops\"/>");
+        QVERIFY(store.accept(change).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return inMission() == 1;
+            },
+            10000));
+        // A reply from an older reload is stale. Here the first reload waits, a second reload
+        // brings both objects, and the late first reply holds none.
+        api.hold = true;
+        const auto heldBefore = api.held.size();
+        change.time = QDateTime::currentDateTimeUtc();
+        QVERIFY(store.accept(change).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return api.held.size() >= heldBefore + 3;
+            },
+            10000));
+        api.hold = false;
+        cot = "<events>" + encodeCot(first) + encodeCot(second) + "</events>";
+        change.time = QDateTime::currentDateTimeUtc().addMSecs(1);
+        QVERIFY(store.accept(change).isEmpty());
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return inMission() == 2;
+            },
+            10000));
+        cot = "<events></events>";
+        api.releaseHeld();
+        QTest::qWait(500);
+        QCOMPARE(inMission(), 2);
+        cot = "<events>" + encodeCot(second) + "</events>";
+        change.time = QDateTime::currentDateTimeUtc().addMSecs(2);
         QVERIFY(store.accept(change).isEmpty());
         QVERIFY(QTest::qWaitFor(
             [&] {

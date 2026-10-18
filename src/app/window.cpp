@@ -871,6 +871,11 @@ Window::~Window()
     if (shown_ && !closing_) {
         savePreferences();
     }
+    // Restore the application look while the window is complete. As a child, the style would
+    // restyle every widget after the window members are gone.
+    displayStyle_->disconnect(this);
+    delete displayStyle_;
+    displayStyle_ = nullptr;
     const auto docks = findChildren<QDockWidget *>();
     for (auto *dock : docks) {
         delete dock;
@@ -964,7 +969,7 @@ void Window::applyDisplayLayout(DisplayMode mode)
 }
 void Window::updateMenuBar()
 {
-    if (!mainMenu_) {
+    if (!mainMenu_ || !displayStyle_) {
         return;
     }
     const bool modern = displayStyle_->mode() == DisplayMode::Modern;
@@ -984,6 +989,12 @@ void Window::restorePreferences()
     const auto layout = geometryBytes(window, QStringLiteral("layout"));
     if (!layout.isEmpty()) {
         QMainWindow::restoreState(layout, LayoutVersion);
+    }
+    // Modern moves the toolbar out of the window state, so the choice has its own key.
+    if (const auto visible = window.value(QStringLiteral("toolbarVisible"));
+        visible.isBool() && toolbar_) {
+        toolbar_->setVisible(visible.toBool());
+        updateMenuBar();
     }
     // The layouts of the other display modes wait until the user selects that mode.
     modeLayouts_.clear();
@@ -1033,7 +1044,8 @@ void Window::restorePreferences()
 }
 bool Window::savePreferences()
 {
-    if (!preferences_.writable()) {
+    // The destructor saves before it deletes the display style. Nothing saves after that.
+    if (!preferences_.writable() || !displayStyle_) {
         return false;
     }
     auto document = preferences_.document();
@@ -1052,6 +1064,9 @@ bool Window::savePreferences()
                                    QString::fromLatin1(it.value().second.toBase64())}});
     }
     window.insert(QStringLiteral("modeLayouts"), others);
+    if (toolbar_) {
+        window.insert(QStringLiteral("toolbarVisible"), !toolbar_->isHidden());
+    }
     document.insert(QStringLiteral("window"), window);
     auto panes = document.value(QStringLiteral("panes")).toObject();
     for (auto *dock : findChildren<QDockWidget *>()) {

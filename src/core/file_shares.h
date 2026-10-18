@@ -9,6 +9,7 @@
 #include <QPointer>
 
 namespace swak {
+struct PreparedPackage;
 class DataSources;
 class Identity;
 class MapSources;
@@ -116,6 +117,8 @@ signals:
 private:
     FileOffer *find(const QString &serverId, const QString &hash);
     void finish(const QString &serverId, const QString &hash, const QByteArray &bytes);
+    void
+    importPrepared(const QString &serverId, const QString &hash, const PreparedPackage &prepared);
     void fail(const QString &serverId, const QString &hash, const QString &error);
     Event sender() const;
     QPointer<Servers> servers_;

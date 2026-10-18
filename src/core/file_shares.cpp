@@ -16,12 +16,14 @@
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QFileInfo>
+#include <QFutureWatcher>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QUuid>
+#include <QtConcurrentRun>
 
 #include <algorithm>
 
@@ -321,28 +323,67 @@ void FileShares::fail(const QString &serverId, const QString &hash, const QStrin
         emit changed();
     }
 }
+// The result of the worker part of an import: a checked and unpacked package, or an error.
+struct PreparedPackage
+{
+    DataPackage package;
+    QString error;
+};
+namespace {
+// Checks the hash and unpacks the package. It uses only its arguments, so a worker thread can
+// run it. A download of up to 64 MiB can take long to hash and to inflate.
+PreparedPackage
+preparePackage(const QByteArray &bytes, const QString &hash, const QString &fileName)
+{
+    PreparedPackage result;
+    if (QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex()) !=
+        hash) {
+        result.error =
+            QCoreApplication::translate("FileShares", "The file does not match its SHA-256 hash.");
+        return result;
+    }
+    result.package = readDataPackage(bytes);
+    if (!result.package.error.isEmpty()) {
+        // TAK clients also share single files, such as a KML file.
+        if (!safePackagePath(fileName) || bytes.startsWith("PK")) {
+            result.error = result.package.error;
+            return result;
+        }
+        result.package = {};
+        result.package.entries.append({fileName, bytes});
+    }
+    return result;
+}
+} // namespace
 void FileShares::finish(const QString &serverId, const QString &hash, const QByteArray &bytes)
 {
-    auto *offer = find(serverId, hash);
+    const auto *offer = find(serverId, hash);
     if (!offer) {
         return;
     }
-    if (QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex()) !=
-        hash) {
-        fail(serverId, hash, tr("The file does not match its SHA-256 hash."));
+    // The offer stays Downloading until the import ends, so a second download cannot start.
+    auto *watcher = new QFutureWatcher<PreparedPackage>(this);
+    connect(watcher, &QFutureWatcherBase::finished, this, [this, watcher, serverId, hash] {
+        watcher->deleteLater();
+        importPrepared(serverId, hash, watcher->result());
+    });
+    watcher->setFuture(
+        QtConcurrent::run(preparePackage, bytes, hash, QFileInfo(offer->fileName).fileName()));
+}
+void FileShares::importPrepared(const QString &serverId,
+                                const QString &hash,
+                                const PreparedPackage &prepared)
+{
+    // The offer can be gone or replaced while the worker ran.
+    auto *offer = find(serverId, hash);
+    if (!offer || offer->state != FileOffer::State::Downloading) {
         return;
     }
-    auto package = readDataPackage(bytes);
-    if (!package.error.isEmpty()) {
-        // TAK clients also share single files, such as a KML file.
-        const auto fileName = QFileInfo(offer->fileName).fileName();
-        if (!safePackagePath(fileName) || bytes.startsWith("PK")) {
-            fail(serverId, hash, package.error);
-            return;
-        }
-        package = {};
-        package.entries.append({fileName, bytes});
+    if (!prepared.error.isEmpty()) {
+        fail(serverId, hash, prepared.error);
+        return;
     }
+    auto package = prepared.package;
     if (package.name.isEmpty()) {
         package.name = offer->name;
     }

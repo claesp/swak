@@ -37,6 +37,7 @@ public:
         auto *proxy = new QSortFilterProxyModel(table_);
         proxy->setSourceModel(contacts_);
         proxy->setSortLocaleAware(true);
+        proxy->setSortRole(Contacts::SortRole);
         table_->setModel(proxy);
         table_->setSortingEnabled(true);
         table_->sortByColumn(Contacts::CallsignColumn, Qt::AscendingOrder);

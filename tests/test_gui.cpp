@@ -1656,7 +1656,10 @@ private slots:
             click(QStringLiteral("newReport"));
         };
         fill(QStringLiteral("  "));
-        QCOMPARE(status->text(), QStringLiteral("Type a report title."));
+        // The attachments read on a worker first, so the result arrives later.
+        QVERIFY(QTest::qWaitFor([&] {
+            return status->text() == QStringLiteral("Type a report title.");
+        }));
         fill(QStringLiteral("Bridge out"));
         QVERIFY(status->text().startsWith(QStringLiteral("Sending")) || !status->text().isEmpty());
         QVERIFY(QTest::qWaitFor(
@@ -1770,7 +1773,9 @@ private slots:
         const auto locked = write(QStringLiteral("locked.xml"), swak::encodeCot(event));
         QVERIFY(QFile::setPermissions(locked, {}));
         import(locked);
-        QCOMPARE(label->text(), QStringLiteral("The file cannot be opened."));
+        QVERIFY(QTest::qWaitFor([&] {
+            return label->text() == QStringLiteral("The file cannot be opened.");
+        }));
         auto stale = event;
         stale.uid = QStringLiteral("stale-1");
         stale.stale = stale.time.addSecs(-60);
@@ -2467,6 +2472,24 @@ private slots:
         timing.insert(QStringLiteral("holdSeconds"), 1);
         timing.insert(QStringLiteral("fadeMs"), 400);
         lineSettings->restorePreferences(timing);
+        // The guide opacity setting applies to these tools too, as to markers and areas.
+        auto guides = lineSettings->savePreferences();
+        QCOMPARE(guides.value(QStringLiteral("guideOpacity")).toDouble(), 0.5);
+        guides.insert(QStringLiteral("guideOpacity"), 0.2);
+        lineSettings->restorePreferences(guides);
+        QCOMPARE(lineSettings->savePreferences().value(QStringLiteral("guideOpacity")).toDouble(),
+                 0.2);
+        distanceAction->trigger();
+        {
+            QImage overlay(800, 600, QImage::Format_ARGB32_Premultiplied);
+            overlay.fill(Qt::transparent);
+            QPainter painter(&overlay);
+            tools->paintOverlay(
+                painter, {QSizeF(800, 600), QPointF(0.5, 0.5), 3}, QPointF(400, 300));
+            painter.end();
+            QCOMPARE(overlay.pixelColor(400, 100).alpha(), qRound(0.2 * 255));
+        }
+        QVERIFY(tools->cancel());
         const swak::Viewport view{QSizeF(800, 600), QPointF(0.5, 0.5), 3};
         const auto release = [&](QPointF point, const swak::Viewport &at) {
             QMouseEvent event(QEvent::MouseButtonRelease,
@@ -2836,6 +2859,30 @@ private slots:
         const QPoint inside(map->width() / 2 + 40, map->height() / 2 + 40);
         QCOMPARE(frame().pixelColor(inside), standard.pixelColor(inside));
     }
+    void modernToolbarPersists()
+    {
+        // Modern keeps the toolbar outside the window state. A hidden command dock stays hidden
+        // after a restart, and the menu bar shows instead.
+        QTemporaryDir directory;
+        const auto profile = directory.filePath(QStringLiteral("toolbar.json"));
+        {
+            swak::Window window(profile, QPluginLoader::staticInstances());
+            window.show();
+            QVERIFY(QTest::qWaitForWindowExposed(&window));
+            window.findChild<QAction *>(QStringLiteral("displayMode/modern"))->trigger();
+            auto *toolbar = window.findChild<QToolBar *>(QStringLiteral("mainToolbar"));
+            toolbar->toggleViewAction()->trigger();
+            QVERIFY(toolbar->isHidden());
+            QVERIFY(window.savePreferences());
+        }
+        swak::Window restarted(profile, QPluginLoader::staticInstances());
+        restarted.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&restarted));
+        QTest::qWait(100);
+        QVERIFY(restarted.findChild<QAction *>(QStringLiteral("displayMode/modern"))->isChecked());
+        QVERIFY(restarted.findChild<QToolBar *>(QStringLiteral("mainToolbar"))->isHidden());
+        QVERIFY(!restarted.menuBar()->isHidden());
+    }
     void displayModeRoundTrip()
     {
         // After Modern and back, Standard looks exactly as before: colors, fonts, pane
@@ -3085,7 +3132,9 @@ private slots:
             click(QStringLiteral("newReport"));
         };
         send({photo});
-        QCOMPARE(label->text(), QStringLiteral("Sending the report…"));
+        QVERIFY(QTest::qWaitFor([&] {
+            return label->text() == QStringLiteral("Sending the report…");
+        }));
         QVERIFY(QTest::qWaitFor(
             [&] {
                 return std::any_of(
@@ -3112,7 +3161,9 @@ private slots:
             dialog->accept();
         });
         click(QStringLiteral("newReport"));
-        QCOMPARE(label->text(), QStringLiteral("The file cannot be opened."));
+        QVERIFY(QTest::qWaitFor([&] {
+            return label->text() == QStringLiteral("The file cannot be opened.");
+        }));
         QCOMPARE(api.requests.size(), requests);
         // A refused update shows the server error and does not read the list.
         status = 403;
@@ -10709,6 +10760,20 @@ private slots:
         enroll->trigger();
         QCOMPARE(status->text(), QStringLiteral("Enter the password of the TAK account."));
         QVERIFY(enroll->isEnabled());
+        // A started enrollment keeps its first progress message visible.
+        entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
+        QVERIFY(servers->put(QStringLiteral("tak"), entry).isEmpty());
+        list->setCurrentCell(0, 1);
+        QTimer::singleShot(0, &window, [&] {
+            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            QVERIFY(dialog);
+            dialog->findChild<QLineEdit *>(QStringLiteral("enrollPassword"))
+                ->setText(QStringLiteral("secret"));
+            dialog->accept();
+        });
+        enroll->trigger();
+        QCOMPARE(status->text(), QStringLiteral("Reading the certificate settings of the server…"));
+        QVERIFY(status->isVisible());
     }
     void serverChannelsDialog()
     {

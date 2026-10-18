@@ -829,6 +829,21 @@ private slots:
             table.SetColorEntry(1, &green);
             QCOMPARE(palette->GetRasterBand(1)->SetColorTable(&table), CE_None);
             QCOMPARE(palette->GetRasterBand(1)->Fill(1), CE_None);
+            // A float band holds NaN. A VRT gives it a palette.
+            auto invalid = create(QStringLiteral("nan.tif"), 1, GDT_Float32, world);
+            QVERIFY(invalid);
+            QCOMPARE(invalid->GetRasterBand(1)->Fill(std::numeric_limits<double>::quiet_NaN()),
+                     CE_None);
+            QFile vrt(directory.filePath(QStringLiteral("nan.vrt")));
+            QVERIFY(vrt.open(QIODevice::WriteOnly));
+            vrt.write("<VRTDataset rasterXSize=\"64\" rasterYSize=\"64\"><SRS>EPSG:4326</SRS>"
+                      "<GeoTransform>-180, 5.625, 0, 85, 0, -2.65625</GeoTransform>"
+                      "<VRTRasterBand dataType=\"Float32\" band=\"1\"><ColorInterp>Palette"
+                      "</ColorInterp><ColorTable><Entry c1=\"20\" c2=\"180\" c3=\"60\" "
+                      "c4=\"255\"/></ColorTable><SimpleSource><SourceFilename "
+                      "relativeToVRT=\"1\">nan.tif</SourceFilename><SourceBand>1</SourceBand>"
+                      "</SimpleSource></VRTRasterBand></VRTDataset>");
+            vrt.close();
             auto elevation = create(QStringLiteral("elevation.tif"), 1, GDT_Int16, world);
             QVERIFY(elevation);
             std::vector<qint16> heights(64 * 64);
@@ -857,6 +872,10 @@ private slots:
         const auto palette = tile(QStringLiteral("palette.tif"));
         QVERIFY2(palette.error.isEmpty(), qPrintable(palette.error));
         QCOMPARE(palette.image.pixelColor(128, 128), QColor(20, 180, 60));
+        // NaN is not a palette index. Those pixels are transparent.
+        const auto noIndex = tile(QStringLiteral("nan.vrt"));
+        QVERIFY2(noIndex.error.isEmpty(), qPrintable(noIndex.error));
+        QCOMPARE(noIndex.image.pixelColor(128, 128).alpha(), 0);
         const auto elevation = tile(QStringLiteral("elevation.tif"));
         QVERIFY2(elevation.error.isEmpty(), qPrintable(elevation.error));
         const auto west = elevation.image.pixelColor(20, 128);

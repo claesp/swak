@@ -162,7 +162,7 @@ void metricCell(QPainter &painter,
                 QRectF bounds,
                 int zone,
                 bool north,
-                const QJsonObject &type)
+                const GridStyle &style)
 {
     const auto a = view.screen(bounds.bottom(), bounds.left()),
                b = view.screen(bounds.top(), bounds.right());
@@ -175,7 +175,7 @@ void metricCell(QPainter &painter,
     painter.setClipRect(visible, Qt::IntersectClip);
     painter.drawRect(cell);
     const auto center = view.coordinate(visible.center());
-    const bool mgrs = type.value("system").toString() == QLatin1String("mgrs");
+    const bool mgrs = style.system == QLatin1String("mgrs");
     const auto zoneName =
         mgrs ? gridCoordinate(center.y(), center.x(), "mgrs", -1)
              : (zone == 0 ? QStringLiteral("UPS") : QStringLiteral("UTM %1").arg(zone)) +
@@ -208,7 +208,7 @@ void metricCell(QPainter &painter,
                 maxY = std::max(maxY, y);
             }
         }
-        const double spacing = type.value("spacing").toDouble(140);
+        const double spacing = style.spacing;
         const double metersPerPixel =
             groundDistance(project(center.y(), center.x()),
                            project(view.coordinate(visible.center() + QPointF(1, 0)).y(),
@@ -294,29 +294,40 @@ void metricCell(QPainter &painter,
     painter.restore();
 }
 } // namespace
-void paintGridType(QPainter &painter, const Viewport &view, const QJsonObject &type)
+std::optional<GridStyle> gridStyle(const QJsonObject &type)
 {
-    if (!GridTypes::validate(type).isEmpty() || !std::isfinite(view.zoom) || view.zoom < 0 ||
-        view.zoom > 30 || view.size.isEmpty() || !std::isfinite(view.center.x()) ||
-        !std::isfinite(view.center.y())) {
-        return;
+    if (!GridTypes::validate(type).isEmpty()) {
+        return {};
     }
-    const auto system = type.value("system").toString();
-    if (system == QLatin1String("geographic")) {
-        paintMapGrid(painter,
-                     view,
+    return GridStyle{type.value("system").toString(),
                      type.value("opacity").toDouble(),
                      type.value("spacing").toDouble(),
-                     QColor(type.value("color").toString()),
                      type.value("width").toDouble(),
-                     type.value("format").toInt());
+                     QColor(type.value("color").toString()),
+                     type.value("format").toInt()};
+}
+void paintGridType(QPainter &painter, const Viewport &view, const QJsonObject &type)
+{
+    if (const auto style = gridStyle(type)) {
+        paintGridType(painter, view, *style);
+    }
+}
+void paintGridType(QPainter &painter, const Viewport &view, const GridStyle &style)
+{
+    if (!std::isfinite(view.zoom) || view.zoom < 0 || view.zoom > 30 || view.size.isEmpty() ||
+        !std::isfinite(view.center.x()) || !std::isfinite(view.center.y())) {
+        return;
+    }
+    if (style.system == QLatin1String("geographic")) {
+        paintMapGrid(
+            painter, view, style.opacity, style.spacing, style.color, style.width, style.format);
         return;
     }
     painter.save();
     painter.setRenderHint(QPainter::Antialiasing, true);
-    auto color = QColor(type.value("color").toString());
-    color.setAlphaF(static_cast<float>(type.value("opacity").toDouble()));
-    painter.setPen(QPen(color, type.value("width").toDouble()));
+    auto color = style.color;
+    color.setAlphaF(static_cast<float>(style.opacity));
+    painter.setPen(QPen(color, style.width));
     painter.setBrush(Qt::NoBrush);
     painter.setClipRect(QRectF(QPointF{}, view.size));
     // Latitude bands also delimit the Norway and Svalbard zone exceptions.
@@ -342,11 +353,11 @@ void paintGridType(QPainter &painter, const Viewport &view, const QJsonObject &t
                        QRectF(west, south, east - west, north - south),
                        zone,
                        south >= 0,
-                       type);
+                       style);
         }
     }
-    metricCell(painter, view, QRectF(-180, 84, 360, 1.05112878), 0, true, type);
-    metricCell(painter, view, QRectF(-180, -85.05112878, 360, 5.05112878), 0, false, type);
+    metricCell(painter, view, QRectF(-180, 84, 360, 1.05112878), 0, true, style);
+    metricCell(painter, view, QRectF(-180, -85.05112878, 360, 5.05112878), 0, false, style);
     painter.restore();
 }
 } // namespace swak

@@ -140,6 +140,12 @@ bool MapTools::guidesActive() const
         return tool && tool->guidesActive();
     });
 }
+bool MapTools::overlayActive() const
+{
+    return std::any_of(tools_.cbegin(), tools_.cend(), [](const auto &tool) {
+        return tool && (tool->interactionActive() || tool->guidesActive());
+    });
+}
 QString MapTools::statusText() const
 {
     QStringList labels;

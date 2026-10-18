@@ -6,6 +6,7 @@
 #include <QObject>
 #include <QPair>
 #include <QPointer>
+#include <QSet>
 #include <QString>
 #include <QUrl>
 
@@ -66,9 +67,12 @@ public:
 
 private:
     struct Shared;
-    void deliver(QPointer<QObject> context, Callback done, NetworkReply reply);
+    void deliver(quint64 id, QPointer<QObject> context, Callback done, NetworkReply reply);
     void run();
     std::shared_ptr<Shared> shared_;
     std::thread worker_;
+    // Requests whose callback can still run. Only the interface thread uses it. cancel removes
+    // an identifier, so that a reply already queued for delivery does not run its callback.
+    QSet<quint64> pending_;
 };
 } // namespace swak

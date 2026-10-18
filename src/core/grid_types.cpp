@@ -82,6 +82,7 @@ GridTypes::GridTypes(QObject *parent) : QObject(parent)
          {QStringLiteral("geographic"), QStringLiteral("utm"), QStringLiteral("mgrs")}) {
         entries_.insert(id, defaults(id));
     }
+    refreshStyle();
 }
 QJsonObject GridTypes::defaults(const QString &system)
 {
@@ -150,6 +151,7 @@ void GridTypes::restorePreferences(const QJsonObject &values)
     if (!entries_.contains(lastSelected_)) {
         lastSelected_.clear();
     }
+    refreshStyle();
     emit changed();
 }
 QString GridTypes::put(const QString &id, const QJsonObject &value)
@@ -163,6 +165,7 @@ QString GridTypes::put(const QString &id, const QJsonObject &value)
     }
     restored_ = true;
     entries_.insert(id, value);
+    refreshStyle();
     emit changed();
     return {};
 }
@@ -173,6 +176,7 @@ void GridTypes::remove(const QString &id)
     if (selected_ == id) {
         selected_.clear();
     }
+    refreshStyle();
     emit changed();
 }
 void GridTypes::select(const QString &id)
@@ -182,6 +186,7 @@ void GridTypes::select(const QString &id)
     if (!selected_.isEmpty()) {
         lastSelected_ = selected_;
     }
+    refreshStyle();
     emit changed();
 }
 void GridTypes::setVisible(bool visible)
@@ -210,13 +215,20 @@ void GridTypes::migrate(const QJsonObject &mapValues)
     if (!mapValues.value("gridVisible").toBool(true)) {
         selected_.clear();
     }
+    refreshStyle();
     emit changed();
 }
 void GridTypes::paint(QPainter &painter, const Viewport &view) const
 {
-    if (!selected_.isEmpty()) {
-        paintGridType(painter, view, entries_.value(selected_).toObject());
+    if (selectedStyle_) {
+        paintGridType(painter, view, *selectedStyle_);
     }
+}
+void GridTypes::refreshStyle()
+{
+    // Frames use the typed style. They never validate or read the JSON record.
+    selectedStyle_ =
+        selected_.isEmpty() ? std::nullopt : gridStyle(entries_.value(selected_).toObject());
 }
 QWidget *GridTypes::createSettingsWidget(QWidget *parent)
 {

@@ -219,7 +219,7 @@ quint64 NetworkClient::send(NetworkRequest request, QObject *context, Callback d
     const auto reject = [&](const QString &error) {
         NetworkReply reply;
         reply.error = error;
-        deliver(context, std::move(done), std::move(reply));
+        deliver(0, context, std::move(done), std::move(reply));
         return quint64{0};
     };
     if (!shared_->multi) {
@@ -259,6 +259,7 @@ quint64 NetworkClient::send(NetworkRequest request, QObject *context, Callback d
         shared_->queued.push_back({id, std::move(request), context, std::move(done)});
         ++shared_->active;
     }
+    pending_.insert(id);
     curl_multi_wakeup(shared_->multi);
     return id;
 }
@@ -267,6 +268,7 @@ void NetworkClient::cancel(quint64 id)
     if (!id || !shared_->multi) {
         return;
     }
+    pending_.remove(id);
     {
         const std::lock_guard lock(shared_->mutex);
         shared_->cancelled.insert(id);
@@ -279,13 +281,20 @@ int NetworkClient::activeCount() const
 {
     return shared_->active.load();
 }
-void NetworkClient::deliver(QPointer<QObject> context, Callback done, NetworkReply reply)
+void NetworkClient::deliver(quint64 id,
+                            QPointer<QObject> context,
+                            Callback done,
+                            NetworkReply reply)
 {
     // This object lives on the interface thread. The destructor joins the worker before
     // QObject removes pending events, so a queued call never reaches a destroyed client.
+    // A refused request has identifier 0 and always reports its reason.
     QMetaObject::invokeMethod(
         this,
-        [context, done = std::move(done), reply = std::move(reply)] {
+        [this, id, context, done = std::move(done), reply = std::move(reply)] {
+            if (id && !pending_.remove(id)) {
+                return;
+            }
             if (context && done) {
                 done(reply);
             }
@@ -321,7 +330,7 @@ void NetworkClient::run()
             if (!transfer || curl_multi_add_handle(shared.multi, transfer->easy) != CURLM_OK) {
                 NetworkReply reply;
                 reply.error = tr("The HTTPS request cannot be prepared.");
-                deliver(pending.context, std::move(pending.done), std::move(reply));
+                deliver(pending.id, pending.context, std::move(pending.done), std::move(reply));
                 --shared.active;
                 continue;
             }
@@ -359,7 +368,7 @@ void NetworkClient::run()
             if (reply.error.isEmpty()) {
                 reply.body = std::move(transfer->body);
             }
-            deliver(transfer->context, std::move(transfer->done), std::move(reply));
+            deliver(transfer->id, transfer->context, std::move(transfer->done), std::move(reply));
             finish(it);
         }
         curl_multi_poll(shared.multi, nullptr, 0, 1000, nullptr);

@@ -430,7 +430,12 @@ RasterTile toImage(GDALDataset &dataset,
                 }
             }
             if (palette) {
-                const auto *entry = palette->GetColorEntry(static_cast<int>(channels[0]));
+                // A float band with a palette can hold NaN or a large value. Only a finite index
+                // inside the table converts to int.
+                const double index = channels[0];
+                const auto *entry = index >= 0 && index < palette->GetColorEntryCount()
+                                        ? palette->GetColorEntry(static_cast<int>(index))
+                                        : nullptr;
                 channels = entry ? std::array<double, 4>{double(entry->c1),
                                                          double(entry->c2),
                                                          double(entry->c3),

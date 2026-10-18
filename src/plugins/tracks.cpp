@@ -308,6 +308,10 @@ public:
             detailStyles_.remove(key);
             iconCaches_.remove(key);
         });
+        // Removed and expired events leave the cache, so it never needs a full clear.
+        connect(&services.store, &Store::changed, this, [this, key] {
+            pruneStyles(*key);
+        });
         if (services.mapTools) {
             auto *cone = new HeadingConeTool(services.store.motion(), &menu);
             services.mapTools->add(cone);
@@ -474,7 +478,7 @@ private:
         auto it = cache.find(event.uid);
         if (it == cache.end() || it->time != event.time || it->detailSize != event.detail.size()) {
             if (cache.size() >= MaxEvents) {
-                cache.clear();
+                pruneStyles(store);
             }
             auto color = detailColor(event, u"color").value_or(QColor());
             if (color.isValid()) {
@@ -487,6 +491,21 @@ private:
             it = cache.insert(event.uid, {event.time, event.detail.size(), color, path});
         }
         return *it;
+    }
+    // Removes the styles of events that the store no longer holds.
+    void pruneStyles(const Store &store) const
+    {
+        const auto found = detailStyles_.find(&store);
+        if (found == detailStyles_.end() || found->size() <= store.rowCount()) {
+            return;
+        }
+        QSet<QString> present;
+        for (const auto &event : store.events()) {
+            present.insert(event.uid);
+        }
+        found->removeIf([&present](const auto &entry) {
+            return !present.contains(entry.key());
+        });
     }
     QAction *createClearAction(Store &store, QWidget &owner)
     {

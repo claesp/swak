@@ -8,11 +8,13 @@
 #include "core/tak_server_api.h"
 #include "core/text.h"
 
+#include <QFutureWatcher>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTimeZone>
 #include <QUuid>
+#include <QtConcurrentRun>
 
 #include <algorithm>
 #include <cmath>
@@ -428,10 +430,16 @@ void Missions::setVisible(const QString &serverId, const QString &name, bool vis
 }
 void Missions::reload(const QString &serverId, const QString &name)
 {
-    const auto *mission = find(serverId, name);
+    auto *mission = find(serverId, name);
     if (!mission || !api_) {
         return;
     }
+    // Reloads can overlap, and their replies can arrive in any order.
+    const auto generation = ++mission->generation;
+    const auto current = [this, serverId, name, generation]() -> MissionSubscription * {
+        auto *target = find(serverId, name);
+        return target && target->generation == generation ? target : nullptr;
+    };
     const auto headers = authorization(*mission);
     const auto base = QStringLiteral("/api/missions/") + percentEncoded(name);
     api_->martiRequest(
@@ -441,15 +449,29 @@ void Missions::reload(const QString &serverId, const QString &name)
         {},
         {},
         this,
-        [this, serverId, name](const NetworkReply &reply) {
+        [this, serverId, name, current](const NetworkReply &reply) {
+            if (!current()) {
+                return;
+            }
             if (!reply.ok()) {
-                if (auto *target = find(serverId, name)) {
+                if (auto *target = current()) {
                     target->status = httpError(reply);
                     emit changed();
                 }
                 return;
             }
-            loadEvents(serverId, name, reply.body);
+            // Up to 2048 CoT documents decode on a worker. The interface thread applies them.
+            auto *watcher = new QFutureWatcher<QList<Event>>(this);
+            connect(watcher,
+                    &QFutureWatcherBase::finished,
+                    this,
+                    [this, watcher, serverId, name, current] {
+                        watcher->deleteLater();
+                        if (current()) {
+                            loadEvents(serverId, name, watcher->result());
+                        }
+                    });
+            watcher->setFuture(QtConcurrent::run(readMissionEvents, reply.body));
         },
         MaxCotBytes,
         RequestTimeoutMs,
@@ -461,8 +483,8 @@ void Missions::reload(const QString &serverId, const QString &name)
         {},
         {},
         this,
-        [this, serverId, name](const NetworkReply &reply) {
-            if (auto *target = find(serverId, name); target && reply.ok()) {
+        [this, current](const NetworkReply &reply) {
+            if (auto *target = current(); target && reply.ok()) {
                 target->files = readMissionFiles(reply.body);
                 emit changed();
             }
@@ -477,8 +499,8 @@ void Missions::reload(const QString &serverId, const QString &name)
         {},
         {},
         this,
-        [this, serverId, name](const NetworkReply &reply) {
-            if (auto *target = find(serverId, name); target && reply.ok()) {
+        [this, current](const NetworkReply &reply) {
+            if (auto *target = current(); target && reply.ok()) {
                 target->logs = readMissionLogs(reply.body);
                 emit changed();
             }
@@ -487,14 +509,13 @@ void Missions::reload(const QString &serverId, const QString &name)
         RequestTimeoutMs,
         headers);
 }
-void Missions::loadEvents(const QString &serverId, const QString &name, const QByteArray &xml)
+void Missions::loadEvents(const QString &serverId, const QString &name, QList<Event> events)
 {
     auto *mission = find(serverId, name);
     if (!mission) {
         return;
     }
     const auto origin = missionOrigin(serverId, name);
-    auto events = readMissionEvents(xml);
     for (auto &event : events) {
         event.origin = origin;
     }

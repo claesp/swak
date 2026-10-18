@@ -92,6 +92,8 @@ public:
     double areaFillOpacity() const;
     QStringList attributions() const;
     bool guidesActive() const;
+    // True when a tool paints an overlay: during an interaction or with active guides.
+    bool overlayActive() const;
     QList<MapItem> itemsAt(const Viewport &view, QPointF position) const;
     bool interact(const MapItem &item, QEvent &event, QWidget &map);
     void populateContextMenu(const MapItem &item, QMenu &menu);

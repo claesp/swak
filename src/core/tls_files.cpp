@@ -18,6 +18,21 @@ TlsFiles::~TlsFiles()
     // every copy, as docs/security.md records.
     password.fill('\0');
 }
+TlsFiles readTlsAuthority(const QJsonObject &source)
+{
+    TlsFiles files;
+    const auto path = source.value(QStringLiteral("ca")).toString();
+    if (path.isEmpty()) {
+        return files;
+    }
+    const auto input = readRegularFile(path, MaxCredentialBytes);
+    if (input.error.isEmpty()) {
+        files.ca = input.bytes;
+    } else {
+        files.error = tr("The CA file of the server entry cannot be read.");
+    }
+    return files;
+}
 TlsFiles readTlsFiles(const QJsonObject &source)
 {
     TlsFiles files;

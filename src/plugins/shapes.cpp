@@ -91,6 +91,8 @@ public:
             numberSetting(QStringLiteral("lineWidth"), tr("Outline width (pixels)"), 1, 6));
         fields.append(
             numberSetting(QStringLiteral("radius"), tr("Control point radius (pixels)"), 1, 6));
+        fields.append(
+            numberSetting(QStringLiteral("guideOpacity"), tr("Guide line opacity"), 0, 1, 2));
         return fields;
     }
 
@@ -107,6 +109,7 @@ public:
         values.insert(QStringLiteral("fadeMs"), fadeMs);
         values.insert(QStringLiteral("lineWidth"), width);
         values.insert(QStringLiteral("radius"), radius);
+        values.insert(QStringLiteral("guideOpacity"), guideOpacity);
         return values;
     }
     QString validateSettings(const QJsonObject &values) const override
@@ -158,6 +161,7 @@ public:
         fadeMs = preferenceInteger(values, QStringLiteral("fadeMs"), 1000, 100, 5000);
         width = preferenceNumber(values, QStringLiteral("lineWidth"), 2, 1, 6);
         radius = preferenceNumber(values, QStringLiteral("radius"), 3, 1, 6);
+        guideOpacity = preferenceNumber(values, QStringLiteral("guideOpacity"), 0.5, 0, 1);
         restoreEditorState(values);
         emit configurationChanged();
     }
@@ -166,7 +170,7 @@ public:
                             QKeyCombination(Qt::ShiftModifier, Qt::Key_D).toCombined(),
                             QKeyCombination(Qt::ShiftModifier, Qt::Key_L).toCombined()};
     int holdSeconds = 10, fadeMs = 1000;
-    double width = 2, radius = 3;
+    double width = 2, radius = 3, guideOpacity = 0.5;
 };
 class ShapesTool final : public MapTool
 {
@@ -591,7 +595,7 @@ public:
             dots(painter, points, QColor(editor_.draft()->color), view);
         }
         if (guidesActive()) {
-            paintGuides(painter, view, pointer, 0.5);
+            paintGuides(painter, view, pointer, editor_.guideOpacity);
         }
     }
 

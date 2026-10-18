@@ -2,6 +2,7 @@
 #include <QFile>
 #include <QHostAddress>
 #include <QList>
+#include <QPointer>
 #include <QRegularExpression>
 #include <QSslCertificate>
 #include <QSslKey>
@@ -11,6 +12,7 @@
 
 #include <functional>
 #include <memory>
+#include <utility>
 
 // This server and its private key are test fixtures only.
 // An HTTPS server for client tests. It reads one request and answers through respond.
@@ -22,6 +24,8 @@ public:
     bool requireClient = false;
     bool hold = false;
     QList<QByteArray> requests;
+    // Requests that arrived while hold was set. releaseHeld answers them later.
+    QList<std::pair<QPointer<QSslSocket>, QByteArray>> held;
     int clientCertificates = 0;
     std::function<QByteArray(const QByteArray &)> respond = [](const QByteArray &) {
         const QByteArray body = "{\"ok\":true}";
@@ -74,10 +78,22 @@ public:
             if (!hold) {
                 socket->write(respond(*input));
                 socket->disconnectFromHost();
+            } else {
+                held.append({QPointer<QSslSocket>(socket), *input});
             }
         });
         connect(socket, &QSslSocket::disconnected, socket, &QObject::deleteLater);
         socket->startServerEncryption();
+    }
+    // Answers the held requests with the current respond function.
+    void releaseHeld()
+    {
+        for (const auto &[socket, input] : std::exchange(held, {})) {
+            if (socket) {
+                socket->write(respond(input));
+                socket->disconnectFromHost();
+            }
+        }
     }
 };
 // Makes an HTTP reply with a status code and a body.
