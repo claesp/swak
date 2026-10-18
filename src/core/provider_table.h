@@ -1,4 +1,6 @@
 #pragma once
+#include "core/text.h"
+
 #include <QButtonGroup>
 #include <QCheckBox>
 #include <QHBoxLayout>
@@ -7,11 +9,6 @@
 #include <QTableWidget>
 
 namespace swak {
-// Qt shows tooltips as rich text when they look like markup. Escape stored text.
-inline QString plainToolTip(const QString &text)
-{
-    return text.isEmpty() ? QString{} : QStringLiteral("<qt>%1</qt>").arg(text.toHtmlEscaped());
-}
 class ProviderTable final : public QTableWidget
 {
 public:

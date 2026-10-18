@@ -168,9 +168,44 @@ QString redactQueryValues(const QString &text)
 }
 bool declaresXmlDocumentType(const QByteArray &bytes)
 {
-    // A document type declaration appears before the root element.
-    const auto head = bytes.left(4096);
-    return head.contains("<!DOCTYPE") || head.contains("<!ENTITY");
+    const auto head = bytes.left(XmlPrologLimit);
+    // A UTF-16 or UTF-32 byte order mark, or a "<" next to a zero byte, means text that a
+    // byte search cannot read. Binary formats, such as GeoPackage, start differently.
+    if (head.startsWith("\xFF\xFE") || head.startsWith("\xFE\xFF") ||
+        head.startsWith(QByteArrayView("<\0", 2)) || head.startsWith(QByteArrayView("\0<", 2)) ||
+        head.startsWith(QByteArrayView("\0\0\0<", 4))) {
+        return true;
+    }
+    qsizetype at = head.startsWith("\xEF\xBB\xBF") ? 3 : 0;
+    // Skip the prolog: white space, the XML declaration, processing instructions, and comments.
+    // A DTD can only appear there, before the root element.
+    while (at < head.size()) {
+        const char ch = head.at(at);
+        if (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n') {
+            ++at;
+            continue;
+        }
+        if (ch != '<') {
+            // Not XML, or text before a root element. GDAL reads it with another driver.
+            return false;
+        }
+        const auto rest = QByteArrayView(head).sliced(at);
+        if (rest.startsWith("<?") || rest.startsWith("<!--")) {
+            const bool comment = rest.startsWith("<!--");
+            const auto end = head.indexOf(comment ? "-->" : "?>", at + (comment ? 4 : 2));
+            if (end < 0) {
+                // The prolog continues past the bytes that SWAK checks.
+                return true;
+            }
+            at = end + (comment ? 3 : 2);
+            continue;
+        }
+        // Any other declaration, such as <!DOCTYPE or <!ENTITY, is refused. Otherwise this is
+        // the root element.
+        return rest.startsWith("<!");
+    }
+    // Only prolog text was found. A longer document can still hold a DTD after it.
+    return bytes.size() > head.size();
 }
 QString gdalError(const QString &fallback)
 {

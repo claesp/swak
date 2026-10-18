@@ -272,6 +272,31 @@ private slots:
         cancelled = true;
         QVERIFY(!format()->decode(point, cancelled).error.isEmpty());
     }
+    void xmlPrologCheck()
+    {
+        // A DTD can follow comments and processing instructions of any length in the prolog.
+        const QByteArray dtd = "<!DOCTYPE kml [<!ENTITY x 'bad'>]>";
+        const QByteArray longComment = "<!--" + QByteArray(5000, 'c') + "-->";
+        QVERIFY(declaresXmlDocumentType(dtd + point));
+        QVERIFY(declaresXmlDocumentType("<?xml version=\"1.0\"?>" + longComment + dtd + point));
+        QVERIFY(declaresXmlDocumentType("<?xml version=\"1.0\"?>\n<?style a?>\n" + dtd));
+        QVERIFY(declaresXmlDocumentType("<!--" + QByteArray(XmlPrologLimit, 'c') + "-->" + point));
+        QVERIFY(declaresXmlDocumentType(QByteArray("\xFF\xFE<\0k\0", 6)));
+        QVERIFY(declaresXmlDocumentType(QByteArray("<\0k\0m\0l\0", 8)));
+        // A root element ends the prolog. A DTD text later in the body is only text.
+        QVERIFY(!declaresXmlDocumentType("<?xml version=\"1.0\"?>" + longComment + point));
+        QVERIFY(!declaresXmlDocumentType(point + "<!-- <!DOCTYPE x> -->"));
+        QVERIFY(!declaresXmlDocumentType("\xEF\xBB\xBF" + point));
+        // Other formats pass: JSON, and binary files such as a shapefile header.
+        QVERIFY(!declaresXmlDocumentType("{\"type\":\"FeatureCollection\"}"));
+        QVERIFY(!declaresXmlDocumentType(QByteArray("\0\0\x27\x0a\0\0", 6)));
+        QVERIFY(!declaresXmlDocumentType(QByteArray("SQLite format 3\0", 16)));
+        std::atomic_bool cancelled = false;
+        QCOMPARE(format()
+                     ->decode("<?xml version=\"1.0\"?>" + longComment + dtd + point, cancelled)
+                     .error,
+                 QStringLiteral("XML declarations and external entities are not allowed."));
+    }
     void documentUrlsStayOffline()
     {
         // GML schema locations and GeoJSON CRS links name URLs. GDAL must not fetch them.

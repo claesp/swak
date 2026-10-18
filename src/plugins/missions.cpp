@@ -11,6 +11,7 @@
 #include "core/store.h"
 #include "core/tak_server_api.h"
 #include "core/tak_shapes.h"
+#include "core/text.h"
 #include "core/user_objects.h"
 
 #include <QComboBox>
@@ -377,7 +378,7 @@ private:
                                     mission.passwordProtected ? tr("Yes") : tr("No")};
             for (int column = 0; column < cells.size(); ++column) {
                 auto *item = new QTableWidgetItem(cells.at(column));
-                item->setToolTip(cells.at(column));
+                item->setToolTip(plainToolTip(cells.at(column)));
                 available_->setItem(row, column, item);
             }
         }
@@ -454,7 +455,7 @@ private:
                     file.name,
                     file.size < 0 ? tr("unknown size") : QLocale().formattedDataSize(file.size)),
                 fileList_);
-            item->setToolTip(file.submitter);
+            item->setToolTip(plainToolTip(file.submitter));
         }
         for (const auto &entry : mission->logs) {
             new QListWidgetItem(

@@ -526,7 +526,7 @@ public:
                 result.error = tr("Cannot read the local data file.");
                 return result;
             }
-            if (declaresXmlDocumentType(input.read(4096))) {
+            if (declaresXmlDocumentType(input.read(XmlPrologLimit))) {
                 result.error = tr("XML declarations and external entities are not allowed.");
                 return result;
             }
@@ -552,7 +552,7 @@ private:
             result.error = tr("Cannot read the archived dataset.");
             return false;
         }
-        QByteArray head(4096, '\0');
+        QByteArray head(XmlPrologLimit, '\0');
         const auto amount = VSIFReadL(head.data(), 1, static_cast<size_t>(head.size()), file);
         VSIFCloseL(file);
         head.resize(static_cast<qsizetype>(amount));

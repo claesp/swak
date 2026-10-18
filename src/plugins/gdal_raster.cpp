@@ -89,16 +89,31 @@ QString wmtsUrl(const QJsonObject &source)
     return url + QStringLiteral("&TILEMATRIX=") + text("matrixPrefix") +
            QStringLiteral("${z}&TILEROW=${y}&TILECOL=${x}");
 }
-QString cacheElement(const RasterRequest &request, const QString &name)
+bool uncheckedTls(const RasterRequest &request)
+{
+    return request.source.value(QStringLiteral("ignoreTls")).toBool(false);
+}
+// Tiles fetched without certificate checks never serve a checked source. An empty result means
+// no disk cache, for example for a source with credentials.
+QString cacheFolder(const RasterRequest &request)
 {
     if (request.cacheDirectory.isEmpty() || authenticatedMap(request.source)) {
+        return {};
+    }
+    return QDir(request.cacheDirectory)
+        .filePath(uncheckedTls(request) ? QStringLiteral("unchecked") : QStringLiteral("verified"));
+}
+QString cacheElement(const RasterRequest &request, const QString &name)
+{
+    const auto folder = cacheFolder(request);
+    if (folder.isEmpty()) {
         return {};
     }
     const auto key =
         QCryptographicHash::hash(name.toUtf8(), QCryptographicHash::Sha256).toHex().left(32);
     return QStringLiteral("<Cache><Path>%1</Path><Expires>604800</Expires><MaxSize>%2</MaxSize>"
                           "</Cache>")
-        .arg(xml(QDir(request.cacheDirectory).filePath(QString::fromLatin1(key))))
+        .arg(xml(QDir(folder).filePath(QString::fromLatin1(key))))
         .arg(request.cacheBytes);
 }
 // Builds a GDAL WMS driver description for tile and map services.
@@ -187,8 +202,16 @@ public:
     {
         const auto &source = request.source;
         const auto mode = source.value(QStringLiteral("authMode")).toString();
-        if (source.value(QStringLiteral("ignoreTls")).toBool(false)) {
+        if (uncheckedTls(request)) {
             set("GDAL_HTTP_UNSAFESSL", "YES");
+        }
+        // WMS: and WMTS: dataset names have no Cache element. Without these options, GDAL
+        // caches their tiles in its own folder, outside the SWAK limit and TLS separation.
+        if (const auto folder = cacheFolder(request); folder.isEmpty()) {
+            set("GDAL_ENABLE_WMS_CACHE", "NO");
+        } else {
+            set("GDAL_DEFAULT_WMS_CACHE_PATH",
+                QDir(folder).filePath(QStringLiteral("datasets")).toUtf8());
         }
         if (mode == u"basic") {
             set("GDAL_HTTP_AUTH", "BASIC");
@@ -290,9 +313,11 @@ DatasetPool &datasetPool()
     });
     return pool;
 }
-std::unique_ptr<OpenDataset> openDataset(const QString &name, QString &error)
+// The key names a pooled dataset. It holds the certificate policy, because GDAL keeps that
+// policy for the life of an open dataset.
+std::unique_ptr<OpenDataset> openDataset(const QString &name, const QString &key, QString &error)
 {
-    if (auto reused = datasetPool().take(name)) {
+    if (auto reused = datasetPool().take(key)) {
         return reused;
     }
     CPLErrorReset();
@@ -306,7 +331,7 @@ std::unique_ptr<OpenDataset> openDataset(const QString &name, QString &error)
         return nullptr;
     }
     auto opened = std::make_unique<OpenDataset>();
-    opened->name = name;
+    opened->name = key;
     auto *band = dataset->GetRasterBand(1);
     if (band->GetRasterDataType() != GDT_Byte) {
         double range[2] = {0, 255};
@@ -487,7 +512,8 @@ RasterTile render(const RasterRequest &request, const std::atomic_bool &cancelle
     initializeGdal();
     const HttpOptions options(request);
     const auto name = datasetName(request);
-    auto opened = openDataset(name, result.error);
+    auto opened = openDataset(
+        name, uncheckedTls(request) ? name + QStringLiteral("\n#unchecked") : name, result.error);
     if (!opened) {
         result.providerWide = true;
         return result;
@@ -830,6 +856,12 @@ private:
             !url.userInfo().isEmpty() || url.hasFragment()) {
             return tr("Use a local file path, or /vsicurl/, WMTS:, or WMS: followed by an HTTPS "
                       "URL.");
+        }
+        // GDAL sends credentials to every host that a capabilities document names, and the
+        // map cannot limit it to the dataset host.
+        if (authenticatedMap(source)) {
+            return tr("Remote GDAL datasets do not use credentials. Use a WMS, WMTS, or tile "
+                      "service source instead.");
         }
         return {};
     }

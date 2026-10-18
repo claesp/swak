@@ -57,6 +57,8 @@ The GDAL dataset type opens any raster that GDAL reads. Enter one of these locat
 - `WMTS:` followed by an HTTPS capabilities URL and GDAL WMTS options.
 - `WMS:` followed by an HTTPS service URL and GDAL WMS options.
 
+Remote datasets do not use credentials. GDAL would send them to every host that a capabilities document names. Use the WMS, WMTS, or tile service types for a service that needs credentials.
+
 Local files can use GeoTIFF and COG, MBTiles, GeoPackage, PMTiles, JPEG 2000, PNG, JPEG, WebP, GIF, BMP, DTED and SRTM elevation, NITF, CADRG and CIB through RPF table-of-contents files, ADRG, Erdas Imagine, ENVI, NetCDF, HDF5, Arc/Info ASCII grids, USGS DEM, BSB nautical charts, Esri compact caches, MRF, Zarr, PDF, GRIB, and VRT. Remote files use a smaller list without VRT, because a VRT can read other local files.
 
 GDAL warps each dataset tile from its own coordinate reference system to Web Mercator. Palette images keep their colors. Elevation and other data that is not 8-bit appears as gray between the dataset minimum and maximum. Pixels outside the dataset are transparent. Large files without overviews render slowly at low zoom. Add overviews with `gdaladdo` for faster display.
@@ -89,7 +91,7 @@ The renderer permits four active jobs and 256 visible tiles. Raster requests hav
 
 The decoded-tile cache defaults to 256 MiB. File > Settings > Map exposes Tile memory cache, with limits from 64 through 512 MiB.
 
-GDAL keeps a raster disk cache under `maps/gdal` in the operating system cache directory. On Linux, this is normally `~/.cache/SWAK/swak/maps/gdal`. Entries expire after seven days. File > Settings > Map exposes Tile disk cache, from 16 through 4096 MiB. GDAL removes old entries above that size. MVT tiles use Qt HTTP caching in the `verified` and `unchecked` directories, with a process lock.
+GDAL keeps a raster disk cache under `maps/gdal` in the operating system cache directory. On Linux, this is normally `~/.cache/SWAK/swak/maps/gdal`. Sources with certificate checks use its `verified` folder, and sources with the certificate exception use its `unchecked` folder. `WMS:` and `WMTS:` datasets cache in a `datasets` folder below these. Sources with credentials use no disk cache. Entries expire after seven days. File > Settings > Map exposes Tile disk cache, from 16 through 4096 MiB. GDAL removes old entries above that size. MVT tiles use Qt HTTP caching in the `verified` and `unchecked` directories, with a process lock.
 
 The raster changes have these known gaps compared with the earlier Qt client:
 

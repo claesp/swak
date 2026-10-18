@@ -4,6 +4,7 @@
 #include "core/servers.h"
 #include "core/store.h"
 #include "core/tak_server_api.h"
+#include "core/text.h"
 
 #include <QCollator>
 #include <QColor>
@@ -86,9 +87,9 @@ QVariant Contacts::data(const QModelIndex &index, int role) const
         return QColor(Qt::gray);
     }
     if (role == Qt::ToolTipRole) {
-        return QStringList{contact.uid, contact.endpoint, contact.device}
-            .join(QLatin1Char('\n'))
-            .trimmed();
+        return plainToolTip(QStringList{contact.uid, contact.endpoint, contact.device}
+                                .join(QLatin1Char('\n'))
+                                .trimmed());
     }
     if (role != Qt::DisplayRole) {
         return {};

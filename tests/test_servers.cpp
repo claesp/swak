@@ -1311,6 +1311,27 @@ private slots:
             },
             5000));
         QVERIFY(!plain.received.contains("t-x-takp-q"));
+        // A read full of protocol responses that SWAK did not ask for stays one XML pass. The
+        // event after them arrives, and the stream stays connected.
+        QByteArray flood;
+        const auto response = NegotiatingServer::control(
+            QStringLiteral("t-x-takp-r"), QStringLiteral("<TakResponse status='true'/>"));
+        while (flood.size() + response.size() < 60000) {
+            flood += response;
+        }
+        auto marker = sampleEvent();
+        marker.uid = QStringLiteral("after-flood");
+        QVERIFY(plain.client);
+        plain.client->write(flood + encodeCot(marker));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return std::any_of(
+                    xmlStore.events().cbegin(), xmlStore.events().cend(), [](const Event &event) {
+                        return event.uid == u"after-flood";
+                    });
+            },
+            5000));
+        QVERIFY(xmlServers.status(QStringLiteral("xml")).startsWith(QStringLiteral("Connected")));
         xml.insert(QStringLiteral("takProtocol"), QStringLiteral("other"));
         QVERIFY(!validateServer(xml).isEmpty());
     }
@@ -1853,6 +1874,11 @@ private slots:
                  QStringLiteral("Test"));
         QCOMPARE(contacts.index(1, Contacts::ReportColumn).data().toString(),
                  QStringLiteral("No current position"));
+        // Contact details from the server show as plain text.
+        QVERIFY(contacts.index(0, 0)
+                    .data(Qt::ToolTipRole)
+                    .toString()
+                    .startsWith(QStringLiteral("<qt>")));
         QVERIFY(!contacts.contacts().at(1).online);
         // A position report with a contact endpoint marks the user online.
         auto report = sampleEvent(QStringLiteral("ANDROID-1"));
@@ -3278,6 +3304,13 @@ private slots:
         QVERIFY(missions.at(0).created.isValid());
         QVERIFY(missions.at(1).passwordProtected);
         QVERIFY(missions.at(1).created.isValid());
+        // A number that does not fit in milliseconds gives no time, not undefined behavior.
+        QVERIFY(readMissions("{\"data\":[{\"name\":\"Far\",\"createTime\":1e300},"
+                             "{\"name\":\"Past\",\"createTime\":-1e300}]}",
+                             &missions));
+        QCOMPARE(missions.size(), 2);
+        QVERIFY(!missions.at(0).created.isValid());
+        QVERIFY(!missions.at(1).created.isValid());
         QVERIFY(!readMissions("[]", &missions));
         QVERIFY(!readMissions("{\"data\":{}}", &missions));
         const auto files = readMissionFiles("{\"data\":[{\"contents\":[{\"data\":{\"hash\":\"" +
@@ -4833,6 +4866,30 @@ private slots:
         remove.time = remove.time.addSecs(1);
         QVERIFY(store.accept(remove).isEmpty());
         QCOMPARE(store.rowCount(), 1);
+        // An update from another origin does not take the object over. A later delete from that
+        // origin therefore cannot remove a local object or another server's object.
+        auto local = sampleEvent();
+        local.uid = QStringLiteral("local-1");
+        QVERIFY(store.accept(local).isEmpty());
+        for (const auto &target : {local, second}) {
+            auto takeover = target;
+            takeover.origin = QStringLiteral("server-1");
+            takeover.time = takeover.time.addSecs(2);
+            takeover.callsign = QStringLiteral("Relayed");
+            QVERIFY(store.accept(takeover).isEmpty());
+            const auto row = std::find_if(
+                store.events().cbegin(), store.events().cend(), [&](const Event &event) {
+                    return event.uid == target.uid;
+                });
+            QVERIFY(row != store.events().cend());
+            QCOMPARE(row->callsign, QStringLiteral("Relayed"));
+            QCOMPARE(row->origin, target.origin);
+            remove.time = remove.time.addSecs(1);
+            remove.detail = QStringLiteral("<link uid=\"%1\" relation=\"none\" type=\"a-f-G\"/>")
+                                .arg(target.uid);
+            QVERIFY(store.accept(remove).isEmpty());
+        }
+        QCOMPARE(store.rowCount(), 2);
         // Retained detail has a total budget. Later events keep only their typed fields.
         store.clear();
         QCOMPARE(store.detailCharacters(), 0);

@@ -18,6 +18,7 @@
 #include "core/routing.h"
 #include "core/servers.h"
 #include "core/store.h"
+#include "core/text.h"
 #include "core/user_objects.h"
 #include "image_fault.h"
 
@@ -80,6 +81,16 @@ private:
         return event;
     }
 private slots:
+    void plainToolTips()
+    {
+        // Remote text in a tooltip stays text. Markup is escaped, and line breaks stay.
+        const auto tip = plainToolTip(QStringLiteral("<b>bold</b> & <img src=\"x.png\">\nnext"));
+        QCOMPARE(
+            tip,
+            QStringLiteral("<qt>&lt;b&gt;bold&lt;/b&gt; &amp; &lt;img src=&quot;x.png&quot;&gt;"
+                           "<br>next</qt>"));
+        QVERIFY(plainToolTip({}).isEmpty());
+    }
     void routingFormatAndRequests()
     {
         RouteSources sources(QPluginLoader::staticInstances(), nullptr);

@@ -68,7 +68,7 @@ The input bounds are:
 - Nested geometry: 8 levels.
 - Visible text: 100 feature labels across all feeds.
 
-GDAL reads ZIP archives in memory and never extracts files to disk. SWAK lists the archive first. It rejects absolute paths, parent traversal, oversized entries, and archives with more than one dataset. SWAK rejects XML document type declarations before GDAL reads KML, GPX, GML, or GeoRSS. Coordinates outside the valid longitude and latitude ranges fail the whole update. Excessive structure also fails the whole update. These bounds do not replace dependency security updates.
+GDAL reads ZIP archives in memory and never extracts files to disk. SWAK lists the archive first. It rejects absolute paths, parent traversal, oversized entries, and archives with more than one dataset. SWAK rejects XML document type declarations before GDAL reads KML, GPX, GML, or GeoRSS. The check reads the whole prolog, because comments and processing instructions can come before a declaration. It rejects UTF-16 and UTF-32 XML and a prolog longer than 64 KiB. Coordinates outside the valid longitude and latitude ranges fail the whole update. Excessive structure also fails the whole update. These bounds do not replace dependency security updates.
 
 # Dependencies
 

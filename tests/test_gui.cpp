@@ -41,6 +41,7 @@
 #include "core/servers.h"
 #include "core/settings_dialog.h"
 #include "core/tak_server_api.h"
+#include "core/text.h"
 #include "core/tiles.h"
 #include "core/toolbar.h"
 #include "core/track_history.h"
@@ -3032,7 +3033,8 @@ private slots:
         QVERIFY(waitFor(QStringLiteral("2 reports.")));
         QCOMPARE(table->rowCount(), 2);
         QCOMPARE(table->item(0, 0)->text(), QStringLiteral("Bridge out"));
-        QCOMPARE(table->item(0, 0)->toolTip(), QStringLiteral("Water over road"));
+        QCOMPARE(table->item(0, 0)->toolTip(),
+                 swak::plainToolTip(QStringLiteral("Water over road")));
         QCOMPARE(table->item(0, 4)->text(), QStringLiteral("Echo"));
         QVERIFY(!table->item(0, 5)->text().isEmpty());
         // A report without a title shows its identifier and no time.
@@ -3218,7 +3220,7 @@ private slots:
         QVERIFY(waitFor(QStringLiteral("1 checklists.")));
         QCOMPARE(list->count(), 1);
         QCOMPARE(list->item(0)->text(), QStringLiteral("Patrol"));
-        QCOMPARE(list->item(0)->toolTip(), QStringLiteral("Night"));
+        QCOMPARE(list->item(0)->toolTip(), swak::plainToolTip(QStringLiteral("Night")));
         // Selecting a checklist reads its tasks. The status column follows the task columns.
         list->setCurrentRow(0);
         QVERIFY(QTest::qWaitFor(
@@ -3858,7 +3860,7 @@ private slots:
                     ->text()
                     .contains(QStringLiteral(" · owner · ")));
         QVERIFY(files->item(0)->text().startsWith(QStringLiteral("map.kmz (")));
-        QCOMPARE(files->item(0)->toolTip(), QStringLiteral("Echo"));
+        QCOMPARE(files->item(0)->toolTip(), swak::plainToolTip(QStringLiteral("Echo")));
         QCOMPARE(files->item(1)->text(), QStringLiteral("notes.txt (unknown size)"));
         QVERIFY(logs->item(0)->text().contains(QStringLiteral("ANDROID-1")));
         QVERIFY(logs->item(0)->text().endsWith(QStringLiteral("\nStarted")));
@@ -10811,7 +10813,10 @@ private slots:
                 return !shown->isEmpty();
             },
             15000));
-        QCOMPARE(*shown, (QStringList{QStringLiteral("Cyan+"), QStringLiteral("Ops-Operations")}));
+        QCOMPARE(*shown,
+                 (QStringList{QStringLiteral("Cyan+"),
+                              QStringLiteral("Ops-") +
+                                  swak::plainToolTip(QStringLiteral("Operations"))}));
         QTest::qWait(100);
         QCOMPARE(api.requests.size(), sent + 1);
         choose(true);

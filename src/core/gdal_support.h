@@ -53,7 +53,12 @@ const std::vector<const char *> &gdalRasterDrivers();
 const std::vector<const char *> &gdalRemoteRasterDrivers();
 // Replaces URL query values in diagnostic text. Query values can hold API keys.
 QString redactQueryValues(const QString &text);
-// True when the text declares a DTD. Some GDAL XML drivers expand internal entities.
+// The bytes that declaresXmlDocumentType reads at most. A longer XML prolog is refused.
+inline constexpr qsizetype XmlPrologLimit = 64 * 1024;
+// True when XML text declares a DTD or an entity, or when SWAK cannot check its prolog. Some
+// GDAL XML drivers expand internal entities. The check reads the whole prolog: comments and
+// processing instructions can come before a DTD. UTF-16 and UTF-32 text is refused, and so is
+// a prolog longer than XmlPrologLimit. Text that is not XML, such as JSON, passes.
 bool declaresXmlDocumentType(const QByteArray &bytes);
 // Reads the last GDAL error of this thread as bounded plain text.
 QString gdalError(const QString &fallback);

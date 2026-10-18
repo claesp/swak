@@ -6,6 +6,7 @@
 #include "core/servers.h"
 #include "core/single_line_label.h"
 #include "core/tak_server_api.h"
+#include "core/text.h"
 
 #include <QComboBox>
 #include <QDialog>
@@ -181,8 +182,9 @@ private:
                                                           : QString{}};
             for (int column = 0; column < cells.size(); ++column) {
                 auto *item = new QTableWidgetItem(cells.at(column));
-                item->setToolTip(column == 0 && !report.description.isEmpty() ? report.description
-                                                                              : cells.at(column));
+                item->setToolTip(plainToolTip(column == 0 && !report.description.isEmpty()
+                                                  ? report.description
+                                                  : cells.at(column)));
                 table_->setItem(row, column, item);
             }
         }

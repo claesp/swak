@@ -4,6 +4,7 @@
 #include "core/map_tools.h"
 #include "core/modal.h"
 #include "core/object_sharing.h"
+#include "core/text.h"
 #include "core/user_objects.h"
 
 #include <QDialog>
@@ -56,7 +57,7 @@ bool chooseRecipients(QWidget *parent,
         item->setFlags(Qt::ItemIsUserCheckable | Qt::ItemIsEnabled);
         item->setData(Qt::UserRole, recipient.uid);
         item->setData(Qt::UserRole + 1, recipient.callsign);
-        item->setToolTip(recipient.uid);
+        item->setToolTip(plainToolTip(recipient.uid));
         const bool checked =
             std::any_of(recipients->cbegin(), recipients->cend(), [&recipient](const auto &r) {
                 return r.uid == recipient.uid;

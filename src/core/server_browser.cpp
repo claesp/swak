@@ -352,11 +352,13 @@ void ServerBrowser::chooseMapLayers(const QString &id, const QByteArray &json)
         item->setFlags(Qt::ItemIsUserCheckable | Qt::ItemIsEnabled);
         item->setCheckState(maps_ && maps_->sources().contains(layer.id) ? Qt::Checked
                                                                          : Qt::Unchecked);
-        item->setToolTip(layer.source.value(QStringLiteral("endpoint")).toString());
+        item->setToolTip(plainToolTip(layer.source.value(QStringLiteral("endpoint")).toString()));
     }
     layout->addWidget(list);
     if (!skipped.isEmpty()) {
         auto *other = new QLabel(skipped.join(QLatin1Char('\n')), dialog.get());
+        // Layer names come from the server.
+        other->setTextFormat(Qt::PlainText);
         other->setObjectName(QStringLiteral("skippedMapLayers"));
         other->setWordWrap(true);
         layout->addWidget(other);
@@ -490,9 +492,9 @@ void ServerBrowser::showDataFeeds(const QList<ServerFeed> &feeds,
                                 received};
         for (int column = 0; column < cells.size(); ++column) {
             auto *item = new QTableWidgetItem(cells.at(column));
-            item->setToolTip(column == 0 && !feed.tags.isEmpty()
-                                 ? feed.tags.join(QStringLiteral(", "))
-                                 : cells.at(column));
+            item->setToolTip(plainToolTip(column == 0 && !feed.tags.isEmpty()
+                                              ? feed.tags.join(QStringLiteral(", "))
+                                              : cells.at(column)));
             table->setItem(row, column, item);
         }
     }
@@ -560,7 +562,7 @@ void ServerBrowser::chooseChannels(const QString &id,
         item->setCheckState(active.contains(name) ? Qt::Checked : Qt::Unchecked);
         for (const auto &group : groups) {
             if (group.name == name && !group.description.isEmpty()) {
-                item->setToolTip(group.description);
+                item->setToolTip(plainToolTip(group.description));
             }
         }
     }

@@ -14,6 +14,7 @@
 #include <QUuid>
 
 #include <algorithm>
+#include <cmath>
 
 namespace swak {
 namespace {
@@ -37,8 +38,13 @@ QString plain(const QString &text, qsizetype limit = 128)
 QDateTime readTime(const QJsonValue &value)
 {
     if (value.isDouble()) {
-        return QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(value.toDouble()),
-                                              QTimeZone::UTC);
+        // Reject values that do not fit in milliseconds before the conversion. A larger value,
+        // such as 1e300 from a server, would make the cast undefined.
+        const double milliseconds = value.toDouble();
+        if (!std::isfinite(milliseconds) || std::abs(milliseconds) > 1e15) {
+            return {};
+        }
+        return QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(milliseconds), QTimeZone::UTC);
     }
     return QDateTime::fromString(value.toString(), Qt::ISODateWithMs);
 }

@@ -7,6 +7,7 @@
 #include "core/servers.h"
 #include "core/single_line_label.h"
 #include "core/tak_server_api.h"
+#include "core/text.h"
 #include "core/user_objects.h"
 
 #include <QComboBox>
@@ -45,7 +46,7 @@ QTableWidget *table(const QString &name, const QStringList &headers, QWidget *pa
 QTableWidgetItem *cell(const QString &text)
 {
     auto *item = new QTableWidgetItem(text);
-    item->setToolTip(text);
+    item->setToolTip(plainToolTip(text));
     return item;
 }
 class FilesPane final : public QWidget, public PreferenceParticipant

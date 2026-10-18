@@ -29,7 +29,7 @@ Multicast mesh entries join one IPv4 group on one selected interface. They use a
 
 The HTTPS client uses libcurl on one worker thread. Each request uses HTTPS only, certificate and host checks, TLS 1.2 or later, no redirects, no cookies, a reply size limit, and a time limit. It accepts only GET, HEAD, POST, PUT, and DELETE, and rejects header names or values with line breaks. Before it connects, it checks that the URL scheme, host, and port match the configured server. Certificates and keys reach libcurl from memory. Passwords come from `SWAK_COT_` environment variables. libcurl honors the proxy environment variables. Error texts name the failure class and contain no URL or credential.
 
-A TAK delete event, `t-x-d-d`, removes the objects that its link elements name. SWAK records the server entry that delivered each event. A delete removes only objects from the same entry, so one server cannot delete objects from another server or local objects. SWAK does not keep the delete event itself.
+A TAK delete event, `t-x-d-d`, removes the objects that its link elements name. SWAK records the server entry that delivered each event. A delete removes only objects from the same entry, so one server cannot delete objects from another server or local objects. Servers relay and edit shared objects, so an update from another entry can change an object. The update does not change the entry that owns the object. SWAK does not keep the delete event itself.
 
 Coordinates must be finite decimal numbers within geographic ranges. Altitude must lie between minus 100 million and plus 100 million meters. Horizontal and vertical uncertainty must lie between zero and 100 million meters.
 

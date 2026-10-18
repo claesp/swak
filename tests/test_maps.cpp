@@ -4,6 +4,7 @@
 #include "image_fault.h"
 #include "tile_server.h"
 
+#include <QDir>
 #include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -974,6 +975,19 @@ private slots:
                 CPLSetConfigOption("CURL_CA_BUNDLE", nullptr);
             }
         } restore;
+        // Checked and unchecked tiles keep separate caches. A tile fetched without certificate
+        // checks does not serve a checked source.
+        QTemporaryDir cache;
+        auto unchecked = source;
+        unchecked.insert(QStringLiteral("ignoreTls"), true);
+        tile = renderOnWorker(RasterRequest{unchecked, {}, cache.path(), 1 << 20, 3, 3, 5});
+        QVERIFY2(tile.error.isEmpty(), qPrintable(tile.error));
+        const auto beforeChecked = server.requests.size();
+        tile = renderOnWorker(RasterRequest{source, {}, cache.path(), 1 << 20, 3, 3, 5});
+        QVERIFY2(tile.error.isEmpty(), qPrintable(tile.error));
+        QVERIFY(server.requests.size() > beforeChecked);
+        QVERIFY(QDir(cache.filePath(QStringLiteral("unchecked"))).exists());
+        QVERIFY(QDir(cache.filePath(QStringLiteral("verified"))).exists());
         source.insert(
             QStringLiteral("endpoint"),
             QStringLiteral("https://localhost:%1/{z}/{x}/{y}.png").arg(server.serverPort()));
@@ -1181,6 +1195,14 @@ private slots:
         dataset.insert(QStringLiteral("endpoint"), QStringLiteral("/data/map.tif"));
         dataset.insert(QStringLiteral("authMode"), QStringLiteral("bearer"));
         QVERIFY(!raster->validate(dataset).isEmpty());
+        // GDAL would send the credential to every host that a capabilities document names.
+        for (const auto &endpoint : {QStringLiteral("/vsicurl/https://example.test/map.tif"),
+                                     QStringLiteral("WMTS:https://example.test/caps.xml,layer=a"),
+                                     QStringLiteral("WMS:https://example.test/wms")}) {
+            dataset.insert(QStringLiteral("endpoint"), endpoint);
+            QVERIFY2(raster->validate(dataset).contains(QStringLiteral("credentials")),
+                     qPrintable(endpoint));
+        }
         dataset.insert(QStringLiteral("authMode"), QStringLiteral("none"));
         dataset.insert(QStringLiteral("service"), QStringLiteral("unknown"));
         QVERIFY(!raster->validate(dataset).isEmpty());

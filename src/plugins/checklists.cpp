@@ -6,6 +6,7 @@
 #include "core/servers.h"
 #include "core/single_line_label.h"
 #include "core/tak_server_api.h"
+#include "core/text.h"
 
 #include <QComboBox>
 #include <QDialog>
@@ -212,8 +213,8 @@ private:
         checklists_->clear();
         for (const auto &checklist : std::as_const(list_)) {
             auto *item = new QListWidgetItem(checklist.name, checklists_);
-            item->setToolTip(checklist.description.isEmpty() ? checklist.templateName
-                                                             : checklist.description);
+            item->setToolTip(plainToolTip(checklist.description.isEmpty() ? checklist.templateName
+                                                                          : checklist.description));
         }
         current_ = {};
         showTasks();
@@ -232,7 +233,7 @@ private:
             const auto &task = current_.tasks.at(row);
             for (int column = 0; column < columns; ++column) {
                 auto *item = new QTableWidgetItem(task.values.value(column));
-                item->setToolTip(item->text());
+                item->setToolTip(plainToolTip(item->text()));
                 tasks_->setItem(row, column, item);
             }
             auto *state = new QTableWidgetItem(task.status.isEmpty() ? tr("Pending") : task.status);

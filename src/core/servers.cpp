@@ -1087,28 +1087,34 @@ private:
                 s.greeting.clear();
                 bytes.remove(0, end + 1);
             }
-            if (s.binary) {
-                return consumeBinary(s, bytes);
-            }
-            // Stop after a protocol response. Binary data can follow it in the same read.
-            const auto frames = s.stream.feed(bytes, [](const QByteArray &frame) {
-                return frame.contains("t-x-takp-r");
-            });
-            if (!frames.isEmpty()) {
-                s.partial = 0;
-            }
-            for (const auto &frame : frames) {
-                decode(s, frame);
-            }
-            if (s.binary) {
-                const auto rest = s.stream.takeRemainder();
-                s.stream.reset();
-                return rest.isEmpty() || consumeBinary(s, rest);
-            }
-            const auto rest = s.stream.takeRemainder();
-            if (!rest.isEmpty()) {
+            // A loop, not recursion: one read can hold many protocol responses.
+            while (true) {
+                if (s.binary) {
+                    return consumeBinary(s, bytes);
+                }
+                // Stop after a protocol response. Binary data can follow it in the same read.
+                // Only a stream that asked to change protocol stops, so that other peers cannot
+                // make the reader copy the rest of the read for each frame.
+                const bool waiting = s.requested && !s.peer;
+                const auto frames = s.stream.feed(bytes, [waiting](const QByteArray &frame) {
+                    return waiting && frame.contains("t-x-takp-r");
+                });
+                if (!frames.isEmpty()) {
+                    s.partial = 0;
+                }
+                for (const auto &frame : frames) {
+                    decode(s, frame);
+                }
+                if (s.binary) {
+                    const auto rest = s.stream.takeRemainder();
+                    s.stream.reset();
+                    return rest.isEmpty() || consumeBinary(s, rest);
+                }
+                bytes = s.stream.takeRemainder();
+                if (bytes.isEmpty()) {
+                    break;
+                }
                 // The response kept XML mode. Read the rest as XML.
-                return consume(s, rest);
             }
             if (s.stream.failed()) {
                 ++s.rejected;

@@ -110,6 +110,10 @@ QString Store::accept(const Event &event, const QDateTime &now)
         if (event.time < events_.at(row).time) {
             return tr("A newer event already exists for this identity.");
         }
+        // Servers relay and edit shared objects, so an update from another origin is allowed.
+        // The first origin keeps the object. Otherwise one server could take over an object
+        // and then delete it with t-x-d-d.
+        stored.origin = events_.at(row).origin;
         detailCharacters_ += stored.detail.size() - previous;
         events_[row] = stored;
         if (batching_) {

@@ -5,6 +5,7 @@
 #include "core/modal.h"
 #include "core/preferences.h"
 #include "core/single_line_label.h"
+#include "core/text.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -191,7 +192,8 @@ private:
                 room.unread > 0 ? tr("%1 (%2)").arg(room.title).arg(room.unread) : room.title,
                 rooms_);
             item->setData(Qt::UserRole, room.key);
-            item->setToolTip(room.kind == ChatRoom::Kind::Direct ? room.key : room.title);
+            item->setToolTip(
+                plainToolTip(room.kind == ChatRoom::Kind::Direct ? room.key : room.title));
             auto font = item->font();
             font.setBold(room.unread > 0);
             item->setFont(font);
@@ -255,7 +257,7 @@ private:
                 }
                 const auto title = contact.callsign.isEmpty() ? contact.uid : contact.callsign;
                 auto *action = menu.addAction(title);
-                action->setToolTip(contact.uid);
+                action->setToolTip(plainToolTip(contact.uid));
                 connect(action,
                         &QAction::triggered,
                         this,
