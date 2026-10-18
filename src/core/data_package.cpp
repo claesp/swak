@@ -1,5 +1,7 @@
 #include "core/data_package.h"
 
+#include "core/text.h"
+
 #include <QCoreApplication>
 #include <QHash>
 #include <QSet>
@@ -24,14 +26,7 @@ QString tr(const char *text)
 }
 QString plain(const QString &text)
 {
-    QString result;
-    for (const auto ch : text.left(128)) {
-        if (ch.category() != QChar::Other_Control && ch.category() != QChar::Other_Format &&
-            !ch.isSurrogate()) {
-            result += ch;
-        }
-    }
-    return result.trimmed();
+    return plainText(text, 128);
 }
 struct Manifest
 {

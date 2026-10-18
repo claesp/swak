@@ -1,5 +1,7 @@
 #include "core/data_feeds.h"
 
+#include "core/text.h"
+
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -10,14 +12,7 @@ namespace swak {
 namespace {
 QString plain(const QString &text, qsizetype limit = 128)
 {
-    QString result;
-    for (const auto ch : text.left(limit)) {
-        if (ch.category() != QChar::Other_Control && ch.category() != QChar::Other_Format &&
-            !ch.isSurrogate()) {
-            result += ch;
-        }
-    }
-    return result.trimmed();
+    return plainText(text, limit);
 }
 QStringList strings(const QJsonValue &value, int limit)
 {

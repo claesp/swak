@@ -2,6 +2,7 @@
 
 #include "core/identity.h"
 #include "core/tak_server_api.h"
+#include "core/text.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -19,14 +20,7 @@ constexpr int RequestTimeoutMs = 60000;
 
 QString plain(const QString &text, qsizetype limit = 512)
 {
-    QString result;
-    for (const auto ch : text.left(limit)) {
-        if (ch == u'\n' || (ch.category() != QChar::Other_Control &&
-                            ch.category() != QChar::Other_Format && !ch.isSurrogate())) {
-            result += ch;
-        }
-    }
-    return result.trimmed();
+    return plainText(text, limit, LineBreaks::Keep);
 }
 QString encoded(const QString &value)
 {

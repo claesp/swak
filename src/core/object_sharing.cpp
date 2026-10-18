@@ -3,6 +3,7 @@
 #include "core/identity.h"
 #include "core/logging.h"
 #include "core/servers.h"
+#include "core/text.h"
 #include "core/user_objects.h"
 
 #include <QJsonArray>
@@ -11,14 +12,14 @@
 
 namespace swak {
 namespace {
-bool safeText(const QString &text)
+// Recipients become event destinations, so they follow the identity rule of events.
+bool validRecipient(const ShareRecipient &recipient)
 {
-    return text.size() <= 128 && std::none_of(text.cbegin(), text.cend(), [](QChar ch) {
-               return ch.category() == QChar::Other_Control ||
-                      ch.category() == QChar::Other_Format || ch.isSurrogate();
-           });
+    return identityText(recipient.uid) &&
+           (recipient.callsign.isEmpty() || identityText(recipient.callsign));
 }
-// Reads recipients. Returns false for invalid content.
+// Reads recipients. Returns false for an invalid structure. It skips single invalid recipients,
+// so that one bad entry does not discard the saved sharing state.
 bool readRecipients(const QJsonValue &value, QList<ShareRecipient> *recipients)
 {
     if (!value.isUndefined() && !value.isArray()) {
@@ -33,10 +34,9 @@ bool readRecipients(const QJsonValue &value, QList<ShareRecipient> *recipients)
         const auto object = entry.toObject();
         ShareRecipient recipient{object.value(QStringLiteral("uid")).toString(),
                                  object.value(QStringLiteral("callsign")).toString()};
-        if (recipient.uid.isEmpty() || !safeText(recipient.uid) || !safeText(recipient.callsign)) {
-            return false;
+        if (validRecipient(recipient)) {
+            result.append(recipient);
         }
-        result.append(recipient);
     }
     *recipients = result;
     return true;
@@ -113,7 +113,7 @@ QString ObjectSharing::validateSettings(const QJsonObject &values) const
         const auto id = object.value(QStringLiteral("id")).toString();
         QList<ShareRecipient> parsed;
         const auto type = object.value(QStringLiteral("type")).toString();
-        if (id.isEmpty() || !safeText(id) || type.size() > 16 ||
+        if (!identityText(id) || type.size() > 16 ||
             (!type.isEmpty() && !type.startsWith(QStringLiteral("u-d-")) &&
              !type.startsWith(QStringLiteral("b-m-"))) ||
             !readRecipients(object.value(QStringLiteral("recipients")), &parsed)) {
@@ -183,6 +183,9 @@ QString ObjectSharing::share(const QString &id, const QList<ShareRecipient> &rec
     }
     if (recipients.size() > MaxRecipients) {
         return tr("Choose at most %1 recipients.").arg(MaxRecipients);
+    }
+    if (!std::all_of(recipients.cbegin(), recipients.cend(), validRecipient)) {
+        return tr("A recipient has an invalid identity.");
     }
     if (!states_.contains(id) && states_.size() >= MaxShared) {
         return tr("At most %1 objects can be shared.").arg(MaxShared);

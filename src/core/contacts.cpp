@@ -16,18 +16,6 @@
 #include <memory>
 
 namespace swak {
-namespace {
-QString bounded(const QString &text)
-{
-    QString result;
-    for (const auto ch : text.left(128)) {
-        if (ch.category() != QChar::Other_Control && ch.category() != QChar::Other_Format) {
-            result += ch;
-        }
-    }
-    return result;
-}
-} // namespace
 bool readTakContacts(const QByteArray &json, const QString &origin, QList<Contact> *contacts)
 {
     const auto document = QJsonDocument::fromJson(json);
@@ -38,12 +26,13 @@ bool readTakContacts(const QByteArray &json, const QString &origin, QList<Contac
     for (const auto &value : document.array()) {
         const auto object = value.toObject();
         Contact contact;
-        contact.uid = bounded(object.value(QStringLiteral("uid")).toString());
-        contact.callsign = bounded(object.value(QStringLiteral("callsign")).toString());
-        contact.team = bounded(object.value(QStringLiteral("team")).toString());
-        contact.role = bounded(object.value(QStringLiteral("role")).toString());
-        contact.device = bounded(object.value(QStringLiteral("takv")).toString());
+        contact.uid = identityPlain(object.value(QStringLiteral("uid")).toString());
+        contact.callsign = identityPlain(object.value(QStringLiteral("callsign")).toString());
+        contact.team = identityPlain(object.value(QStringLiteral("team")).toString());
+        contact.role = identityPlain(object.value(QStringLiteral("role")).toString());
+        contact.device = plainText(object.value(QStringLiteral("takv")).toString(), 128);
         contact.origin = origin;
+        // Identities follow the event rule, so a contact can receive shared objects and chat.
         if (contact.uid.isEmpty()) {
             continue;
         }

@@ -81,6 +81,30 @@ private:
         return event;
     }
 private slots:
+    void textRules()
+    {
+        const auto smile = QString::fromUtf8("\xF0\x9F\x98\x80");
+        const auto lone = QString(QChar(0xD83D));
+        // Free text keeps emoji and loses controls, format characters, and lone surrogates.
+        QCOMPARE(plainText(QStringLiteral(" a") + smile + lone + QChar(0x202E) + QChar(0x0007) +
+                               QStringLiteral("b\nc "),
+                           100),
+                 QStringLiteral("a") + smile + QStringLiteral("bc"));
+        QCOMPARE(plainText(QStringLiteral("a\nb\tc"), 100, LineBreaks::Keep),
+                 QStringLiteral("a\nb\tc"));
+        // The limit never splits a pair.
+        QCOMPARE(plainText(QStringLiteral("ab") + smile, 3), QStringLiteral("ab"));
+        QCOMPARE(plainText(QStringLiteral("ab") + smile, 4), QStringLiteral("ab") + smile);
+        // Identities have no surrogate at all.
+        QVERIFY(identityText(QStringLiteral("ANDROID-1")));
+        QVERIFY(!identityText({}));
+        QVERIFY(!identityText(QStringLiteral("a") + smile));
+        QVERIFY(!identityText(QStringLiteral("a\nb")));
+        QVERIFY(!identityText(QString(129, u'a')));
+        QCOMPARE(
+            identityPlain(QStringLiteral(" Fox") + smile + QChar(0x200B) + QStringLiteral(" ")),
+            QStringLiteral("Fox"));
+    }
     void plainToolTips()
     {
         // Remote text in a tooltip stays text. Markup is escaped, and line breaks stay.

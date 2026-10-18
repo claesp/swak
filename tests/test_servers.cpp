@@ -2201,6 +2201,42 @@ private slots:
         ellipse.detail = QStringLiteral("<shape><ellipse major=\"100\" minor=\"100\"/></shape>");
         QVERIFY(readTakDrawing(ellipse));
     }
+    void sharingRecipientRules()
+    {
+        // Recipients become event destinations, so they follow the identity rule of events.
+        Store store;
+        Servers servers(store);
+        UserObjects objects;
+        Identity identity;
+        ObjectSharing sharing(objects, &servers, &identity);
+        QVERIFY(objects
+                    .put(localObject(QStringLiteral("m1"),
+                                     QStringLiteral("circle"),
+                                     markerGeometry(59.5, 18.25)))
+                    .isEmpty());
+        const ShareRecipient good{QStringLiteral("ANDROID-1"), QStringLiteral("Echo")};
+        const ShareRecipient emoji{QStringLiteral("ANDROID-2"),
+                                   QStringLiteral("Fox") + QString::fromUtf8("\xF0\x9F\xA6\x8A")};
+        QVERIFY(!sharing.share(QStringLiteral("m1"), {good, emoji}).isEmpty());
+        QVERIFY(!sharing.isShared(QStringLiteral("m1")));
+        // One bad saved recipient is dropped. The rest of the sharing state stays.
+        const QJsonObject values{
+            {QStringLiteral("automatic"), true},
+            {QStringLiteral("shared"),
+             QJsonArray{QJsonObject{
+                 {QStringLiteral("id"), QStringLiteral("m1")},
+                 {QStringLiteral("type"), QStringLiteral("b-m-p-s-m")},
+                 {QStringLiteral("recipients"),
+                  QJsonArray{QJsonObject{{QStringLiteral("uid"), good.uid},
+                                         {QStringLiteral("callsign"), good.callsign}},
+                             QJsonObject{{QStringLiteral("uid"), emoji.uid},
+                                         {QStringLiteral("callsign"), emoji.callsign}}}}}}}};
+        QVERIFY(sharing.validateSettings(values).isEmpty());
+        sharing.restorePreferences(values);
+        QVERIFY(sharing.automatic());
+        QVERIFY(sharing.isShared(QStringLiteral("m1")));
+        QCOMPARE(sharing.recipients(QStringLiteral("m1")), QList<ShareRecipient>{good});
+    }
     void objectSharing()
     {
         QUdpSocket receiver;
@@ -2409,6 +2445,19 @@ private slots:
         bad = all;
         bad.detail = QStringLiteral("<remarks>x</remarks>");
         QVERIFY(!readChatMessage(bad));
+        // A message ID becomes a receipt UID, so it follows the identity rule. Emoji in the text
+        // stay.
+        const auto smile = QString::fromUtf8("\xF0\x9F\x98\x80");
+        QVERIFY(!readChatMessage(geoChat(QStringLiteral("id") + smile,
+                                         QStringLiteral("ANDROID-5"),
+                                         AllChatRooms,
+                                         QStringLiteral("x"))));
+        const auto withEmoji = readChatMessage(geoChat(QStringLiteral("m-emoji"),
+                                                       QStringLiteral("ANDROID-5"),
+                                                       AllChatRooms,
+                                                       QStringLiteral("hi ") + smile));
+        QVERIFY(withEmoji);
+        QCOMPARE(withEmoji->message.text, QStringLiteral("hi ") + smile);
         // Built messages read back.
         auto sender = sampleEvent(QStringLiteral("SWAK-1"));
         sender.callsign = QStringLiteral("Swak");
@@ -4709,6 +4758,13 @@ private slots:
         QVERIFY(citrap.create(QStringLiteral("tak"), report, {}).isEmpty());
         QVERIFY(created.wait(10000));
         QCOMPARE(created.last().at(1).toString(), QStringLiteral("plain-9"));
+        // A title with spaces at the ends or an emoji is cleaned, not refused by the package.
+        auto spaced = report;
+        spaced.title =
+            QStringLiteral(" Fire ") + QString::fromUtf8("\xF0\x9F\x94\xA5") + QStringLiteral(" ");
+        const auto spacedError = citrap.create(QStringLiteral("tak"), spaced, {});
+        QVERIFY2(spacedError.isEmpty(), qPrintable(spacedError));
+        QVERIFY(created.wait(10000));
         QVERIFY(created.last().at(2).toString().isEmpty());
         written.id = QStringLiteral("r-1");
         QVERIFY(citrap.update(QStringLiteral("tak"), written).isEmpty());

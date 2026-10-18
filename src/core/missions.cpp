@@ -6,6 +6,7 @@
 #include "core/servers.h"
 #include "core/store.h"
 #include "core/tak_server_api.h"
+#include "core/text.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -26,14 +27,7 @@ constexpr int MissionLifetimeSeconds = 24 * 60 * 60;
 
 QString plain(const QString &text, qsizetype limit = 128)
 {
-    QString result;
-    for (const auto ch : text.left(limit)) {
-        if (ch.category() != QChar::Other_Control && ch.category() != QChar::Other_Format &&
-            !ch.isSurrogate()) {
-            result += ch;
-        }
-    }
-    return result.trimmed();
+    return plainText(text, limit);
 }
 QDateTime readTime(const QJsonValue &value)
 {

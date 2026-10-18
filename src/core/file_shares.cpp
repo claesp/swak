@@ -10,6 +10,7 @@
 #include "core/servers.h"
 #include "core/store.h"
 #include "core/tak_server_api.h"
+#include "core/text.h"
 #include "core/user_objects.h"
 
 #include <QCoreApplication>
@@ -37,14 +38,7 @@ bool hashText(const QString &text)
 }
 QString plain(const QString &text, qsizetype limit = 128)
 {
-    QString result;
-    for (const auto ch : text.left(limit)) {
-        if (ch.category() != QChar::Other_Control && ch.category() != QChar::Other_Format &&
-            !ch.isSurrogate()) {
-            result += ch;
-        }
-    }
-    return result.trimmed();
+    return plainText(text, limit);
 }
 // A file name without folders or characters that file systems or HTTP headers reject.
 QString safeFileName(const QString &text)

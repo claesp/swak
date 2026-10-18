@@ -1,9 +1,11 @@
 #include "core/chat.h"
 
+#include "core/cot.h"
 #include "core/cot_detail.h"
 #include "core/identity.h"
 #include "core/servers.h"
 #include "core/store.h"
+#include "core/text.h"
 
 #include <QUuid>
 
@@ -17,32 +19,10 @@ constexpr int ChatLifetimeSeconds = 24 * 60 * 60;
 constexpr int MaxReceipts = 256;
 constexpr double UnknownHeight = 9999999;
 
-// Keeps text readable as plain text. It removes control and format characters, such as
-// direction overrides, but keeps line breaks and tabs.
-QString plainText(const QString &text, qsizetype limit)
-{
-    QString result;
-    for (qsizetype i = 0; i < text.size() && result.size() < limit; ++i) {
-        const auto ch = text.at(i);
-        if (ch.isHighSurrogate() && i + 1 < text.size() && text.at(i + 1).isLowSurrogate()) {
-            // A surrogate pair is valid text, such as an emoji. Keep both halves together.
-            if (result.size() + 2 <= limit) {
-                result += ch;
-                result += text.at(i + 1);
-            }
-            ++i;
-        } else if (ch == QLatin1Char('\n') || ch == QLatin1Char('\t') ||
-                   (ch.category() != QChar::Other_Control && ch.category() != QChar::Other_Format &&
-                    !ch.isSurrogate())) {
-            result += ch;
-        }
-    }
-    return result;
-}
+// Chat identifiers become parts of event UIDs, so they follow the identity rule of events.
 bool identifier(const QString &text)
 {
-    return !text.isEmpty() && text.size() <= 128 && plainText(text, 128) == text &&
-           !text.contains(QLatin1Char('\n')) && !text.contains(QLatin1Char('\t'));
+    return identityText(text);
 }
 CotElement element(const QString &name, QList<std::pair<QString, QString>> attributes = {})
 {
@@ -107,12 +87,12 @@ std::optional<IncomingChat> readChatMessage(const Event &event)
     auto &message = result.message;
     message.messageId = details->messageId;
     message.senderUid = senderOf(event, chatElement);
-    message.senderCallsign = plainText(details->senderCallsign, 128).trimmed();
+    message.senderCallsign = plainText(details->senderCallsign, 128);
     if (message.senderCallsign.isEmpty()) {
         message.senderCallsign = message.senderUid;
     }
     const auto text = remarks(event);
-    message.text = plainText(text, MaxChatText);
+    message.text = plainText(text, MaxChatText, LineBreaks::Keep);
     if (text.size() > MaxChatText) {
         message.text += QStringLiteral(" …");
     }
@@ -391,7 +371,8 @@ QString Chat::send(const QString &key, const QString &text)
     if (trimmed.isEmpty()) {
         return tr("Type a message.");
     }
-    if (trimmed.size() > MaxChatText || plainText(trimmed, MaxChatText) != trimmed) {
+    if (trimmed.size() > MaxChatText ||
+        plainText(trimmed, MaxChatText, LineBreaks::Keep) != trimmed) {
         return tr("Use at most %1 characters of plain text.").arg(MaxChatText);
     }
     if (!identifier(self.uid)) {
@@ -481,6 +462,12 @@ void Chat::flush()
         }
     };
     while (!receipts_.isEmpty()) {
+        // A receipt that cannot be encoded never will be. Drop it, so that it does not block
+        // the receipts and messages after it. Only a send failure waits for a retry.
+        if (encodeCot(receipts_.first()).isEmpty()) {
+            receipts_.removeFirst();
+            continue;
+        }
         if (!servers_->send(receipts_.first()).isEmpty()) {
             retry();
             return;

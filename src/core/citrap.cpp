@@ -3,6 +3,7 @@
 #include "core/data_package.h"
 #include "core/identity.h"
 #include "core/tak_server_api.h"
+#include "core/text.h"
 
 #include <QHash>
 #include <QJsonArray>
@@ -23,14 +24,7 @@ constexpr int RequestTimeoutMs = 120000;
 
 QString plain(const QString &text, qsizetype limit = 256)
 {
-    QString result;
-    for (const auto ch : text.left(limit)) {
-        if (ch == u'\n' || (ch.category() != QChar::Other_Control &&
-                            ch.category() != QChar::Other_Format && !ch.isSurrogate())) {
-            result += ch;
-        }
-    }
-    return result.trimmed();
+    return plainText(text, limit, LineBreaks::Keep);
 }
 QString encoded(const QString &value)
 {
@@ -265,7 +259,10 @@ QString Citrap::create(const QString &serverId,
     if (!api_) {
         return tr("No TAK REST API is available.");
     }
-    if (plain(report.title, 128).isEmpty()) {
+    // The title also names the data package, which accepts only clean single-line text. Clean it
+    // here, so that spaces at the ends or line breaks do not fail the package.
+    report.title = plainText(report.title, 128);
+    if (report.title.isEmpty()) {
         return tr("Type a report title.");
     }
     if (attachments.size() > MaxCitrapAttachments) {
