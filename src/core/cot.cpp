@@ -288,7 +288,9 @@ QByteArray encodeCot(const Event &event)
     attr("le", QString::number(event.linearError, 'f', 3));
     xml.writeEndElement();
     xml.writeStartElement(QStringLiteral("detail"));
-    writeDetail(xml, mergedDetail(event));
+    if (!writeDetail(xml, mergedDetail(event))) {
+        return {};
+    }
     xml.writeEndElement();
     xml.writeEndElement();
     xml.writeEndDocument();

@@ -2404,6 +2404,20 @@ private slots:
         QCOMPARE(incoming->message.senderUid, sender.uid);
         QCOMPARE(incoming->message.senderCallsign, QStringLiteral("Swak"));
         QVERIFY(destinations(event).isEmpty());
+        // Emoji are valid surrogate pairs. The text arrives complete.
+        auto emoji = message;
+        emoji.text = QStringLiteral("hello ") + QString::fromUtf8("\xF0\x9F\x98\x80");
+        const auto emojiEvent =
+            decodeCot(encodeCot(chatMessageEvent(sender, allRoom, {}, emoji, now)));
+        QVERIFY(emojiEvent.event);
+        const auto emojiChat = readChatMessage(*emojiEvent.event);
+        QVERIFY(emojiChat);
+        QCOMPARE(emojiChat->message.text, emoji.text);
+        // A lone surrogate cannot travel in XML. The writer refuses the detail instead of dropping
+        // the text.
+        auto lone = message;
+        lone.text = QStringLiteral("bad ") + QChar(0xD83D);
+        QVERIFY(chatMessageEvent(sender, allRoom, {}, lone, now).detail.isEmpty());
         const ChatRoom direct{
             QStringLiteral("ANDROID-5"), QStringLiteral("Echo"), ChatRoom::Kind::Direct, {}, 0};
         event = chatMessageEvent(sender, direct, QStringLiteral("Echo"), message, now);
@@ -5030,6 +5044,13 @@ private slots:
         valid.setAttribute(QStringLiteral("source"), QStringLiteral("SWAK-2"));
         QCOMPARE(detailText({invalid, valid}),
                  QStringLiteral("<remarks source=\"SWAK-2\">ok</remarks>"));
+        // A rejected value fails the whole write. Silent loss would send partial content.
+        auto badValue = valid;
+        badValue.setAttribute(QStringLiteral("to"), QStringLiteral("a") + QChar(0xDC00));
+        QVERIFY(detailText({badValue}).isEmpty());
+        auto badText = valid;
+        badText.text = QStringLiteral("a") + QChar(0x0001);
+        QVERIFY(detailText({badText}).isEmpty());
     }
     void identityRoundTrip()
     {

@@ -21,29 +21,47 @@ bool validName(const QString &name)
     static const QRegularExpression pattern(QStringLiteral("\\A[A-Za-z_][A-Za-z0-9._-]{0,63}\\z"));
     return pattern.match(name).hasMatch();
 }
+// Accepts text that XML can carry. A valid surrogate pair, such as an emoji, is allowed. A lone
+// surrogate is not.
 bool safeValue(const QString &value)
 {
-    return std::none_of(value.begin(), value.end(), [](QChar ch) {
-        return ch.isNull() || ch.isSurrogate() ||
-               (ch.category() == QChar::Other_Control && ch != u'\n' && ch != u'\t');
-    });
+    for (qsizetype i = 0; i < value.size(); ++i) {
+        const auto ch = value.at(i);
+        if (ch.isHighSurrogate() && i + 1 < value.size() && value.at(i + 1).isLowSurrogate()) {
+            ++i;
+            continue;
+        }
+        if (ch.isNull() || ch.isSurrogate() ||
+            (ch.category() == QChar::Other_Control && ch != u'\n' && ch != u'\t')) {
+            return false;
+        }
+    }
+    return true;
 }
 void writeElement(QXmlStreamWriter &xml, const CotElement &element, int depth, bool &valid)
 {
+    // Elements and attributes with invalid names are skipped. A rejected value fails the write,
+    // because the content would otherwise be lost without notice.
     if (depth > MaxDetailDepth || !validName(element.name)) {
-        valid = false;
         return;
     }
     xml.writeStartElement(element.name);
     for (const auto &[key, value] : element.attributes) {
-        if (!validName(key) || !safeValue(value)) {
+        if (!validName(key)) {
+            continue;
+        }
+        if (!safeValue(value)) {
             valid = false;
             continue;
         }
         xml.writeAttribute(key, value);
     }
-    if (!element.text.isEmpty() && safeValue(element.text)) {
-        xml.writeCharacters(element.text);
+    if (!element.text.isEmpty()) {
+        if (safeValue(element.text)) {
+            xml.writeCharacters(element.text);
+        } else {
+            valid = false;
+        }
     }
     for (const auto &child : element.children) {
         writeElement(xml, child, depth + 1, valid);
@@ -118,12 +136,13 @@ std::vector<CotElement> detailElements(const QString &detail)
     }
     return xml.hasError() ? std::vector<CotElement>{} : root;
 }
-void writeDetail(QXmlStreamWriter &xml, const std::vector<CotElement> &elements)
+bool writeDetail(QXmlStreamWriter &xml, const std::vector<CotElement> &elements)
 {
     bool valid = true;
     for (const auto &element : elements) {
         writeElement(xml, element, 1, valid);
     }
+    return valid;
 }
 // Later TAK phases use this reader. The server tests cover it now.
 // cppcheck-suppress unusedFunction
@@ -131,8 +150,7 @@ QString detailText(const std::vector<CotElement> &elements)
 {
     QString output;
     QXmlStreamWriter xml(&output);
-    writeDetail(xml, elements);
-    if (xml.hasError() || output.size() > MaxDetailCharacters) {
+    if (!writeDetail(xml, elements) || xml.hasError() || output.size() > MaxDetailCharacters) {
         return {};
     }
     return output;

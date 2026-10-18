@@ -29,11 +29,13 @@ struct CotElement
 
 // Parses the canonical detail text of an event. Invalid text gives an empty list.
 std::vector<CotElement> detailElements(const QString &detail);
-// Writes elements as canonical detail text. It skips elements with invalid names and
-// returns an empty string when the result exceeds MaxDetailCharacters.
+// Writes elements as canonical detail text. It skips elements and attributes with invalid
+// names. It returns an empty string when a value or text is invalid, or when the result exceeds
+// MaxDetailCharacters, so content is never dropped without notice.
 QString detailText(const std::vector<CotElement> &elements);
-// Writes elements into an open XML writer. It skips elements with invalid names or values.
-void writeDetail(QXmlStreamWriter &xml, const std::vector<CotElement> &elements);
+// Writes elements into an open XML writer. It skips elements and attributes with invalid names.
+// It returns false when it rejected a value or text.
+bool writeDetail(QXmlStreamWriter &xml, const std::vector<CotElement> &elements);
 // Returns the first top-level detail element with this name.
 std::optional<CotElement> detailElement(const Event &event, QStringView name);
 
