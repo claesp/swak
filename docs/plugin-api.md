@@ -341,6 +341,8 @@ The generic form selects a choice field's first declared value when a saved valu
 
 PanePlugin can return a pane-owned QAction from `primaryAction(QWidget *)`. The argument is the dock content container, which contains the plugin widget. The host shares that action between Tools > Plugins and the main toolbar. Supply its icon, tooltip, and active state. The default remains the existing pane toggle.
 
+`MapTool::handle`, `paint`, and `cancel` have defaults that do nothing and return false. A tool that only adds menu entries, or that paints elsewhere, overrides none of them.
+
 MapTool can emit `activationRequested`, which MapTools forwards to the map view. The view cancels the current tool, calls `activate(QWidget &)`, and focuses the map. The default activation method does nothing. Markers uses this path for the Marker menu action and shares its placement setup with the keyboard action. The editor pane still opens after placement or an explicit edit.
 
 # Polygon tools

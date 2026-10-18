@@ -77,8 +77,7 @@ public:
     }
     QJsonObject savePreferences() const override
     {
-        return {{QStringLiteral("header"),
-                 QString::fromLatin1(horizontalHeader()->saveState().toBase64())},
+        return {{QStringLiteral("header"), widgetStateText(horizontalHeader()->saveState())},
                 {QStringLiteral("layout"), HeaderLayout}};
     }
     void restorePreferences(const QJsonObject &values) override
@@ -87,11 +86,7 @@ public:
         if (values.value(QStringLiteral("layout")).toInt() != HeaderLayout) {
             return;
         }
-        const auto bytes = preferenceText(values, QStringLiteral("header"), {}, 16384).toLatin1();
-        if (!bytes.isEmpty()) {
-            horizontalHeader()->restoreState(
-                QByteArray::fromBase64(bytes, QByteArray::AbortOnBase64DecodingErrors));
-        }
+        horizontalHeader()->restoreState(widgetStateBytes(values, QStringLiteral("header"), 16384));
     }
 
 protected:

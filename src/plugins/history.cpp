@@ -35,15 +35,6 @@ public:
     {
         connect(&history, &TrackHistory::changed, this, &MapTool::changed);
     }
-    bool handle(QEvent &, const Viewport &, QWidget &) override
-    {
-        return false;
-    }
-    void paint(QPainter &, const Viewport &) const override {}
-    bool cancel() override
-    {
-        return false;
-    }
     QString statusText() const override
     {
         return status_;

@@ -6,6 +6,7 @@
 #include "core/map_tools.h"
 #include "core/modal.h"
 #include "core/preferences.h"
+#include "core/server_choice.h"
 #include "core/servers.h"
 #include "core/single_line_label.h"
 #include "core/store.h"
@@ -51,15 +52,6 @@ public:
         : MapTool(parent), missions_(services.missions), objects_(services.objects),
           identity_(services.identity), store_(services.store)
     {
-    }
-    bool handle(QEvent &, const Viewport &, QWidget &) override
-    {
-        return false;
-    }
-    void paint(QPainter &, const Viewport &) const override {}
-    bool cancel() override
-    {
-        return false;
     }
     void populateInformationMenu(const MapItem &item, QMenu &menu) override
     {
@@ -329,16 +321,11 @@ public:
     }
     QJsonObject savePreferences() const override
     {
-        return {
-            {QStringLiteral("splitter"), QString::fromLatin1(splitter_->saveState().toBase64())}};
+        return {{QStringLiteral("splitter"), widgetStateText(splitter_->saveState())}};
     }
     void restorePreferences(const QJsonObject &values) override
     {
-        const auto bytes = preferenceText(values, QStringLiteral("splitter"), {}, 1024).toLatin1();
-        if (!bytes.isEmpty()) {
-            splitter_->restoreState(
-                QByteArray::fromBase64(bytes, QByteArray::AbortOnBase64DecodingErrors));
-        }
+        splitter_->restoreState(widgetStateBytes(values, QStringLiteral("splitter"), 1024));
     }
 
 private:
@@ -349,23 +336,7 @@ private:
     }
     void showServers()
     {
-        const auto currentId = serverChoice_->currentData().toString();
-        serverChoice_->clear();
-        if (!servers_) {
-            return;
-        }
-        const auto sources = servers_->sources();
-        for (auto it = sources.begin(); it != sources.end(); ++it) {
-            if (!TakServerApi::martiUrl(it.value().toObject(), QStringLiteral("/api/missions"))
-                     .isEmpty()) {
-                const auto name = it.value().toObject().value(QStringLiteral("name")).toString();
-                serverChoice_->addItem(name.isEmpty() ? it.key() : name, it.key());
-            }
-        }
-        const auto index = serverChoice_->findData(currentId);
-        if (index >= 0) {
-            serverChoice_->setCurrentIndex(index);
-        }
+        fillTakServerChoice(*serverChoice_, servers_, QStringLiteral("/api/missions"));
     }
     void showAvailable()
     {

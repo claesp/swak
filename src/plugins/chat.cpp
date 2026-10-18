@@ -148,16 +148,11 @@ public:
     }
     QJsonObject savePreferences() const override
     {
-        return {
-            {QStringLiteral("splitter"), QString::fromLatin1(splitter_->saveState().toBase64())}};
+        return {{QStringLiteral("splitter"), widgetStateText(splitter_->saveState())}};
     }
     void restorePreferences(const QJsonObject &values) override
     {
-        const auto bytes = preferenceText(values, QStringLiteral("splitter"), {}, 1024).toLatin1();
-        if (!bytes.isEmpty()) {
-            splitter_->restoreState(
-                QByteArray::fromBase64(bytes, QByteArray::AbortOnBase64DecodingErrors));
-        }
+        splitter_->restoreState(widgetStateBytes(values, QStringLiteral("splitter"), 1024));
     }
 
 protected:

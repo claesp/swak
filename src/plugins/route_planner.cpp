@@ -102,7 +102,6 @@ public:
         }
         return false;
     }
-    void paint(QPainter &, const Viewport &) const override {}
     QStringList attributions() const override
     {
         if (attribution.isEmpty() || routeId.isEmpty() || !objects || !objects->find(routeId)) {

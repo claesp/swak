@@ -125,6 +125,15 @@ QString preferenceText(const QJsonObject &values,
     const auto text = value.toString();
     return text.size() <= limit && !text.contains(QChar::Null) ? text : fallback;
 }
+QString widgetStateText(const QByteArray &state)
+{
+    return QString::fromLatin1(state.toBase64());
+}
+QByteArray widgetStateBytes(const QJsonObject &values, const QString &key, qsizetype limit)
+{
+    return QByteArray::fromBase64(preferenceText(values, key, {}, limit).toLatin1(),
+                                  QByteArray::AbortOnBase64DecodingErrors);
+}
 QRect fitWindowRectangle(QRect rectangle, const QList<QRect> &screens)
 {
     if (screens.isEmpty()) {

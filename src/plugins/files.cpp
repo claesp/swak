@@ -4,6 +4,7 @@
 #include "core/interfaces.h"
 #include "core/modal.h"
 #include "core/preferences.h"
+#include "core/server_choice.h"
 #include "core/servers.h"
 #include "core/single_line_label.h"
 #include "core/tak_server_api.h"
@@ -195,22 +196,7 @@ private:
     }
     void showServers()
     {
-        const auto current = serverChoice_->currentData().toString();
-        serverChoice_->clear();
-        if (!servers_) {
-            return;
-        }
-        const auto sources = servers_->sources();
-        for (auto it = sources.begin(); it != sources.end(); ++it) {
-            if (!TakServerApi::martiUrl(it.value().toObject(), QStringLiteral("/sync/search"))
-                     .isEmpty()) {
-                serverChoice_->addItem(serverName(it.key()), it.key());
-            }
-        }
-        const auto index = serverChoice_->findData(current);
-        if (index >= 0) {
-            serverChoice_->setCurrentIndex(index);
-        }
+        fillTakServerChoice(*serverChoice_, servers_, QStringLiteral("/sync/search"));
     }
     void showOffers()
     {

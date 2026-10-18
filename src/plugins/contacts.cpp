@@ -113,16 +113,13 @@ public:
     }
     QJsonObject savePreferences() const override
     {
-        return {{QStringLiteral("header"),
-                 QString::fromLatin1(table_->horizontalHeader()->saveState().toBase64())}};
+        return {
+            {QStringLiteral("header"), widgetStateText(table_->horizontalHeader()->saveState())}};
     }
     void restorePreferences(const QJsonObject &values) override
     {
-        const auto bytes = preferenceText(values, QStringLiteral("header"), {}, 16384).toLatin1();
-        if (!bytes.isEmpty()) {
-            table_->horizontalHeader()->restoreState(
-                QByteArray::fromBase64(bytes, QByteArray::AbortOnBase64DecodingErrors));
-        }
+        table_->horizontalHeader()->restoreState(
+            widgetStateBytes(values, QStringLiteral("header"), 16384));
     }
 
 private:

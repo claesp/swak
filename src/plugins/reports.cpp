@@ -3,6 +3,7 @@
 #include "core/interfaces.h"
 #include "core/modal.h"
 #include "core/preferences.h"
+#include "core/server_choice.h"
 #include "core/servers.h"
 #include "core/single_line_label.h"
 #include "core/tak_server_api.h"
@@ -130,16 +131,13 @@ public:
     }
     QJsonObject savePreferences() const override
     {
-        return {{QStringLiteral("header"),
-                 QString::fromLatin1(table_->horizontalHeader()->saveState().toBase64())}};
+        return {
+            {QStringLiteral("header"), widgetStateText(table_->horizontalHeader()->saveState())}};
     }
     void restorePreferences(const QJsonObject &values) override
     {
-        const auto bytes = preferenceText(values, QStringLiteral("header"), {}, 16384).toLatin1();
-        if (!bytes.isEmpty()) {
-            table_->horizontalHeader()->restoreState(
-                QByteArray::fromBase64(bytes, QByteArray::AbortOnBase64DecodingErrors));
-        }
+        table_->horizontalHeader()->restoreState(
+            widgetStateBytes(values, QStringLiteral("header"), 16384));
     }
 
 private:
@@ -150,22 +148,7 @@ private:
     }
     void showServers()
     {
-        const auto previous = serverChoice_->currentData().toString();
-        serverChoice_->clear();
-        if (!servers_) {
-            return;
-        }
-        const auto sources = servers_->sources();
-        for (auto it = sources.begin(); it != sources.end(); ++it) {
-            if (!TakServerApi::apiUrl(it.value().toObject(), QStringLiteral("/citrap")).isEmpty()) {
-                const auto name = it.value().toObject().value(QStringLiteral("name")).toString();
-                serverChoice_->addItem(name.isEmpty() ? it.key() : name, it.key());
-            }
-        }
-        const auto index = serverChoice_->findData(previous);
-        if (index >= 0) {
-            serverChoice_->setCurrentIndex(index);
-        }
+        fillTakServerChoice(*serverChoice_, servers_, QStringLiteral("/api/citrap"));
     }
     void showReports()
     {

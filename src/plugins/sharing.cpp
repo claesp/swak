@@ -111,15 +111,6 @@ public:
           contacts_(services.contacts)
     {
     }
-    bool handle(QEvent &, const Viewport &, QWidget &) override
-    {
-        return false;
-    }
-    void paint(QPainter &, const Viewport &) const override {}
-    bool cancel() override
-    {
-        return false;
-    }
     void populateInformationMenu(const MapItem &item, QMenu &menu) override
     {
         populateContextMenu(item, menu);

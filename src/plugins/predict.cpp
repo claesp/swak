@@ -114,14 +114,6 @@ public:
         emit changed();
         emit actionsChanged();
     }
-    bool handle(QEvent &, const Viewport &, QWidget &) override
-    {
-        return false;
-    }
-    bool cancel() override
-    {
-        return false;
-    }
     void clear()
     {
         records_.clear();

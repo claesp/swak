@@ -18,8 +18,12 @@ class MapTool : public QObject
     Q_OBJECT
 public:
     using QObject::QObject;
-    virtual bool handle(QEvent &event, const Viewport &view, QWidget &map) = 0;
-    virtual void paint(QPainter &painter, const Viewport &view) const = 0;
+    // A tool that only adds menu entries or paints nothing keeps these defaults.
+    virtual bool handle(QEvent &, const Viewport &, QWidget &)
+    {
+        return false;
+    }
+    virtual void paint(QPainter &, const Viewport &) const {}
     virtual void paintOverlay(QPainter &, const Viewport &, QPointF) const {}
     virtual QString statusText() const
     {
@@ -53,7 +57,11 @@ public:
     }
     virtual void populateContextMenu(const MapItem &, QMenu &) {}
     virtual void populateInformationMenu(const MapItem &, QMenu &) {}
-    virtual bool cancel() = 0;
+    // Returns true when the tool ended an operation.
+    virtual bool cancel()
+    {
+        return false;
+    }
     virtual bool dismiss()
     {
         return cancel();

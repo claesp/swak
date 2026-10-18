@@ -64,5 +64,10 @@ QString preferenceText(const QJsonObject &values,
                        const QString &key,
                        const QString &fallback,
                        qsizetype limit);
+// Saved widget state, such as a splitter or a table header, as base64 text.
+QString widgetStateText(const QByteArray &state);
+// Reads widget state that widgetStateText wrote, as at most limit characters of base64 text. Missing
+// or invalid text gives an empty array, which restoreState ignores.
+QByteArray widgetStateBytes(const QJsonObject &values, const QString &key, qsizetype limit);
 QRect fitWindowRectangle(QRect rectangle, const QList<QRect> &screens);
 } // namespace swak

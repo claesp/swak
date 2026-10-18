@@ -111,15 +111,6 @@ public:
         entries_ = std::move(next);
         return entries_;
     }
-    bool handle(QEvent &, const Viewport &, QWidget &) override
-    {
-        return false;
-    }
-    void paint(QPainter &, const Viewport &) const override {}
-    bool cancel() override
-    {
-        return false;
-    }
     // A click near an outline, or inside a circle or area, selects the drawing.
     QList<MapItem> itemsAt(const Viewport &view, QPointF position) const override
     {

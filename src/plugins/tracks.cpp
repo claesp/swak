@@ -100,15 +100,6 @@ public:
             preferenceNumber(values, QStringLiteral("headingConeOutlineOpacity"), .6, .05, 1);
         motion_.setHeadingConeStyle(cone);
     }
-    bool handle(QEvent &, const Viewport &, QWidget &) override
-    {
-        return false;
-    }
-    void paint(QPainter &, const Viewport &) const override {}
-    bool cancel() override
-    {
-        return false;
-    }
     // A click inside a visible cone selects the object that owns the cone.
     QList<MapItem> itemsAt(const Viewport &view, QPointF position) const override
     {

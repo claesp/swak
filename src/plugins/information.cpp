@@ -203,17 +203,14 @@ public:
         return {{QStringLiteral("dismissKey"),
                  QKeySequence(dismissKey_).toString(QKeySequence::PortableText)},
                 {QStringLiteral("header"),
-                 QString::fromLatin1(properties_->horizontalHeader()->saveState().toBase64())}};
+                 widgetStateText(properties_->horizontalHeader()->saveState())}};
     }
     void restorePreferences(const QJsonObject &values) override
     {
         const int key = dismissalKey(values);
         dismissKey_ = key ? key : Qt::Key_Escape;
-        const auto bytes = preferenceText(values, QStringLiteral("header"), {}, 16384).toLatin1();
-        if (!bytes.isEmpty()) {
-            properties_->horizontalHeader()->restoreState(
-                QByteArray::fromBase64(bytes, QByteArray::AbortOnBase64DecodingErrors));
-        }
+        properties_->horizontalHeader()->restoreState(
+            widgetStateBytes(values, QStringLiteral("header"), 16384));
     }
 
 protected:
