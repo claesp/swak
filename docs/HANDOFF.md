@@ -1853,3 +1853,7 @@ The user asked to move panes between the edges. The user runs KDE on Wayland. Th
 # 2026-10-17: Offscreen exit crash
 
 A GUI test that shows the OpenGL map, such as `modernMap` or `paneDragging`, passes on the offscreen platform but ends with SIGSEGV after the tests. The cause is in Qt 6.8.2. The offscreen platform theme (`libqoffscreen.so`) keeps its system and fixed fonts in two function-local static QFont objects. `QApplicationPrivate::initializeWidgetFontHash` creates them, so their destructors run from `exit()` after QApplication has ended. When the map painted text through OpenGL, their font engines hold OpenGL glyph caches. The glyph cache destructor calls `QOpenGLContext::currentContext()`, which reads a QThreadStorage that no longer exists. A gdb breakpoint on `__cxa_atexit` for `QFont::~QFont` showed the two registrations from the offscreen plugin. No SWAK object owns these fonts. The quality modes use xcb under Xvfb, where the tests end without the crash. The documented offscreen commands in `quality.md` run suites without the OpenGL map. Do not run OpenGL GUI tests on the offscreen platform.
+
+# 2026-10-18: Full code review
+
+[Code review, October 18](review-2026-10-18.md) records a review of all first-party code at `58ceccf`. It has 2 P1, 20 P2, and many P3 findings, and a list of helpers that remove repeated code. No finding is fixed yet. The first P1 is GDAL fetching URLs from untrusted vector data. The second P1 is chat text with emoji that is sent empty. One shared text filter removes the cause of four P2 findings.
