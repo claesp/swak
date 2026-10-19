@@ -111,6 +111,7 @@ public:
         : MapTool(parent), objects_(services.objects), sharing_(services.sharing),
           contacts_(services.contacts)
     {
+        setObjectName(QStringLiteral("sharingTool"));
     }
     void populateInformationMenu(const MapItem &item, QMenu &menu) override
     {

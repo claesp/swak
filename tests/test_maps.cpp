@@ -6,6 +6,7 @@
 #include "tile_server.h"
 
 #include <QDir>
+#include <QDirIterator>
 #include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -1054,6 +1055,69 @@ private slots:
         tile = renderOnWorker(RasterRequest{source, "secret-key", {}, 0, 1, 1, 1});
         QVERIFY(!tile.error.isEmpty());
         QVERIFY(!tile.error.contains(QStringLiteral("secret-key")));
+    }
+    void gdalWmtsDatasetCache()
+    {
+        // WMTS: dataset names have no Cache element. Their tiles go to the SWAK cache folder,
+        // or to no cache, never to the GDAL default folder.
+        TileServer server;
+        QVERIFY(server.load(QFINDTESTDATA("fixtures")));
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        const auto base = QStringLiteral("https://localhost:%1").arg(server.serverPort());
+        const auto capabilities =
+            QStringLiteral(
+                "<?xml version=\"1.0\"?><Capabilities xmlns=\"http://www.opengis.net/wmts/1.0\" "
+                "xmlns:ows=\"http://www.opengis.net/ows/1.1\" version=\"1.0.0\"><Contents><Layer>"
+                "<ows:Identifier>a</ows:Identifier><Style isDefault=\"true\"><ows:Identifier>"
+                "default</ows:Identifier></Style><Format>image/png</Format><TileMatrixSetLink>"
+                "<TileMatrixSet>g</TileMatrixSet></TileMatrixSetLink><ResourceURL "
+                "format=\"image/png\" resourceType=\"tile\" "
+                "template=\"%1/t/{TileMatrix}/{TileRow}/{TileCol}.png\"/></Layer><TileMatrixSet>"
+                "<ows:Identifier>g</ows:Identifier><ows:SupportedCRS>urn:ogc:def:crs:EPSG::3857"
+                "</ows:SupportedCRS><TileMatrix><ows:Identifier>0</ows:Identifier>"
+                "<ScaleDenominator>559082264.0287178</ScaleDenominator><TopLeftCorner>"
+                "-20037508.3427892 20037508.3427892</TopLeftCorner><TileWidth>256</TileWidth>"
+                "<TileHeight>256</TileHeight><MatrixWidth>1</MatrixWidth><MatrixHeight>1"
+                "</MatrixHeight></TileMatrix></TileMatrixSet></Contents></Capabilities>")
+                .arg(base)
+                .toUtf8();
+        server.respond = [&](const QByteArray &head) {
+            return head.contains("/caps.xml")
+                       ? std::pair{QByteArray("HTTP/1.1 200 OK\r\nContent-Type: text/xml\r\n"),
+                                   capabilities}
+                       : std::pair{server.headers, server.body};
+        };
+        QTemporaryDir global, cache;
+        CPLSetConfigOption("GDAL_DEFAULT_WMS_CACHE_PATH", global.path().toUtf8().constData());
+        struct RestoreCache
+        {
+            ~RestoreCache()
+            {
+                CPLSetConfigOption("GDAL_DEFAULT_WMS_CACHE_PATH", nullptr);
+            }
+        } restore;
+        const auto files = [](const QString &path) {
+            int count = 0;
+            for (QDirIterator it(path, QDir::Files, QDirIterator::Subdirectories); it.hasNext();
+                 it.next()) {
+                ++count;
+            }
+            return count;
+        };
+        auto source =
+            datasetSource(QStringLiteral("WMTS:") + base + QStringLiteral("/caps.xml,layer=a"));
+        source.insert(QStringLiteral("ignoreTls"), true);
+        auto tile = renderOnWorker(RasterRequest{source, {}, cache.path(), 1 << 20, 0, 0, 0});
+        QVERIFY2(tile.error.isEmpty(), qPrintable(tile.error));
+        QCOMPARE(tile.image.pixelColor(128, 128), QColor("#eb426a"));
+        QVERIFY(files(cache.filePath(QStringLiteral("unchecked/datasets"))) > 0);
+        QCOMPARE(files(global.path()), 0);
+        // Without a cache folder, GDAL keeps no tiles on disk. A new name avoids a pooled dataset.
+        source.insert(QStringLiteral("endpoint"),
+                      QStringLiteral("WMTS:") + base + QStringLiteral("/caps.xml?b,layer=a"));
+        tile = renderOnWorker(RasterRequest{source, {}, {}, 0, 0, 0, 0});
+        QVERIFY2(tile.error.isEmpty(), qPrintable(tile.error));
+        QCOMPARE(files(global.path()), 0);
     }
     void nearbyTiles()
     {

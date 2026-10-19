@@ -57,10 +57,12 @@ target_compile_options(
         $<$<AND:$<CONFIG:Release,RelWithDebInfo>,$<CXX_COMPILER_ID:GNU,Clang>>:-include;${CMAKE_CURRENT_SOURCE_DIR}/src/core/hardening.h>
 )
 if(SWAK_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    # -fsanitize=undefined does not check float to integer casts. Add that check.
     target_compile_options(
-        swak_build INTERFACE -fsanitize=address,undefined -fno-omit-frame-pointer
+        swak_build INTERFACE -fsanitize=address,undefined,float-cast-overflow
+                             -fno-omit-frame-pointer
     )
-    target_link_options(swak_build INTERFACE -fsanitize=address,undefined)
+    target_link_options(swak_build INTERFACE -fsanitize=address,undefined,float-cast-overflow)
 endif()
 if(SWAK_COVERAGE)
     target_compile_options(swak_build INTERFACE --coverage -O0 -g)

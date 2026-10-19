@@ -6,7 +6,7 @@ The runner uses Python 3.9 or later and its standard library. It saves logs and 
 
 Run modes that execute the application one at a time. Test caches use shared per-user paths, even across different build directories. Parallel runs can fail during cache locking.
 
-Sanitizers are tools that detect faults during program execution. The sanitizer build detects use-after-free, invalid access, some undefined behavior, and leaks. Leak detection stays enabled. The runner does not suppress graphics-driver leaks or accept them as success. The release preset does not enable diagnostic instrumentation. Installation includes no diagnostic tool or test executable.
+Sanitizers are tools that detect faults during program execution. The sanitizer build detects use-after-free, invalid access, some undefined behavior, and leaks. It also checks float to integer casts, such as a NaN pixel value cast to an index. The plain undefined behavior sanitizer does not check them. Leak detection stays enabled. The runner does not suppress graphics-driver leaks or accept them as success. The release preset does not enable diagnostic instrumentation. Installation includes no diagnostic tool or test executable.
 
 On Debian 13, install the development tools with administrator access:
 

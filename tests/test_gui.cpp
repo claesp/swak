@@ -120,7 +120,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <memory>
+#include <optional>
 
 static void answerAction(Qt::Key key = Qt::Key_Return)
 {
@@ -1615,6 +1617,39 @@ private slots:
         QVERIFY(sharing->automatic());
         sharing->setAutomatic(false);
         QVERIFY(!automatic->isChecked());
+        // The recipient dialog runs the event loop. A tool deleted in it shares nothing.
+        item.owner = QStringLiteral("org.swak.markers");
+        auto *with = action(QStringLiteral("shareObjectWith"));
+        QVERIFY(with);
+        QPointer<swak::MapTool> tool =
+            window.findChild<swak::MapTool *>(QStringLiteral("sharingTool"));
+        QVERIFY(tool);
+        bool deleted = false;
+        QTimer::singleShot(100, &window, [&] {
+            auto *dialog = window.findChild<QDialog *>(QStringLiteral("shareRecipientsDialog"));
+            auto *list = dialog
+                             ? dialog->findChild<QListWidget *>(QStringLiteral("shareRecipients"))
+                             : nullptr;
+            if (!list || list->count() != 1) {
+                if (dialog) {
+                    dialog->reject();
+                }
+                return;
+            }
+            list->item(0)->setCheckState(Qt::Checked);
+            dialog->accept();
+            delete tool.data();
+            deleted = true;
+        });
+        with->trigger();
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return deleted;
+            },
+            5000));
+        QTest::qWait(50);
+        QVERIFY(!tool);
+        QVERIFY(!sharing->isShared(marker.id));
     }
     void reportsPane()
     {
@@ -1688,35 +1723,52 @@ private slots:
         }
         return nullptr;
     }
-    // Types a path into the next Qt file dialog that opens, and accepts it. An empty path cancels
-    // the dialog. QFileDialog::selectFile does not change the name field while the field has
-    // focus, so the timer sets the field. The timer stops with its context.
-    static void chooseFile(QObject *context, const QString &path)
+    // Runs action on the next visible Qt file dialog. The timer stops with its context.
+    static void onFileDialog(QObject *context, std::function<void(QFileDialog &)> action)
     {
         auto *timer = new QTimer(context);
         auto tries = std::make_shared<int>(0);
-        QObject::connect(timer, &QTimer::timeout, timer, [timer, path, tries] {
+        QObject::connect(timer, &QTimer::timeout, timer, [timer, action, tries] {
             if (++*tries > 500) {
                 timer->deleteLater();
                 return;
             }
             for (auto *widget : QApplication::topLevelWidgets()) {
                 auto *picker = qobject_cast<QFileDialog *>(widget);
-                auto *name = picker ? picker->findChild<QLineEdit *>(QStringLiteral("fileNameEdit"))
-                                    : nullptr;
-                if (picker && picker->isVisible() && name) {
+                if (picker && picker->isVisible() &&
+                    picker->findChild<QLineEdit *>(QStringLiteral("fileNameEdit"))) {
                     timer->deleteLater();
-                    if (path.isEmpty()) {
-                        picker->reject();
-                        return;
-                    }
-                    name->setText(path);
-                    static_cast<QDialog *>(picker)->accept();
+                    action(*picker);
                     return;
                 }
             }
         });
         timer->start(20);
+    }
+    // Types a path into a file dialog. QFileDialog::selectFile does not change the name field
+    // while the field has focus, so this sets the field. A selected row wins over typed text,
+    // and only a focused field clears that row. Clear the rows first.
+    static void typeFileName(QFileDialog &picker, const QString &path)
+    {
+        for (auto *view : picker.findChildren<QAbstractItemView *>()) {
+            if (view->selectionModel()) {
+                view->selectionModel()->clearSelection();
+            }
+        }
+        picker.findChild<QLineEdit *>(QStringLiteral("fileNameEdit"))->setText(path);
+    }
+    // Types a path into the next Qt file dialog that opens, and accepts it. An empty path cancels
+    // the dialog.
+    static void chooseFile(QObject *context, const QString &path)
+    {
+        onFileDialog(context, [path](QFileDialog &picker) {
+            if (path.isEmpty()) {
+                picker.reject();
+                return;
+            }
+            typeFileName(picker, path);
+            static_cast<QDialog &>(picker).accept();
+        });
     }
     void editorFiles()
     {
@@ -1795,12 +1847,30 @@ private slots:
         QVERIFY(QFile::setPermissions(readOnly, QFileDevice::ReadOwner | QFileDevice::ExeOwner));
         chooseFile(&window, readOnly + QStringLiteral("/event.xml"));
         exportButton->click();
-        QVERIFY(label->text().startsWith(QStringLiteral("The file cannot be saved: ")));
+        QVERIFY2(label->text().startsWith(QStringLiteral("The file cannot be saved: ")),
+                 qPrintable(label->text()));
         chooseFile(&window, {});
         exportButton->click();
         QVERIFY(label->text().startsWith(QStringLiteral("The file cannot be saved: ")));
         QFile::setPermissions(
             readOnly, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+        // The file dialog runs the event loop. An editor deleted in it imports nothing.
+        auto late = event;
+        late.uid = QStringLiteral("late-1");
+        const auto latePath = write(QStringLiteral("late.xml"), swak::encodeCot(late));
+        const auto rows = window.store().rowCount();
+        const QPointer<QWidget> editor =
+            window.findChild<QDockWidget *>(QStringLiteral("org.swak.editor.pane"))->widget();
+        QVERIFY(editor);
+        onFileDialog(&window, [&](QFileDialog &picker) {
+            typeFileName(picker, latePath);
+            static_cast<QDialog &>(picker).accept();
+            delete editor.data();
+        });
+        importButton->click();
+        QVERIFY(!editor);
+        QTest::qWait(50);
+        QCOMPARE(window.store().rowCount(), rows);
     }
     void windowDialogs()
     {
@@ -2637,6 +2707,23 @@ private slots:
         const auto originalWindow = QApplication::palette().color(QPalette::Window);
         QTemporaryDir directory;
         const auto profile = directory.filePath(QStringLiteral("display.json"));
+        // Records the window type when the restored palette arrives at a child widget.
+        struct RestoreProbe final : QObject
+        {
+            bool armed = false;
+            std::optional<bool> windowComplete;
+            bool eventFilter(QObject *watched, QEvent *event) override
+            {
+                if (armed && !windowComplete &&
+                    (event->type() == QEvent::PaletteChange ||
+                     event->type() == QEvent::ApplicationPaletteChange)) {
+                    windowComplete =
+                        qobject_cast<swak::Window *>(
+                            static_cast<QWidget *>(watched)->parentWidget()) != nullptr;
+                }
+                return false;
+            }
+        } probe;
         {
             swak::Window window(profile, QPluginLoader::staticInstances());
             window.show();
@@ -2667,7 +2754,12 @@ private slots:
             QFile saved(profile);
             QVERIFY(saved.open(QIODevice::ReadOnly));
             QVERIFY(saved.readAll().contains("\"displayMode\": \"modern\""));
+            // A widget made after the style gets the restored look while the window is complete.
+            auto *child = new QWidget(&window);
+            child->installEventFilter(&probe);
+            probe.armed = true;
         }
+        QCOMPARE(probe.windowComplete, std::optional<bool>(true));
         // Closing the window restores the application look.
         QCOMPARE(qApp->styleSheet(), originalSheet);
         QCOMPARE(QApplication::palette().color(QPalette::Window), originalWindow);
@@ -3171,6 +3263,25 @@ private slots:
         click(QStringLiteral("reopenReport"));
         QVERIFY(waitFor(QStringLiteral("does not allow")));
         QCOMPARE(table->rowCount(), 2);
+        // The file dialog runs the event loop. A report dialog deleted in it sends nothing.
+        const auto before = api.requests.size();
+        QPointer<QDialog> report;
+        QTimer::singleShot(0, &window, [&] {
+            report = visibleDialog(window, QStringLiteral("newReportDialog"));
+            if (!report) {
+                return;
+            }
+            onFileDialog(&window, [&](QFileDialog &picker) {
+                typeFileName(picker, photo);
+                static_cast<QDialog &>(picker).accept();
+                delete report.data();
+            });
+            report->findChild<QPushButton *>(QStringLiteral("addReportFile"))->click();
+        });
+        click(QStringLiteral("newReport"));
+        QVERIFY(!report);
+        QTest::qWait(50);
+        QCOMPARE(api.requests.size(), before);
     }
     void checklistsPane()
     {
@@ -4001,6 +4112,26 @@ private slots:
         subscriptions->setCurrentRow(row(QStringLiteral("Secret")));
         click(QStringLiteral("reloadMission"));
         QVERIFY(subscriptions->currentItem()->text().startsWith(QStringLiteral("Secret · ")));
+        // The save dialog runs the event loop. A pane deleted in it saves nothing.
+        archiveFails = false;
+        subscriptions->setCurrentRow(row(QStringLiteral("Ops")));
+        const QPointer<QWidget> pane =
+            window.findChild<QDockWidget *>(QStringLiteral("org.swak.missions.view.pane"))
+                ->widget();
+        const auto late = directory.filePath(QStringLiteral("late.zip"));
+        onFileDialog(&window, [&](QFileDialog &picker) {
+            typeFileName(picker, late);
+            static_cast<QDialog &>(picker).accept();
+            delete pane.data();
+        });
+        click(QStringLiteral("exportMission"));
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return !pane;
+            },
+            15000));
+        QTest::qWait(50);
+        QVERIFY(!QFile::exists(late));
     }
     void filesPane()
     {
@@ -5627,6 +5758,7 @@ private slots:
     }
     void markerCollectionWorkflow()
     {
+        const QtDialogs dialogs;
         QTemporaryDir directory;
         const auto profile = directory.filePath(QStringLiteral("collections.json"));
         QString collectionId, markerId;
@@ -5719,7 +5851,18 @@ private slots:
                     ->exportArchive(collectionId, directory.filePath(QStringLiteral("custom.zip")))
                     .isEmpty());
             QVERIFY(manager->grab().save(QStringLiteral("marker-collections.png")));
-            manager->close();
+            // The file dialog runs the event loop. A manager deleted in it imports nothing.
+            const auto count = collections->collections().size();
+            const QPointer<swak::MarkerManager> deleted(manager);
+            onFileDialog(&window, [&](QFileDialog &picker) {
+                typeFileName(picker, directory.filePath(QStringLiteral("custom.zip")));
+                static_cast<QDialog &>(picker).accept();
+                delete deleted.data();
+            });
+            manager->findChild<QPushButton *>(QStringLiteral("importMarkerCollection"))->click();
+            QVERIFY(!deleted);
+            QTest::qWait(50);
+            QCOMPARE(collections->collections().size(), count);
             auto *map = window.findChild<QOpenGLWidget *>();
             auto *editor = window.findChild<swak::ObjectEditor *>(QStringLiteral("objectEditor"));
             auto *objects = window.findChild<swak::UserObjects *>();
