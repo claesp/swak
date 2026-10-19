@@ -13,7 +13,6 @@
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QLineEdit>
-#include <QPointer>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QStandardPaths>
@@ -104,16 +103,14 @@ MarkerManager::MarkerManager(MarkerCollections &collections,
         }
     });
     connect(import, &QPushButton::clicked, this, [this] {
-        // The file dialog runs a nested loop. It can delete this manager.
-        const QPointer<MarkerManager> self(this);
+        // The file dialog is a child of this manager. When a nested loop deletes the manager,
+        // Qt deletes the dialog too, and the dialog returns no file.
         const auto path = QFileDialog::getOpenFileName(
             this,
             tr("Import marker collection"),
             collections_.directory(),
             tr("Collection archives (*.zip *.tar *.tar.gz *.tgz);;All files (*)"));
-        // The nested dialog loop can delete this object. Cppcheck cannot see that.
-        // cppcheck-suppress knownConditionTrueFalse
-        if (!self || path.isEmpty()) {
+        if (path.isEmpty()) {
             return;
         }
         collections_.setDirectory(QFileInfo(path).absolutePath());

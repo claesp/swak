@@ -248,12 +248,10 @@ private:
         auto *addFile = new QPushButton(tr("Add File ..."), dialog.get());
         addFile->setObjectName(QStringLiteral("addReportFile"));
         connect(addFile, &QPushButton::clicked, dialog.get(), [files, &dialog] {
-            // The file dialog runs the event loop, so the report dialog can be deleted in it.
-            const QPointer<QListWidget> list(files);
+            // The file dialog is a child of the report dialog, which owns files. When a nested
+            // loop deletes the report dialog, Qt deletes the file dialog too, and it returns no
+            // file.
             const auto paths = QFileDialog::getOpenFileNames(dialog.get(), tr("Attachments"));
-            if (!list) {
-                return;
-            }
             for (const auto &path : paths) {
                 if (files->count() < MaxCitrapAttachments) {
                     files->addItem(path);

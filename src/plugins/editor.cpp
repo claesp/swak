@@ -377,17 +377,15 @@ private:
     }
     void importFile()
     {
-        // The file dialog runs a nested loop. It can delete this editor.
-        const QPointer<Editor> self(this);
+        // The file dialog is a child of this editor. When a nested loop deletes the editor, Qt
+        // deletes the dialog too, and the dialog returns no file.
         const auto path = QFileDialog::getOpenFileName(
             this,
             tr("Import a CoT event"),
             !importDirectory_.isEmpty() && QDir(importDirectory_).exists() ? importDirectory_
                                                                            : QDir::homePath(),
             tr("CoT XML (*.xml *.cot);;All files (*)"));
-        // The nested dialog loop can delete this object. Cppcheck cannot see that.
-        // cppcheck-suppress knownConditionTrueFalse
-        if (!self || path.isEmpty()) {
+        if (path.isEmpty()) {
             return;
         }
         importDirectory_ = QFileInfo(path).absolutePath();
@@ -417,7 +415,7 @@ private:
         if (output_.isEmpty()) {
             return;
         }
-        const QPointer<Editor> self(this);
+        // The file dialog is a child of this editor, as in importFile.
         const auto path = QFileDialog::getSaveFileName(
             this,
             tr("Export the preview event"),
@@ -425,9 +423,7 @@ private:
                                                                                 : QDir::homePath())
                 .filePath(QStringLiteral("event.xml")),
             tr("CoT XML (*.xml)"));
-        // The nested dialog loop can delete this object. Cppcheck cannot see that.
-        // cppcheck-suppress knownConditionTrueFalse
-        if (!self || path.isEmpty()) {
+        if (path.isEmpty()) {
             return;
         }
         exportDirectory_ = QFileInfo(path).absolutePath();

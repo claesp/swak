@@ -274,13 +274,13 @@ public:
                         showStatus(error);
                         return;
                     }
-                    // The file dialog runs the event loop, so the pane can be deleted in it.
-                    const QPointer self(this);
+                    // The file dialog is a child of this pane. When a nested loop deletes the
+                    // pane, Qt deletes the dialog too, and the dialog returns no file.
                     const auto path = QFileDialog::getSaveFileName(this,
                                                                    tr("Export Mission"),
                                                                    name + QStringLiteral(".zip"),
                                                                    tr("Zip archives (*.zip)"));
-                    if (!self || path.isEmpty()) {
+                    if (path.isEmpty()) {
                         return;
                     }
                     QSaveFile file(path);
