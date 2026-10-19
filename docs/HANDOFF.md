@@ -1857,3 +1857,11 @@ A GUI test that shows the OpenGL map, such as `modernMap` or `paneDragging`, pas
 # 2026-10-18: Full code review
 
 [Code review, October 18](review-2026-10-18.md) records a review of all first-party code at `58ceccf`. It has 2 P1, 20 P2, and many P3 findings, and a list of helpers that remove repeated code. The status section of the review lists the fix commits. All findings, the dead code, and most repeated code are fixed. The review lists the few notes that remain.
+
+# 2026-10-20: Tests for the review notes
+
+New tests cover the paths that the review left untested: the `WMTS:` dataset cache, the DisplayStyle restore at window teardown, the palette NaN guard, and owners deleted during a dialog in sharing, missions, reports, the editor, and the marker manager. The sanitizer build now adds `-fsanitize=float-cast-overflow`. The review notes record which tests fail without their fix.
+
+Run GUI tests by hand with `QT_QPA_PLATFORM=xcb` and a 24-bit Xvfb screen, as `tools/quality.py gui` does. Without `xcb`, Qt uses the desktop Wayland session and its native file dialogs.
+
+The first quick run failed once in `VectorTest::coverageRecovery`. The vector tests use the Qt test-mode cache, which kept 121 MB of tiles from earlier runs. A local server that got the same port again then got no request for a cached tile. The test now empties its test-mode cache at start.

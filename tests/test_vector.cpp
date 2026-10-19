@@ -7,6 +7,7 @@
 #include "vector_fixture.h"
 
 #include <QApplication>
+#include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QJsonArray>
@@ -104,6 +105,11 @@ private slots:
     void initTestCase()
     {
         QStandardPaths::setTestModeEnabled(true);
+        // Tiles from an earlier run stay in the test cache. A server that gets the same port
+        // again would then get no request. Start each run with an empty cache.
+        const auto cache = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+        QVERIFY(cache.contains(QStringLiteral("/.qttest/")));
+        QVERIFY(QDir(cache).removeRecursively());
         for (auto *object : QPluginLoader::staticInstances()) {
             if (auto *provider = qobject_cast<MapProvider *>(object)) {
                 provider_ = provider;
