@@ -10842,6 +10842,20 @@ private slots:
         QVERIFY(!cancel->isEnabled());
         QCOMPARE(button->toolTip(), QStringLiteral("No active emergencies"));
         QVERIFY(button->styleSheet().isEmpty());
+        // The confirmation runs the event loop. An editor deleted in it sends nothing.
+        const QPointer<QWidget> editor =
+            window.findChild<QDockWidget *>(QStringLiteral("org.swak.editor.pane"))->widget();
+        QVERIFY(editor && editor->isAncestorOf(send));
+        QTimer::singleShot(0, qApp, [&] {
+            auto *dialog = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
+            QVERIFY(dialog);
+            QTest::keyClick(dialog, Qt::Key_Return);
+            delete editor.data();
+        });
+        send->click();
+        QVERIFY(!editor);
+        QTest::qWait(50);
+        QCOMPARE(store.rowCount(), 0);
     }
     void serverEnrollmentDialog()
     {

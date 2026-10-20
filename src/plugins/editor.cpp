@@ -333,7 +333,8 @@ private:
             return;
         }
         const auto label = emergencyKind_->currentText();
-        const QPointer<Editor> self(this);
+        // The confirmation runs a nested loop that can delete this pane. confirmAction then
+        // returns false, because its parent is gone.
         const bool confirmed =
             confirmAction(this,
                           tr("Send emergency"),
@@ -342,9 +343,7 @@ private:
                                    QLocale().toString(latitude_->value(), 'f', 5),
                                    QLocale().toString(longitude_->value(), 'f', 5)),
                           tr("Send"));
-        // The confirmation runs a nested loop that can delete this pane.
-        // cppcheck-suppress knownConditionTrueFalse
-        if (!self || !confirmed) {
+        if (!confirmed) {
             return;
         }
         const auto event = emergencyEvent(sender(), label);
