@@ -9,6 +9,8 @@
 #include <QPointer>
 #include <QTimer>
 
+#include <algorithm>
+
 namespace swak {
 class Identity;
 class Servers;
@@ -116,6 +118,13 @@ public:
     }
     QJsonObject savePreferences() const override;
     void restorePreferences(const QJsonObject &values) override;
+    // Sets the wait between the last change event of a group and its reload. Tests use a short
+    // wait. The value is limited to 0 to ReloadDelayMilliseconds.
+    // cppcheck-suppress unusedFunction
+    void setReloadDelay(int milliseconds)
+    {
+        reloadDelay_ = std::clamp(milliseconds, 0, ReloadDelayMilliseconds);
+    }
 
     const QList<MissionSubscription> &subscriptions() const
     {
@@ -176,6 +185,7 @@ private:
     QHash<QString, QList<Event>> events_;
     QList<std::pair<QString, QString>> invitations_;
     QHash<QString, QTimer *> pendingReloads_;
+    int reloadDelay_ = ReloadDelayMilliseconds;
     QTimer refresh_;
 };
 } // namespace swak

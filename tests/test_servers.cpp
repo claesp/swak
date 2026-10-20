@@ -3565,6 +3565,8 @@ private slots:
         values.insert(QStringLiteral("uid"), QStringLiteral("SWAK-1"));
         identity.restorePreferences(values);
         Missions missions(store, &servers, &tak, &identity);
+        // A short wait before each reload keeps the test fast.
+        missions.setReloadDelay(100);
         auto entry = source(9);
         entry.insert(QStringLiteral("protocol"), QStringLiteral("tls"));
         entry.insert(QStringLiteral("enabled"), false);
@@ -3656,6 +3658,24 @@ private slots:
                 return inMission() == 1;
             },
             10000));
+        // A group of change events gives one reload, after the last event of the group.
+        const auto cotReads = [&] {
+            return std::count_if(api.requests.cbegin(), api.requests.cend(), [](const auto &r) {
+                return r.startsWith("GET /Marti/api/missions/Ops/cot ");
+            });
+        };
+        const auto readsBefore = cotReads();
+        for (int i = 3; i < 6; ++i) {
+            change.time = QDateTime::currentDateTimeUtc().addMSecs(i);
+            QVERIFY(store.accept(change).isEmpty());
+        }
+        QVERIFY(QTest::qWaitFor(
+            [&] {
+                return cotReads() > readsBefore;
+            },
+            10000));
+        QTest::qWait(300);
+        QCOMPARE(cotReads(), readsBefore + 1);
         auto other = change;
         other.detail = QStringLiteral("<mission name=\"Other\"/>");
         QVERIFY(store.accept(other).isEmpty());

@@ -1865,3 +1865,9 @@ New tests cover the paths that the review left untested: the `WMTS:` dataset cac
 Run GUI tests by hand with `QT_QPA_PLATFORM=xcb` and a 24-bit Xvfb screen, as `tools/quality.py gui` does. Without `xcb`, Qt uses the desktop Wayland session and its native file dialogs.
 
 The first quick run failed once in `VectorTest::coverageRecovery`. The vector tests use the Qt test-mode cache, which kept 121 MB of tiles from earlier runs. A local server that got the same port again then got no request for a cached tile. The test now empties its test-mode cache at start.
+
+# 2026-10-20: Server suite time
+
+The server suite took about 56.5 seconds against the 60-second ctest limit after `85e3c83`. Most of that time is planned waits. Under machine load it went past the limit. `missionService` waited the 2-second mission reload delay several times. `Missions::setReloadDelay` now sets a shorter wait, and the test uses 100 milliseconds. The test also checks that a group of change events gives one reload.
+
+The kernel counts io_uring waits as I/O pressure. On this machine the Ghostty terminal keeps `/proc/pressure/io` near 100 percent. That value does not show a disk problem.

@@ -691,7 +691,7 @@ void Missions::receiveChange(const QString &serverId, const QString &name)
     if (!timer) {
         timer = new QTimer(this);
         timer->setSingleShot(true);
-        timer->setInterval(ReloadDelayMilliseconds);
+        timer->setInterval(reloadDelay_);
         connect(timer, &QTimer::timeout, this, [this, serverId, name, key] {
             delete pendingReloads_.take(key);
             reload(serverId, name);

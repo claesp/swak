@@ -152,7 +152,7 @@ Read detail through `core/cot_detail.h`. `detailElements` and `detailElement` re
 
 # Missions
 
-`PluginServices::missions` is the per-window `Missions` service in `core/missions.h`. It lists, subscribes, loads, edits, and exports missions and implements `PreferenceParticipant` under `org.swak.missions`. `Store::removeOrigin` removes the objects of one origin, and `Store::messageReceived` also delivers `t-x-m` mission events. `TakServerApi::martiRequest` takes extra headers, such as the mission bearer token. The missions plugin implements `PanePlugin`, and its MANIFEST declares `pane`. Its pane saves the splitter state under `org.swak.missions.view` and registers a map tool for Add to Mission and Remove from a mission.
+`PluginServices::missions` is the per-window `Missions` service in `core/missions.h`. It lists, subscribes, loads, edits, and exports missions and implements `PreferenceParticipant` under `org.swak.missions`. A mission change event starts a reload 2 seconds after the last change of a group. `setReloadDelay` sets a shorter wait, for example in tests. `Store::removeOrigin` removes the objects of one origin, and `Store::messageReceived` also delivers `t-x-m` mission events. `TakServerApi::martiRequest` takes extra headers, such as the mission bearer token. The missions plugin implements `PanePlugin`, and its MANIFEST declares `pane`. Its pane saves the splitter state under `org.swak.missions.view` and registers a map tool for Add to Mission and Remove from a mission.
 
 # Track history and server icons
 
