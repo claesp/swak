@@ -1871,3 +1871,10 @@ The first quick run failed once in `VectorTest::coverageRecovery`. The vector te
 The server suite took about 56.5 seconds against the 60-second ctest limit after `85e3c83`. Most of that time is planned waits. Under machine load it went past the limit. `missionService` waited the 2-second mission reload delay several times. `Missions::setReloadDelay` now sets a shorter wait, and the test uses 100 milliseconds. The test also checks that a group of change events gives one reload.
 
 The kernel counts io_uring waits as I/O pressure. On this machine the Ghostty terminal keeps `/proc/pressure/io` near 100 percent. That value does not show a disk problem.
+
+# 2026-10-21: Display mode switch time
+
+Under the sanitizers, a switch to Modern takes about 1.2 seconds and a switch to Standard about 0.6 seconds. Each change of style or style sheet restyles about 1200 widgets. The display mode GUI tests spend most of their time in these switches. Two faster orders change the result, so `DisplayStyle` keeps its order:
+
+- A Modern style sheet set before the Fusion style changes pane and command dock sizes by a few pixels.
+- A Standard style set before the style sheet removal leaves the dock title buttons with faint icons.
